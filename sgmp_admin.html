@@ -1094,6 +1094,7 @@ if (STATE.role === 'delegate') {
   loadModules();
   loadPrompts();
   loadUsers();
+  loadLogs();
 }
 
 document.getElementById('logoutBtn').addEventListener('click', function() {
@@ -1361,6 +1362,41 @@ function loadUsers() {
   });
 }
 
+  function loadLogs() {
+  apiGet('get_logs', { limit: 100 }).then(function(res) {
+    var tbody = document.getElementById('logsTableBody');
+    if (!tbody) return;
+
+    if (!res.ok || !Array.isArray(res.data)) {
+      tbody.innerHTML = '<tr><td colspan="6">No fue posible cargar los logs.</td></tr>';
+      return;
+    }
+
+    if (!res.data.length) {
+      tbody.innerHTML = '<tr><td colspan="6">No hay logs registrados.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = res.data.map(function(log) {
+      return (
+        '<tr>' +
+          '<td>' + esc(log.timestamp || '') + '</td>' +
+          '<td>' + esc(log.action || '') + '</td>' +
+          '<td>' + esc(log.user || '') + '</td>' +
+          '<td>' + esc(log.detail || '') + '</td>' +
+          '<td>' + esc(log.module || '') + '</td>' +
+          '<td>' + esc(log.status || '') + '</td>' +
+        '</tr>'
+      );
+    }).join('');
+  }).catch(function() {
+    var tbody = document.getElementById('logsTableBody');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="6">Error de conexión cargando logs.</td></tr>';
+    }
+  });
+}
+  
 function renderUsers() {
   var tbody = document.getElementById('usersBody');
   var tbl   = document.getElementById('usersTable');
