@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AudixEngine (beta) v2.2</title>
+<title>AudixEngine Auditoría Documental</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <style>
@@ -219,7 +218,7 @@ textarea.xtall { min-height: 380px; }
 // Verifica sesión activa antes de cargar el módulo
 (function() {
   var SESSION_KEY = 'sgmp_session_v1';
-  var LAUNCHER_URL = 'https://ornate-rabanadas-0e6e8f.netlify.app/index.html';
+  var LAUNCHER_URL = 'https://enginesgmp.github.io/sgmp/index.html';
 
   function checkSession() {
     // Si el login no es requerido en el Sheet, permitir acceso libre
@@ -255,7 +254,7 @@ textarea.xtall { min-height: 380px; }
 <header class="app-header">
   <div class="app">
     <div class="header-title">AudixEngine <span>(beta) v2.2</span></div>
-    <div class="header-desc">Motor de análisis, creación y reescritura documental. Prompts multi-IA con fence markers. Compatible con ChatGPT, Claude, Gemini y modelos locales. Genera entregables .docx.</div>
+    <div class="header-desc">Motor de auditoría, análisis y reconstrucción documental. Audita documentos existentes, identifica brechas, permite revisión de hallazgos y genera una versión mejorada descargable.</div>
   </div>
 </header>
 
@@ -268,7 +267,7 @@ textarea.xtall { min-height: 380px; }
       <span id="stepMeta">Paso 1 de 4 — Configuración</span>
     </div>
     <div class="stepper">
-      <div class="step-node active" id="sn-1" onclick="tryNav(1)"><div class="step-circle"><span>1</span></div><div class="step-lbl">Configuración</div><div class="step-sub">Contexto, modo y criterios.</div></div>
+      <div class="step-node active" id="sn-1" onclick="tryNav(1)"><div class="step-circle"><span>1</span></div><div class="step-lbl">Configuración</div><div class="step-sub">Documento, contexto y criterios.</div></div>
       <div class="step-node" id="sn-2" onclick="tryNav(2)"><div class="step-circle"><span>2</span></div><div class="step-lbl">Ejecución</div><div class="step-sub">Prompt y respuesta JSON.</div></div>
       <div class="step-node" id="sn-3" onclick="tryNav(3)"><div class="step-circle"><span>3</span></div><div class="step-lbl">Revisión</div><div class="step-sub">Hallazgos y decisiones.</div></div>
       <div class="step-node" id="sn-4" onclick="tryNav(4)"><div class="step-circle"><span>4</span></div><div class="step-lbl">Descargas</div><div class="step-sub">Entregables .docx</div></div>
@@ -278,26 +277,18 @@ textarea.xtall { min-height: 380px; }
   <!-- ========== PANEL 1: CONFIGURACIÓN ========== -->
   <div class="panel active" id="panel-1">
     <div class="card">
-      <div class="card-title">Configuración inicial <span class="tag-mira">Preparado para MIRA Docs</span></div>
-      <div class="card-desc">Define modo de trabajo, contexto del documento, normativas y metodologías aplicables. AudixEngine construirá prompts robustos con controles anti-alucinación.</div>
+      <div class="card-title">Configuración inicial <span class="tag-mira">Auditoría documental</span></div>
+      <div class="card-desc">Carga un documento existente, define el contexto, normativas y criterios aplicables. AudixEngine analizará brechas, permitirá revisar hallazgos y generará una versión mejorada del documento.</div>
 
-      <div class="section-label">1. Modo de trabajo</div>
-      <div class="mode-grid">
-        <div class="mode-card sel" id="mode-existing" onclick="setMode('existing')">
-          <div class="mode-card-title">Documento existente</div>
-          <div class="mode-card-desc">Analiza un documento actual, identifica brechas y genera versión final reescrita.</div>
-        </div>
-        <div class="mode-card" id="mode-new" onclick="setMode('new')">
-          <div class="mode-card-title">Documento nuevo</div>
-          <div class="mode-card-desc">Construye desde un brief estructurado o define los campos directamente.</div>
-        </div>
+      <div class="alert alert-info" style="margin-bottom:0;font-size:12px">
+        <span class="alert-icon">ℹ</span>
+        <span>Este módulo audita y mejora documentos existentes. La creación de documentos nuevos corresponde a otro módulo del sistema.</span>
       </div>
     </div>
 
-    <!-- DOCUMENTO EXISTENTE -->
     <div class="card" id="existing-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="section-label" style="margin-bottom:0;border-bottom:none">2. Documento a analizar</div>
+        <div class="section-label" style="margin-bottom:0;border-bottom:none">1. Documento a analizar</div>
         <div id="charCount" class="muted"></div>
       </div>
 
@@ -316,47 +307,9 @@ textarea.xtall { min-height: 380px; }
       <div class="form-hint" style="margin-top:4px">AudixEngine no asume contenido faltante. Si no hay evidencia, el análisis marcará "No se evidencia".</div>
     </div>
 
-    <!-- DOCUMENTO NUEVO -->
-    <div class="card hidden" id="new-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div class="section-label" style="margin-bottom:0;border-bottom:none">2. Brief del documento a construir</div>
-        <button class="btn btn-ghost btn-sm" onclick="downloadBriefTemplate()">↓ Descargar plantilla de brief</button>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Nombre del documento</label>
-          <input type="text" id="newDocName" placeholder="Ej. Procedimiento de liberación de producto" oninput="updateSummary()">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Proceso relacionado</label>
-          <input type="text" id="newDocProcess" placeholder="Ej. Control de calidad / Despacho" oninput="updateSummary()">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Objetivo</label>
-          <textarea id="newDocObjective" placeholder="¿Para qué existe este documento?" style="min-height:80px" oninput="updateSummary()"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Alcance</label>
-          <textarea id="newDocScope" placeholder="Áreas, actividades o límites del documento." style="min-height:80px" oninput="updateSummary()"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Responsables</label>
-          <textarea id="newDocResp" placeholder="Responsables, actores o áreas involucradas." style="min-height:80px"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Controles clave / puntos críticos</label>
-          <textarea id="newDocControls" placeholder="Controles, verificaciones, registros, aprobaciones." style="min-height:80px"></textarea>
-        </div>
-        <div class="form-group full">
-          <label class="form-label">Brief adicional (opcional)</label>
-          <textarea id="briefText" class="doc" placeholder="Si ya tienes un brief estructurado, pégalo aquí."></textarea>
-        </div>
-      </div>
-    </div>
-
     <!-- CONTEXTO -->
     <div class="card">
-      <div class="section-label">3. Clasificación y criterios</div>
+      <div class="section-label">2. Clasificación y criterios</div>
       <div class="form-grid-3">
         <div class="form-group">
           <label class="form-label">Tipo de documento</label>
@@ -416,7 +369,7 @@ textarea.xtall { min-height: 380px; }
 
     <!-- NORMATIVAS Y METODOLOGÍAS -->
     <div class="card">
-      <div class="section-label">4. Normativas y metodologías</div>
+      <div class="section-label">3. Normativas y metodologías</div>
       <div class="form-label" style="margin-bottom:8px">Normativas aplicables</div>
       <div class="pill-row" id="normGroup"></div>
       <div class="pill-add">
@@ -436,7 +389,7 @@ textarea.xtall { min-height: 380px; }
 
     <!-- RESUMEN -->
     <div class="card">
-      <div class="section-label">5. Resumen previo a la ejecución</div>
+      <div class="section-label">4. Resumen previo a la ejecución</div>
       <div class="sum-grid" id="sumGrid"></div>
       <div class="muted" style="margin-top:12px">AudixEngine construirá prompts robustos con controles anti-alucinación, fence markers multi-IA y validación antes de consolidar resultados.</div>
       <div id="step1Errors" style="margin-top:12px"></div>
@@ -490,7 +443,6 @@ textarea.xtall { min-height: 380px; }
   <!-- ========== PANEL 3: REVISIÓN ========== -->
   <div class="panel" id="panel-3">
 
-    <!-- Score (modo existente) -->
     <div id="existingReview">
       <div class="score-wrap" id="scoreWrap">
         <div class="score-num" id="scoreNum" style="color:var(--navy)">—</div>
@@ -527,20 +479,6 @@ textarea.xtall { min-height: 380px; }
       </div>
     </div>
 
-    <!-- Modo nuevo -->
-    <div id="newDocReview" class="hidden">
-      <div class="card">
-        <div class="card-title">Borrador generado</div>
-        <textarea id="newDocDraft" class="xtall" placeholder="El borrador aparecerá aquí..."></textarea>
-        <div class="form-hint" style="margin-top:6px">Puedes ajustar directamente el borrador antes de generar los entregables.</div>
-      </div>
-      <div class="card" style="margin-top:0">
-        <div class="card-title">Control de cambios propuesto</div>
-        <textarea id="newDocChanges" style="min-height:120px" placeholder="Describe ajustes, supuestos validados y cambios clave."></textarea>
-      </div>
-    </div>
-
-    <!-- Prompt final y documento reconstruido (modo existente) -->
     <div id="finalPromptSection">
       <div class="card" style="margin-top:0">
         <div class="card-title">
@@ -622,7 +560,7 @@ textarea.xtall { min-height: 380px; }
 // SGMP · Loader de prompts desde Sheet
 // Incluir este bloque al inicio del <script> de cada módulo
 // ══════════════════════════════════════════════════════
-var SGMP_API = 'https://script.google.com/macros/s/AKfycbxacrnEiiTVyip9CqJSelbN81BBt-qVfrmwo2Yyb7SfLw9Co48Oua8OPlu-SDmhi1kj/exec';
+var SGMP_API = 'https://script.google.com/macros/s/AKfycbyQZi1flaILc4e3I7MFp8gLctkzC6VccjfFz5aHluMrGZLwOUeS3uQaHPsMZ3l5yfDw-Q/exec';
 var SGMP_PROMPTS = {};
 var SGMP_LOADED  = false;
 
@@ -718,11 +656,8 @@ function markDone(n){ if(!S.done.includes(n)) S.done.push(n); }
 // STEP 1
 // ============================================================
 function setMode(m) {
-  S.mode=m;
-  document.getElementById('mode-existing').classList.toggle('sel', m==='existing');
-  document.getElementById('mode-new').classList.toggle('sel', m==='new');
-  document.getElementById('existing-card').classList.toggle('hidden', m!=='existing');
-  document.getElementById('new-card').classList.toggle('hidden', m!=='new');
+  // AudixEngine trabaja únicamente con documentos existentes.
+  S.mode = 'existing';
   updateSummary();
 }
 
@@ -811,14 +746,14 @@ function updateSummary() {
   const exMap = {buenas_practicas:'Buenas prácticas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
   const amMap = {Express:'Express',Completo:'Completo'};
   const data = [
-    ['Modo', S.mode==='existing'?'Documento existente':'Documento nuevo'],
+    ['Módulo', 'Auditoría de documento existente'],
     ['Tipo', dt||'No definido'],
     ['Normativas', S.norms.length?S.norms.join(', '):'Buenas prácticas operativas'],
     ['Exigencia', exMap[ex]||'Buenas prácticas'],
     ['Sector', document.getElementById('sector').value||'—'],
     ['Empresa', document.getElementById('empresa').value||'No definida'],
     ['Análisis', amMap[document.getElementById('analysisMode').value]||'Express'],
-    ['Proceso', (S.mode==='existing'?document.getElementById('proceso').value:document.getElementById('newDocProcess').value)||'—'],
+    ['Proceso', document.getElementById('proceso').value||'—'],
   ];
   document.getElementById('sumGrid').innerHTML = data.map(([k,v])=>`<div class="sum-cell"><div class="sum-lbl">${k}</div><div class="sum-val">${esc(v)}</div></div>`).join('');
 }
@@ -830,33 +765,21 @@ function validateStep1() {
   const errs = [];
   if (!dt) errs.push('Selecciona el tipo de documento.');
   if (!sc) errs.push('Selecciona el sector.');
-  if (S.mode==='existing' && !dc) errs.push('Pega el contenido del documento o carga un archivo.');
-  if (S.mode==='new') {
-    const nm=document.getElementById('newDocName').value.trim();
-    const ob=document.getElementById('newDocObjective').value.trim();
-    const br=document.getElementById('briefText').value.trim();
-    if (!nm && !ob && !br) errs.push('Para documento nuevo, completa al menos el nombre y objetivo, o pega un brief.');
-  }
+  if (!dc) errs.push('Pega el contenido del documento o carga un archivo.');
   document.getElementById('step1Errors').innerHTML = errs.length ? alertHTML('err',errs.join('<br>')) : '';
   if (errs.length) return;
 
   S.config = {
-    mode: S.mode,
+    mode: 'existing',
     docType: dt,
     sector: sc,
     empresa: document.getElementById('empresa').value||'No especificada',
     exigencia: document.getElementById('exigencia').value,
     analysisMode: document.getElementById('analysisMode').value,
-    proceso: S.mode==='existing' ? document.getElementById('proceso').value : document.getElementById('newDocProcess').value,
+    proceso: document.getElementById('proceso').value,
     norms: S.norms.length ? S.norms.join(', ') : 'No definidas. Aplicar buenas prácticas operativas.',
     normsList: [...S.norms],
-    mets: S.mets.length ? S.mets.join(', ') : 'No definidas',
-    newDocName: document.getElementById('newDocName').value,
-    newDocObjective: document.getElementById('newDocObjective').value,
-    newDocScope: document.getElementById('newDocScope').value,
-    newDocResp: document.getElementById('newDocResp').value,
-    newDocControls: document.getElementById('newDocControls').value,
-    briefText: document.getElementById('briefText').value,
+    mets: S.mets.length ? S.mets.join(', ') : 'No definidas'
   };
   S.docContent = document.getElementById('docContent').value.trim();
   markDone(1);
@@ -869,7 +792,6 @@ function validateStep1() {
 // ============================================================
 function buildPrompt() {
   const c = S.config;
-  if (S.mode === 'new') { buildNewDocPrompt(c); return; }
   buildAnalysisPrompt(c);
 }
 
@@ -914,66 +836,22 @@ function buildAnalysisPrompt(c) {
 }
 
 
-function buildNewDocPrompt(c) {
-  const exMap = {buenas_practicas:'Buenas prácticas operativas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
-  var basePrompt = sgmpPrompt('prompt_new_doc', null);
-  var prompt;
-  if (basePrompt) {
-    prompt = basePrompt
-      .replace('{{docType}}', c.docType || '')
-      .replace('{{sector}}', c.sector || '')
-      .replace('{{empresa}}', c.empresa || '')
-      .replace('{{norms}}', c.norms || '')
-      .replace('{{exigencia}}', exMap[c.exigencia] || 'Buenas prácticas operativas')
-      .replace('{{mets}}', c.mets || '')
-      .replace('{{newDocName}}', c.newDocName || 'No definido')
-      .replace('{{proceso}}', c.proceso || 'No definido')
-      .replace('{{newDocObjective}}', c.newDocObjective || 'No definido')
-      .replace('{{newDocScope}}', c.newDocScope || 'No definido')
-      .replace('{{newDocResp}}', c.newDocResp || 'No definido')
-      .replace('{{newDocControls}}', c.newDocControls || 'No definido')
-      .replace('{{briefText}}', c.briefText || 'No definido');
-  } else {
-    prompt = '⚠️ Prompt no disponible. Verifica la conexión con el servidor de configuración.';
-  }
-  document.getElementById('promptBox').textContent = prompt;
-  document.getElementById('promptCardTitle').textContent = 'Prompt de documento nuevo';
-  document.getElementById('promptCardDesc').textContent = 'Copia este prompt en cualquier IA. El prompt exige un único bloque de código para facilitar el copiado con un clic.';
-  document.getElementById('respCardTitle').textContent = 'Borrador generado por la IA';
-  document.getElementById('respHint').textContent = 'Pega aquí el borrador generado. El sistema extraerá el contenido entre los fence markers.';
-  document.getElementById('btnCopyDoc').style.display='none';
-  document.getElementById('charWarn').innerHTML='';
-}
-
 function buildConsolidationPrompt() {
   const c = S.config;
   const active = S.findings.filter(f=>f.action!=='reject');
   const changes = active.map(f=>`[${f.id}] ${f.seccion}: ${f.action==='custom'&&f.custom ? f.custom : f.propuesta}`).join('\n');
   const exMap = {buenas_practicas:'Buenas prácticas operativas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
-  return `════════════════════════════════════════════════════
-INSTRUCCIONES — AUDIXENGINE v2.2 — RECONSTRUCCIÓN DOCUMENTAL
-════════════════════════════════════════════════════
-Actúa como redactor técnico experto en documentación operativa y sistemas de gestión.
 
-CONFIGURACIÓN:
+  // Parte estática del Sheet con fallback hardcodeado
+  const staticBase = sgmpPrompt('prompt_reconstruction', null);
+
+  const configBlock = `CONFIGURACIÓN:
   Tipo de documento : ${c.docType}
   Sector            : ${c.sector}
   Normativas        : ${c.normsList&&c.normsList.length ? c.normsList.join(', ') : 'Buenas prácticas operativas'}
-  Nivel de exigencia: ${exMap[c.exigencia]||'Buenas prácticas operativas'}
+  Nivel de exigencia: ${exMap[c.exigencia]||'Buenas prácticas operativas'}`;
 
-REGLAS ABSOLUTAS:
-1. Mantén la estructura lógica y jerárquica del documento: mismos títulos, subtítulos, orden y profundidad.
-2. NO reduzcas, comprimas ni resumas ninguna sección; conserva el nivel de detalle técnico del documento base.
-3. NO elimines tablas, listas, criterios de aceptación, ejemplos ni descripciones de defectos.
-4. Si una tabla existe o debe mantenerse, devuélvela en Markdown completo.
-5. Si el documento mencionaba imágenes, anexos o figuras, conserva la referencia mediante placeholders [IMAGEN: descripción].
-6. Redacción técnica, formal y declarativa-operativa.
-7. No incluyas introducción, comentarios ni notas del redactor.
-8. Entrega TODO dentro de un ÚNICO bloque de código de texto plano.
-9. Dentro del bloque utiliza exactamente los marcadores ===DOC_START=== y ===DOC_END===.
-10. Usa títulos principales en MAYÚSCULAS y negrita mediante Markdown.
-
-MEJORAS A INCORPORAR (${active.length} instrucciones aprobadas):
+  const dynamicBlock = `MEJORAS A INCORPORAR (${active.length} instrucciones aprobadas):
 ${changes}
 
 INSTRUCCIÓN DE FORMATO:
@@ -991,6 +869,37 @@ ${S.docContent}
 ════════════════════════════════════════════════════
 
 Entrega el documento reconstruido usando los fence markers indicados.`;
+
+  if (staticBase) {
+    return staticBase
+      .replace('{{docType}}', c.docType || '')
+      .replace('{{sector}}', c.sector || '')
+      .replace('{{norms}}', c.normsList&&c.normsList.length ? c.normsList.join(', ') : 'Buenas prácticas operativas')
+      .replace('{{exigencia}}', exMap[c.exigencia]||'Buenas prácticas operativas')
+      + '\n\n' + dynamicBlock;
+  }
+
+  // Fallback hardcodeado
+  return `════════════════════════════════════════════════════
+INSTRUCCIONES — AUDIXENGINE v2.2 — RECONSTRUCCIÓN DOCUMENTAL
+════════════════════════════════════════════════════
+Actúa como redactor técnico experto en documentación operativa y sistemas de gestión.
+
+${configBlock}
+
+REGLAS ABSOLUTAS:
+1. Mantén la estructura lógica y jerárquica del documento: mismos títulos, subtítulos, orden y profundidad.
+2. NO reduzcas, comprimas ni resumas ninguna sección; conserva el nivel de detalle técnico del documento base.
+3. NO elimines tablas, listas, criterios de aceptación, ejemplos ni descripciones de defectos.
+4. Si una tabla existe o debe mantenerse, devuélvela en Markdown completo.
+5. Si el documento mencionaba imágenes, anexos o figuras, conserva la referencia mediante placeholders [IMAGEN: descripción].
+6. Redacción técnica, formal y declarativa-operativa.
+7. No incluyas introducción, comentarios ni notas del redactor.
+8. Entrega TODO dentro de un ÚNICO bloque de código de texto plano.
+9. Dentro del bloque utiliza exactamente los marcadores ===DOC_START=== y ===DOC_END===.
+10. Usa títulos principales en MAYÚSCULAS y negrita mediante Markdown.
+
+${dynamicBlock}`;
 }
 
 function copyDocSeparate() {
@@ -1051,11 +960,7 @@ function processResponse() {
   const resultDiv = document.getElementById('respResult');
   if (!combined.trim()) { resultDiv.innerHTML=alertHTML('err','No hay contenido para procesar.'); return; }
 
-  if (S.mode === 'existing') {
-    processAnalysisResponse(combined, resultDiv);
-  } else {
-    processNewDocResponse(combined, resultDiv);
-  }
+  processAnalysisResponse(combined, resultDiv);
 }
 
 function processAnalysisResponse(combined, resultDiv) {
@@ -1079,16 +984,6 @@ function processAnalysisResponse(combined, resultDiv) {
   save();
 }
 
-function processNewDocResponse(combined, resultDiv) {
-  const doc = extractDoc(combined);
-  if (!doc) { resultDiv.innerHTML=alertHTML('err','No se encontró contenido válido en la respuesta.'); return; }
-  document.getElementById('newDocDraft').value = doc;
-  document.getElementById('newDocChanges').value = 'Creación inicial del documento.';
-  resultDiv.innerHTML=alertHTML('ok','✓ Borrador detectado. Avanza a Revisión para ajustar antes de generar entregables.');
-  document.getElementById('btnTo3').disabled=false;
-  markDone(2);
-  save();
-}
 
 // ============================================================
 // STEP 3 — REVISIÓN
@@ -1130,9 +1025,8 @@ function renderReview() {
       </div>`).join('');
   }
 
-  // Modo: mostrar revisión existente, ocultar nuevo
+  // Mostrar revisión de auditoría documental
   document.getElementById('existingReview').classList.remove('hidden');
-  document.getElementById('newDocReview').classList.add('hidden');
   document.getElementById('finalPromptSection').classList.remove('hidden');
 
   renderFindings();
@@ -1376,24 +1270,6 @@ async function downloadQuestionsDoc() {
   dlBlob(blob,'Bateria_Preguntas_AudixEngine.docx','');
 }
 
-async function downloadBriefTemplate() {
-  if (typeof Packer === 'undefined') {
-    // Fallback TXT si docx.js no cargó
-    const txt=`================================================================================\nPLANTILLA DE BRIEF — AUDIXENGINE v2.2\n================================================================================\n\n1. Nombre del documento:\n2. Tipo de documento:\n3. Proceso relacionado:\n4. Objetivo:\n5. Alcance:\n6. Responsables / actores:\n7. Controles clave / puntos críticos:\n8. Entradas y salidas relevantes:\n9. Marco normativo (opcional):\n10. Nivel de exigencia (si aplica):\n11. Observaciones:\n\n================================================================================`;
-    dlBlob(txt,'Plantilla_Brief_AudixEngine.txt','text/plain;charset=utf-8'); return;
-  }
-  const doc = new Document({sections:[{children:[
-    tPara('AudixEngine (beta) v2.2 — Plantilla de brief'),
-    ...[['1. Nombre del documento',''],['2. Tipo de documento',''],['3. Proceso relacionado',''],['4. Objetivo',''],['5. Alcance',''],['6. Responsables / actores',''],['7. Controles clave / puntos críticos',''],['8. Entradas y salidas relevantes',''],['9. Marco normativo (opcional)',''],['10. Nivel de exigencia (si aplica)',''],['11. Observaciones o restricciones','']].flatMap(([k])=>[
-      new Paragraph({children:[new TextRun({text:k,bold:true,color:'1F4E79',size:24})],spacing:{before:150,after:60}}),
-      bPara(''),
-      new Paragraph({text:'',spacing:{after:100}})
-    ]),
-    new Paragraph({children:[new TextRun({text:'Generado con AudixEngine v2.2 · MIRA',size:18,color:'718096'})],alignment:AlignmentType.RIGHT})
-  ]}]});
-  const blob = await Packer.toBlob(doc);
-  dlBlob(blob,'Plantilla_Brief_AudixEngine.docx','');
-}
 
 // ============================================================
 // UTILITIES
