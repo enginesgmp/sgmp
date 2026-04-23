@@ -1,0 +1,1433 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AudixEngine (beta) v2.2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<style>
+/* ============================================================
+   DESIGN SYSTEM
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy:      #1a3a5c;
+  --navy-dk:   #122d47;
+  --blue:      #2b6cb0;
+  --blue-md:   #3182ce;
+  --blue-lt:   #ebf4ff;
+  --text:      #1a202c;
+  --text-2:    #4a5568;
+  --text-3:    #718096;
+  --border:    #e2e8f0;
+  --border-2:  #cbd5e0;
+  --bg:        #f7f9fc;
+  --white:     #ffffff;
+  --ok:        #38a169;
+  --ok-bg:     #f0fff4;
+  --ok-bd:     #c6f6d5;
+  --warn:      #b7791f;
+  --warn-bg:   #fffbeb;
+  --warn-bd:   #fefcbf;
+  --err:       #c53030;
+  --err-bg:    #fff5f5;
+  --err-bd:    #fed7d7;
+  --shadow:    0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --r:         8px;
+  --r-lg:      12px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
+.app { max-width: 980px; margin: 0 auto; padding: 0 20px 60px; }
+
+/* HEADER */
+.app-header { background: var(--navy); color: white; padding: 26px 32px; border-radius: 0 0 var(--r-lg) var(--r-lg); margin-bottom: 20px; box-shadow: var(--shadow-md); }
+.header-title { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 6px; }
+.header-title span { color: #90cdf4; font-weight: 400; }
+.header-desc { font-size: 13px; color: #a0c4e8; line-height: 1.5; max-width: 760px; }
+
+/* STEPPER */
+.stepper-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 24px; margin-bottom: 18px; box-shadow: var(--shadow); }
+.stepper-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+.stepper { display: grid; grid-template-columns: repeat(4, 1fr); position: relative; }
+.stepper::before { content: ''; position: absolute; top: 14px; left: 10%; right: 10%; height: 2px; background: var(--border); z-index: 0; }
+.step-node { display: flex; flex-direction: column; align-items: center; position: relative; z-index: 1; cursor: pointer; }
+.step-circle { width: 28px; height: 28px; border-radius: 50%; background: var(--border); border: 2px solid var(--border); color: var(--text-3); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; margin-bottom: 8px; transition: all 0.2s; }
+.step-node.active .step-circle { background: var(--blue-md); border-color: var(--blue-md); color: white; }
+.step-node.done .step-circle { background: var(--ok); border-color: var(--ok); color: white; }
+.step-lbl { font-size: 13px; font-weight: 700; color: var(--text-2); text-align: center; }
+.step-node.active .step-lbl { color: var(--blue-md); }
+.step-sub { font-size: 11px; color: var(--text-3); text-align: center; max-width: 120px; line-height: 1.35; margin-top: 3px; }
+
+/* PANELS */
+.panel { display: none; } .panel.active { display: block; }
+
+/* CARDS */
+.card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px 24px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.card-title { font-size: 15px; font-weight: 800; color: var(--navy); margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.card-desc { font-size: 13px; color: var(--text-2); margin-bottom: 16px; line-height: 1.5; }
+.section-label { font-size: 14px; font-weight: 700; color: var(--blue); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid var(--blue-lt); }
+.badge { font-size: 11px; font-weight: 600; background: var(--blue-lt); color: var(--blue); padding: 4px 12px; border-radius: 20px; white-space: nowrap; border: 1px solid #bee3f8; }
+
+/* FORM */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.4px; }
+.form-hint { font-size: 11px; color: var(--text-3); line-height: 1.35; margin-top: 3px; }
+input[type="text"], input[type="file"], select, textarea {
+  border: 1px solid var(--border-2); border-radius: var(--r); padding: 9px 12px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--white); outline: none; transition: border-color 0.15s, box-shadow 0.15s; width: 100%;
+}
+input[type="file"] { padding: 6px 10px; font-size: 13px; cursor: pointer; }
+input:focus, select:focus, textarea:focus { border-color: var(--blue-md); box-shadow: 0 0 0 3px rgba(49,130,206,0.12); }
+textarea { resize: vertical; min-height: 130px; line-height: 1.6; }
+textarea.doc { min-height: 200px; }
+textarea.tall { min-height: 300px; }
+textarea.code { font-family: 'Courier New', monospace; font-size: 12.5px; min-height: 200px; }
+textarea.xtall { min-height: 380px; }
+
+/* MODE CARDS */
+.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.mode-card { border: 2px solid var(--border); border-radius: var(--r); padding: 16px 18px; cursor: pointer; transition: all 0.15s; background: var(--white); }
+.mode-card:hover { border-color: var(--blue-md); background: var(--blue-lt); }
+.mode-card.sel { border-color: var(--blue-md); background: var(--blue-lt); }
+.mode-card-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.mode-card.sel .mode-card-title { color: var(--blue); }
+.mode-card-desc { font-size: 12px; color: var(--text-2); line-height: 1.4; }
+
+/* PILLS */
+.pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pill { padding: 5px 14px; border-radius: 20px; background: #edf2f7; border: 1px solid var(--border-2); font-size: 13px; font-weight: 500; color: var(--text-2); cursor: pointer; transition: all 0.15s; user-select: none; }
+.pill:hover { border-color: var(--blue); color: var(--blue); }
+.pill.on { background: var(--blue-md); color: white; border-color: var(--blue-md); }
+.pill-add { display: flex; gap: 8px; margin-top: 8px; }
+.pill-add input { flex: 1; }
+
+/* SUMMARY GRID */
+.sum-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sum-cell { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; }
+.sum-lbl { font-size: 10px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.sum-val { font-size: 14px; font-weight: 700; color: var(--text); }
+
+/* BUTTONS */
+.btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 20px; border-radius: var(--r); border: none; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600; transition: all 0.15s; white-space: nowrap; }
+.btn-navy { background: var(--navy); color: white; } .btn-navy:hover { background: var(--navy-dk); }
+.btn-blue { background: var(--blue-md); color: white; } .btn-blue:hover { background: var(--blue); }
+.btn-out { background: transparent; color: var(--navy); border: 1.5px solid var(--navy); } .btn-out:hover { background: var(--blue-lt); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-2); } .btn-ghost:hover { border-color: var(--text-2); }
+.btn-ok { background: var(--ok); color: white; } .btn-ok:hover { background: #2f855a; }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+.btn-lg { padding: 12px 28px; font-size: 15px; }
+.btn:disabled { opacity: 0.4; pointer-events: none; }
+.btn-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+
+/* ALERTS */
+.alert { border-radius: var(--r); padding: 11px 14px; font-size: 13px; display: flex; align-items: flex-start; gap: 9px; margin-bottom: 10px; }
+.alert-icon { flex-shrink: 0; font-size: 14px; }
+.alert-ok   { background: var(--ok-bg);   border: 1px solid var(--ok-bd);   color: #276749; }
+.alert-warn { background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn); }
+.alert-err  { background: var(--err-bg);  border: 1px solid var(--err-bd);  color: var(--err); }
+.alert-info { background: var(--blue-lt); border: 1px solid #bee3f8;        color: var(--blue); }
+
+/* PROMPT BOX */
+.prompt-box { background: #f8fafc; border: 1px solid var(--border-2); border-radius: var(--r); padding: 16px; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.7; color: var(--text-2); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow-y: auto; }
+.fence-badge { font-size: 11px; font-weight: 600; background: var(--blue-lt); color: var(--blue); padding: 3px 10px; border-radius: 12px; border: 1px solid #bee3f8; display: inline-flex; align-items: center; gap: 5px; }
+
+/* SCORE */
+.score-wrap { display: flex; align-items: center; gap: 20px; padding: 18px 22px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg); margin-bottom: 16px; }
+.score-num { font-size: 52px; font-weight: 900; line-height: 1; min-width: 88px; }
+.score-meta { flex: 1; }
+.score-level { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+.score-desc { font-size: 13px; color: var(--text-2); }
+.score-bar-wrap { width: 150px; }
+.bar-lbl { font-size: 10px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+.bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; transition: width 0.7s ease; }
+
+/* METRICS */
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.metric { background: var(--white); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; }
+.metric-num { font-size: 30px; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 4px; }
+.metric-lbl { font-size: 12px; color: var(--text-3); }
+
+/* FINDINGS */
+.findings-counter { display: flex; gap: 14px; font-size: 13px; font-weight: 600; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 14px; flex-wrap: wrap; }
+.cnt-item { display: flex; align-items: center; gap: 6px; }
+.cnt-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+.finding-card { border: 1px solid var(--border); border-radius: var(--r); margin-bottom: 10px; overflow: hidden; }
+.finding-card.rejected { opacity: 0.42; }
+.finding-hdr { display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.finding-id { font-size: 11px; font-weight: 700; font-family: monospace; background: var(--navy); color: white; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
+.finding-sec { font-size: 13px; font-weight: 600; flex: 1; }
+.crit-badge { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 12px; flex-shrink: 0; }
+.crit-critica,.crit-alta-alt { background: #fed7d7; color: #9b2c2c; }
+.crit-alta { background: #fefcbf; color: #744210; }
+.crit-media { background: #e9d8fd; color: #553c9a; }
+.crit-baja { background: var(--ok-bg); color: #276749; }
+.conf-badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; background: #edf2f7; color: var(--text-2); border: 1px solid var(--border-2); }
+.finding-body { padding: 13px 14px; }
+.finding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.finding-field-lbl { font-size: 10px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+.finding-field-val { font-size: 13px; color: var(--text-2); }
+.finding-prop { font-size: 13px; background: var(--blue-lt); border-left: 3px solid var(--blue-md); padding: 8px 11px; border-radius: 0 var(--r) var(--r) 0; margin-bottom: 10px; }
+.finding-ref { font-size: 11px; color: var(--text-3); margin-bottom: 8px; }
+.action-row { display: flex; gap: 7px; flex-wrap: wrap; }
+.act-btn { padding: 5px 13px; font-size: 12px; font-weight: 600; border-radius: 20px; border: 1.5px solid; cursor: pointer; transition: all 0.15s; background: white; }
+.act-exec  { border-color: var(--ok);  color: var(--ok); }
+.act-exec.on,  .act-exec:hover  { background: var(--ok);  color: white; }
+.act-custom { border-color: var(--blue); color: var(--blue); }
+.act-custom.on, .act-custom:hover { background: var(--blue); color: white; }
+.act-reject { border-color: var(--err); color: var(--err); }
+.act-reject.on, .act-reject:hover { background: var(--err); color: white; }
+
+/* NAV FOOTER */
+.nav-footer { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; background: var(--white); border: 1px solid var(--border); border-radius: var(--r-lg); margin-top: 14px; box-shadow: var(--shadow); }
+
+/* DOWNLOADS */
+.dl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+.dl-card { border: 1px solid var(--border); border-radius: var(--r); padding: 16px; background: var(--white); }
+.dl-card h4 { font-size: 14px; margin-bottom: 6px; color: var(--navy); }
+.dl-card p { font-size: 12px; color: var(--text-3); line-height: 1.45; }
+
+/* TOAST */
+.toast { position: fixed; bottom: 22px; right: 22px; background: var(--navy); color: white; padding: 11px 18px; border-radius: var(--r); font-size: 13px; font-weight: 600; transform: translateY(70px); opacity: 0; transition: all 0.25s; z-index: 1000; box-shadow: var(--shadow-md); }
+.toast.show { transform: translateY(0); opacity: 1; }
+
+/* DROP ZONE */
+.drop-zone { border: 2px dashed var(--border-2); border-radius: var(--r); padding: 18px; text-align: center; cursor: pointer; transition: all 0.15s; }
+.drop-zone:hover, .drop-zone.over { border-color: var(--blue-md); background: var(--blue-lt); }
+.drop-zone-icon { font-size: 26px; margin-bottom: 5px; }
+.drop-zone-text { font-size: 13px; color: var(--text-2); }
+.drop-zone-sub { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+.sep { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: 12px; margin: 11px 0; }
+.sep::before, .sep::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* MISC */
+.hidden { display: none !important; }
+.muted { color: var(--text-3); font-size: 12px; }
+.italic-box { font-style: italic; color: var(--text-2); background: var(--blue-lt); border: 1px solid #bee3f8; padding: 12px 16px; border-radius: var(--r); margin-bottom: 14px; font-size: 13px; }
+.tag-mira { font-size: 11px; color: var(--text-3); border: 1px solid var(--border); padding: 3px 10px; border-radius: 12px; }
+
+@media(max-width:700px){ .form-grid,.form-grid-3,.mode-grid,.metrics,.sum-grid,.dl-grid{ grid-template-columns:1fr; } }
+</style>
+  <script>
+// ── SGMP Session Guard ─────────────────────────────────────
+// Verifica sesión activa antes de cargar el módulo
+(function() {
+  var SESSION_KEY = 'sgmp_session_v1';
+  var LAUNCHER_URL = 'https://ornate-rabanadas-0e6e8f.netlify.app/index.html';
+
+  function checkSession() {
+    // Si el login no es requerido en el Sheet, permitir acceso libre
+    // Si es requerido, verificar sesión
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) {
+        // No hay sesión - redirigir al launcher
+        window.location.replace(LAUNCHER_URL);
+        return false;
+      }
+      var session = JSON.parse(raw);
+      if (!session.username) {
+        window.location.replace(LAUNCHER_URL);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      window.location.replace(LAUNCHER_URL);
+      return false;
+    }
+  }
+
+  // Verificar inmediatamente
+  checkSession();
+})();
+// ── Fin SGMP Session Guard ─────────────────────────────────
+
+  </script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app">
+    <div class="header-title">AudixEngine <span>(beta) v2.2</span></div>
+    <div class="header-desc">Motor de análisis, creación y reescritura documental. Prompts multi-IA con fence markers. Compatible con ChatGPT, Claude, Gemini y modelos locales. Genera entregables .docx.</div>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- STEPPER -->
+  <div class="stepper-card">
+    <div class="stepper-meta">
+      <span>Flujo: Configurar → Ejecutar → Revisar → Descargar</span>
+      <span id="stepMeta">Paso 1 de 4 — Configuración</span>
+    </div>
+    <div class="stepper">
+      <div class="step-node active" id="sn-1" onclick="tryNav(1)"><div class="step-circle"><span>1</span></div><div class="step-lbl">Configuración</div><div class="step-sub">Contexto, modo y criterios.</div></div>
+      <div class="step-node" id="sn-2" onclick="tryNav(2)"><div class="step-circle"><span>2</span></div><div class="step-lbl">Ejecución</div><div class="step-sub">Prompt y respuesta JSON.</div></div>
+      <div class="step-node" id="sn-3" onclick="tryNav(3)"><div class="step-circle"><span>3</span></div><div class="step-lbl">Revisión</div><div class="step-sub">Hallazgos y decisiones.</div></div>
+      <div class="step-node" id="sn-4" onclick="tryNav(4)"><div class="step-circle"><span>4</span></div><div class="step-lbl">Descargas</div><div class="step-sub">Entregables .docx</div></div>
+    </div>
+  </div>
+
+  <!-- ========== PANEL 1: CONFIGURACIÓN ========== -->
+  <div class="panel active" id="panel-1">
+    <div class="card">
+      <div class="card-title">Configuración inicial <span class="tag-mira">Preparado para MIRA Docs</span></div>
+      <div class="card-desc">Define modo de trabajo, contexto del documento, normativas y metodologías aplicables. AudixEngine construirá prompts robustos con controles anti-alucinación.</div>
+
+      <div class="section-label">1. Modo de trabajo</div>
+      <div class="mode-grid">
+        <div class="mode-card sel" id="mode-existing" onclick="setMode('existing')">
+          <div class="mode-card-title">Documento existente</div>
+          <div class="mode-card-desc">Analiza un documento actual, identifica brechas y genera versión final reescrita.</div>
+        </div>
+        <div class="mode-card" id="mode-new" onclick="setMode('new')">
+          <div class="mode-card-title">Documento nuevo</div>
+          <div class="mode-card-desc">Construye desde un brief estructurado o define los campos directamente.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTO EXISTENTE -->
+    <div class="card" id="existing-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-label" style="margin-bottom:0;border-bottom:none">2. Documento a analizar</div>
+        <div id="charCount" class="muted"></div>
+      </div>
+
+      <div class="drop-zone" id="dropZone"
+        ondrop="handleDrop(event)" ondragover="ev(event,'add')" ondragleave="ev(event,'rm')"
+        onclick="document.getElementById('fileInput').click()">
+        <div class="drop-zone-icon">📄</div>
+        <div class="drop-zone-text">Arrastra un archivo <span style="color:var(--text-3);font-weight:400">(opcional)</span></div>
+        <div class="drop-zone-sub">.txt · .md · .docx — si el DOCX no extrae, pega abajo</div>
+      </div>
+      <input type="file" id="fileInput" accept=".txt,.md,.docx" style="display:none" onchange="handleFile(event)">
+      <div id="fileAlert" style="margin-top:8px"></div>
+
+      <div class="sep">contenido del documento</div>
+      <textarea id="docContent" class="doc" placeholder="Pega aquí el contenido — o carga un archivo arriba. Ambas opciones son independientes." oninput="updateCharCount()"></textarea>
+      <div class="form-hint" style="margin-top:4px">AudixEngine no asume contenido faltante. Si no hay evidencia, el análisis marcará "No se evidencia".</div>
+    </div>
+
+    <!-- DOCUMENTO NUEVO -->
+    <div class="card hidden" id="new-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="section-label" style="margin-bottom:0;border-bottom:none">2. Brief del documento a construir</div>
+        <button class="btn btn-ghost btn-sm" onclick="downloadBriefTemplate()">↓ Descargar plantilla de brief</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Nombre del documento</label>
+          <input type="text" id="newDocName" placeholder="Ej. Procedimiento de liberación de producto" oninput="updateSummary()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Proceso relacionado</label>
+          <input type="text" id="newDocProcess" placeholder="Ej. Control de calidad / Despacho" oninput="updateSummary()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Objetivo</label>
+          <textarea id="newDocObjective" placeholder="¿Para qué existe este documento?" style="min-height:80px" oninput="updateSummary()"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Alcance</label>
+          <textarea id="newDocScope" placeholder="Áreas, actividades o límites del documento." style="min-height:80px" oninput="updateSummary()"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Responsables</label>
+          <textarea id="newDocResp" placeholder="Responsables, actores o áreas involucradas." style="min-height:80px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Controles clave / puntos críticos</label>
+          <textarea id="newDocControls" placeholder="Controles, verificaciones, registros, aprobaciones." style="min-height:80px"></textarea>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Brief adicional (opcional)</label>
+          <textarea id="briefText" class="doc" placeholder="Si ya tienes un brief estructurado, pégalo aquí."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTEXTO -->
+    <div class="card">
+      <div class="section-label">3. Clasificación y criterios</div>
+      <div class="form-grid-3">
+        <div class="form-group">
+          <label class="form-label">Tipo de documento</label>
+          <select id="docType" onchange="updateSummary()">
+            <option value="">Seleccione...</option>
+            <option>POE / Procedimiento Operativo</option>
+            <option>Manual de Calidad</option>
+            <option>Instructivo de Trabajo</option>
+            <option>Registro / Formato</option>
+            <option>Plan de Control</option>
+            <option>Política de Calidad</option>
+            <option>Plan HACCP</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sector</label>
+          <select id="sector" onchange="updateSummary()">
+            <option>Procesamiento de alimentos</option>
+            <option>Manufactura industrial</option>
+            <option>Agroindustria</option>
+            <option>Pesquero / Acuícola</option>
+            <option>Servicios</option>
+            <option>Laboratorio</option>
+            <option>Construcción</option>
+            <option>Salud / Farmacéutico</option>
+            <option>Comercio y distribución</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Empresa</label>
+          <input type="text" id="empresa" placeholder="Nombre de la empresa" oninput="updateSummary()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Modo de análisis</label>
+          <select id="analysisMode" onchange="updateSummary()">
+            <option value="Express">Express — hallazgos críticos y altos (máx. 5)</option>
+            <option value="Completo">Completo — todos los hallazgos</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nivel de exigencia</label>
+          <select id="exigencia" onchange="updateSummary()">
+            <option value="buenas_practicas" selected>Buenas prácticas operativas</option>
+            <option value="referencial">Referencial</option>
+            <option value="cumplimiento">Cumplimiento requerido</option>
+            <option value="auditoria">Auditoría / certificación</option>
+          </select>
+          <div class="form-hint" id="exigHint">Solo aplica si se define al menos una normativa.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Proceso relacionado</label>
+          <input type="text" id="proceso" placeholder="Ej. Recepción de materia prima" oninput="updateSummary()">
+        </div>
+      </div>
+    </div>
+
+    <!-- NORMATIVAS Y METODOLOGÍAS -->
+    <div class="card">
+      <div class="section-label">4. Normativas y metodologías</div>
+      <div class="form-label" style="margin-bottom:8px">Normativas aplicables</div>
+      <div class="pill-row" id="normGroup"></div>
+      <div class="pill-add">
+        <input type="text" id="normInput" placeholder="Agregar normativa personalizada" onkeydown="if(event.key==='Enter')addPill('norm')">
+        <button class="btn btn-out btn-sm" onclick="addPill('norm')">Agregar</button>
+      </div>
+      <div id="normAlert" class="alert alert-warn" style="margin-top:10px;font-size:12px">
+        <span class="alert-icon">⚠</span>No se ha definido normativa. El documento se generará bajo buenas prácticas operativas.
+      </div>
+      <div class="form-label" style="margin-bottom:8px;margin-top:18px">Metodologías aplicables</div>
+      <div class="pill-row" id="metGroup"></div>
+      <div class="pill-add">
+        <input type="text" id="metInput" placeholder="Agregar metodología personalizada" onkeydown="if(event.key==='Enter')addPill('met')">
+        <button class="btn btn-out btn-sm" onclick="addPill('met')">Agregar</button>
+      </div>
+    </div>
+
+    <!-- RESUMEN -->
+    <div class="card">
+      <div class="section-label">5. Resumen previo a la ejecución</div>
+      <div class="sum-grid" id="sumGrid"></div>
+      <div class="muted" style="margin-top:12px">AudixEngine construirá prompts robustos con controles anti-alucinación, fence markers multi-IA y validación antes de consolidar resultados.</div>
+      <div id="step1Errors" style="margin-top:12px"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-navy btn-lg" onclick="validateStep1()">Ejecutar análisis →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== PANEL 2: EJECUCIÓN ========== -->
+  <div class="panel" id="panel-2">
+    <div class="card">
+      <div class="card-title">
+        <span id="promptCardTitle">Prompt de análisis</span>
+        <span class="fence-badge">🛡 Fence markers · Multi-IA</span>
+      </div>
+      <div class="card-desc" id="promptCardDesc">Copia este prompt y ejecútalo en cualquier IA. El prompt exige un único bloque de código con fence markers para que la interfaz de la IA muestre el botón de copiar y el JSON siga siendo extraíble aunque agregue texto adicional.</div>
+      <div id="promptBox" class="prompt-box">— Completa la configuración para ver el prompt —</div>
+      <div class="btn-row">
+        <button class="btn btn-navy" onclick="copyBox('promptBox')">⎘ Copiar prompt</button>
+        <button class="btn btn-ghost" id="btnCopyDoc" onclick="copyDocSeparate()" style="display:none">⎘ Copiar solo documento</button>
+      </div>
+      <div id="charWarn" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" id="respCardTitle">Respuesta de la IA</div>
+      <div class="alert alert-info" style="margin-bottom:12px;font-size:12px">
+        <span class="alert-icon">ℹ</span>
+        <span id="respHint">Pega la respuesta completa. El sistema extraerá automáticamente el contenido entre los fence markers, ignorando texto adicional. Si viene en múltiples partes, agrégalas en orden.</span>
+      </div>
+      <div id="respPartsContainer">
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">Parte 1 (o respuesta completa)</label>
+          <textarea id="resp-1" class="code tall" placeholder="Pega aquí la respuesta de la IA..."></textarea>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:4px">
+        <button class="btn btn-ghost btn-sm" onclick="addRespPart()">+ Agregar parte</button>
+        <button class="btn btn-blue" onclick="processResponse()">✓ Validar y procesar</button>
+      </div>
+      <div id="respResult" style="margin-top:12px"></div>
+    </div>
+
+    <div class="nav-footer">
+      <button class="btn btn-ghost" onclick="goTo(1)">← Configuración</button>
+      <button class="btn btn-navy btn-lg" id="btnTo3" onclick="goTo(3)" disabled>Continuar → Revisión</button>
+    </div>
+  </div>
+
+  <!-- ========== PANEL 3: REVISIÓN ========== -->
+  <div class="panel" id="panel-3">
+
+    <!-- Score (modo existente) -->
+    <div id="existingReview">
+      <div class="score-wrap" id="scoreWrap">
+        <div class="score-num" id="scoreNum" style="color:var(--navy)">—</div>
+        <div class="score-meta">
+          <div class="score-level" id="scoreLevel">Sin datos</div>
+          <div class="score-desc" id="scoreDesc">Procesa el JSON para ver el diagnóstico</div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="bar-lbl">Cumplimiento</div>
+          <div class="bar-track"><div class="bar-fill" id="barFill" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="card" id="sumAnalysis">
+        <div class="card-title">Resumen del análisis</div>
+        <div id="sumContent"><div class="muted">Pendiente.</div></div>
+      </div>
+
+      <div class="card hidden" id="questionsCard">
+        <div class="card-title">Preguntas de validación</div>
+        <div id="questionsList"></div>
+        <div class="btn-row"><button class="btn btn-out btn-sm" onclick="downloadQuestionsDoc()">↓ Descargar batería de preguntas (.docx)</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Hallazgos y decisiones</div>
+        <div class="findings-counter" id="findCounter">
+          <div class="cnt-item"><div class="cnt-dot" style="background:var(--ok)"></div><span id="cntExec">0 a ejecutar</span></div>
+          <div class="cnt-item"><div class="cnt-dot" style="background:var(--blue)"></div><span id="cntCustom">0 personalizados</span></div>
+          <div class="cnt-item"><div class="cnt-dot" style="background:var(--err)"></div><span id="cntReject">0 rechazados</span></div>
+          <div class="cnt-item" style="margin-left:auto"><span id="cntTotal" class="muted">0 total</span></div>
+        </div>
+        <div id="findingsList"></div>
+      </div>
+    </div>
+
+    <!-- Modo nuevo -->
+    <div id="newDocReview" class="hidden">
+      <div class="card">
+        <div class="card-title">Borrador generado</div>
+        <textarea id="newDocDraft" class="xtall" placeholder="El borrador aparecerá aquí..."></textarea>
+        <div class="form-hint" style="margin-top:6px">Puedes ajustar directamente el borrador antes de generar los entregables.</div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <div class="card-title">Control de cambios propuesto</div>
+        <textarea id="newDocChanges" style="min-height:120px" placeholder="Describe ajustes, supuestos validados y cambios clave."></textarea>
+      </div>
+    </div>
+
+    <!-- Prompt final y documento reconstruido (modo existente) -->
+    <div id="finalPromptSection">
+      <div class="card" style="margin-top:0">
+        <div class="card-title">
+          Prompt de reconstrucción
+          <span class="fence-badge">🛡 Fence markers activos</span>
+        </div>
+        <div class="card-desc">Genera el prompt con las instrucciones aprobadas y ejecútalo en cualquier IA. La salida exigirá un único bloque de código para facilitar el copiado con un clic.</div>
+        <div id="finalPromptBox" class="prompt-box" style="min-height:80px">— Decide las acciones sobre los hallazgos y presiona "Generar prompt final" —</div>
+        <div class="btn-row">
+          <button class="btn btn-navy" onclick="buildFinalPrompt()">⚡ Generar prompt final</button>
+          <button class="btn btn-blue" onclick="copyBox('finalPromptBox')">⎘ Copiar prompt final</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Documento reconstruido</div>
+        <div class="card-desc">Pega aquí la respuesta de la IA al prompt de reconstrucción. Si viene en partes, agrégalas en orden.</div>
+        <div id="docPartsContainer">
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="form-label">Parte 1 (o documento completo)</label>
+            <textarea id="docPart-1" class="xtall" placeholder="Pega aquí el documento reconstruido..."></textarea>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:4px">
+          <button class="btn btn-ghost btn-sm" onclick="addDocPart()">+ Agregar parte</button>
+          <button class="btn btn-blue" onclick="consolidateDoc()">✓ Consolidar documento</button>
+        </div>
+        <div id="docResult" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <div class="nav-footer">
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" onclick="goTo(2)">← Ejecución</button>
+      </div>
+      <button class="btn btn-navy btn-lg" id="btnTo4" onclick="goTo(4)" disabled>Ir a entregables →</button>
+    </div>
+  </div>
+
+  <!-- ========== PANEL 4: DESCARGAS ========== -->
+  <div class="panel" id="panel-4">
+
+    <div class="card">
+      <div class="card-title">Entregables finales</div>
+      <div class="card-desc">En esta etapa solo se preparan y descargan los entregables finales. No se replica contenido de fases anteriores para evitar contaminación visual.</div>
+      <div id="finalDocStatusCard" class="alert alert-info" style="margin-bottom:12px">
+        <span class="alert-icon">ℹ</span>
+        <span id="finalDocStatusText">Documento final pendiente de consolidación.</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-navy" onclick="copyFinalDoc()">⎘ Copiar documento final</button>
+        <button class="btn btn-blue" onclick="downloadFinalDocx()">↓ Descargar documento final (.docx)</button>
+        <button class="btn btn-ghost" onclick="downloadFinalTxt()">↓ Descargar documento final (.txt)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Análisis y soporte</div>
+      <div class="btn-row">
+        <button class="btn btn-out" onclick="downloadOnePage()">↓ Descargar One Page (.docx)</button>
+        <button class="btn btn-ghost" onclick="downloadAnalysisJSON()">↓ Descargar JSON de análisis</button>
+        <button class="btn btn-ghost" onclick="copyAnalysisJSON()">⎘ Copiar JSON</button>
+      </div>
+    </div>
+
+    <div class="nav-footer">
+      <button class="btn btn-ghost" onclick="goTo(3)">← Revisión</button>
+      <button class="btn btn-ghost" onclick="resetAll()">↺ Nueva sesión</button>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div class="toast" id="toast">✓ Copiado</div>
+
+<script>
+
+// ══════════════════════════════════════════════════════
+// SGMP · Loader de prompts desde Sheet
+// Incluir este bloque al inicio del <script> de cada módulo
+// ══════════════════════════════════════════════════════
+var SGMP_API = 'https://script.google.com/macros/s/AKfycbxacrnEiiTVyip9CqJSelbN81BBt-qVfrmwo2Yyb7SfLw9Co48Oua8OPlu-SDmhi1kj/exec';
+var SGMP_PROMPTS = {};
+var SGMP_LOADED  = false;
+
+function sgmpLoadPrompts(moduleCode, onReady) {
+  var cacheKey = 'sgmp_p_' + moduleCode;
+  try {
+    var cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      var arr = JSON.parse(cached);
+      arr.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+      SGMP_LOADED = true;
+      onReady();
+      return;
+    }
+  } catch(e) {}
+
+  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.ok && res.data && res.data.length) {
+        res.data.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
+      }
+      SGMP_LOADED = true;
+      onReady();
+    })
+    .catch(function() {
+      SGMP_LOADED = true;
+      onReady(); // continúa con prompts vacíos — módulo funciona igual
+    });
+}
+
+// Obtener prompt — nunca falla, devuelve fallback si no hay nada
+function sgmpPrompt(key, fallback) {
+  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
+}
+
+// Auth admin contra Sheet
+function sgmpAuthAdmin(username, password, onOk, onErr) {
+  var url = SGMP_API + '?action=auth_admin&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
+  fetch(url).then(function(r){return r.json();}).then(function(res){
+    if (res.ok) { sessionStorage.setItem('sgmp_admin_token', res.data.token); onOk(res.data); }
+    else onErr(res.error || 'Credenciales incorrectas.');
+  }).catch(function(){ onErr('Error de conexión.'); });
+}
+
+// ============================================================
+// LIBS CHECK
+// ============================================================
+const DOCX_LIB = window.docx || {};
+if (!window.docx) console.warn('⚠️ docx.js no cargado - descarga de .docx no disponible');
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        WidthType, HeadingLevel, AlignmentType, BorderStyle, PageOrientation } = DOCX_LIB;
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const NORMS_DEFAULT = ["ISO 9001","ISO 22000","BRC Food Safety","ISO 45001","ISO 14001","HACCP","FSSC 22000","ISO 17025","ISO 13485","GMP/BPM","SQF","IFS Food","BASC","OSHA"];
+const METS_DEFAULT  = ["Lean","Six Sigma/DMAIC","TOC","TRIZ","PMBOK","TPM","5S","Kaizen","Scrum/Agile","DDMRP"];
+
+// ============================================================
+// STATE
+// ============================================================
+const S = {
+  step: 1, done: [],
+  mode: 'existing',
+  norms: [], mets: [],
+  config: {}, docContent: '',
+  analysisJSON: null, findings: [],
+  finalPrompt: '', finalDoc: '',
+  respPartCount: 1, docPartCount: 1,
+};
+
+function save() { try { sessionStorage.setItem('audix22', JSON.stringify({ mode: S.mode, norms: S.norms, mets: S.mets, config: S.config, docContent: S.docContent, analysisJSON: S.analysisJSON, findings: S.findings, finalDoc: S.finalDoc })); } catch(e){} }
+
+// ============================================================
+// NAV
+// ============================================================
+const STEP_NAMES = ['','Configuración','Ejecución','Revisión','Descargas'];
+function tryNav(n) { if (n===S.step || (n>S.step && !S.done.includes(n-1) && !S.done.includes(n))) return; goTo(n); }
+function goTo(n) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+n).classList.add('active');
+  document.querySelectorAll('.step-node').forEach((el,i)=>{ el.classList.remove('active','done'); if(i+1<n) el.classList.add('done'); if(i+1===n) el.classList.add('active'); });
+  S.step=n;
+  document.getElementById('stepMeta').textContent = `Paso ${n} de 4 — ${STEP_NAMES[n]}`;
+  window.scrollTo(0,0);
+  save();
+}
+function markDone(n){ if(!S.done.includes(n)) S.done.push(n); }
+
+// ============================================================
+// STEP 1
+// ============================================================
+function setMode(m) {
+  S.mode=m;
+  document.getElementById('mode-existing').classList.toggle('sel', m==='existing');
+  document.getElementById('mode-new').classList.toggle('sel', m==='new');
+  document.getElementById('existing-card').classList.toggle('hidden', m!=='existing');
+  document.getElementById('new-card').classList.toggle('hidden', m!=='new');
+  updateSummary();
+}
+
+// Char counter
+function updateCharCount() {
+  const v = document.getElementById('docContent').value;
+  S.docContent = v;
+  document.getElementById('charCount').textContent = v.length ? v.length.toLocaleString()+' chars' : '';
+}
+
+// File handling — mammoth.js para DOCX, nativo para txt/md
+function ev(e, action) { e.preventDefault(); document.getElementById('dropZone').classList[action==='add'?'add':'remove']('over'); }
+function handleDrop(e) { e.preventDefault(); document.getElementById('dropZone').classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) readFile(f); }
+function handleFile(e) { const f=e.target.files[0]; if(f) readFile(f); }
+
+function readFile(f) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  const alertEl = document.getElementById('fileAlert');
+
+  if (ext === 'docx') {
+    alertEl.innerHTML = alertHTML('info','⏳ Extrayendo texto del archivo DOCX...');
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      try {
+        if (typeof mammoth === 'undefined') throw new Error('Librería de lectura DOCX no disponible. Verifica tu conexión a internet.');
+        const result = await mammoth.extractRawText({ arrayBuffer: e.target.result });
+        const text = result.value.trim();
+        if (!text) {
+          alertEl.innerHTML = alertHTML('warn','ℹ El DOCX está vacío o no pudo leerse. Pega el contenido manualmente en el campo de abajo.');
+          document.getElementById('docContent').focus();
+          return;
+        }
+        document.getElementById('docContent').value = text;
+        S.docContent = text;
+        updateCharCount();
+        alertEl.innerHTML = alertHTML('ok',`✓ ${f.name} — ${text.length.toLocaleString()} caracteres extraídos correctamente.`);
+      } catch(err) {
+        alertEl.innerHTML = alertHTML('warn','⚠️ Error al extraer el DOCX: ' + err.message + '. Intenta con un archivo .txt o pega el contenido manualmente.');
+        document.getElementById('docContent').focus();
+      }
+    };
+    reader.readAsArrayBuffer(f);
+  } else {
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('docContent').value = e.target.result;
+      S.docContent = e.target.result;
+      updateCharCount();
+      alertEl.innerHTML = alertHTML('ok',`✓ ${f.name} cargado — ${Math.round(f.size/1024)} KB`);
+    };
+    reader.readAsText(f,'UTF-8');
+  }
+}
+
+// Pills
+function renderPills(groupId, items, selected) {
+  const el = document.getElementById(groupId); el.innerHTML='';
+  items.forEach(item => {
+    const p = document.createElement('div');
+    p.className = 'pill'+(selected.includes(item)?' on':'');
+    p.textContent = item;
+    p.onclick = () => { const i=selected.indexOf(item); if(i>=0) selected.splice(i,1); else selected.push(item); renderPills(groupId,items,selected); syncNormAlert(); updateSummary(); };
+    el.appendChild(p);
+  });
+}
+function syncNormAlert() {
+  document.getElementById('normAlert').style.display = S.norms.length ? 'none':'flex';
+  const ex = document.getElementById('exigencia');
+  if (!S.norms.length) { ex.value='buenas_practicas'; }
+  updateSummary();
+}
+function addPill(type) {
+  const inp = document.getElementById(type==='norm'?'normInput':'metInput');
+  const v = inp.value.trim(); if(!v) return;
+  const arr = type==='norm' ? NORMS_DEFAULT : METS_DEFAULT;
+  const sel = type==='norm' ? S.norms : S.mets;
+  const grpId = type==='norm' ? 'normGroup' : 'metGroup';
+  if(!arr.includes(v)) arr.push(v);
+  if(!sel.includes(v)) sel.push(v);
+  inp.value=''; renderPills(grpId,arr,sel); syncNormAlert();
+}
+
+function updateSummary() {
+  const dt = document.getElementById('docType').value;
+  const ex = document.getElementById('exigencia').value;
+  const exMap = {buenas_practicas:'Buenas prácticas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
+  const amMap = {Express:'Express',Completo:'Completo'};
+  const data = [
+    ['Modo', S.mode==='existing'?'Documento existente':'Documento nuevo'],
+    ['Tipo', dt||'No definido'],
+    ['Normativas', S.norms.length?S.norms.join(', '):'Buenas prácticas operativas'],
+    ['Exigencia', exMap[ex]||'Buenas prácticas'],
+    ['Sector', document.getElementById('sector').value||'—'],
+    ['Empresa', document.getElementById('empresa').value||'No definida'],
+    ['Análisis', amMap[document.getElementById('analysisMode').value]||'Express'],
+    ['Proceso', (S.mode==='existing'?document.getElementById('proceso').value:document.getElementById('newDocProcess').value)||'—'],
+  ];
+  document.getElementById('sumGrid').innerHTML = data.map(([k,v])=>`<div class="sum-cell"><div class="sum-lbl">${k}</div><div class="sum-val">${esc(v)}</div></div>`).join('');
+}
+
+function validateStep1() {
+  const dt = document.getElementById('docType').value;
+  const sc = document.getElementById('sector').value;
+  const dc = document.getElementById('docContent').value.trim();
+  const errs = [];
+  if (!dt) errs.push('Selecciona el tipo de documento.');
+  if (!sc) errs.push('Selecciona el sector.');
+  if (S.mode==='existing' && !dc) errs.push('Pega el contenido del documento o carga un archivo.');
+  if (S.mode==='new') {
+    const nm=document.getElementById('newDocName').value.trim();
+    const ob=document.getElementById('newDocObjective').value.trim();
+    const br=document.getElementById('briefText').value.trim();
+    if (!nm && !ob && !br) errs.push('Para documento nuevo, completa al menos el nombre y objetivo, o pega un brief.');
+  }
+  document.getElementById('step1Errors').innerHTML = errs.length ? alertHTML('err',errs.join('<br>')) : '';
+  if (errs.length) return;
+
+  S.config = {
+    mode: S.mode,
+    docType: dt,
+    sector: sc,
+    empresa: document.getElementById('empresa').value||'No especificada',
+    exigencia: document.getElementById('exigencia').value,
+    analysisMode: document.getElementById('analysisMode').value,
+    proceso: S.mode==='existing' ? document.getElementById('proceso').value : document.getElementById('newDocProcess').value,
+    norms: S.norms.length ? S.norms.join(', ') : 'No definidas. Aplicar buenas prácticas operativas.',
+    normsList: [...S.norms],
+    mets: S.mets.length ? S.mets.join(', ') : 'No definidas',
+    newDocName: document.getElementById('newDocName').value,
+    newDocObjective: document.getElementById('newDocObjective').value,
+    newDocScope: document.getElementById('newDocScope').value,
+    newDocResp: document.getElementById('newDocResp').value,
+    newDocControls: document.getElementById('newDocControls').value,
+    briefText: document.getElementById('briefText').value,
+  };
+  S.docContent = document.getElementById('docContent').value.trim();
+  markDone(1);
+  goTo(2);
+  buildPrompt();
+}
+
+// ============================================================
+// STEP 2 — PROMPTS CON FENCE MARKERS
+// ============================================================
+function buildPrompt() {
+  const c = S.config;
+  if (S.mode === 'new') { buildNewDocPrompt(c); return; }
+  buildAnalysisPrompt(c);
+}
+
+function buildAnalysisPrompt(c) {
+  const exMap = {buenas_practicas:'Buenas prácticas operativas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
+  const exigText = exMap[c.exigencia]||'Buenas prácticas operativas';
+  const charCount = S.docContent.length;
+
+  var basePrompt = sgmpPrompt('prompt_analysis', null);
+  var instructions;
+  if (basePrompt) {
+    instructions = basePrompt
+      .replace('{{docType}}', c.docType || '')
+      .replace('{{sector}}', c.sector || '')
+      .replace('{{empresa}}', c.empresa || '')
+      .replace('{{analysisMode}}', c.analysisMode || '')
+      .replace('{{norms}}', c.norms || '')
+      .replace('{{exigencia}}', exigText || '')
+      .replace('{{mets}}', c.mets || '');
+  } else {
+    instructions = '⚠️ Prompt no disponible. Verifica la conexión con el servidor de configuración.';
+  }
+
+  const fullPrompt = instructions + '\n\nDOCUMENTO A ANALIZAR:\n────────────────────────────────────────────────────\n' + S.docContent + '\n────────────────────────────────────────────────────\n\nAnaliza el documento y encierra tu JSON entre los fence markers indicados.';
+
+  document.getElementById('promptBox').textContent = fullPrompt;
+  document.getElementById('promptCardTitle').textContent = 'Prompt de análisis';
+  document.getElementById('promptCardDesc').textContent = 'Copia este prompt y ejecútalo en cualquier IA. El prompt exige un único bloque de código con fence markers para que la interfaz de la IA muestre el botón de copiar y el JSON siga siendo extraíble aunque agregue texto adicional.';
+  document.getElementById('respCardTitle').textContent = 'Respuesta JSON de la IA';
+  document.getElementById('respHint').textContent = 'Pega la respuesta completa. El sistema extraerá el JSON entre los fence markers. Si viene en partes, agrégalas en orden.';
+
+  const warnEl = document.getElementById('charWarn');
+  if (charCount > 12000) {
+    document.getElementById('btnCopyDoc').style.display = 'inline-flex';
+    warnEl.innerHTML = alertHTML('warn', `El documento tiene ${charCount.toLocaleString()} chars. Para IAs con contexto limitado usa el botón "Copiar solo documento" y pégalo por separado.`);
+  } else {
+    warnEl.innerHTML = '';
+    document.getElementById('btnCopyDoc').style.display = 'none';
+  }
+
+  S._instrOnly = instructions;
+}
+
+
+function buildNewDocPrompt(c) {
+  const exMap = {buenas_practicas:'Buenas prácticas operativas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
+  var basePrompt = sgmpPrompt('prompt_new_doc', null);
+  var prompt;
+  if (basePrompt) {
+    prompt = basePrompt
+      .replace('{{docType}}', c.docType || '')
+      .replace('{{sector}}', c.sector || '')
+      .replace('{{empresa}}', c.empresa || '')
+      .replace('{{norms}}', c.norms || '')
+      .replace('{{exigencia}}', exMap[c.exigencia] || 'Buenas prácticas operativas')
+      .replace('{{mets}}', c.mets || '')
+      .replace('{{newDocName}}', c.newDocName || 'No definido')
+      .replace('{{proceso}}', c.proceso || 'No definido')
+      .replace('{{newDocObjective}}', c.newDocObjective || 'No definido')
+      .replace('{{newDocScope}}', c.newDocScope || 'No definido')
+      .replace('{{newDocResp}}', c.newDocResp || 'No definido')
+      .replace('{{newDocControls}}', c.newDocControls || 'No definido')
+      .replace('{{briefText}}', c.briefText || 'No definido');
+  } else {
+    prompt = '⚠️ Prompt no disponible. Verifica la conexión con el servidor de configuración.';
+  }
+  document.getElementById('promptBox').textContent = prompt;
+  document.getElementById('promptCardTitle').textContent = 'Prompt de documento nuevo';
+  document.getElementById('promptCardDesc').textContent = 'Copia este prompt en cualquier IA. El prompt exige un único bloque de código para facilitar el copiado con un clic.';
+  document.getElementById('respCardTitle').textContent = 'Borrador generado por la IA';
+  document.getElementById('respHint').textContent = 'Pega aquí el borrador generado. El sistema extraerá el contenido entre los fence markers.';
+  document.getElementById('btnCopyDoc').style.display='none';
+  document.getElementById('charWarn').innerHTML='';
+}
+
+function buildConsolidationPrompt() {
+  const c = S.config;
+  const active = S.findings.filter(f=>f.action!=='reject');
+  const changes = active.map(f=>`[${f.id}] ${f.seccion}: ${f.action==='custom'&&f.custom ? f.custom : f.propuesta}`).join('\n');
+  const exMap = {buenas_practicas:'Buenas prácticas operativas',referencial:'Referencial',cumplimiento:'Cumplimiento requerido',auditoria:'Auditoría / certificación'};
+  return `════════════════════════════════════════════════════
+INSTRUCCIONES — AUDIXENGINE v2.2 — RECONSTRUCCIÓN DOCUMENTAL
+════════════════════════════════════════════════════
+Actúa como redactor técnico experto en documentación operativa y sistemas de gestión.
+
+CONFIGURACIÓN:
+  Tipo de documento : ${c.docType}
+  Sector            : ${c.sector}
+  Normativas        : ${c.normsList&&c.normsList.length ? c.normsList.join(', ') : 'Buenas prácticas operativas'}
+  Nivel de exigencia: ${exMap[c.exigencia]||'Buenas prácticas operativas'}
+
+REGLAS ABSOLUTAS:
+1. Mantén la estructura lógica y jerárquica del documento: mismos títulos, subtítulos, orden y profundidad.
+2. NO reduzcas, comprimas ni resumas ninguna sección; conserva el nivel de detalle técnico del documento base.
+3. NO elimines tablas, listas, criterios de aceptación, ejemplos ni descripciones de defectos.
+4. Si una tabla existe o debe mantenerse, devuélvela en Markdown completo.
+5. Si el documento mencionaba imágenes, anexos o figuras, conserva la referencia mediante placeholders [IMAGEN: descripción].
+6. Redacción técnica, formal y declarativa-operativa.
+7. No incluyas introducción, comentarios ni notas del redactor.
+8. Entrega TODO dentro de un ÚNICO bloque de código de texto plano.
+9. Dentro del bloque utiliza exactamente los marcadores ===DOC_START=== y ===DOC_END===.
+10. Usa títulos principales en MAYÚSCULAS y negrita mediante Markdown.
+
+MEJORAS A INCORPORAR (${active.length} instrucciones aprobadas):
+${changes}
+
+INSTRUCCIÓN DE FORMATO:
+Encierra el documento reconstruido entre estas marcas:
+
+===DOC_START===
+[documento completo]
+===DOC_END===
+
+Si excede el límite de tokens, divide con ===DOC_PARTE_X=== al inicio de cada sección.
+
+DOCUMENTO ORIGINAL:
+════════════════════════════════════════════════════
+${S.docContent}
+════════════════════════════════════════════════════
+
+Entrega el documento reconstruido usando los fence markers indicados.`;
+}
+
+function copyDocSeparate() {
+  copyToClipboard(S.docContent); showToast('Documento copiado');
+}
+
+// ============================================================
+// PROCESAMIENTO DE RESPUESTAS
+// ============================================================
+let respPartCount = 1;
+function addRespPart() {
+  respPartCount++;
+  const c = document.getElementById('respPartsContainer');
+  const d = document.createElement('div');
+  d.className='form-group'; d.style.marginBottom='10px';
+  d.innerHTML=`<label class="form-label">Parte ${respPartCount}</label><textarea id="resp-${respPartCount}" class="code tall" placeholder="Parte ${respPartCount}..."></textarea>`;
+  c.appendChild(d);
+}
+
+function extractFenced(raw, startMark, endMark) {
+  const re = new RegExp(startMark.replace(/=/g,'\\=') + '\\s*([\\s\\S]*?)\\s*' + endMark.replace(/=/g,'\\='));
+  const m = raw.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function extractJSON(raw) {
+  let extracted = extractFenced(raw,'===JSON_START===','===JSON_END===');
+  if (!extracted) {
+    const cm = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (cm) extracted = cm[1].trim();
+  }
+  if (!extracted) {
+    const fb = raw.indexOf('{'), lb = raw.lastIndexOf('}');
+    if (fb!==-1 && lb>fb) extracted = raw.slice(fb,lb+1).trim();
+  }
+  return extracted;
+}
+
+function extractDoc(raw) {
+  // Fence markers para documento
+  let doc = extractFenced(raw,'===DOC_START===','===DOC_END===');
+  if (doc) return doc;
+  // Partes numeradas ===DOC_PARTE_X===
+  if (raw.includes('===DOC_PARTE_')) {
+    return raw.replace(/===DOC_PARTE_\d+===/g,'').trim();
+  }
+  // Sin markers: limpiar frases de IA y devolver
+  return raw.replace(/^(aquí (tienes|está|te presento)[^:\n]*(:|,|\n)|claro,[^:\n]*(:|,|\n))/i,'').trim();
+}
+
+function processResponse() {
+  let combined = '';
+  for (let i=1; i<=respPartCount+5; i++) {
+    const el = document.getElementById('resp-'+i); if(!el) break;
+    const v = el.value.trim(); if(!v) continue;
+    combined += v.replace(/===CONTINUA===/gi,'') + '\n';
+  }
+  const resultDiv = document.getElementById('respResult');
+  if (!combined.trim()) { resultDiv.innerHTML=alertHTML('err','No hay contenido para procesar.'); return; }
+
+  if (S.mode === 'existing') {
+    processAnalysisResponse(combined, resultDiv);
+  } else {
+    processNewDocResponse(combined, resultDiv);
+  }
+}
+
+function processAnalysisResponse(combined, resultDiv) {
+  const extracted = extractJSON(combined);
+  if (!extracted) { resultDiv.innerHTML=alertHTML('err','No se encontró JSON. Verifica que la IA usó los fence markers o que la respuesta contiene un objeto JSON { }.'); return; }
+  let parsed;
+  try { parsed = JSON.parse(extracted); } catch(e) { resultDiv.innerHTML=alertHTML('err',`JSON inválido: ${e.message}`); return; }
+  if (!parsed.hallazgos || !Array.isArray(parsed.hallazgos)) { resultDiv.innerHTML=alertHTML('err','Estructura incorrecta: falta el campo "hallazgos".'); return; }
+
+  // Normalizar criticidad y porcentaje
+  const critMap = {critica:'Alta',crítica:'Alta',alta:'Alta',media:'Media',baja:'Baja',urgente:'Alta',high:'Alta',medium:'Media',low:'Baja'};
+  parsed.hallazgos = parsed.hallazgos.map(h=>({...h, criticidad: critMap[String(h.criticidad||'').toLowerCase()]||h.criticidad||'Media'}));
+  if (typeof parsed.porcentaje_cumplimiento==='string') parsed.porcentaje_cumplimiento=parseInt(parsed.porcentaje_cumplimiento)||0;
+
+  S.analysisJSON = parsed;
+  S.findings = parsed.hallazgos.map(h=>({...h, action:'execute', custom:''}));
+  resultDiv.innerHTML=alertHTML('ok',`✓ JSON válido. ${parsed.hallazgos.length} hallazgos. Puedes continuar a Revisión.`);
+  document.getElementById('btnTo3').disabled=false;
+  markDone(2);
+  renderReview();
+  save();
+}
+
+function processNewDocResponse(combined, resultDiv) {
+  const doc = extractDoc(combined);
+  if (!doc) { resultDiv.innerHTML=alertHTML('err','No se encontró contenido válido en la respuesta.'); return; }
+  document.getElementById('newDocDraft').value = doc;
+  document.getElementById('newDocChanges').value = 'Creación inicial del documento.';
+  resultDiv.innerHTML=alertHTML('ok','✓ Borrador detectado. Avanza a Revisión para ajustar antes de generar entregables.');
+  document.getElementById('btnTo3').disabled=false;
+  markDone(2);
+  save();
+}
+
+// ============================================================
+// STEP 3 — REVISIÓN
+// ============================================================
+function renderReview() {
+  const a = S.analysisJSON;
+  const pct = a.porcentaje_cumplimiento||0;
+  document.getElementById('scoreNum').textContent = pct+'%';
+  document.getElementById('scoreLevel').textContent = a.nivel||'—';
+  document.getElementById('scoreDesc').textContent = (a.resumen||'').substring(0,150)+'...';
+  const bar = document.getElementById('barFill');
+  bar.style.width=pct+'%';
+  bar.style.background = pct>=70?'var(--ok)':pct>=40?'var(--warn)':'var(--err)';
+  document.getElementById('scoreNum').style.color = pct>=70?'var(--ok)':pct>=40?'var(--warn)':'var(--err)';
+
+  // Summary
+  document.getElementById('sumContent').innerHTML=`
+    <div class="italic-box">${esc(a.resumen||'')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div class="form-label" style="margin-bottom:8px;color:var(--ok)">✓ Fortalezas</div>
+        ${(a.fortalezas||[]).map(f=>`<div style="font-size:13px;padding:6px 10px;background:var(--ok-bg);border-radius:var(--r);margin-bottom:6px;border-left:3px solid var(--ok)">${esc(f)}</div>`).join('')||'<span class="muted">No identificadas</span>'}
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:8px;color:var(--err)">⚠ Riesgos</div>
+        ${(a.riesgos_principales||[]).map(r=>`<div style="font-size:13px;padding:6px 10px;background:var(--err-bg);border-radius:var(--r);margin-bottom:6px;border-left:3px solid var(--err)">${esc(r)}</div>`).join('')||'<span class="muted">No identificados</span>'}
+      </div>
+    </div>`;
+
+  // Preguntas
+  const qs = a.preguntas_complementarias||[];
+  if (a.necesita_preguntas && qs.length) {
+    document.getElementById('questionsCard').classList.remove('hidden');
+    document.getElementById('questionsList').innerHTML = qs.map((q,i)=>`
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">${i+1}. ${esc(q.area||'—')}</div>
+        <div style="font-size:13px;color:var(--text-2)"><strong>Pregunta:</strong> ${esc(q.pregunta||'')}</div>
+        <div style="font-size:12px;color:var(--text-3)"><strong>Propósito:</strong> ${esc(q.proposito||'')} · <strong>Ref:</strong> ${esc(q.referencia||'')}</div>
+      </div>`).join('');
+  }
+
+  // Modo: mostrar revisión existente, ocultar nuevo
+  document.getElementById('existingReview').classList.remove('hidden');
+  document.getElementById('newDocReview').classList.add('hidden');
+  document.getElementById('finalPromptSection').classList.remove('hidden');
+
+  renderFindings();
+}
+
+function renderFindings() {
+  // Guardar custom texts antes de re-render
+  S.findings.forEach((_,i)=>{ const el=document.getElementById('ct-'+i); if(el) S.findings[i].custom=el.value; });
+  let exec=0, custom=0, reject=0;
+  const list = document.getElementById('findingsList');
+  if (!S.findings.length) { list.innerHTML='<div class="muted">Sin hallazgos.</div>'; return; }
+
+  list.innerHTML = S.findings.map((f,i) => {
+    if(f.action==='execute') exec++; else if(f.action==='custom') custom++; else reject++;
+    const critCls = {Alta:'crit-alta',Media:'crit-media',Baja:'crit-baja'}[f.criticidad]||'crit-media';
+    return `<div class="finding-card ${f.action==='reject'?'rejected':''}" id="fc-${i}">
+      <div class="finding-hdr">
+        <span class="finding-id">${esc(String(f.id))}</span>
+        <span class="finding-sec">${esc(f.seccion)}</span>
+        <span class="crit-badge ${critCls}">${esc(f.criticidad)}</span>
+        <span class="conf-badge">Conf: ${esc(f.confianza||'Media')}</span>
+      </div>
+      <div class="finding-body">
+        <div class="finding-grid">
+          <div><div class="finding-field-lbl">Estado actual</div><div class="finding-field-val">${esc(f.estado_actual||'—')}</div></div>
+          <div><div class="finding-field-lbl">Estado esperado</div><div class="finding-field-val">${esc(f.estado_ideal||f.propuesta||'—')}</div></div>
+        </div>
+        <div class="finding-field-lbl" style="margin-bottom:4px">Brecha</div>
+        <div class="finding-field-val" style="margin-bottom:8px">${esc(f.brecha||'—')}</div>
+        <div class="finding-ref">📋 ${esc(f.referencia||'Sin referencia')}</div>
+        <div class="finding-prop">${f.action==='custom'&&f.custom ? esc(f.custom) : esc(f.propuesta||'—')}</div>
+        <div class="action-row">
+          <button class="act-btn act-exec ${f.action==='execute'?'on':''}" onclick="setAction(${i},'execute')">✓ Ejecutar</button>
+          <button class="act-btn act-custom ${f.action==='custom'?'on':''}" onclick="setAction(${i},'custom')">✎ Personalizar</button>
+          <button class="act-btn act-reject ${f.action==='reject'?'on':''}" onclick="setAction(${i},'reject')">✕ Rechazar</button>
+        </div>
+        ${f.action==='custom'?`<textarea id="ct-${i}" style="width:100%;min-height:70px;margin-top:8px;font-size:13px;padding:8px;border:1px solid var(--border-2);border-radius:var(--r);font-family:inherit" placeholder="Escribe tu instrucción personalizada..." onchange="S.findings[${i}].custom=this.value;save()">${esc(f.custom||'')}</textarea>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('cntExec').textContent=exec+' a ejecutar';
+  document.getElementById('cntCustom').textContent=custom+' personalizados';
+  document.getElementById('cntReject').textContent=reject+' rechazados';
+  document.getElementById('cntTotal').textContent=S.findings.length+' total';
+}
+
+function setAction(i, action) {
+  S.findings.forEach((_,j)=>{ const el=document.getElementById('ct-'+j); if(el) S.findings[j].custom=el.value; });
+  S.findings[i].action=action;
+  renderFindings(); save();
+}
+
+function buildFinalPrompt() {
+  S.findings.forEach((_,i)=>{ const el=document.getElementById('ct-'+i); if(el) S.findings[i].custom=el.value; });
+  S.finalPrompt = buildConsolidationPrompt();
+  document.getElementById('finalPromptBox').textContent = S.finalPrompt;
+  save();
+}
+
+// Consolidar documento final
+let docPartCount = 1;
+function addDocPart() {
+  docPartCount++;
+  const c = document.getElementById('docPartsContainer');
+  const d = document.createElement('div'); d.className='form-group'; d.style.marginBottom='10px';
+  d.innerHTML=`<label class="form-label">Parte ${docPartCount}</label><textarea id="docPart-${docPartCount}" class="xtall" placeholder="Parte ${docPartCount}..."></textarea>`;
+  c.appendChild(d);
+}
+
+function consolidateDoc() {
+  let parts = [];
+  for (let i=1; i<=docPartCount+5; i++) {
+    const el=document.getElementById('docPart-'+i); if(!el) break;
+    const v=el.value.trim(); if(!v) continue;
+    parts.push(extractDoc(v));
+  }
+  const resultDiv = document.getElementById('docResult');
+  if (!parts.length) { resultDiv.innerHTML=alertHTML('err','No hay contenido para consolidar.'); return; }
+  const combined = parts.join('\n\n');
+  if (/^\s*[{\[]/.test(combined)) { resultDiv.innerHTML=alertHTML('err','El contenido parece ser JSON. Pega el documento reconstruido.'); return; }
+  S.finalDoc = combined;
+  resultDiv.innerHTML=alertHTML('ok',`✓ Consolidado. ${parts.length} parte(s). ${combined.length.toLocaleString()} caracteres.`);
+  document.getElementById('btnTo4').disabled=false;
+  showFinalPreview();
+  const statusCard = document.getElementById('finalDocStatusCard'); if (statusCard) { statusCard.className='alert alert-ok'; }
+  markDone(3); save();
+}
+
+function showFinalPreview() {
+  if (!S.finalDoc) return;
+  const status = document.getElementById('finalDocStatusText');
+  if (status) status.textContent = `Documento final consolidado y listo para copiar o descargar. Longitud: ${S.finalDoc.length.toLocaleString()} caracteres.`;
+}
+
+// ============================================================
+// STEP 4 — DESCARGAS
+// ============================================================
+function copyFinalDoc() { copyToClipboard(S.finalDoc); }
+function copyAnalysisJSON() { if(!S.analysisJSON) return; copyToClipboard(JSON.stringify(S.analysisJSON,null,2)); }
+function downloadFinalTxt() {
+  if (!S.finalDoc) { alert('Consolida el documento final primero.'); return; }
+  dlBlob(S.finalDoc, `${safeName(S.config.empresa)}_DocumentoFinal.txt`, 'text/plain;charset=utf-8');
+}
+function downloadAnalysisJSON() {
+  if (!S.analysisJSON) { alert('Procesa el análisis primero.'); return; }
+  dlBlob(JSON.stringify(S.analysisJSON,null,2), `AUDIX_analisis_${safeName(S.config.empresa)}.json`, 'application/json');
+}
+
+// DOCX — helper functions
+function bStyle() {
+  const b={style:BorderStyle.SINGLE,size:1,color:'C7D3E0'};
+  return {top:b,bottom:b,left:b,right:b,insideHorizontal:b,insideVertical:b};
+}
+function tPara(text,level=HeadingLevel.HEADING_1){ return new Paragraph({text,heading:level,spacing:{after:180}}); }
+function bPara(text){ return new Paragraph({children:[new TextRun({text:String(text||''),size:22,color:'17212B'})],spacing:{after:100}}); }
+function hCell(t){ return new TableCell({shading:{fill:'D9EAF7'},children:[new Paragraph({children:[new TextRun({text:t,bold:true,color:'1F4E79'})]})]}); }
+function tCell(t){ return new TableCell({children:[new Paragraph({children:[new TextRun(String(t||''))]})]});}
+function metaTable(cfg){
+  const rows=[['Tipo',cfg.docType||'—'],['Empresa',cfg.empresa||'—'],['Sector',cfg.sector||'—'],['Normativa',cfg.normsList&&cfg.normsList.length?cfg.normsList.join(', '):'Buenas prácticas'],['Fecha',new Date().toLocaleDateString('es')],['Versión','2.2 BETA'],['Estado','Borrador'],['Elaborado','AudixEngine']].map(([a,b])=>new TableRow({children:[new TableCell({shading:{fill:'1F4E79'},children:[new Paragraph({children:[new TextRun({text:a,color:'FFFFFF',bold:true})]})]}),tCell(b)]}));
+  return new Table({width:{size:100,type:WidthType.PERCENTAGE},rows,borders:bStyle()});
+}
+
+function inlineRuns(text){
+  const runs=[]; let last=0; const re=/\*\*(.+?)\*\*/g; let m;
+  while((m=re.exec(String(text||'')))!==null){
+    if(m.index>last) runs.push(new TextRun({text:text.slice(last,m.index),size:22,color:'17212B'}));
+    runs.push(new TextRun({text:m[1],bold:true,size:22,color:'17212B'}));
+    last = m.index + m[0].length;
+  }
+  if(last < String(text||'').length) runs.push(new TextRun({text:String(text||'').slice(last),size:22,color:'17212B'}));
+  return runs.length?runs:[new TextRun({text:String(text||''),size:22,color:'17212B'})];
+}
+
+function markdownTableToDocx(lines){
+  const cleaned = lines.map(l=>l.trim()).filter(Boolean);
+  if(cleaned.length < 2) return cleaned.map(l=>new Paragraph({children:inlineRuns(l),spacing:{after:80}}));
+  const rows = cleaned
+    .filter((l,idx)=> !(idx===1 && /^\|?\s*:?[-| ]+:?\s*(\|\s*:?[-| ]+:?\s*)+\|?$/.test(l)))
+    .map((line,rowIdx)=>{
+      const cells = line.replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+      return new TableRow({children: cells.map(c => rowIdx===0 ? hCell(c) : new TableCell({children:[new Paragraph({children:inlineRuns(c)})]}))});
+    });
+  return [new Table({width:{size:100,type:WidthType.PERCENTAGE},rows,borders:bStyle()}), new Paragraph({text:'',spacing:{after:100}})];
+}
+
+function structuredDocToElements(text){
+  const src = String(text||'').replace(/===DOC_START===|===DOC_END===|```/g,'').trim();
+  const lines = src.split(/\r?\n/);
+  const out = [];
+  for(let i=0;i<lines.length;i++){
+    let line = lines[i].trim();
+    if(!line){ out.push(new Paragraph({text:'',spacing:{after:80}})); continue; }
+
+    if(/^\|.*\|$/.test(line)){
+      const tableLines=[line];
+      while(i+1<lines.length && /^\|.*\|$/.test(lines[i+1].trim())){ tableLines.push(lines[++i].trim()); }
+      out.push(...markdownTableToDocx(tableLines));
+      continue;
+    }
+
+    if(/^#\s+/.test(line)){
+      out.push(new Paragraph({children:inlineRuns(line.replace(/^#\s+/,'')),heading:HeadingLevel.HEADING_1,spacing:{before:180,after:120}}));
+      continue;
+    }
+    if(/^##\s+/.test(line)){
+      out.push(new Paragraph({children:inlineRuns(line.replace(/^##\s+/,'')),heading:HeadingLevel.HEADING_2,spacing:{before:140,after:100}}));
+      continue;
+    }
+    if(/^###\s+/.test(line)){
+      out.push(new Paragraph({children:inlineRuns(line.replace(/^###\s+/,'')),heading:HeadingLevel.HEADING_3,spacing:{before:120,after:90}}));
+      continue;
+    }
+
+    if(/^\[IMAGEN:\s*.*\]$/i.test(line)){
+      out.push(new Paragraph({
+        children:[new TextRun({text:line,bold:true,italics:true,color:'2B6CB0',size:22})],
+        shading:{fill:'EBF4FF'},
+        border:{left:{style:BorderStyle.SINGLE,size:6,color:'2B6CB0'}},
+        spacing:{before:80,after:80}
+      }));
+      continue;
+    }
+
+    if(/^[-*]\s+/.test(line)){
+      out.push(new Paragraph({children:inlineRuns(line.replace(/^[-*]\s+/,'')),bullet:{level:0},spacing:{after:70}}));
+      continue;
+    }
+
+    out.push(new Paragraph({children:inlineRuns(line),spacing:{after:90}}));
+  }
+  return out;
+}
+
+async function downloadFinalDocx() {
+  if (!S.finalDoc) { alert('Consolida el documento final primero.'); return; }
+  const c = S.config;
+  const elements = structuredDocToElements(S.finalDoc);
+  const doc = new Document({sections:[{children:[
+    tPara('AudixEngine (beta) v2.2 — Documento final'),
+    metaTable(c),
+    new Paragraph({text:'',spacing:{after:150}}),
+    ...elements,
+    new Paragraph({children:[new TextRun({text:'Generado con AudixEngine v2.2',size:18,color:'718096'})],spacing:{before:300},alignment:AlignmentType.RIGHT})
+  ]}]});
+  const blob = await Packer.toBlob(doc);
+  dlBlob(blob, `${safeName(c.empresa)}_DocumentoFinal_AudixEngine.docx`, '');
+}
+
+async function downloadOnePage() {
+  if (!S.analysisJSON && S.mode==='existing') { alert('Procesa el análisis primero.'); return; }
+  const c = S.config;
+  const rows = [new TableRow({children:[hCell('#'),hCell('Sección'),hCell('Estado actual'),hCell('Estado esperado'),hCell('Brecha'),hCell('Referencia'),hCell('Criticidad'),hCell('Confianza'),hCell('Decisión')]})];
+  S.findings.forEach((f,i)=>rows.push(new TableRow({children:[tCell(i+1),tCell(f.seccion),tCell(f.estado_actual),tCell(f.estado_ideal||f.propuesta),tCell(f.brecha),tCell(f.referencia),tCell(f.criticidad),tCell(f.confianza||'—'),tCell(f.action+(f.action==='custom'&&f.custom?': '+f.custom:''))]})));
+  const doc = new Document({sections:[{properties:{page:{margin:{top:600,right:600,bottom:600,left:600},size:{orientation:PageOrientation.LANDSCAPE}}},children:[
+    tPara('AudixEngine (beta) v2.2 — One Page'),
+    metaTable(c),
+    new Paragraph({text:'',spacing:{after:150}}),
+    new Paragraph({children:[new TextRun({text:S.analysisJSON?.resumen||'',size:22,italics:true,color:'4A5568'})],spacing:{after:150}}),
+    new Table({width:{size:100,type:WidthType.PERCENTAGE},rows,borders:bStyle()}),
+    new Paragraph({text:'',spacing:{after:150}}),
+    new Paragraph({children:[new TextRun({text:'Generado con AudixEngine v2.2 · MIRA',size:18,color:'718096'})],alignment:AlignmentType.RIGHT})
+  ]}]});
+  const blob = await Packer.toBlob(doc);
+  dlBlob(blob, `${safeName(c.empresa)}_OnePage_AudixEngine.docx`,'');
+}
+
+async function downloadQuestionsDoc() {
+  const qs = S.analysisJSON?.preguntas_complementarias||[];
+  const doc = new Document({sections:[{children:[
+    tPara('AudixEngine — Batería de preguntas'),
+    ...qs.flatMap((q,i)=>[
+      new Paragraph({children:[new TextRun({text:`${i+1}. ${q.area||''}`,bold:true,size:24,color:'1F4E79'})],spacing:{before:150,after:80}}),
+      bPara(`Pregunta: ${q.pregunta||''}`),
+      bPara(`Propósito: ${q.proposito||''}`),
+      bPara(`Referencia: ${q.referencia||''}`),
+      new Paragraph({text:'',spacing:{after:100}})
+    ])
+  ]}]});
+  const blob = await Packer.toBlob(doc);
+  dlBlob(blob,'Bateria_Preguntas_AudixEngine.docx','');
+}
+
+async function downloadBriefTemplate() {
+  if (typeof Packer === 'undefined') {
+    // Fallback TXT si docx.js no cargó
+    const txt=`================================================================================\nPLANTILLA DE BRIEF — AUDIXENGINE v2.2\n================================================================================\n\n1. Nombre del documento:\n2. Tipo de documento:\n3. Proceso relacionado:\n4. Objetivo:\n5. Alcance:\n6. Responsables / actores:\n7. Controles clave / puntos críticos:\n8. Entradas y salidas relevantes:\n9. Marco normativo (opcional):\n10. Nivel de exigencia (si aplica):\n11. Observaciones:\n\n================================================================================`;
+    dlBlob(txt,'Plantilla_Brief_AudixEngine.txt','text/plain;charset=utf-8'); return;
+  }
+  const doc = new Document({sections:[{children:[
+    tPara('AudixEngine (beta) v2.2 — Plantilla de brief'),
+    ...[['1. Nombre del documento',''],['2. Tipo de documento',''],['3. Proceso relacionado',''],['4. Objetivo',''],['5. Alcance',''],['6. Responsables / actores',''],['7. Controles clave / puntos críticos',''],['8. Entradas y salidas relevantes',''],['9. Marco normativo (opcional)',''],['10. Nivel de exigencia (si aplica)',''],['11. Observaciones o restricciones','']].flatMap(([k])=>[
+      new Paragraph({children:[new TextRun({text:k,bold:true,color:'1F4E79',size:24})],spacing:{before:150,after:60}}),
+      bPara(''),
+      new Paragraph({text:'',spacing:{after:100}})
+    ]),
+    new Paragraph({children:[new TextRun({text:'Generado con AudixEngine v2.2 · MIRA',size:18,color:'718096'})],alignment:AlignmentType.RIGHT})
+  ]}]});
+  const blob = await Packer.toBlob(doc);
+  dlBlob(blob,'Plantilla_Brief_AudixEngine.docx','');
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+const esc = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function alertHTML(type, msg) {
+  const icons={ok:'✓',warn:'⚠',err:'✕',info:'ℹ'};
+  const cls={ok:'alert-ok',warn:'alert-warn',err:'alert-err',info:'alert-info'};
+  return `<div class="alert ${cls[type]}"><span class="alert-icon">${icons[type]}</span><span>${msg}</span></div>`;
+}
+function copyBox(id) { const el=document.getElementById(id); copyToClipboard(('value' in el && el.value)?el.value:el.textContent); }
+function copyToClipboard(text) { if(!text) return; navigator.clipboard ? navigator.clipboard.writeText(text).then(()=>showToast()) : fallbackCopy(text); }
+function fallbackCopy(text){ const t=document.createElement('textarea'); t.value=text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); showToast(); }
+function showToast(msg='✓ Copiado'){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
+function dlBlob(content,filename){ const b=content instanceof Blob?content:new Blob([content],{type:'text/plain'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000); }
+function safeName(s){ return (s||'documento').replace(/[^a-z0-9áéíóúüñ\-_]/gi,'_').replace(/_+/g,'_').trim(); }
+function resetAll() { if(!confirm('¿Reiniciar toda la sesión?')) return; sessionStorage.removeItem('audix22'); location.reload(); }
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  renderPills('normGroup', NORMS_DEFAULT, S.norms);
+  renderPills('metGroup', METS_DEFAULT, S.mets);
+  updateSummary();
+  syncNormAlert();
+  // Listeners para summary en tiempo real
+  ['docType','sector','empresa','analysisMode','exigencia','proceso'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.addEventListener('change',updateSummary); el.addEventListener('input',updateSummary); }
+  });
+});
+  // Cargar prompts del Sheet al iniciar
+  sgmpLoadPrompts('AD', function() { /* prompts AudixEngine listos */ });
+</script>
+</body>
+</html>

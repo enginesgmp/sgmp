@@ -1,0 +1,1402 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SIPOC Builder v7</title>
+<style>
+:root{
+  --bg:#f0f4f8;--panel:#fff;--line:#d4dde8;--text:#162033;--muted:#5a7090;
+  --blue:#1d4ed8;--blue-s:#eff6ff;--blue-m:#bfdbfe;
+  --green:#16a34a;--green-s:#f0fdf4;--green-m:#bbf7d0;
+  --amber:#b45309;--amber-s:#fffbeb;--amber-m:#fde68a;
+  --red:#dc2626;--red-s:#fef2f2;--red-m:#fecaca;
+  --radius:12px;--shadow:0 2px 10px rgba(0,0,0,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+.app{max-width:1500px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+
+/* HEADER */
+.hdr{background:linear-gradient(135deg,#162033,#1d4ed8);border-radius:var(--radius);padding:14px 20px;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.hdr-left h1{font-size:18px;font-weight:700;margin-bottom:2px}
+.hdr-left p{font-size:11px;opacity:.7}
+.hdr-right{display:flex;gap:8px}
+.hdr-btn{padding:6px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+.hdr-btn:hover{background:rgba(255,255,255,.2)}
+
+/* NAV */
+.nav{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:8px;flex-wrap:wrap}
+.nav-tab{padding:7px 14px;border-radius:8px;border:none;background:none;font-weight:600;cursor:pointer;font-size:13px;color:var(--muted);transition:.15s}
+.nav-tab:hover{background:#f0f4f8;color:var(--text)}
+.nav-tab.active{background:var(--blue-s);color:var(--blue)}
+
+/* PANELS */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.hidden{display:none!important}
+
+/* MSG */
+.msg{padding:9px 13px;border-radius:9px;font-size:13px;font-weight:500;margin-bottom:10px;display:none}
+.msg.show{display:block}
+.msg.info{background:var(--blue-s);color:#1e3a8a;border:1px solid var(--blue-m)}
+.msg.ok{background:var(--green-s);color:#14532d;border:1px solid var(--green-m)}
+.msg.warn{background:var(--amber-s);color:#78350f;border:1px solid var(--amber-m)}
+.msg.err{background:var(--red-s);color:#7f1d1d;border:1px solid var(--red-m)}
+
+/* STAGE */
+.stage{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 13px;margin-bottom:12px}
+.stage strong{font-size:13px;color:#6d28d9;display:block;margin-bottom:1px}
+.stage span{font-size:11px;color:#7c3aed}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.g2c{display:grid;grid-template-columns:1fr 1.3fr;gap:12px}
+.full{grid-column:1/-1}
+
+/* FIELDS */
+.field{display:flex;flex-direction:column;gap:4px}
+label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+input,textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;color:var(--text);background:#fff}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--blue-m)}
+textarea{min-height:70px;resize:vertical}
+select[multiple]{min-height:90px}
+
+/* BUTTONS */
+button{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:7px 13px;font-weight:600;cursor:pointer;font-size:13px;transition:.15s;display:inline-flex;align-items:center;gap:5px}
+button:hover{border-color:#8aabb0;background:#f5f8ff}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.primary:hover{background:#1e40af}
+button.ok{background:var(--green);color:#fff;border-color:var(--green)}
+button.ok:hover{background:#15803d}
+button.warn{background:var(--amber);color:#fff;border-color:var(--amber)}
+button.sm{padding:4px 9px;font-size:11px}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.btn-row.right{justify-content:flex-end}
+.btn-row.between{justify-content:space-between}
+
+/* CARD GRID */
+.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fafcff}
+.card h3{font-size:13px;margin-bottom:7px;color:var(--blue)}
+
+/* TABLES */
+.tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:9px;margin-top:8px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:6px 8px;border-bottom:1px solid #eef2f7;text-align:left;font-size:12px;vertical-align:top}
+th{background:#f7faff;color:var(--muted);font-size:10px;text-transform:uppercase;font-weight:700}
+tr:last-child td{border-bottom:none}
+
+/* CODEBOX */
+.codebox{background:#0d1b2a;color:#a8d8ea;border-radius:10px;padding:12px 14px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-word;line-height:1.5;border:1px solid #1e3a5f;overflow-y:auto;max-height:360px;min-height:100px}
+.xml-ta{font-family:Consolas,monospace;font-size:11px;min-height:180px;background:#fafeff}
+
+/* VALIDATOR */
+.vld{border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-top:6px;display:none}
+.vld.show{display:block}
+.vld.ok{background:#f0fdf4;border:1px solid #86efac;color:#15803d}
+.vld.warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
+.vld.bad{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+
+/* TPL INFO */
+.tpl-info{background:#e8f4fd;border:1px solid #90c4e8;border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:12px}
+
+/* SUMMARY */
+.sum-box{background:#f7faff;border:1px solid var(--blue-m);border-radius:9px;padding:10px 13px;margin-bottom:10px}
+.sum-row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid #e8eef8}
+.sum-row:last-child{border-bottom:none}
+.sum-row strong{color:var(--muted);font-weight:600}
+
+/* PILL */
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:var(--blue-s);color:var(--blue)}
+
+/* PREVIEW */
+.preview{display:flex;gap:8px;overflow-x:auto;padding:8px;min-height:80px;background:#f8fafc;border:1px solid var(--line);border-radius:9px}
+.lane{min-width:160px;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex-shrink:0}
+.lane-hd{background:var(--blue);color:#fff;padding:6px 8px;font-size:10px;font-weight:700;text-align:center}
+.lane-bd{padding:6px;display:flex;flex-direction:column;gap:5px;background:#fafcff}
+.ncard{border:1px solid var(--blue-m);border-radius:6px;padding:5px 7px;background:#fff;font-size:10px}
+.ncard.decision{border-color:#fcd34d;background:#fffbeb}
+.ncard strong{display:block;margin-bottom:1px}
+.ncard small{color:var(--muted);display:block;font-size:9px}
+
+/* CFG */
+.cfg-sec{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.cfg-sec:last-child{border-bottom:none;margin-bottom:0}
+.cfg-sec h3{font-size:13px;margin-bottom:8px;color:#6d28d9}
+
+/* MANUAL */
+.man-sec{margin-bottom:18px}
+.man-sec h3{font-size:14px;color:var(--blue);margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.man-sec p,.man-sec li{font-size:13px;line-height:1.6;margin-bottom:5px}
+.man-sec ol,.man-sec ul{padding-left:16px}
+.man-sec code{background:#eef4ff;padding:1px 5px;border-radius:3px;font-size:11px;font-family:monospace;color:var(--blue)}
+.man-sec pre{background:#f4f7fb;padding:10px 12px;border-radius:7px;font-size:11px;overflow-x:auto;border:1px solid var(--line);white-space:pre-wrap}
+
+@media(max-width:900px){.g2,.g3,.g2c,.card-grid{grid-template-columns:1fr}.full{grid-column:1}}
+</style>
+  <script>
+// ── SGMP Session Guard ─────────────────────────────────────
+// Verifica sesión activa antes de cargar el módulo
+(function() {
+  var SESSION_KEY = 'sgmp_session_v1';
+  var LAUNCHER_URL = 'https://ornate-rabanadas-0e6e8f.netlify.app/index.html';
+
+  function checkSession() {
+    // Si el login no es requerido en el Sheet, permitir acceso libre
+    // Si es requerido, verificar sesión
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) {
+        // No hay sesión - redirigir al launcher
+        window.location.replace(LAUNCHER_URL);
+        return false;
+      }
+      var session = JSON.parse(raw);
+      if (!session.username) {
+        window.location.replace(LAUNCHER_URL);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      window.location.replace(LAUNCHER_URL);
+      return false;
+    }
+  }
+
+  // Verificar inmediatamente
+  checkSession();
+})();
+// ── Fin SGMP Session Guard ─────────────────────────────────
+
+  </script>
+</head>
+<body>
+<div class="app">
+<header class="hdr">
+  <div class="hdr-left">
+    <h1>&#9881; SIPOC Builder</h1>
+    <p>Captura guiada &middot; Carga JSON del LMP &middot; Genera plantilla XML &middot; Compatible con cualquier IA &middot; draw.io</p>
+  </div>
+  <div class="hdr-right">
+    <button class="hdr-btn" onclick="switchTab('tab_manual')">&#128218; Manual</button>
+    <button class="hdr-btn" onclick="switchTab('tab_config')">&#9881; Config</button>
+    <span style="background:rgba(255,255,255,.15);padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;color:#fff">v7.0</span>
+  </div>
+</header>
+
+<nav class="nav">
+  <button class="nav-tab active" data-tab="tab_capture" onclick="switchTab('tab_capture')">1 &middot; Captura</button>
+  <button class="nav-tab" data-tab="tab_tpl" onclick="switchTab('tab_tpl')">2 &middot; Plantilla XML</button>
+  <button class="nav-tab" data-tab="tab_f1" onclick="switchTab('tab_f1')">F1 &middot; Verificar</button>
+  <button class="nav-tab" data-tab="tab_f2" onclick="switchTab('tab_f2')">F2 &middot; Flujo</button>
+  <button class="nav-tab" data-tab="tab_f3" onclick="switchTab('tab_f3')">F3 &middot; SIPOC</button>
+  <button class="nav-tab" data-tab="tab_out" onclick="switchTab('tab_out')">&#10003; Salida</button>
+  <button class="nav-tab" data-tab="tab_config" onclick="switchTab('tab_config')">&#9881; Config</button>
+  <button class="nav-tab" data-tab="tab_manual" onclick="switchTab('tab_manual')">&#128218; Manual</button>
+</nav>
+
+<div id="gmsg" class="msg info show">Selecciona el modo de captura o carga un JSON del LMP para comenzar.</div>
+<!-- ═══════════════════════════════════ TAB CAPTURA ═══════════════════════════════════ -->
+<div id="tab_capture" class="tab-content">
+  <div class="panel">
+    <h2 style="margin-bottom:12px">&#191;C&oacute;mo deseas iniciar?</h2>
+    <div class="g3">
+      <div class="card">
+        <h3>&#128221; Captura guiada</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Registra el proceso paso a paso: base, cat&aacute;logos SIPOC y actividades relacionales.</p>
+        <button class="primary" id="btn_guided">Iniciar captura guiada</button>
+      </div>
+      <div class="card">
+        <h3>&#128230; Cargar JSON del LMP</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Carga el JSON del LMP. Salta el Prompt 0 y va directo a la plantilla XML.</p>
+        <div class="field" style="margin-bottom:7px"><input type="file" id="lmp_file" accept=".json"/></div>
+        <button class="ok" id="btn_lmp">Cargar JSON y generar plantilla &#8594;</button>
+      </div>
+      <div class="card">
+        <h3>&#128196; Documento fuente</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Pega texto de un proceso existente. El sistema genera el Prompt 0 para la IA.</p>
+        <button class="primary" id="btn_doc">Iniciar desde documento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUIDED -->
+  <div id="guided_area" class="hidden">
+    <div class="panel">
+      <div class="stage"><strong>Paso 1 &middot; Base del proceso</strong><span>Datos generales que aparecer&aacute;n en el encabezado del diagrama.</span></div>
+      <div class="g2">
+        <div class="field"><label>C&oacute;digo del proceso</label><input id="g_code" placeholder="Ej: PR-30211"/></div>
+        <div class="field"><label>Nombre del proceso *</label><input id="g_name" placeholder="Ej: Gesti&oacute;n de Donaciones"/></div>
+        <div class="field full"><label>Finalidad *</label><input id="g_purpose" placeholder="Ej: Ejecutar donaciones a terceros que generen impacto positivo"/></div>
+        <div class="field full"><label>Notas aclaratorias al pie (una por l&iacute;nea)</label><textarea id="g_notes" placeholder="5.1. Nota uno&#10;5.2. Nota dos"></textarea></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="stage"><strong>Paso 2 &middot; Cat&aacute;logos SIPOC</strong><span>Elementos reutilizables. Las actividades referenciar&aacute;n estos cat&aacute;logos.</span></div>
+      <div class="card-grid">
+        <div class="card"><h3>Suppliers</h3><div class="field"><input id="in_sup" placeholder="Nombre proveedor externo"/></div><button class="sm" style="margin-top:6px" id="btn_add_sup">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th></th></tr></thead><tbody id="tb_sup"></tbody></table></div></div>
+        <div class="card"><h3>Inputs</h3><div class="field"><input id="in_inp" placeholder="Nombre entrada externa"/></div><button class="sm" style="margin-top:6px" id="btn_add_inp">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th></th></tr></thead><tbody id="tb_inp"></tbody></table></div></div>
+        <div class="card"><h3>Outputs</h3><div class="field"><input id="in_out" placeholder="Nombre salida externa"/></div><button class="sm" style="margin-top:6px" id="btn_add_out">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th></th></tr></thead><tbody id="tb_out"></tbody></table></div></div>
+        <div class="card"><h3>Customers</h3><div class="field"><input id="in_cus" placeholder="Nombre cliente externo"/></div><button class="sm" style="margin-top:6px" id="btn_add_cus">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th></th></tr></thead><tbody id="tb_cus"></tbody></table></div></div>
+        <div class="card"><h3>Actores internos</h3><div class="field"><input id="in_act" placeholder="Nombre actor / rol"/></div><button class="sm" style="margin-top:6px" id="btn_add_act">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th></th></tr></thead><tbody id="tb_act"></tbody></table></div></div>
+        <div class="card"><h3>Documentos gu&iacute;a</h3><div class="field"><input id="in_doc_name" placeholder="Nombre documento"/></div><div class="field"><input id="in_doc_ref" placeholder="C&oacute;digo / referencia"/></div><button class="sm" style="margin-top:6px" id="btn_add_doc">+ Agregar</button><div class="tbl-wrap"><table><thead><tr><th>Documento</th><th>Ref.</th><th></th></tr></thead><tbody id="tb_doc"></tbody></table></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="stage"><strong>Paso 3 &middot; Actividades relacionales</strong><span>Cada actividad declara actor, previas, siguientes y elementos SIPOC que conecta.</span></div>
+      <div class="g2">
+        <div class="field"><label>Actividad *</label><input id="a_name" placeholder="Ej: Analizar solicitud de donaci&oacute;n"/></div>
+        <div class="field"><label>Tipo *</label>
+          <select id="a_type">
+            <option value="operation">Operaci&oacute;n</option>
+            <option value="decision">Decisi&oacute;n</option>
+            <option value="control">Control / Verificaci&oacute;n</option>
+            <option value="document">Documento</option>
+          </select>
+        </div>
+        <div class="field"><label>Actor / ejecutor *</label><select id="a_actor"><option value="">&#8212; Seleccione &#8212;</option></select></div>
+        <div class="field"><label>Documento gu&iacute;a</label><select id="a_doc"><option value="">&#8212; Ninguno &#8212;</option></select></div>
+        <div class="field"><label>Actividad(es) previa(s) <span style="font-weight:400;text-transform:none">(Ctrl+clic)</span></label><select id="a_prev" multiple></select></div>
+        <div class="field"><label>Actividad(es) siguiente(s)</label><select id="a_next" multiple></select></div>
+        <div class="field"><label>Suppliers que alimentan esta actividad</label><select id="a_sup" multiple></select></div>
+        <div class="field"><label>Inputs que entran en esta actividad</label><select id="a_inp" multiple></select></div>
+        <div class="field"><label>Outputs que genera esta actividad</label><select id="a_outp" multiple></select></div>
+        <div class="field"><label>Customers que reciben de esta actividad</label><select id="a_cus" multiple></select></div>
+        <div class="field"><label style="text-transform:none;font-size:12px"><input type="checkbox" id="a_is_start"/>&nbsp; Es la actividad de entrada conceptual al proceso</label></div>
+        <div class="field"><label style="text-transform:none;font-size:12px"><input type="checkbox" id="a_is_end"/>&nbsp; Es la actividad de cierre conceptual del proceso</label></div>
+        <div class="field full"><label>Nota t&eacute;cnica</label><input id="a_note" placeholder="Ej: Si No -> Corregir | Si S&iacute; -> Continuar"/></div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="btn_add_act_row">+ Agregar actividad</button>
+        <span class="pill" id="act_count">0 actividades</span>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table><thead><tr><th>#</th><th>Actividad</th><th>Actor</th><th>Tipo</th><th>Previas</th><th>Siguientes</th><th>Entrada</th><th>Cierre</th><th></th></tr></thead>
+        <tbody id="tb_acts"></tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="stage"><strong>Paso 4 &middot; Preview y construcci&oacute;n</strong><span>Revisa el flujo antes de generar la plantilla XML.</span></div>
+      <div class="btn-row" style="margin-bottom:10px">
+        <button id="btn_preview">&#9654; Preview</button>
+        <button id="btn_export_json">&#11015; Exportar JSON</button>
+        <button class="ok" id="btn_to_tpl">Generar plantilla XML &#8594;</button>
+      </div>
+      <div id="preview_board" class="preview"><span style="color:var(--muted);font-size:12px;align-self:center">El preview aparecer&aacute; aqu&iacute;.</span></div>
+    </div>
+  </div>
+
+  <!-- DOCUMENT MODE -->
+  <div id="doc_area" class="hidden">
+    <div class="panel">
+      <div class="stage"><strong>Modo documento &middot; Prompt 0</strong><span>Pega el texto del proceso y genera el prompt para la IA.</span></div>
+      <div class="g2c">
+        <div>
+          <div class="field" style="margin-bottom:8px"><label>Texto del proceso</label><textarea id="doc_text" style="min-height:160px" placeholder="Pega aqu&iacute; la descripci&oacute;n, actas, transcripciones..."></textarea></div>
+          <button class="primary" id="btn_p0">Generar Prompt 0</button>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Prompt 0 generado</label>
+          <div id="p0_box" class="codebox" style="margin-top:5px"></div>
+          <div class="btn-row"><button id="btn_copy_p0">&#128203; Copiar Prompt 0</button></div>
+          <div class="field" style="margin-top:10px"><label>JSON de respuesta de la IA</label><textarea id="p0_resp" class="xml-ta" placeholder="Pega aqu&iacute; el JSON devuelto..."></textarea></div>
+          <div class="field"><input type="file" id="p0_file" accept=".json"/></div>
+          <div class="btn-row"><button class="ok" id="btn_load_p0">Cargar JSON y generar plantilla &#8594;</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB PLANTILLA ═══════════════════════════════════ -->
+<div id="tab_tpl" class="tab-content hidden">
+  <div class="panel">
+    <div class="stage"><strong>Plantilla XML generada autom&aacute;ticamente</strong><span>Arquitectura plana &mdash; todos los elementos en parent="1" con coordenadas absolutas.</span></div>
+    <div id="tpl_info" class="tpl-info">Sin datos a&uacute;n.</div>
+    <div class="field"><label>XML plantilla</label><textarea id="tpl_xml" class="xml-ta" style="min-height:160px" readonly></textarea></div>
+    <div class="btn-row between" style="margin-top:10px">
+      <div class="btn-row">
+        <button id="btn_copy_tpl">&#128203; Copiar XML plantilla</button>
+        <button class="warn" id="btn_dl_tpl">&#11015; Descargar plantilla.xml</button>
+      </div>
+      <button class="ok" id="btn_tpl_to_f1">Continuar a F1 &#8594;</button>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB F1 ═══════════════════════════════════ -->
+<div id="tab_f1" class="tab-content hidden">
+  <div class="panel">
+    <div class="stage"><strong>F1 &middot; Verificar nodos</strong><span>La plantilla ya tiene todos los nodos. La IA verifica posiciones y devuelve el XML sin modificaciones mayores.</span></div>
+    <div class="g2c">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Prompt F1</label>
+        <div id="pf1_box" class="codebox" style="margin-top:5px"></div>
+        <div class="btn-row"><button id="btn_copy_f1">&#128203; Copiar Prompt F1</button></div>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">XML resultado F1</label>
+        <textarea id="xml_f1" class="xml-ta" style="margin-top:5px" placeholder="Pega el XML devuelto por la IA..."></textarea>
+        <div id="vld_f1" class="vld"></div>
+        <div class="btn-row">
+          <button id="btn_vld_f1">&#128269; Validar</button>
+          <button class="ok" id="btn_f1_next">Continuar a F2 &#8594;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB F2 ═══════════════════════════════════ -->
+<div id="tab_f2" class="tab-content hidden">
+  <div class="panel">
+    <div class="stage"><strong>F2 &middot; Conectar flujo interno</strong><span>Conecta secuencias y decisiones del proceso. Sin tocar SIPOC todav&iacute;a.</span></div>
+    <div class="g2c">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Prompt F2</label>
+        <div id="pf2_box" class="codebox" style="margin-top:5px"></div>
+        <div class="btn-row"><button id="btn_copy_f2">&#128203; Copiar Prompt F2</button></div>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">XML resultado F2</label>
+        <textarea id="xml_f2" class="xml-ta" style="margin-top:5px" placeholder="Pega el XML devuelto por la IA..."></textarea>
+        <div id="vld_f2" class="vld"></div>
+        <div class="btn-row">
+          <button id="btn_vld_f2">&#128269; Validar</button>
+          <button class="ok" id="btn_f2_next">Continuar a F3 &#8594;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB F3 ═══════════════════════════════════ -->
+<div id="tab_f3" class="tab-content hidden">
+  <div class="panel">
+    <div class="stage"><strong>F3 &middot; Integrar capa SIPOC</strong><span>Conecta Suppliers &#8594; Inputs &#8594; Proceso &#8594; Outputs &#8594; Customers como capas perif&eacute;ricas.</span></div>
+    <div class="g2c">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Prompt F3</label>
+        <div id="pf3_box" class="codebox" style="margin-top:5px"></div>
+        <div class="btn-row"><button id="btn_copy_f3">&#128203; Copiar Prompt F3</button></div>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">XML resultado F3</label>
+        <textarea id="xml_f3" class="xml-ta" style="margin-top:5px" placeholder="Pega el XML devuelto por la IA..."></textarea>
+        <div id="vld_f3" class="vld"></div>
+        <div class="btn-row">
+          <button id="btn_vld_f3">&#128269; Validar</button>
+          <button class="ok" id="btn_f3_final">&#10003; Generar salida final</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB SALIDA ═══════════════════════════════════ -->
+<div id="tab_out" class="tab-content hidden">
+  <div class="panel">
+    <h2 style="margin-bottom:12px">&#10003; Salida final</h2>
+    <div id="out_report" style="margin-bottom:12px"></div>
+    <div class="field"><label>XML final &mdash; encabezado y notas incorporados</label><textarea id="xml_final" class="xml-ta" style="min-height:180px" readonly></textarea></div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="warn" id="btn_dl_final">&#11015; Descargar XML final</button>
+      <button class="primary" id="btn_drawio">&#128279; Abrir draw.io</button>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB CONFIG ═══════════════════════════════════ -->
+<div id="tab_config" class="tab-content hidden">
+  <div class="panel">
+    <h2 style="margin-bottom:14px">&#9881; Configuraci&oacute;n</h2>
+    <div class="cfg-sec">
+      <h3>&#127991; Etiquetas de zonas SIPOC</h3>
+      <div class="g3">
+        <div class="field"><label>Suppliers</label><input id="cfg_lbl_sup" value="SUPPLIERS"/></div>
+        <div class="field"><label>Inputs</label><input id="cfg_lbl_inp" value="INPUTS"/></div>
+        <div class="field"><label>Proceso</label><input id="cfg_lbl_proc" value="PROCESO"/></div>
+        <div class="field"><label>Outputs</label><input id="cfg_lbl_out" value="OUTPUTS"/></div>
+        <div class="field"><label>Customers</label><input id="cfg_lbl_cus" value="CUSTOMERS"/></div>
+      </div>
+    </div>
+    <div class="cfg-sec">
+      <h3>&#127912; Colores de zonas</h3>
+      <div class="g3">
+        <div class="field"><label>Suppliers</label><input type="color" id="cfg_col_sup" value="#e07820" style="height:36px"/></div>
+        <div class="field"><label>Inputs</label><input type="color" id="cfg_col_inp" value="#1a7ac4" style="height:36px"/></div>
+        <div class="field"><label>Proceso</label><input type="color" id="cfg_col_proc" value="#1d4ed8" style="height:36px"/></div>
+        <div class="field"><label>Outputs</label><input type="color" id="cfg_col_out" value="#2e8b44" style="height:36px"/></div>
+        <div class="field"><label>Customers</label><input type="color" id="cfg_col_cus" value="#c0306a" style="height:36px"/></div>
+      </div>
+    </div>
+    <div class="cfg-sec">
+      <h3>&#128221; Editor de prompts</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Deja vac&iacute;o para usar el prompt original. Los cambios se aplican al guardar.</p>
+      <div style="margin-bottom:8px"><label>Prompt 0</label><textarea id="cfg_p0" style="min-height:80px;font-size:11px;font-family:monospace" placeholder="Deja vac&iacute;o para usar el original..."></textarea></div>
+      <div style="margin-bottom:8px"><label>Prompt F1</label><textarea id="cfg_f1" style="min-height:80px;font-size:11px;font-family:monospace" placeholder="Deja vac&iacute;o para usar el original..."></textarea></div>
+      <div style="margin-bottom:8px"><label>Prompt F2</label><textarea id="cfg_f2" style="min-height:80px;font-size:11px;font-family:monospace" placeholder="Deja vac&iacute;o para usar el original..."></textarea></div>
+      <div style="margin-bottom:8px"><label>Prompt F3</label><textarea id="cfg_f3" style="min-height:80px;font-size:11px;font-family:monospace" placeholder="Deja vac&iacute;o para usar el original..."></textarea></div>
+      <div class="btn-row">
+        <button id="btn_save_cfg">&#128190; Guardar prompts</button>
+        <button id="btn_reset_cfg">&#8635; Restaurar originales</button>
+        <button class="ok" id="btn_export_cfg">&#11015; Exportar config</button>
+        <input type="file" id="cfg_import_file" accept=".json" style="max-width:200px"/>
+        <button id="btn_import_cfg">&#11014; Importar config</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ═══════════════════════════════════ TAB MANUAL ═══════════════════════════════════ -->
+<div id="tab_manual" class="tab-content hidden">
+  <div class="panel">
+    <h2 style="margin-bottom:14px">&#128218; Manual &mdash; SIPOC Builder v7.0</h2>
+    <div class="man-sec">
+      <h3>Flujo de trabajo</h3>
+      <ol>
+        <li><strong>Captura</strong> &mdash; Guiada paso a paso, JSON del LMP, o documento fuente.</li>
+        <li><strong>Plantilla XML</strong> &mdash; El builder genera la estructura con coordenadas calculadas.</li>
+        <li><strong>F1</strong> &mdash; La IA verifica que los nodos est&eacute;n correctamente posicionados.</li>
+        <li><strong>F2</strong> &mdash; La IA conecta el flujo interno (secuencias y decisiones).</li>
+        <li><strong>F3</strong> &mdash; La IA integra la capa SIPOC perif&eacute;rica.</li>
+        <li><strong>Salida</strong> &mdash; XML final con encabezado y notas. Importa en draw.io.</li>
+      </ol>
+    </div>
+    <div class="man-sec">
+      <h3>Importar en draw.io</h3>
+      <ol>
+        <li>Abre <code>app.diagrams.net</code></li>
+        <li>Ve a <code>Extras &rarr; Edit Diagram</code></li>
+        <li>Borra el contenido, pega el XML y haz clic en Cerrar</li>
+        <li>Usa <code>Ctrl+Shift+H</code> para ajustar la vista</li>
+      </ol>
+    </div>
+    <div class="man-sec">
+      <h3>Contrato JSON del LMP</h3>
+      <pre>{
+  "sipoc_input": {
+    "process_code": "PR-30211",
+    "process_name": "Gesti&oacute;n de Donaciones",
+    "purpose": "Ejecutar donaciones a terceros...",
+    "notes": "5.1. Nota uno
+5.2. Nota dos",
+    "suppliers": ["Solicitante"],
+    "inputs": ["Solicitud de Donaci&oacute;n RE-30211A"],
+    "outputs": ["Pedido de Donaci&oacute;n"],
+    "customers": ["Proveedor"],
+    "actors": ["Jefe de RR.PP.", "Asistente de Gerencia"],
+    "documents": ["RE-30211A"],
+    "activities": [{
+      "name": "Recibir solicitud",
+      "type": "operation",
+      "actor": "Jefe de RR.PP.",
+      "document": "RE-30211A",
+      "previous": null,
+      "next": "Analizar solicitud",
+      "is_start": true,
+      "is_end": false,
+      "note": ""
+    }]
+  }
+}</pre>
+    </div>
+    <div class="man-sec">
+      <h3>Preguntas de entrevista para el LMP</h3>
+      <p><strong>Del proceso:</strong></p>
+      <ul>
+        <li>&#191;Cu&aacute;l es el c&oacute;digo y nombre oficial del proceso?</li>
+        <li>&#191;Cu&aacute;l es la finalidad en una oraci&oacute;n?</li>
+        <li>&#191;Qui&eacute;nes son los proveedores externos (Suppliers)?</li>
+        <li>&#191;Qu&eacute; entradas externas recibe el proceso (Inputs)?</li>
+        <li>&#191;Qu&eacute; salidas genera hacia el exterior (Outputs)?</li>
+        <li>&#191;Qui&eacute;nes son los receptores de esas salidas (Customers)?</li>
+        <li>&#191;Qu&eacute; actores o roles participan internamente?</li>
+        <li>&#191;Qu&eacute; documentos gu&iacute;an las actividades?</li>
+        <li>&#191;Hay notas aclaratorias o excepciones?</li>
+      </ul>
+      <p><strong>Por actividad:</strong></p>
+      <ul>
+        <li>&#191;Cu&aacute;l es el nombre? &#191;Es operaci&oacute;n, decisi&oacute;n o control?</li>
+        <li>&#191;Qui&eacute;n la ejecuta? &#191;Qu&eacute; documento usa?</li>
+        <li>&#191;Qu&eacute; actividad viene antes? &#191;Qu&eacute; actividad sigue?</li>
+        <li>&#191;Es la primera actividad del flujo? &#191;Es la &uacute;ltima?</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- ═══ LOGIN MODAL ═══ -->
+<div id="login_overlay" style="display:none;position:fixed;inset:0;background:rgba(15,25,45,.82);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+  <div style="background:#fff;border-radius:16px;padding:36px 40px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:28px;margin-bottom:8px">&#9881;</div>
+      <h2 style="font-size:18px;color:#162033;margin-bottom:4px">SIPOC Builder</h2>
+      <p style="font-size:12px;color:#5a7090">Configuraci&oacute;n &mdash; Acceso restringido</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#5a7090;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Usuario</label>
+        <input id="login_user" type="text" placeholder="Usuario" style="width:100%;padding:10px 12px;border:1px solid #d4dde8;border-radius:8px;font-size:14px;font-family:inherit" autocomplete="off"/>
+      </div>
+      <div>
+        <label style="font-size:10px;font-weight:700;color:#5a7090;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Clave</label>
+        <input id="login_pass" type="password" placeholder="Clave" style="width:100%;padding:10px 12px;border:1px solid #d4dde8;border-radius:8px;font-size:14px;font-family:inherit"/>
+      </div>
+      <div id="login_err" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:7px;padding:8px 12px;font-size:12px;color:#991b1b;text-align:center">
+        Usuario o clave incorrectos.
+      </div>
+      <button id="login_btn" style="margin-top:4px;padding:11px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Ingresar</button>
+    </div>
+    <p style="font-size:10px;color:#9ab0c8;text-align:center;margin-top:18px">Piloto interno &mdash; acceso autorizado</p>
+  </div>
+</div>
+</div><!-- end .app --><script>
+
+// ══════════════════════════════════════════════════════
+// SGMP · Loader de prompts desde Sheet
+// Incluir este bloque al inicio del <script> de cada módulo
+// ══════════════════════════════════════════════════════
+var SGMP_API = 'https://script.google.com/macros/s/AKfycbxacrnEiiTVyip9CqJSelbN81BBt-qVfrmwo2Yyb7SfLw9Co48Oua8OPlu-SDmhi1kj/exec';
+var SGMP_PROMPTS = {};
+var SGMP_LOADED  = false;
+
+function sgmpLoadPrompts(moduleCode, onReady) {
+  var cacheKey = 'sgmp_p_' + moduleCode;
+  try {
+    var cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      var arr = JSON.parse(cached);
+      arr.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+      SGMP_LOADED = true;
+      onReady();
+      return;
+    }
+  } catch(e) {}
+
+  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.ok && res.data && res.data.length) {
+        res.data.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
+      }
+      SGMP_LOADED = true;
+      onReady();
+    })
+    .catch(function() {
+      SGMP_LOADED = true;
+      onReady(); // continúa con prompts vacíos — módulo funciona igual
+    });
+}
+
+// Obtener prompt — nunca falla, devuelve fallback si no hay nada
+function sgmpPrompt(key, fallback) {
+  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
+}
+
+// Auth admin contra Sheet
+function sgmpAuthAdmin(username, password, onOk, onErr) {
+  var url = SGMP_API + '?action=auth_admin&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
+  fetch(url).then(function(r){return r.json();}).then(function(res){
+    if (res.ok) { sessionStorage.setItem('sgmp_admin_token', res.data.token); onOk(res.data); }
+    else onErr(res.error || 'Credenciales incorrectas.');
+  }).catch(function(){ onErr('Error de conexión.'); });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+const S = {
+  sp: null,
+  tplXml: '', idRef: '',
+  xmlF1: '', xmlF2: '', xmlF3: '', xmlFinal: '',
+  cats: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documents:[] },
+  acts: [],
+  cfg: {
+    lbl_sup:'SUPPLIERS', lbl_inp:'INPUTS', lbl_proc:'PROCESO', lbl_out:'OUTPUTS', lbl_cus:'CUSTOMERS',
+    col_sup:'#e07820', col_inp:'#1a7ac4', col_proc:'#1d4ed8', col_out:'#2e8b44', col_cus:'#c0306a',
+    prompts: { p0:'', f1:'', f2:'', f3:'' }
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════
+const $  = id => document.getElementById(id);
+const ex = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function gMsg(type, text) {
+  const m = $('gmsg');
+  m.className = 'msg show ' + type;
+  m.textContent = text;
+}
+
+function switchTab(id) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  $(id).classList.remove('hidden');
+  const nb = document.querySelector('[data-tab="' + id + '"]');
+  if (nb) nb.classList.add('active');
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text)
+    .then(() => gMsg('ok', 'Copiado al portapapeles.'))
+    .catch(() => gMsg('warn', 'No se pudo copiar. Selecciona y copia manualmente.'));
+}
+
+function dlText(text, fname) {
+  if (!text) { gMsg('warn', 'No hay contenido para descargar.'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'text/plain;charset=utf-8'}));
+  a.download = fname;
+  a.click();
+  gMsg('ok', 'Descargado: ' + fname);
+}
+
+function readFile(input, cb) {
+  const f = input.files[0];
+  if (!f) { gMsg('warn', 'Selecciona un archivo primero.'); return; }
+  const r = new FileReader();
+  r.onload = e => cb(e.target.result);
+  r.readAsText(f);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VALIDATOR
+// ═══════════════════════════════════════════════════════════════
+function validateXML(srcId, vldId) {
+  const el = $(vldId);
+  let str = ($(srcId).value || '').trim();
+  if (!str) {
+    el.className = 'vld show bad';
+    el.textContent = '\u274c Campo vac\u00edo \u2014 pega el XML devuelto por la IA.';
+    return false;
+  }
+  // Strip markdown fences
+  const fence = str.match(/```(?:xml)?\s*([\s\S]*?)```/);
+  if (fence) str = fence[1].trim();
+  // Basic check
+  if (!str.includes('<mxGraphModel') && !str.includes('<mxCell')) {
+    el.className = 'vld show bad';
+    el.textContent = '\u274c No es XML draw.io v\u00e1lido. Copia el bloque que empieza con <mxGraphModel.';
+    return false;
+  }
+  const v = str.split('vertex="1"').length - 1;
+  const e = str.split('edge="1"').length - 1;
+  if (v < 2) {
+    el.className = 'vld show bad';
+    el.textContent = '\u274c Solo ' + v + ' nodos \u2014 la IA omiti\u00f3 los nodos originales. Fusiona manualmente.';
+    return false;
+  }
+  el.className = 'vld show ok';
+  el.textContent = '\u2705 XML v\u00e1lido \u2014 ' + v + ' nodos, ' + e + ' conexiones.';
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CATALOG
+// ═══════════════════════════════════════════════════════════════
+const CAT_TB = { suppliers:'tb_sup', inputs:'tb_inp', outputs:'tb_out', customers:'tb_cus', actors:'tb_act', documents:'tb_doc' };
+
+function addCat(type) {
+  let item;
+  if (type === 'documents') {
+    const n = $('in_doc_name').value.trim();
+    if (!n) { gMsg('warn', 'Ingresa el nombre del documento.'); return; }
+    item = { name: n, ref: $('in_doc_ref').value.trim() };
+    $('in_doc_name').value = ''; $('in_doc_ref').value = '';
+  } else {
+    const ids = { suppliers:'in_sup', inputs:'in_inp', outputs:'in_out', customers:'in_cus', actors:'in_act' };
+    const v = $(ids[type]).value.trim();
+    if (!v) { gMsg('warn', 'Ingresa un valor antes de agregar.'); return; }
+    item = { name: v };
+    $(ids[type]).value = '';
+  }
+  S.cats[type].push(item);
+  renderCatTable(type);
+  syncSelects();
+  gMsg('ok', 'Elemento agregado.');
+}
+
+function removeCat(type, idx) {
+  S.cats[type].splice(idx, 1);
+  renderCatTable(type);
+  syncSelects();
+}
+
+function renderCatTable(type) {
+  const tb = $(CAT_TB[type]);
+  if (!tb) return;
+  const items = S.cats[type];
+  if (!items.length) {
+    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Sin elementos.</td></tr>';
+    return;
+  }
+  if (type === 'documents') {
+    tb.innerHTML = items.map((it, i) =>
+      `<tr><td>${ex(it.name)}</td><td>${ex(it.ref||'')}</td><td><button class="sm" onclick="removeCat('documents',${i})">\u2715</button></td></tr>`
+    ).join('');
+  } else {
+    tb.innerHTML = items.map((it, i) =>
+      `<tr><td>${ex(it.name)}</td><td><button class="sm" onclick="removeCat('${type}',${i})">\u2715</button></td></tr>`
+    ).join('');
+  }
+}
+
+function syncSelects() {
+  const setOpts = (id, items, multi) => {
+    const el = $(id); if (!el) return;
+    const prev = Array.from(el.selectedOptions).map(o => o.value);
+    el.innerHTML = (multi ? '' : '<option value="">\u2014 Seleccione \u2014</option>') +
+      items.map((it, i) => `<option value="${i}">${ex(it.name || it)}</option>`).join('');
+    if (multi) Array.from(el.options).forEach(o => { if (prev.includes(o.value)) o.selected = true; });
+  };
+  setOpts('a_actor', S.cats.actors, false);
+  setOpts('a_doc',   S.cats.documents, false);
+  setOpts('a_prev',  S.acts, true);
+  setOpts('a_next',  S.acts, true);
+  setOpts('a_sup',   S.cats.suppliers, true);
+  setOpts('a_inp',   S.cats.inputs, true);
+  setOpts('a_outp',  S.cats.outputs, true);
+  setOpts('a_cus',   S.cats.customers, true);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ACTIVITIES
+// ═══════════════════════════════════════════════════════════════
+function addActivity() {
+  const name = $('a_name').value.trim();
+  const actorIdx = $('a_actor').value;
+  if (!name) { gMsg('warn', 'La actividad debe tener nombre.'); return; }
+  if (actorIdx === '') { gMsg('warn', 'Selecciona un actor.'); return; }
+  const sv = id => Array.from($(id).selectedOptions).map(o => parseInt(o.value));
+  const act = {
+    name,
+    type: $('a_type').value,
+    actor: S.cats.actors[parseInt(actorIdx)]?.name || '',
+    document: $('a_doc').value !== '' ? (S.cats.documents[parseInt($('a_doc').value)]?.name || '') : '',
+    previous: sv('a_prev').map(i => S.acts[i]?.name).filter(Boolean),
+    next:     sv('a_next').map(i => S.acts[i]?.name).filter(Boolean),
+    ext_suppliers: sv('a_sup').map(i => S.cats.suppliers[i]?.name).filter(Boolean),
+    ext_inputs:    sv('a_inp').map(i => S.cats.inputs[i]?.name).filter(Boolean),
+    ext_outputs:   sv('a_outp').map(i => S.cats.outputs[i]?.name).filter(Boolean),
+    ext_customers: sv('a_cus').map(i => S.cats.customers[i]?.name).filter(Boolean),
+    is_start: $('a_is_start').checked,
+    is_end:   $('a_is_end').checked,
+    note: $('a_note').value.trim()
+  };
+  S.acts.push(act);
+  $('a_name').value = ''; $('a_note').value = '';
+  $('a_is_start').checked = false; $('a_is_end').checked = false;
+  ['a_prev','a_next','a_sup','a_inp','a_outp','a_cus'].forEach(id => {
+    Array.from($(id).options).forEach(o => o.selected = false);
+  });
+  renderActsTable();
+  syncSelects();
+  gMsg('ok', 'Actividad agregada.');
+}
+
+function removeAct(idx) { S.acts.splice(idx, 1); renderActsTable(); syncSelects(); }
+
+function renderActsTable() {
+  $('act_count').textContent = S.acts.length + ' actividades';
+  const tb = $('tb_acts');
+  if (!S.acts.length) {
+    tb.innerHTML = '<tr><td colspan="9" style="color:var(--muted)">Sin actividades.</td></tr>'; return;
+  }
+  tb.innerHTML = S.acts.map((a, i) => `<tr>
+    <td>${i+1}</td><td>${ex(a.name)}</td><td>${ex(a.actor)}</td><td>${ex(a.type)}</td>
+    <td>${ex((a.previous||[]).join(', '))}</td><td>${ex((a.next||[]).join(', '))}</td>
+    <td>${a.is_start ? '\u2713' : ''}</td><td>${a.is_end ? '\u2713' : ''}</td>
+    <td><button class="sm" onclick="removeAct(${i})">\u2715</button></td>
+  </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODES
+// ═══════════════════════════════════════════════════════════════
+function startGuided() {
+  $('guided_area').classList.remove('hidden');
+  $('doc_area').classList.add('hidden');
+  gMsg('info', 'Completa base, cat\u00e1logos y actividades.');
+}
+function startDocument() {
+  $('doc_area').classList.remove('hidden');
+  $('guided_area').classList.add('hidden');
+  gMsg('info', 'Pega el texto del proceso y genera el Prompt 0.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════════════════
+function buildPreview() {
+  const lanes = {};
+  S.acts.forEach(a => { if (!lanes[a.actor]) lanes[a.actor] = []; lanes[a.actor].push(a); });
+  if (!Object.keys(lanes).length) {
+    $('preview_board').innerHTML = '<span style="color:var(--muted);font-size:12px;align-self:center">Sin actividades.</span>'; return;
+  }
+  $('preview_board').innerHTML = Object.entries(lanes).map(([actor, acts]) => `
+    <div class="lane">
+      <div class="lane-hd">${ex(actor)}</div>
+      <div class="lane-bd">
+        ${acts.map(a => `<div class="ncard ${ex(a.type)}">
+          <strong>${ex(a.name)}</strong>
+          ${a.previous?.length ? '<small>\u2190 ' + ex(a.previous.join(', ')) + '</small>' : ''}
+          ${a.next?.length ? '<small>\u2192 ' + ex(a.next.join(', ')) + '</small>' : ''}
+          ${a.is_start ? '<small style="color:var(--green)">\u25b6 Entrada</small>' : ''}
+          ${a.is_end ? '<small style="color:#16a34a">\u25a0 Cierre</small>' : ''}
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+  gMsg('ok', 'Preview generado.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BUILD SP FROM GUIDED
+// ═══════════════════════════════════════════════════════════════
+function buildSP() {
+  return {
+    process_code: $('g_code').value.trim(),
+    process_name: $('g_name').value.trim(),
+    purpose:      $('g_purpose').value.trim(),
+    notes:        $('g_notes').value.trim(),
+    suppliers: S.cats.suppliers.map(x => x.name),
+    inputs:    S.cats.inputs.map(x => x.name),
+    outputs:   S.cats.outputs.map(x => x.name),
+    customers: S.cats.customers.map(x => x.name),
+    actors:    S.cats.actors.map(x => x.name),
+    documents: S.cats.documents.map(x => x.name),
+    activities: S.acts
+  };
+}
+
+function exportJSON() {
+  dlText(JSON.stringify({ sipoc_input: buildSP() }, null, 2), 'sipoc_export.json');
+}
+
+function goToTemplate() {
+  if (!$('g_name').value.trim()) { gMsg('warn', 'Completa el nombre del proceso.'); return; }
+  if (!S.acts.length) { gMsg('warn', 'Agrega al menos una actividad.'); return; }
+  S.sp = buildSP();
+  genTemplate();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LMP LOAD
+// ═══════════════════════════════════════════════════════════════
+function loadLMP() {
+  readFile($('lmp_file'), raw => {
+    try {
+      let parsed = JSON.parse(raw);
+      let sp = parsed.sipoc_input || parsed.structured_process || parsed;
+      if (!sp.process_name) { gMsg('err', 'El JSON no tiene process_name.'); return; }
+      if (sp.activities) sp.activities = normActs(sp.activities);
+      S.sp = sp;
+      genTemplate();
+    } catch(e) { gMsg('err', 'JSON inv\u00e1lido: ' + e.message); }
+  });
+}
+
+function normActs(acts) {
+  return acts.map(a => ({
+    name: a.name || '',
+    type: a.type || 'operation',
+    actor: a.actor || a.actor_id || '',
+    document: a.document || '',
+    previous: Array.isArray(a.previous) ? a.previous : (a.previous ? [a.previous] : []),
+    next:     Array.isArray(a.next)     ? a.next     : (a.next     ? [a.next]     : []),
+    ext_suppliers: a.ext_suppliers || [],
+    ext_inputs:    a.ext_inputs    || [],
+    ext_outputs:   a.ext_outputs   || [],
+    ext_customers: a.ext_customers || [],
+    is_start: !!a.is_start,
+    is_end:   !!a.is_end,
+    note: a.note || a.notes || ''
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOCUMENT MODE P0
+// ═══════════════════════════════════════════════════════════════
+function buildP0() {
+  const text = $('doc_text').value.trim();
+  if (!text) { gMsg('warn', 'Pega el texto del proceso.'); return; }
+  $('p0_box').textContent = getPrompt('p0', text);
+  gMsg('info', 'Prompt 0 generado. C\u00f3pialo y ej\u00e9cutalo en la IA.');
+}
+
+function loadP0() {
+  const file = $('p0_file').files[0];
+  if (file) { readFile($('p0_file'), processP0); return; }
+  processP0($('p0_resp').value.trim());
+}
+
+function processP0(raw) {
+  if (!raw) { gMsg('warn', 'Pega el JSON o carga un archivo.'); return; }
+  try {
+    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const clean = fence ? fence[1].trim() : raw;
+    let parsed = JSON.parse(clean);
+    let sp = parsed.structured_process || parsed.sipoc_input || parsed;
+    if (!sp.process_name) { gMsg('err', 'El JSON no tiene process_name.'); return; }
+    if (sp.activities) sp.activities = normActs(sp.activities);
+    S.sp = sp;
+    genTemplate();
+  } catch(e) { gMsg('err', 'JSON inv\u00e1lido: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TEMPLATE GENERATOR
+// ═══════════════════════════════════════════════════════════════
+function genTemplate() {
+  const sp = S.sp;
+  const N = x => (Array.isArray(x) ? x : []).map(v => typeof v === 'string' ? v : (v.name || String(v)));
+  const actors = N(sp.catalogs?.actors  || sp.actors);
+  const sups   = N(sp.catalogs?.suppliers || sp.suppliers);
+  const inps   = N(sp.catalogs?.inputs  || sp.inputs);
+  const outs   = N(sp.catalogs?.outputs || sp.outputs);
+  const cuss   = N(sp.catalogs?.customers || sp.customers);
+  const acts   = sp.activities || [];
+
+  // Layout constants
+  const COL_S=190, COL_G=10, LANE_W=290, LANE_HDR=38;
+  const NODE_H=44, NODE_W=230, NODE_PAD=28, GAP_V=26;
+  const ZONE_LBL_H=36, PROC_TOP=120;
+  const SN_H=40, SN_W=148, SN_GAP=12, SN_PAD=22;
+
+  // Identify entry/exit activities for coloring
+  const startActs = new Set(acts.filter(a => a.is_start).map(a => a.name));
+  const endActs   = new Set(acts.filter(a => a.is_end).map(a => a.name));
+  // Fallback: first and last
+  if (!startActs.size && acts.length) startActs.add(acts[0].name);
+  if (!endActs.size && acts.length)   endActs.add(acts[acts.length-1].name);
+
+  // Identify inputs linked to start acts and outputs linked to end acts
+  const startInputs  = new Set(acts.filter(a => startActs.has(a.name)).flatMap(a => a.ext_inputs  || []));
+  const endOutputs   = new Set(acts.filter(a => endActs.has(a.name)).flatMap(a => a.ext_outputs || []));
+
+  // Per-actor count for height
+  const apc = {};
+  actors.forEach(a => apc[a] = 0);
+  acts.forEach(a => { const k = a.actor || actors[0]; apc[k] = (apc[k]||0) + 1; });
+  const maxA = Math.max(4, ...Object.values(apc));
+  const laneH = LANE_HDR + maxA*(NODE_H+GAP_V) + GAP_V*2;
+  const sipocItems = Math.max(sups.length, inps.length, outs.length, cuss.length, 3);
+  const sipocH = Math.max(laneH, ZONE_LBL_H + sipocItems*(SN_H+SN_GAP) + SN_PAD*2);
+
+  // X positions
+  const xSup=20, xInp=xSup+COL_S+COL_G;
+  const xProc=xInp+COL_S+COL_G;
+  const procW=Math.max(actors.length,1)*LANE_W;
+  const xOut=xProc+procW+COL_G, xCus=xOut+COL_S+COL_G;
+  const totalW=xCus+COL_S+20;
+
+  let idC=100; const nid=()=>String(idC++);
+  const cells=[], nodeMap={}, sipocMap={suppliers:{},inputs:{},outputs:{},customers:{}}, laneMap={};
+  const C = S.cfg;
+  const colBodyY = PROC_TOP+ZONE_LBL_H;
+
+  cells.push('<mxCell id="0"/>','<mxCell id="1" parent="0"/>');
+
+  // Zone label bars
+  [[C.lbl_sup,xSup,COL_S,C.col_sup],[C.lbl_inp,xInp,COL_S,C.col_inp],
+   [C.lbl_proc,xProc,procW,C.col_proc],[C.lbl_out,xOut,COL_S,C.col_out],[C.lbl_cus,xCus,COL_S,C.col_cus]
+  ].forEach(([lbl,x,w,fill]) => {
+    cells.push(`<mxCell id="${nid()}" value="${ex(lbl)}" style="text;html=1;strokeColor=${fill};fillColor=${fill};align=center;verticalAlign=middle;fontStyle=1;fontSize=12;fontColor=#ffffff;rounded=0;" vertex="1" parent="1"><mxGeometry x="${x}" y="${PROC_TOP}" width="${w}" height="${ZONE_LBL_H}" as="geometry"/></mxCell>`);
+  });
+
+  // Zone backgrounds
+  [[xSup,COL_S,'#fff8ee','#e8a060'],[xInp,COL_S,'#eef6ff','#70aae0'],
+   [xOut,COL_S,'#eefff4','#70c898'],[xCus,COL_S,'#fff0f6','#e890b8']
+  ].forEach(([x,w,fill,stroke]) => {
+    cells.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=${stroke};opacity=60;" vertex="1" parent="1"><mxGeometry x="${x}" y="${colBodyY}" width="${w}" height="${sipocH}" as="geometry"/></mxCell>`);
+  });
+
+  // Swimlanes
+  const effActors = actors.length > 0 ? actors : ['Actor'];
+  effActors.forEach((actor, ai) => {
+    const lid=nid(), lx=xProc+ai*LANE_W, ly=colBodyY;
+    laneMap[actor] = {id:lid, x:lx, y:ly};
+    cells.push(`<mxCell id="${lid}" value="${ex(actor)}" style="swimlane;startSize=${LANE_HDR};fillColor=#f8fbff;strokeColor=#7090c0;fontSize=11;fontStyle=1;align=center;" vertex="1" parent="1"><mxGeometry x="${lx}" y="${ly}" width="${LANE_W}" height="${laneH}" as="geometry"/></mxCell>`);
+  });
+
+  // Activity nodes
+  const actCount = {};
+  acts.forEach((a, idx) => {
+    const actor = (a.actor && laneMap[a.actor]) ? a.actor : effActors[0];
+    if (!actCount[actor]) actCount[actor] = 0;
+    const lane = laneMap[actor] || Object.values(laneMap)[0];
+    const absX = lane.x + NODE_PAD;
+    const absY = lane.y + LANE_HDR + GAP_V + actCount[actor]*(NODE_H+GAP_V);
+    const nidV = nid();
+    nodeMap['act_'+idx] = {id:nidV, name:a.name, actor, absX, absY, type:a.type};
+
+    const isDec  = a.type==='decision';
+    const nw = isDec ? NODE_H*2.1 : NODE_W;
+    const nh = isDec ? NODE_H*1.4 : NODE_H;
+    const nx = isDec ? (lane.x+(LANE_W-nw)/2) : absX;
+
+    // Color logic: entry=light green, exit=dark green, decision=yellow, default=white
+    let fillColor='#ffffff', strokeColor='#2359b8';
+    if (startActs.has(a.name))      { fillColor='#d1fae5'; strokeColor='#16a34a'; }
+    else if (endActs.has(a.name))   { fillColor='#86efac'; strokeColor='#15803d'; }
+    else if (isDec)                  { fillColor='#fff8dc'; strokeColor='#c8a000'; }
+
+    const style = isDec
+      ? `rhombus;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`
+      : `rounded=1;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`;
+
+    cells.push(`<mxCell id="${nidV}" value="${ex(a.name)}" style="${style}" vertex="1" parent="1"><mxGeometry x="${Math.round(nx)}" y="${Math.round(absY)}" width="${Math.round(nw)}" height="${Math.round(nh)}" as="geometry"/></mxCell>`);
+    actCount[actor]++;
+  });
+
+  // SIPOC item nodes
+  const sStyle=(fill,fc,highlight)=>`rounded=1;whiteSpace=wrap;html=1;fillColor=${highlight||fill};strokeColor=#888;fontColor=${fc};fontSize=10;fontStyle=1;`;
+  [[sups,xSup,'#ffd8a0','#5d3c00','suppliers',null],
+   [inps,xInp,'#b8d8f8','#0d2d4e','inputs','#d1fae5'],
+   [outs,xOut,'#a8e8c0','#0d3d1e','outputs','#86efac'],
+   [cuss,xCus,'#f8c0d8','#4d0d24','customers',null]
+  ].forEach(([items,x,fill,fc,key,hlColor]) => {
+    items.forEach((item, i) => {
+      const sid=nid(), nx=x+(COL_S-SN_W)/2, ny=colBodyY+SN_PAD+i*(SN_H+SN_GAP);
+      sipocMap[key][item] = {id:sid};
+      // Highlight entry inputs and exit outputs
+      const isHL = (key==='inputs' && startInputs.has(item)) || (key==='outputs' && endOutputs.has(item));
+      cells.push(`<mxCell id="${sid}" value="${ex(item)}" style="${sStyle(fill,fc,isHL?hlColor:null)}" vertex="1" parent="1"><mxGeometry x="${nx}" y="${ny}" width="${SN_W}" height="${SN_H}" as="geometry"/></mxCell>`);
+    });
+  });
+
+  // ID reference map
+  const idLines = ['=== MAPA DE IDs (usar en source= y target= de los edges) ===','','SWIMLANES:'];
+  Object.entries(laneMap).forEach(([a,v]) => idLines.push(`  "${a}" -> id="${v.id}" x=${v.x} y=${v.y}`));
+  idLines.push('','ACTIVIDADES:');
+  Object.entries(nodeMap).forEach(([,v]) => idLines.push(`  "${v.name}" (${v.actor}) -> id="${v.id}" x=${v.absX} y=${v.absY}`));
+  idLines.push('','SUPPLIERS:'); Object.entries(sipocMap.suppliers).forEach(([n,v]) => idLines.push(`  "${n}" -> id="${v.id}"`));
+  idLines.push('INPUTS:');    Object.entries(sipocMap.inputs).forEach(([n,v])    => idLines.push(`  "${n}" -> id="${v.id}"`));
+  idLines.push('OUTPUTS:');   Object.entries(sipocMap.outputs).forEach(([n,v])   => idLines.push(`  "${n}" -> id="${v.id}"`));
+  idLines.push('CUSTOMERS:'); Object.entries(sipocMap.customers).forEach(([n,v]) => idLines.push(`  "${n}" -> id="${v.id}"`));
+  idLines.push('','REGLA: Todos los edges deben tener parent="1". Usa source="ID" target="ID".');
+
+  const pageW = Math.ceil((totalW+200)/100)*100;
+  const pageH = Math.ceil((sipocH+colBodyY+200)/100)*100;
+  S.tplXml = `<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${pageW}" pageHeight="${pageH}" math="0" shadow="0">\n  <root>\n    ${cells.join('\n    ')}\n  </root>\n</mxGraphModel>`;
+  S.idRef = idLines.join('\n');
+
+  // Update UI
+  $('tpl_xml').value = S.tplXml;
+  $('tpl_info').innerHTML = `<strong>Plantilla generada &mdash; arquitectura plana, todos parent="1"</strong><br>
+    Actores: ${effActors.length} (${effActors.join(', ')}) &middot; Actividades: ${acts.length} &middot;
+    S:${sups.length} I:${inps.length} O:${outs.length} C:${cuss.length} &middot; Canvas: ~${totalW}px &middot;
+    \u2705 Actividad de entrada: verde claro &middot; Actividad de cierre: verde oscuro`;
+
+  switchTab('tab_tpl');
+  gMsg('ok', 'Plantilla XML generada. Contin\u00faa con F1.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROMPT STEP NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function stepNext(tabId, srcId, vldId, storeKey, buildNext) {
+  const xml = $(srcId).value.trim();
+  if (!xml) { gMsg('warn', 'Pega el XML resultado antes de continuar.'); return; }
+  if (!validateXML(srcId, vldId)) { gMsg('warn', 'El XML no es v\u00e1lido. Revisa antes de continuar.'); return; }
+  if (storeKey==='f1') S.xmlF1 = xml;
+  if (storeKey==='f2') S.xmlF2 = xml;
+  if (storeKey==='f3') S.xmlF3 = xml;
+  buildNext();
+  switchTab(tabId);
+  gMsg('ok', 'Paso completado. Copia el nuevo prompt y ej\u00e9cutalo en la IA.');
+}
+
+function goFinal() {
+  const xml = $('xml_f3').value.trim();
+  if (!xml) { gMsg('warn', 'Pega el XML de F3 primero.'); return; }
+  if (!validateXML('xml_f3', 'vld_f3')) { gMsg('warn', 'El XML no es v\u00e1lido.'); return; }
+  S.xmlF3 = xml;
+  S.xmlFinal = injectHeader(xml, S.sp || {});
+  $('xml_final').value = S.xmlFinal;
+  renderOutReport();
+  switchTab('tab_out');
+  gMsg('ok', '\u2705 XML final listo. Descarga e importa en draw.io.');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INJECT HEADER + FOOTER
+// ═══════════════════════════════════════════════════════════════
+function injectHeader(xmlStr, sp) {
+  if (!xmlStr || !xmlStr.includes('<mxGraphModel')) return xmlStr;
+  // Clean previous injections
+  let xml = xmlStr.replace(/<mxCell id="90\d\d"[^>]*\/>/g,'')
+                  .replace(/<mxCell id="90\d\d"[\s\S]*?<\/mxCell>/g,'');
+
+  const wM = xml.match(/pageWidth="(\d+)"/), hM = xml.match(/pageHeight="(\d+)"/);
+  const pageW = wM ? parseInt(wM[1]) : 2400;
+  const pageH = hM ? parseInt(hM[1]) : 1000;
+
+  // Find max Y for footer placement
+  let maxY = 0;
+  const reY = /y="([\d.]+)"[^>]*?height="([\d.]+)"/g; let mY;
+  while ((mY=reY.exec(xml))!==null) { const b=parseFloat(mY[1])+parseFloat(mY[2]); if(b>maxY) maxY=b; }
+  if (!maxY) maxY=600;
+
+  const totalW = Math.max(pageW-40, 1200);
+  const code    = sp.process_code || '';
+  const name    = sp.process_name || '';
+  const purpose = sp.purpose || '';
+  const notes   = (sp.notes || '').trim();
+
+  // Header layout:
+  // Line 1: [código 90px] [nombre — immediately after, left-aligned]
+  // Line 2: FINALIDAD — left-aligned, full width
+  const L1H = 28, L2H = purpose ? 20 : 0, GAP = purpose ? 3 : 0;
+  const HDR_H = L1H + L2H + GAP;
+  const yH = 8, yF = maxY + 20;
+
+  let idc=9000; const nid=()=>String(idc++); const nc=[];
+
+  // Background
+  nc.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1a2f45;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="20" y="${yH}" width="${totalW}" height="${HDR_H}" as="geometry"/></mxCell>`);
+
+  // Code — left, 90px
+  if (code) nc.push(`<mxCell id="${nid()}" value="${ex(code)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=11;fontColor=#7ab8f5;" vertex="1" parent="1"><mxGeometry x="28" y="${yH}" width="90" height="${L1H}" as="geometry"/></mxCell>`);
+
+  // Name — immediately after code, left-aligned (not centered)
+  if (name) {
+    const nameX = code ? 122 : 28;
+    nc.push(`<mxCell id="${nid()}" value="${ex(name)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#ffffff;" vertex="1" parent="1"><mxGeometry x="${nameX}" y="${yH}" width="${totalW-nameX-20}" height="${L1H}" as="geometry"/></mxCell>`);
+  }
+
+  // Finalidad — line 2, left-aligned
+  if (purpose) nc.push(`<mxCell id="${nid()}" value="FINALIDAD: ${ex(purpose)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=2;fontSize=10;fontColor=#aed4ff;" vertex="1" parent="1"><mxGeometry x="28" y="${yH+L1H+GAP}" width="${totalW-56}" height="${L2H}" as="geometry"/></mxCell>`);
+
+  // Footer notes — left-aligned
+  if (notes) {
+    const nl = notes.split(/\n/).filter(l=>l.trim());
+    const noteH = Math.max(44, nl.length*15+18);
+    nc.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f4f7fb;strokeColor=#c8d8e8;" vertex="1" parent="1"><mxGeometry x="20" y="${yF}" width="${totalW}" height="${noteH}" as="geometry"/></mxCell>`);
+    nc.push(`<mxCell id="${nid()}" value="NOTAS:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontStyle=1;fontSize=9;fontColor=#1a2f45;" vertex="1" parent="1"><mxGeometry x="28" y="${yF+5}" width="55" height="${noteH-10}" as="geometry"/></mxCell>`);
+    // Use &#xa; for line breaks inside XML attributes — NO <br/> tags
+    const notesVal = nl.map(l=>ex(l)).join('&#xa;');
+    nc.push(`<mxCell id="${nid()}" value="${notesVal}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=9;fontColor=#2d4a62;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="86" y="${yF+5}" width="${totalW-100}" height="${noteH-10}" as="geometry"/></mxCell>`);
+    const nH = yF+noteH+40;
+    if (nH>pageH) xml = xml.replace(`pageHeight="${pageH}"`,`pageHeight="${Math.ceil(nH/100)*100+100}"`);
+  }
+
+  return xml.replace(/\s*<\/root>/, '\n    '+nc.join('\n    ')+'\n  </root>');
+}
+
+function renderOutReport() {
+  const sp = S.sp || {};
+  const acts = sp.activities || [];
+  const actors = [...new Set(acts.map(a=>a.actor).filter(Boolean))];
+  $('out_report').innerHTML = `
+    <div class="sum-box">
+      <div class="sum-row"><strong>Proceso</strong><span>${ex(sp.process_name||'\u2014')}</span></div>
+      <div class="sum-row"><strong>C\u00f3digo</strong><span>${ex(sp.process_code||'\u2014')}</span></div>
+      <div class="sum-row"><strong>Actividades</strong><span>${acts.length}</span></div>
+      <div class="sum-row"><strong>Actores</strong><span>${actors.join(', ')||'\u2014'}</span></div>
+      <div class="sum-row"><strong>Estado</strong><span style="color:var(--green);font-weight:700">\u2705 XML con encabezado y notas incorporados</span></div>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 13px;font-size:12px;color:#166534">
+      <strong>Importar en draw.io:</strong> Extras &rarr; Edit Diagram &rarr; pega el XML &rarr; Cerrar. Usa Ctrl+Shift+H para ajustar la vista.
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROMPTS
+// ═══════════════════════════════════════════════════════════════
+function getPrompt(key, ...args) {
+  // 1. Config manual del usuario (mayor prioridad)
+  var c = S.cfg.prompts[key];
+  if (c && c.trim()) return c;
+  // 2. Prompt del Sheet con variables reemplazadas
+  var sheetKey = 'prompt_' + key;
+  var sheetPrompt = sgmpPrompt(sheetKey, '');
+  if (sheetPrompt) {
+    var sp = S.sp || {};
+    if (key === 'f2' || key === 'f3') {
+      sheetPrompt = sheetPrompt
+        .replace('{{process_name}}', sp.process_name || '')
+        .replace('{{actors}}', (sp.actors || []).join(', '))
+        .replace('{{suppliers}}', (sp.suppliers || []).join(', '))
+        .replace('{{inputs}}', (sp.inputs || []).join(', '))
+        .replace('{{outputs}}', (sp.outputs || []).join(', '))
+        .replace('{{customers}}', (sp.customers || []).join(', '))
+        .replace('{{idRef}}', args[1] || args[2] || '')
+        .replace('{{xmlF1}}', args[0] || '')
+        .replace('{{xmlF2}}', args[0] || '');
+    } else if (key === 'f1') {
+      sheetPrompt = sheetPrompt
+        .replace('{{idRef}}', args[1] || '')
+        .replace('{{tplXml}}', args[0] || '');
+    } else if (key === 'p0') {
+      sheetPrompt = sheetPrompt
+        .replace('{{content}}', args[0] || '');
+    }
+    return sheetPrompt;
+  }
+  // Sin fallback — prompt no disponible
+  return '⚠️ Prompt no disponible. Verifica la conexión con el servidor de configuración.';
+}
+
+// Prompts gestionados desde SGMP Sheet
+
+function buildF1Prompt() { $('pf1_box').textContent = getPrompt('f1', S.tplXml, S.idRef); }
+function buildF2Prompt() { $('pf2_box').textContent = getPrompt('f2', S.xmlF1, S.sp, S.idRef); }
+function buildF3Prompt() { $('pf3_box').textContent = getPrompt('f3', S.xmlF2, S.sp, S.idRef); }
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+function saveCfg() {
+  ['lbl_sup','lbl_inp','lbl_proc','lbl_out','lbl_cus',
+   'col_sup','col_inp','col_proc','col_out','col_cus'].forEach(k => {
+    if ($('cfg_'+k)) S.cfg[k] = $('cfg_'+k).value;
+  });
+  ['p0','f1','f2','f3'].forEach(k => { S.cfg.prompts[k] = $('cfg_'+k)?.value.trim()||''; });
+  gMsg('ok', 'Configuraci\u00f3n guardada.');
+}
+function resetCfg() {
+  ['p0','f1','f2','f3'].forEach(k => { S.cfg.prompts[k]=''; if($('cfg_'+k)) $('cfg_'+k).value=''; });
+  gMsg('ok', 'Prompts restaurados a los originales.');
+}
+function exportCfg() { dlText(JSON.stringify(S.cfg, null, 2), 'sipoc_config.json'); }
+function importCfg() {
+  readFile($('cfg_import_file'), raw => {
+    try {
+      Object.assign(S.cfg, JSON.parse(raw));
+      ['lbl_sup','lbl_inp','lbl_proc','lbl_out','lbl_cus','col_sup','col_inp','col_proc','col_out','col_cus'].forEach(k=>{if($('cfg_'+k)&&S.cfg[k])$('cfg_'+k).value=S.cfg[k];});
+      ['p0','f1','f2','f3'].forEach(k=>{if($('cfg_'+k)&&S.cfg.prompts[k])$('cfg_'+k).value=S.cfg.prompts[k];});
+      gMsg('ok', 'Configuraci\u00f3n importada.');
+    } catch(e) { gMsg('err', 'JSON inv\u00e1lido: '+e.message); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIRE ALL EVENTS — called once on DOMContentLoaded
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+
+  // Cargar prompts del Sheet al iniciar
+  sgmpLoadPrompts('SB', function() { /* prompts SB listos */ });
+
+  // ── CONFIG ACCESS CONTROL ─────────────────────────────────────
+  // Credenciales removidas - validación contra SGMP Sheet
+  
+  let cfgUnlocked = false;
+  var SGMP_API = 'https://script.google.com/macros/s/AKfycbxacrnEiiTVyip9CqJSelbN81BBt-qVfrmwo2Yyb7SfLw9Co48Oua8OPlu-SDmhi1kj/exec';
+
+  function attemptLogin() {
+    const u = $('login_user').value.trim();
+    const p = $('login_pass').value;
+    if (!u || !p) { $('login_err').style.display = 'block'; return; }
+    $('login_err').style.display = 'none';
+    // Validar contra SGMP Sheet
+    var url = SGMP_API + '?action=auth_admin&username=' + encodeURIComponent(u) + '&password=' + encodeURIComponent(p);
+    fetch(url).then(function(r){return r.json();}).then(function(res){
+      if (res.ok) {
+        sessionStorage.setItem('sgmp_admin_token', res.data.token);
+        $('login_overlay').style.display = 'none';
+        cfgUnlocked = true;
+        gMsg('ok', 'Acceso a Configuraci\u00f3n concedido.');
+      } else {
+        $('login_err').style.display = 'block';
+        $('login_pass').value = '';
+        $('login_pass').focus();
+      }
+    }).catch(function(){
+      $('login_err').style.display = 'block';
+    });
+  }
+
+  $('login_btn').addEventListener('click', attemptLogin);
+  $('login_pass').addEventListener('keydown', e => { if (e.key === 'Enter') attemptLogin(); });
+  $('login_user').addEventListener('keydown', e => { if (e.key === 'Enter') $('login_pass').focus(); });
+
+  // Override switchTab to intercept Config access
+  const _switchTab = switchTab;
+  window.switchTab = function(id) {
+    if (id === 'tab_config' && !cfgUnlocked) {
+      $('login_overlay').style.display = 'flex';
+      $('login_user').value = '';
+      $('login_pass').value = '';
+      $('login_err').style.display = 'none';
+      setTimeout(() => $('login_user').focus(), 50);
+      return;
+    }
+    _switchTab(id);
+  };
+  // Also patch nav tab buttons that call switchTab inline
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    const tab = btn.getAttribute('data-tab');
+    if (tab === 'tab_config') {
+      btn.onclick = () => window.switchTab('tab_config');
+    }
+  });
+  // Patch header config button
+  document.querySelectorAll('.hdr-btn').forEach(btn => {
+    if (btn.textContent.includes('Config')) {
+      btn.onclick = () => window.switchTab('tab_config');
+    }
+  });
+  // ── END ACCESS CONTROL ────────────────────────────────────────
+
+
+  // Capture mode buttons
+  $('btn_guided').addEventListener('click', startGuided);
+  $('btn_lmp').addEventListener('click', loadLMP);
+  $('btn_doc').addEventListener('click', startDocument);
+
+  // Catalog add buttons
+  $('btn_add_sup').addEventListener('click', () => addCat('suppliers'));
+  $('btn_add_inp').addEventListener('click', () => addCat('inputs'));
+  $('btn_add_out').addEventListener('click', () => addCat('outputs'));
+  $('btn_add_cus').addEventListener('click', () => addCat('customers'));
+  $('btn_add_act').addEventListener('click', () => addCat('actors'));
+  $('btn_add_doc').addEventListener('click', () => addCat('documents'));
+
+  // Activity
+  $('btn_add_act_row').addEventListener('click', addActivity);
+  $('btn_preview').addEventListener('click', buildPreview);
+  $('btn_export_json').addEventListener('click', exportJSON);
+  $('btn_to_tpl').addEventListener('click', goToTemplate);
+
+  // Document mode
+  $('btn_p0').addEventListener('click', buildP0);
+  $('btn_copy_p0').addEventListener('click', () => copyText($('p0_box').textContent));
+  $('btn_load_p0').addEventListener('click', loadP0);
+
+  // Template tab
+  $('btn_copy_tpl').addEventListener('click', () => copyText($('tpl_xml').value));
+  $('btn_dl_tpl').addEventListener('click', () => dlText($('tpl_xml').value, 'sipoc_plantilla.xml'));
+  $('btn_tpl_to_f1').addEventListener('click', () => { buildF1Prompt(); switchTab('tab_f1'); gMsg('info', 'Copia el Prompt F1 y ej\u00e9cutalo en la IA.'); });
+
+  // F1
+  $('btn_copy_f1').addEventListener('click', () => copyText($('pf1_box').textContent));
+  $('btn_vld_f1').addEventListener('click', () => validateXML('xml_f1','vld_f1'));
+  $('btn_f1_next').addEventListener('click', () => stepNext('tab_f2','xml_f1','vld_f1','f1',buildF2Prompt));
+
+  // F2
+  $('btn_copy_f2').addEventListener('click', () => copyText($('pf2_box').textContent));
+  $('btn_vld_f2').addEventListener('click', () => validateXML('xml_f2','vld_f2'));
+  $('btn_f2_next').addEventListener('click', () => stepNext('tab_f3','xml_f2','vld_f2','f2',buildF3Prompt));
+
+  // F3
+  $('btn_copy_f3').addEventListener('click', () => copyText($('pf3_box').textContent));
+  $('btn_vld_f3').addEventListener('click', () => validateXML('xml_f3','vld_f3'));
+  $('btn_f3_final').addEventListener('click', goFinal);
+
+  // Output
+  $('btn_dl_final').addEventListener('click', () => dlText($('xml_final').value, 'sipoc_final.xml'));
+  $('btn_drawio').addEventListener('click', () => { window.open('https://app.diagrams.net/','_blank'); gMsg('info','draw.io abierto. Extras \u2192 Edit Diagram \u2192 pega el XML.'); });
+
+  // Config
+  $('btn_save_cfg').addEventListener('click', saveCfg);
+  $('btn_reset_cfg').addEventListener('click', resetCfg);
+  $('btn_export_cfg').addEventListener('click', exportCfg);
+  $('btn_import_cfg').addEventListener('click', importCfg);
+
+});
+</script>
+</body>
+</html>
