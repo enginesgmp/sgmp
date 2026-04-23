@@ -100,6 +100,21 @@ tr:last-child td{border-bottom:none}
 .vld.warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}
 .vld.bad{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
 
+
+/* DIAGNOSTIC */
+.diag-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.diag-title{font-size:13px;font-weight:700;color:var(--blue)}
+.diag-meta{font-size:11px;color:var(--muted)}
+.diag-sem{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:800}
+.diag-sem.ok{background:var(--green-s);color:#166534;border:1px solid var(--green-m)}
+.diag-sem.warn{background:var(--amber-s);color:#92400e;border:1px solid var(--amber-m)}
+.diag-sem.bad{background:var(--red-s);color:#991b1b;border:1px solid var(--red-m)}
+.diag-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}
+.diag-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.diag-card strong{display:block;font-size:18px;line-height:1.1;margin-bottom:3px}
+.diag-card span{font-size:11px;color:var(--muted)}
+@media(max-width:900px){.diag-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 /* TPL INFO */
 .tpl-info{background:#e8f4fd;border:1px solid #90c4e8;border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:12px}
 
@@ -314,6 +329,7 @@ tr:last-child td{border-bottom:none}
 <div id="tab_tpl" class="tab-content hidden">
   <div class="panel">
     <div class="stage"><strong>Plantilla XML generada autom&aacute;ticamente</strong><span>Arquitectura plana &mdash; todos los elementos en parent="1" con coordenadas absolutas.</span></div>
+    <div id="load_diag" class="sum-box" style="display:none"></div>
     <div id="tpl_info" class="tpl-info">Sin datos a&uacute;n.</div>
     <div class="field"><label>XML plantilla</label><textarea id="tpl_xml" class="xml-ta" style="min-height:160px" readonly></textarea></div>
     <div class="btn-row between" style="margin-top:10px">
@@ -609,6 +625,7 @@ const S = {
   sp: null,
   tplXml: '', idRef: '',
   xmlF1: '', xmlF2: '', xmlF3: '', xmlFinal: '',
+  loadTrace: { source:'', loadedAt:'', processName:'', activityCount:0, warningsCount:0, blockingCount:0 },
   cats: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documents:[] },
   acts: [],
   cfg: {
@@ -884,35 +901,203 @@ function goToTemplate() {
 // ═══════════════════════════════════════════════════════════════
 // LMP LOAD
 // ═══════════════════════════════════════════════════════════════
-function loadLMP() {
-  readFile($('lmp_file'), raw => {
-    try {
-      let parsed = JSON.parse(raw);
-      let sp = parsed.sipoc_input || parsed.structured_process || parsed;
-      if (!sp.process_name) { gMsg('err', 'El JSON no tiene process_name.'); return; }
-      if (sp.activities) sp.activities = normActs(sp.activities);
-      S.sp = sp;
-      genTemplate();
-    } catch(e) { gMsg('err', 'JSON inv\u00e1lido: ' + e.message); }
+
+function normalizeText(v) {
+  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+}
+
+function normalizeNoteText(v) {
+  return String(v == null ? '' : v).trim();
+}
+
+function normalizeCatalogItems(items) {
+  const arr = Array.isArray(items) ? items : [];
+  const out = [];
+  const seen = new Set();
+  arr.forEach(item => {
+    const raw = typeof item === 'string' ? item : (item?.name || item?.title || String(item || ''));
+    let cleaned = normalizeText(raw).replace(/[.]+$/,'').trim();
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(cleaned);
   });
+  return out;
+}
+
+function toArrayOfCleanStrings(v) {
+  if (Array.isArray(v)) return v.map(x => normalizeText(x)).filter(Boolean);
+  const s = normalizeText(v);
+  return s ? [s] : [];
 }
 
 function normActs(acts) {
-  return acts.map(a => ({
-    name: a.name || '',
-    type: a.type || 'operation',
-    actor: a.actor || a.actor_id || '',
-    document: a.document || '',
-    previous: Array.isArray(a.previous) ? a.previous : (a.previous ? [a.previous] : []),
-    next:     Array.isArray(a.next)     ? a.next     : (a.next     ? [a.next]     : []),
-    ext_suppliers: a.ext_suppliers || [],
-    ext_inputs:    a.ext_inputs    || [],
-    ext_outputs:   a.ext_outputs   || [],
-    ext_customers: a.ext_customers || [],
+  const arr = Array.isArray(acts) ? acts : [];
+  return arr.map(a => ({
+    name: normalizeText(a.name || a.activity_name || ''),
+    type: normalizeText(a.type || 'operation').toLowerCase(),
+    actor: normalizeText(a.actor || a.actor_id || ''),
+    document: normalizeText(a.document || ''),
+    previous: toArrayOfCleanStrings(a.previous),
+    next: toArrayOfCleanStrings(a.next),
+    ext_suppliers: normalizeCatalogItems(a.ext_suppliers || a.suppliers || []),
+    ext_inputs: normalizeCatalogItems(a.ext_inputs || a.inputs || []),
+    ext_outputs: normalizeCatalogItems(a.ext_outputs || a.outputs || []),
+    ext_customers: normalizeCatalogItems(a.ext_customers || a.customers || []),
     is_start: !!a.is_start,
-    is_end:   !!a.is_end,
-    note: a.note || a.notes || ''
+    is_end: !!a.is_end,
+    note: normalizeNoteText(a.note || a.notes || '')
   }));
+}
+
+function looksLikeSerializedJson(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  return (s.startsWith('{') && s.endsWith('}')) || /"totalActivities"|"ava"|"wastesCount"/.test(s);
+}
+
+function normalizeIncomingPayload(parsed) {
+  const sourceBlock = parsed?.sipoc_input ? 'sipoc_input' : (parsed?.structured_process ? 'structured_process' : 'root');
+  const sp = parsed?.sipoc_input || parsed?.structured_process || parsed || {};
+  const normalized = {
+    process_code: normalizeText(sp.process_code || sp.processCode || ''),
+    process_name: normalizeText(sp.process_name || sp.processName || ''),
+    purpose: normalizeText(sp.purpose || sp.finality || ''),
+    start_event: normalizeText(sp.start_event || sp.startEvent || ''),
+    end_event: normalizeText(sp.end_event || sp.endEvent || ''),
+    notes: normalizeNoteText(sp.notes || ''),
+    suppliers: normalizeCatalogItems(sp.catalogs?.suppliers || sp.suppliers || []),
+    inputs: normalizeCatalogItems(sp.catalogs?.inputs || sp.inputs || []),
+    outputs: normalizeCatalogItems(sp.catalogs?.outputs || sp.outputs || []),
+    customers: normalizeCatalogItems(sp.catalogs?.customers || sp.customers || []),
+    actors: normalizeCatalogItems(sp.catalogs?.actors || sp.actors || []),
+    documents: normalizeCatalogItems(sp.catalogs?.documents || sp.documents || []),
+    activities: normActs(sp.activities || [])
+  };
+  return { ok:true, sourceBlock, normalized, warnings:[], errors:[] };
+}
+
+
+function sourceLabel(sourceKey) {
+  const map = {
+    sipoc_input: 'JSON con bloque sipoc_input',
+    structured_process: 'JSON con bloque structured_process',
+    root: 'JSON raíz directa',
+    lmp_json: 'Archivo JSON del LMP',
+    prompt0_json: 'Respuesta JSON desde Prompt 0',
+    guided_capture: 'Captura guiada interna',
+    manual_json: 'JSON manual'
+  };
+  return map[sourceKey] || sourceKey || 'desconocido';
+}
+
+function buildSeverity(blockingCount, warningCount) {
+  if (blockingCount > 0) return { cls:'bad', text:'Bloqueado' };
+  if (warningCount > 0) return { cls:'warn', text:'Con advertencias' };
+  return { cls:'ok', text:'Listo para continuar' };
+}
+
+function validateSipocContract(sp) {
+  const blockingErrors = [];
+  const warnings = [];
+  if (!normalizeText(sp.process_name)) blockingErrors.push('Falta sipoc_input.process_name.');
+  if (!normalizeText(sp.purpose)) blockingErrors.push('Falta sipoc_input.purpose.');
+  if (!Array.isArray(sp.activities) || !sp.activities.length) blockingErrors.push('sipoc_input.activities debe contener al menos una actividad.');
+  if (!normalizeText(sp.process_code)) warnings.push('process_code viene vacío.');
+  if (looksLikeSerializedJson(sp.notes)) warnings.push('notes parece contener métricas o JSON serializado; separarlo en analysis_metrics.');
+  if (!sp.inputs.length) warnings.push('No se detectaron inputs.');
+  if (!sp.outputs.length) warnings.push('No se detectaron outputs.');
+  if (!sp.customers.length) warnings.push('No se detectaron customers.');
+  if (!sp.actors.length) warnings.push('No se detectaron actores en catálogo.');
+  return {
+    valid: blockingErrors.length === 0,
+    blockingErrors,
+    warnings,
+    summary: {
+      activities: sp.activities.length,
+      actors: sp.actors.length,
+      inputs: sp.inputs.length,
+      outputs: sp.outputs.length,
+      customers: sp.customers.length,
+      documents: sp.documents.length
+    }
+  };
+}
+
+function validateActivitiesSemantic(activities) {
+  const blockingErrors = [];
+  const warnings = [];
+  const names = new Set();
+  const dupes = new Set();
+  const startCount = activities.filter(a => a.is_start).length;
+  const endCount = activities.filter(a => a.is_end).length;
+  const allowedTypes = new Set(['operation','decision','control','document','end']);
+  activities.forEach((a, idx) => {
+    if (!normalizeText(a.name)) blockingErrors.push(`La actividad #${idx+1} no tiene nombre.`);
+    if (!normalizeText(a.actor)) blockingErrors.push(`La actividad "${a.name || '#'+(idx+1)}" no tiene actor.`);
+    if (!allowedTypes.has(a.type)) warnings.push(`La actividad "${a.name || '#'+(idx+1)}" tiene type no estándar: ${a.type || '(vacío)'}.`);
+    const key = normalizeText(a.name).toLowerCase();
+    if (key) {
+      if (names.has(key)) dupes.add(a.name);
+      names.add(key);
+    }
+  });
+  if (dupes.size) warnings.push('Existen actividades con nombres duplicados: ' + Array.from(dupes).join(', '));
+  if (startCount === 0) warnings.push('No hay actividad marcada como inicio (is_start).');
+  if (endCount === 0) warnings.push('No hay actividad marcada como cierre (is_end).');
+  if (startCount > 1) warnings.push('Hay más de una actividad marcada como inicio.');
+  if (endCount > 1) warnings.push('Hay más de una actividad marcada como cierre.');
+  if (activities.length && activities.every(a => a.type === 'operation')) warnings.push('Todas las actividades vienen como operation; revisar si faltan decisiones o cierres.');
+  const validNames = new Set(activities.map(a => normalizeText(a.name)).filter(Boolean));
+  activities.forEach(a => {
+    (a.previous || []).forEach(p => { if (normalizeText(p) && !validNames.has(normalizeText(p))) warnings.push(`La actividad "${a.name}" referencia previous inexistente: ${p}`); });
+    (a.next || []).forEach(n => { if (normalizeText(n) && !validNames.has(normalizeText(n))) warnings.push(`La actividad "${a.name}" referencia next inexistente: ${n}`); });
+    if (a.type === 'decision' && (a.next || []).length < 2) warnings.push(`La decisión "${a.name}" tiene menos de dos salidas definidas.`);
+  });
+  return { blockingErrors, warnings };
+}
+
+
+function renderLoadDiagnostics(payload) {
+  const box = $('load_diag');
+  if (!box) return;
+  const warnings = payload.warnings || [];
+  const blocking = payload.blockingErrors || [];
+  const sp = payload.normalized || {};
+  const sev = buildSeverity(blocking.length, warnings.length);
+  const loadedAt = S.loadTrace?.loadedAt ? new Date(S.loadTrace.loadedAt).toLocaleString() : '—';
+  const sourceText = sourceLabel(S.loadTrace?.source || payload.sourceBlock || '');
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="diag-head">
+      <div>
+        <div class="diag-title">Diagnóstico de carga</div>
+        <div class="diag-meta">Fuente: ${ex(sourceText)} · Cargado: ${ex(loadedAt)}</div>
+      </div>
+      <div class="diag-sem ${sev.cls}">${sev.text}</div>
+    </div>
+
+    <div class="diag-cards">
+      <div class="diag-card"><strong>${sp.activities?.length || 0}</strong><span>Actividades</span></div>
+      <div class="diag-card"><strong>${sp.actors?.length || 0}</strong><span>Actores</span></div>
+      <div class="diag-card"><strong>${blocking.length}</strong><span>Bloqueantes</span></div>
+      <div class="diag-card"><strong>${warnings.length}</strong><span>Advertencias</span></div>
+    </div>
+
+    <div class="sum-row"><strong>Proceso</strong><span>${ex(sp.process_name || '—')}</span></div>
+    <div class="sum-row"><strong>Código</strong><span>${ex(sp.process_code || '—')}</span></div>
+    <div class="sum-row"><strong>Finalidad</strong><span>${ex(sp.purpose || '—')}</span></div>
+    <div class="sum-row"><strong>Inputs / Outputs / Customers</strong><span>${sp.inputs?.length || 0} / ${sp.outputs?.length || 0} / ${sp.customers?.length || 0}</span></div>
+    <div class="sum-row"><strong>Documentos</strong><span>${sp.documents?.length || 0}</span></div>
+
+    ${blocking.length ? `<div style="margin-top:8px;color:#991b1b;font-size:12px"><strong>Bloqueantes:</strong><ul style="margin:6px 0 0 18px">${blocking.map(x=>`<li>${ex(x)}</li>`).join('')}</ul></div>` : ''}
+    ${warnings.length ? `<div style="margin-top:8px;color:#92400e;font-size:12px"><strong>Advertencias:</strong><ul style="margin:6px 0 0 18px">${warnings.map(x=>`<li>${ex(x)}</li>`).join('')}</ul></div>` : ''}
+  `;
+}
+
+function loadLMP() {
+  readFile($('lmp_file'), raw => processIncomingJson(raw, 'lmp_json'));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -922,28 +1107,16 @@ function buildP0() {
   const text = $('doc_text').value.trim();
   if (!text) { gMsg('warn', 'Pega el texto del proceso.'); return; }
   $('p0_box').textContent = getPrompt('p0', text);
-  gMsg('info', 'Prompt 0 generado. C\u00f3pialo y ej\u00e9cutalo en la IA.');
+  gMsg('info', 'Prompt 0 generado. Cópialo y ejecútalo en la IA.');
 }
 
 function loadP0() {
   const file = $('p0_file').files[0];
-  if (file) { readFile($('p0_file'), processP0); return; }
-  processP0($('p0_resp').value.trim());
+  if (file) { readFile($('p0_file'), raw => processIncomingJson(raw, 'prompt0_json')); return; }
+  processIncomingJson($('p0_resp').value.trim(), 'prompt0_json');
 }
 
-function processP0(raw) {
-  if (!raw) { gMsg('warn', 'Pega el JSON o carga un archivo.'); return; }
-  try {
-    const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const clean = fence ? fence[1].trim() : raw;
-    let parsed = JSON.parse(clean);
-    let sp = parsed.structured_process || parsed.sipoc_input || parsed;
-    if (!sp.process_name) { gMsg('err', 'El JSON no tiene process_name.'); return; }
-    if (sp.activities) sp.activities = normActs(sp.activities);
-    S.sp = sp;
-    genTemplate();
-  } catch(e) { gMsg('err', 'JSON inv\u00e1lido: ' + e.message); }
-}
+function processP0(raw) { processIncomingJson(raw, 'prompt0_json'); }
 
 // ═══════════════════════════════════════════════════════════════
 // TEMPLATE GENERATOR
