@@ -1,566 +1,33 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MiraGenDocs · Sistema Documental MIRA</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MIRA GenDocs v2 · Word / Excel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <style>
-:root{
-  --bg:#f0f4fb;--surface:#ffffff;--surface2:#f5f8ff;
-  --border:#dce6f5;--border2:#c5d6ee;
-  --accent:#1a5fc8;--accent2:#1348a0;
-  --teal:#0e7fa3;--amber:#b45309;--red:#b91c1c;--green:#15803d;
-  --text:#0f1c33;--text2:#3d5478;--text3:#7a94b8;
-  --mono:'DM Mono',monospace;--serif:'Instrument Serif',serif;--sans:'DM Sans',sans-serif;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
-.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
-@media(max-width:768px){.app{grid-template-columns:1fr}}
-
-/* SIDEBAR */
-.sidebar{background:#12336b;border-right:1px solid #0e2a57;display:flex;flex-direction:column}
-.brand{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
-.brand-name{font-family:var(--serif);font-size:19px;color:#fff;letter-spacing:-.3px}
-.brand-name span{color:#7ec8f4;font-style:italic}
-.brand-sub{font-size:9px;color:rgba(255,255,255,.38);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
-.nav{padding:10px 8px;flex:1;overflow-y:auto}
-.nav-section{font-size:9px;color:rgba(255,255,255,.3);letter-spacing:2px;text-transform:uppercase;padding:8px 8px 4px}
-.nav-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;color:rgba(255,255,255,.6);font-size:12px;transition:all .15s;margin-bottom:1px}
-.nav-item:hover{background:rgba(255,255,255,.09);color:#fff}
-.nav-item.active{background:rgba(126,200,244,.2);color:#7ec8f4}
-.nav-item .icon{font-size:13px;width:16px;text-align:center;flex-shrink:0}
-.sidebar-footer{padding:10px;border-top:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;gap:6px}
-.config-btn{width:100%;padding:7px 12px;background:transparent;border:1px solid rgba(255,255,255,.18);border-radius:6px;color:rgba(255,255,255,.5);font-family:var(--sans);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
-.config-btn:hover{border-color:#7ec8f4;color:#7ec8f4}
-
-/* MAIN */
-.main{display:flex;flex-direction:column;overflow:hidden}
-.topbar{padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#fff}
-.topbar-title{font-size:14px;font-weight:500;color:var(--text)}
-.topbar-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
-.content{flex:1;overflow-y:auto;padding:20px 24px}
-
-/* SCREENS */
-.screen{display:none}.screen.active{display:block}
-
-/* STAGE HEADER */
-.stage-header{display:flex;align-items:center;gap:12px;margin-bottom:18px}
-.stage-number{width:28px;height:28px;border-radius:50%;background:#dbeafe;border:1px solid #93c5fd;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--mono);color:var(--accent);flex-shrink:0}
-.stage-title{font-size:15px;font-weight:500;color:var(--text)}
-.stage-desc{font-size:11px;color:var(--text3);margin-top:1px}
-
-/* PANEL */
-.panel{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
-.panel-head{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2)}
-.panel-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-family:var(--mono)}
-.panel-status{font-size:9px;padding:2px 8px;border-radius:10px;font-family:var(--mono)}
-.status-pending{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
-.status-ready{background:#dcfce7;color:#14532d;border:1px solid #86efac}
-.status-done{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd}
-.panel-body{padding:14px}
-
-/* FORMS */
-.field-label{font-size:11px;color:var(--text3);margin-bottom:5px;display:flex;align-items:center;gap:5px}
-.req{color:var(--accent);font-size:8px}
-textarea,input[type=text],select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:13px;padding:9px 11px;resize:vertical;transition:border .15s;outline:none}
-textarea:focus,input[type=text]:focus,select:focus{border-color:var(--accent)}
-textarea{min-height:75px;line-height:1.6}
-textarea.mono{font-family:var(--mono);font-size:11.5px}
-
-/* PROMPT BLOCK */
-.prompt-block{background:#f0f6ff;border:1px solid var(--border2);border-radius:8px;overflow:hidden;margin-bottom:10px}
-.prompt-block-head{padding:7px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:#e4eefb}
-.prompt-block-title{font-size:10px;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;font-family:var(--mono)}
-.copy-btn{display:flex;align-items:center;gap:5px;padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:5px;font-size:11px;font-family:var(--sans);font-weight:500;cursor:pointer;transition:all .15s}
-.copy-btn:hover{background:var(--accent2)}.copy-btn.copied{background:var(--green)}
-.copy-btn svg{width:11px;height:11px;flex-shrink:0}
-.prompt-text{padding:10px 12px;font-family:var(--mono);font-size:11px;color:#2d4a7a;line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:180px;overflow-y:auto}
-.prompt-text.expanded{max-height:none}
-.prompt-toggle{width:100%;padding:5px;background:transparent;border:none;border-top:1px solid var(--border);color:var(--text3);font-size:10px;cursor:pointer;text-align:center;transition:color .15s}
-.prompt-toggle:hover{color:var(--text)}
-
-/* PASTE AREA */
-.paste-label{display:flex;align-items:center;gap:6px;font-size:11px;color:#0e6e8a;margin-bottom:5px;font-weight:500}
-.paste-label-warn{color:var(--amber)}
-
-/* OUTPUT */
-.output-block{background:#f0fbf8;border:1px solid #a7d9cf;border-left:3px solid var(--teal);border-radius:8px;padding:10px 12px;margin-top:8px}
-.output-label{font-size:9px;color:#0e6e8a;letter-spacing:1.5px;text-transform:uppercase;font-family:var(--mono);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
-.output-text{font-size:11.5px;color:#1e3a5f;line-height:1.7;font-family:var(--mono);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto}
-
-/* ACTIONS */
-.action-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.btn{padding:7px 15px;border-radius:6px;font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;border:none;transition:all .15s}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
-.btn-secondary{background:transparent;border:1px solid var(--border2);color:var(--text2)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
-.btn-teal{background:var(--teal);color:#fff}.btn-teal:hover{background:#0b6485}
-.btn-ghost{background:transparent;color:var(--text3);font-size:11px;padding:5px 10px}.btn-ghost:hover{color:var(--text)}
-.btn:disabled{opacity:.38;cursor:not-allowed}
-
-/* STEPS FLOW */
-.steps-flow{display:flex;align-items:center;margin-bottom:20px;overflow-x:auto;padding-bottom:4px;gap:0}
-.step-pill{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:4px;font-size:10px;font-family:var(--mono);color:var(--text3);background:#fff;border:1px solid var(--border);white-space:nowrap;cursor:pointer;transition:all .15s}
-.step-pill:not(:last-child)::after{content:"›";margin-left:6px;color:var(--text3)}
-.step-pill.active{color:var(--accent);border-color:#93c5fd;background:#eff6ff}
-.step-pill.done{color:var(--green);border-color:#86efac;background:#f0fdf4}
-.step-pill .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
-
-/* BP REVIEW */
-.bp-card{background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
-.bp-card-head{padding:8px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.bp-meta{flex:1}
-.bp-num{font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:1px}
-.bp-desc{font-size:12px;color:var(--text);margin-top:2px;line-height:1.5}
-.bp-origen{font-size:10px;color:var(--text3);margin-top:3px}
-.bp-actions{display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap}
-.bp-btn{padding:3px 9px;border-radius:4px;font-size:10px;font-weight:500;cursor:pointer;border:1px solid;transition:all .15s;font-family:var(--sans)}
-.bp-btn-aprobar{color:#14532d;border-color:#86efac;background:#f0fdf4}.bp-btn-aprobar:hover,.bp-btn-aprobar.sel{background:#14532d;color:#fff;border-color:#14532d}
-.bp-btn-rechazar{color:#991b1b;border-color:#fca5a5;background:#fff5f5}.bp-btn-rechazar:hover,.bp-btn-rechazar.sel{background:#991b1b;color:#fff;border-color:#991b1b}
-.bp-btn-ajustar{color:#92400e;border-color:#fcd34d;background:#fefce8}.bp-btn-ajustar:hover,.bp-btn-ajustar.sel{background:#92400e;color:#fff;border-color:#92400e}
-.bp-card.estado-aprobada{border-left:3px solid #15803d}
-.bp-card.estado-rechazada{border-left:3px solid #b91c1c;opacity:.55}
-.bp-card.estado-ajustada{border-left:3px solid #b45309}
-.bp-adjust-area{padding:0 12px 10px;display:none}
-.bp-adjust-area.open{display:block}
-.bp-cat-badge{display:inline-block;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;font-family:var(--mono);text-transform:uppercase}
-.cat-recomendada{background:#dbeafe;color:#1e3a8a}.cat-opcional{background:#f3f4f6;color:#374151}.cat-advertencia{background:#fef3c7;color:#92400e}
-
-/* VALIDATION */
-.validation-bar{display:none;background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:7px 12px;font-size:11px;color:#991b1b;margin-bottom:10px;align-items:center;gap:6px}
-.validation-bar.show{display:flex}
-
-/* INFO BAR */
-.info-bar{background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:7px 11px;font-size:11px;color:#1e3a8a;line-height:1.6;margin-bottom:10px;display:flex;gap:7px}
-.info-bar-warn{background:#fffbeb;border-color:#fcd34d;color:#92400e}
-.ib-icon{flex-shrink:0;font-size:13px}
-
-/* OVERLAY */
-.overlay{position:fixed;inset:0;background:rgba(10,30,70,.55);display:flex;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(4px)}
-.overlay.hidden{display:none}
-.login-box{background:#fff;border:1px solid var(--border2);border-radius:12px;padding:28px;width:340px}
-.login-title{font-family:var(--serif);font-size:20px;color:var(--text);margin-bottom:4px}
-.login-sub{font-size:11px;color:var(--text3);margin-bottom:18px}
-.login-error{font-size:11px;color:var(--red);margin-top:7px;display:none}
-.lock-icon{font-size:26px;margin-bottom:10px;display:block}
-
-/* TOAST */
-.toast{position:fixed;bottom:18px;right:18px;background:#fff;border:1px solid var(--border2);border-left:3px solid var(--green);border-radius:8px;padding:9px 14px;font-size:12px;color:var(--text);z-index:1000;opacity:0;transform:translateY(6px);transition:all .22s;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.09)}
-.toast.show{opacity:1;transform:translateY(0)}
-
-/* CONFIG */
-.config-wrap{max-width:680px}
-.config-section{margin-bottom:24px}
-.config-section-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px}
-.prompt-config-item{background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
-.prompt-config-head{padding:9px 13px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s}
-.prompt-config-head:hover{background:var(--surface2)}
-.prompt-config-name{font-size:12px;font-weight:500;color:var(--text);display:flex;align-items:center;gap:7px}
-.prompt-config-body{padding:10px 13px;border-top:1px solid var(--border);display:none}
-.prompt-config-body.open{display:block}
-.save-indicator{font-size:10px;color:var(--green);opacity:0;transition:opacity .3s;margin-left:7px}
-.save-indicator.show{opacity:1}
-
-/* MISC */
-.empty-state{text-align:center;padding:36px 20px;color:var(--text3)}
-.em-icon{font-size:28px;margin-bottom:10px;display:block}
-.empty-state p{font-size:12px;line-height:1.6}
-::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
-.divider{border:none;border-top:1px solid var(--border);margin:12px 0}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:600px){.two-col{grid-template-columns:1fr}}
-.project-field{display:flex;flex-direction:column;gap:3px}
-.project-field label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px}
-.stats-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.stat-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 14px;flex:1;min-width:100px}
-.stat-val{font-size:22px;font-weight:600;color:var(--accent);font-family:var(--mono)}
-.stat-lbl{font-size:10px;color:var(--text3);margin-top:1px}
-@media(max-width:768px){.sidebar{display:none}.mobile-nav{display:flex;gap:4px;padding:7px 10px;background:#fff;border-bottom:1px solid var(--border);overflow-x:auto}.mobile-nav-btn{padding:4px 9px;border-radius:4px;font-size:10px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;white-space:nowrap}.mobile-nav-btn.active{background:#dbeafe;color:var(--accent);border-color:#93c5fd}}
-@media(min-width:769px){.mobile-nav{display:none}}
+:root{--bg:#f3f7fc;--surface:#fff;--surface2:#f8fbff;--border:#d9e5f4;--border2:#bfd0e8;--blue:#1d5fbf;--blue2:#164a96;--navy:#102a55;--text:#102033;--muted:#65758c;--green:#15803d;--red:#b91c1c;--amber:#b45309;--teal:#0e7490;--shadow:0 10px 28px rgba(16,42,85,.08);--r:14px;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;--sans:Inter,Segoe UI,Roboto,Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#f7fbff 0%,#edf4ff 100%);font-family:var(--sans);color:var(--text);font-size:14px}.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}.sidebar{background:var(--navy);color:#fff;padding:18px 12px;display:flex;flex-direction:column}.brand{padding:10px 12px 18px;border-bottom:1px solid rgba(255,255,255,.12)}.brand h1{font-size:21px;margin:0}.brand h1 span{color:#93c5fd}.brand p{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:rgba(255,255,255,.55);margin:4px 0 0}.nav{padding:14px 0;flex:1}.nav-title{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:rgba(255,255,255,.35);padding:10px 10px 4px}.nav button{width:100%;border:0;background:transparent;color:rgba(255,255,255,.68);padding:10px 12px;text-align:left;border-radius:10px;cursor:pointer;font-weight:600;display:flex;gap:9px;align-items:center}.nav button:hover,.nav button.active{background:rgba(147,197,253,.16);color:#fff}.main{min-width:0}.top{background:#fff;border-bottom:1px solid var(--border);padding:18px 26px;display:flex;justify-content:space-between;gap:18px;align-items:center;position:sticky;top:0;z-index:5}.top h2{margin:0;font-size:19px}.top p{margin:3px 0 0;color:var(--muted);font-size:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}.content{padding:24px;max-width:1200px}.screen{display:none}.screen.active{display:block}.card{background:#fff;border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;margin-bottom:16px}.card h3{margin:0 0 8px;font-size:16px;color:var(--navy)}.card .desc{color:var(--muted);margin:0 0 16px;font-size:13px;line-height:1.5}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:800}.req{color:var(--blue)}input,select,textarea{width:100%;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);padding:10px 12px;font:inherit;color:var(--text);outline:none}textarea{min-height:110px;resize:vertical;line-height:1.55}.mono{font-family:var(--mono);font-size:12px}.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer;background:#e8eef7;color:var(--navy);display:inline-flex;align-items:center;gap:7px}.btn.primary{background:var(--blue);color:#fff}.btn.primary:hover{background:var(--blue2)}.btn.green{background:var(--green);color:#fff}.btn.red{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}.btn.ghost{background:#fff;border:1px solid var(--border2);color:var(--text)}.btn:disabled{opacity:.45;cursor:not-allowed}.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mode{border:2px solid var(--border);border-radius:14px;background:#fff;padding:16px;cursor:pointer}.mode.active{border-color:var(--blue);background:#eff6ff}.mode strong{display:block;color:var(--navy);font-size:15px}.mode span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.pill-row{display:flex;flex-wrap:wrap;gap:8px}.pill{border:1px solid var(--border2);background:#fff;color:var(--muted);padding:6px 12px;border-radius:999px;cursor:pointer;font-weight:700;font-size:12px}.pill.on{background:var(--blue);border-color:var(--blue);color:#fff}.add-row{display:flex;gap:8px;margin-top:9px}.drop{border:2px dashed var(--border2);border-radius:14px;padding:24px;text-align:center;background:#fbfdff;cursor:pointer}.drop.over{border-color:var(--blue);background:#eff6ff}.drop b{display:block}.drop span{font-size:12px;color:var(--muted)}.alert{padding:11px 13px;border-radius:10px;margin:10px 0;font-size:13px;line-height:1.45}.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a}.warn{background:#fffbeb;border:1px solid #fcd34d;color:#92400e}.ok{background:#ecfdf5;border:1px solid #86efac;color:#14532d}.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}.prompt{background:#f8fafc;border:1px solid var(--border2);border-radius:12px;overflow:hidden}.prompt-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#eaf2ff;border-bottom:1px solid var(--border)}.prompt-head strong{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--blue)}.prompt-body{padding:14px;white-space:pre-wrap;font-family:var(--mono);font-size:12px;line-height:1.65;max-height:440px;overflow:auto}.rec{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;background:#fff}.rec.rejected{opacity:.55}.rec-head{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;background:#f8fbff;border-bottom:1px solid var(--border);padding:10px 12px}.rec-title{font-weight:800;color:var(--navy)}.rec-meta{font-size:11px;color:var(--muted);margin-top:2px}.rec-body{padding:12px}.rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mini-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:800;margin-bottom:3px}.mini-box{background:#f8fafc;border:1px solid var(--border);padding:8px;border-radius:8px;font-size:13px}.rec-actions{display:flex;gap:6px;flex-wrap:wrap}.hidden{display:none!important}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.summary{background:#f8fbff;border:1px solid var(--border);border-radius:12px;padding:12px}.summary .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:800}.summary .val{font-size:14px;font-weight:800;color:var(--navy);margin-top:4px}.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}th{background:#eaf2ff;color:var(--navy);text-align:left;padding:8px;border-bottom:1px solid var(--border)}td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top}.footer-note{font-size:12px;color:var(--muted)}@media(max-width:850px){.app{grid-template-columns:1fr}.sidebar{position:static}.nav{display:grid;grid-template-columns:repeat(2,1fr);gap:4px}.grid2,.grid3,.summary-grid,.mode-grid,.rec-grid{grid-template-columns:1fr}.content{padding:14px}.top{position:static;flex-direction:column;align-items:flex-start}}
 </style>
   <script>
-// ── SGMP Session Guard ─────────────────────────────────────
-// Verifica sesión activa antes de cargar el módulo
-(function() {
+// ── SGMP Session Guard ───────────────────────────────────────
+(function(){
   var SESSION_KEY = 'sgmp_session_v1';
-  var LAUNCHER_URL = 'https://ornate-rabanadas-0e6e8f.netlify.app/index.html';
-
-  function checkSession() {
-    // Si el login no es requerido en el Sheet, permitir acceso libre
-    // Si es requerido, verificar sesión
-    try {
-      var raw = sessionStorage.getItem(SESSION_KEY);
-      if (!raw) {
-        // No hay sesión - redirigir al launcher
-        window.location.replace(LAUNCHER_URL);
-        return false;
-      }
-      var session = JSON.parse(raw);
-      if (!session.username) {
-        window.location.replace(LAUNCHER_URL);
-        return false;
-      }
-      return true;
-    } catch(e) {
-      window.location.replace(LAUNCHER_URL);
-      return false;
-    }
-  }
-
-  // Verificar inmediatamente
-  checkSession();
+  var LAUNCHER_URL = 'https://enginesgmp.github.io/sgmp/index.html';
+  try {
+    var raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) { window.location.replace(LAUNCHER_URL); return; }
+    var sess = JSON.parse(raw);
+    if (!sess.username) { window.location.replace(LAUNCHER_URL); }
+  } catch(e) { window.location.replace(LAUNCHER_URL); }
 })();
-// ── Fin SGMP Session Guard ─────────────────────────────────
-
+// ── Fin Session Guard ────────────────────────────────────────
   </script>
-</head>
-<body>
-
-<!-- CONFIG OVERLAY -->
-<div class="overlay hidden" id="configOverlay">
-  <div class="login-box">
-    <span class="lock-icon">🔐</span>
-    <div class="login-title">Configuración base</div>
-    <div class="login-sub">Acceso restringido — Administrador metodológico</div>
-    <div class="field-label">Contraseña</div>
-    <input type="password" id="configPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')checkConfig()">
-    <div class="login-error" id="configError">Contraseña incorrecta</div>
-    <div class="action-row" style="margin-top:12px">
-      <button class="btn btn-primary" style="flex:1" onclick="checkConfig()">Acceder</button>
-      <button class="btn btn-secondary" onclick="closeConfigOverlay()">Cancelar</button>
-    </div>
-  </div>
-</div>
-
-<div class="app">
-<!-- SIDEBAR -->
-<aside class="sidebar">
-  <div class="brand">
-    <div class="brand-name">MiraGen<span>Docs</span></div>
-    <div class="brand-sub">Motor Documental · MIRA v1.1</div>
-  </div>
-  <nav class="nav">
-    <div class="nav-section">Flujo de trabajo</div>
-    <div class="nav-item active" onclick="showScreen('workflow')" id="nav-workflow"><span class="icon">⚡</span> Flujo activo</div>
-    <div class="nav-item" onclick="showScreen('docs')" id="nav-docs"><span class="icon">📄</span> Documentos</div>
-    <div class="nav-item" onclick="showScreen('history')" id="nav-history"><span class="icon">🗂</span> Historial</div>
-    <div class="nav-section">Proyecto</div>
-    <div class="nav-item" onclick="showScreen('project')" id="nav-project"><span class="icon">🗃</span> Proyecto activo</div>
-    <div class="nav-item" onclick="exportProject()"><span class="icon">⬇</span> Exportar JSON</div>
-    <div class="nav-item" onclick="document.getElementById('importFile').click()"><span class="icon">⬆</span> Importar JSON</div>
-    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProject(event)">
-    <div class="nav-section">Recursos</div>
-    <div class="nav-item" onclick="downloadManual()"><span class="icon">📖</span> Manual de usuario</div>
-  </nav>
-  <div class="sidebar-footer">
-    <button class="config-btn" onclick="openConfigOverlay()">⚙ Configuración base</button>
-  </div>
-</aside>
-
-<!-- MOBILE NAV -->
-<div class="mobile-nav">
-  <button class="mobile-nav-btn active" onclick="showScreen('workflow',this)">⚡ Flujo</button>
-  <button class="mobile-nav-btn" onclick="showScreen('docs',this)">📄 Docs</button>
-  <button class="mobile-nav-btn" onclick="showScreen('history',this)">🗂 Historial</button>
-  <button class="mobile-nav-btn" onclick="showScreen('project',this)">🗃 Proyecto</button>
-  <button class="mobile-nav-btn" onclick="downloadManual()">📖 Manual</button>
-  <button class="mobile-nav-btn" onclick="openConfigOverlay()">⚙ Config</button>
-</div>
-
-<main class="main">
-  <div class="topbar">
-    <div class="topbar-title" id="topbarTitle">Flujo activo</div>
-    <div class="topbar-meta" id="topbarMeta">Sin proyecto activo</div>
-  </div>
-  <div class="content">
-
-    <!-- ══ WORKFLOW ══ -->
-    <div class="screen active" id="screen-workflow">
-      <div class="steps-flow" id="stepsFlow">
-        <div class="step-pill active" onclick="gotoStage(0)" id="pill-0"><span class="dot"></span> Extracción</div>
-        <div class="step-pill" onclick="gotoStage(1)" id="pill-1"><span class="dot"></span> TO-BE</div>
-        <div class="step-pill" onclick="gotoStage(2)" id="pill-2"><span class="dot"></span> Análisis</div>
-        <div class="step-pill" onclick="gotoStage(3)" id="pill-3"><span class="dot"></span> Construcción</div>
-        <div class="step-pill" onclick="gotoStage(4)" id="pill-4"><span class="dot"></span> Consolidación</div>
-      </div>
-
-      <!-- STAGE 0 -->
-      <div class="stage-content" id="stage-0">
-        <div class="stage-header"><div class="stage-number">01</div><div><div class="stage-title">Extracción documental</div><div class="stage-desc">Convierte un documento existente en ficha estructurada para el análisis</div></div></div>
-        <div class="validation-bar" id="val-0">⚠ Completa el nombre y el contenido del documento antes de continuar.</div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Documento de entrada</span><span class="panel-status status-pending" id="st0-status">Pendiente</span></div>
-          <div class="panel-body">
-            <div class="field-label">Nombre del documento <span class="req">★</span></div>
-            <input type="text" id="doc-name" placeholder="Ej: Procedimiento de compras v3.docx" oninput="saveState()">
-            <div style="height:9px"></div>
-            <div class="field-label">Contenido del documento <span class="req">★</span></div>
-            <div class="info-bar"><span class="ib-icon">💡</span> Pega el texto del documento. Copia desde Word, PDF o cualquier fuente de texto.</div>
-            <textarea id="doc-content" placeholder="Pega el contenido del documento aquí..." oninput="saveState();autoShowOutput('doc-content','out-extraction')"></textarea>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Prompt de extracción</span><span class="panel-status status-ready">Listo para copiar</span></div>
-          <div class="panel-body">
-            <div class="info-bar"><span class="ib-icon">📋</span> El prompt ya incluye el contenido del documento. Cópialo y pégalo directamente en Claude o ChatGPT.</div>
-            <div class="prompt-block">
-              <div class="prompt-block-head"><span class="prompt-block-title">Prompt · Extracción de ficha</span>
-                <button class="copy-btn" onclick="copyPrompt('extraction',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v7a1 1 0 001 1h2"/></svg> Copiar prompt</button>
-              </div>
-              <div class="prompt-text" id="prompt-extraction-display"></div>
-              <button class="prompt-toggle" onclick="togglePrompt('extraction-display')">Ver completo ↓</button>
-            </div>
-            <div class="divider"></div>
-            <div class="paste-label">↩ Pega aquí la respuesta de la IA</div>
-            <textarea class="mono" id="resp-extraction" placeholder="Pega la respuesta completa de la IA (ficha estructurada)..." oninput="saveState();onRespPaste('resp-extraction','out-extraction-text','out-extraction','st0-status')"></textarea>
-            <div id="out-extraction" class="output-block" style="display:none">
-              <div class="output-label">Ficha estructurada
-                <button class="copy-btn" style="font-size:10px;padding:2px 8px" onclick="copyElementText('resp-extraction',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="10" height="10"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar</button>
-              </div>
-              <div class="output-text" id="out-extraction-text"></div>
-            </div>
-            <div class="action-row">
-              <button class="btn btn-primary" onclick="advanceStage(0,1)">Continuar → TO-BE</button>
-              <button class="btn btn-secondary" onclick="saveDocToHistory()">Guardar ficha</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- STAGE 1 -->
-      <div class="stage-content" id="stage-1" style="display:none">
-        <div class="stage-header"><div class="stage-number">02</div><div><div class="stage-title">Estructuración TO-BE</div><div class="stage-desc">Transforma tu proceso deseado en TO-BE estructurado para la matriz</div></div></div>
-        <div class="validation-bar" id="val-1">⚠ Pega el contenido del TO-BE antes de continuar.</div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Insumo TO-BE</span></div>
-          <div class="panel-body">
-            <div class="field-label">Tipo de insumo</div>
-            <select id="tobe-type" oninput="saveState()">
-              <option value="sipoc">SIPOC</option>
-              <option value="tabla">Tabla de proceso</option>
-              <option value="libre">Descripción libre</option>
-              <option value="flujograma">Descripción de flujograma</option>
-            </select>
-            <div style="height:9px"></div>
-            <div class="field-label">Contenido del TO-BE <span class="req">★</span></div>
-            <textarea id="tobe-content" placeholder="Pega tu SIPOC, tabla de proceso o descripción del TO-BE..." oninput="saveState()"></textarea>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Prompt TO-BE</span><span class="panel-status status-ready">Listo para copiar</span></div>
-          <div class="panel-body">
-            <div class="prompt-block">
-              <div class="prompt-block-head"><span class="prompt-block-title">Prompt · Estructuración TO-BE</span>
-                <button class="copy-btn" onclick="copyPrompt('tobe',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar prompt</button>
-              </div>
-              <div class="prompt-text" id="prompt-tobe-display"></div>
-              <button class="prompt-toggle" onclick="togglePrompt('tobe-display')">Ver completo ↓</button>
-            </div>
-            <div class="divider"></div>
-            <div class="paste-label">↩ Pega aquí la respuesta de la IA</div>
-            <textarea class="mono" id="resp-tobe" placeholder="Pega el TO-BE estructurado devuelto por la IA..." oninput="saveState();onRespPaste('resp-tobe','out-tobe-text','out-tobe','')"></textarea>
-            <div id="out-tobe" class="output-block" style="display:none">
-              <div class="output-label">TO-BE estructurado
-                <button class="copy-btn" style="font-size:10px;padding:2px 8px" onclick="copyElementText('resp-tobe',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="10" height="10"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar</button>
-              </div>
-              <div class="output-text" id="out-tobe-text"></div>
-            </div>
-            <div class="action-row">
-              <button class="btn btn-secondary" onclick="gotoStage(0)">← Volver</button>
-              <button class="btn btn-primary" onclick="advanceStage(1,2)">Continuar → Análisis</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- STAGE 2 -->
-      <div class="stage-content" id="stage-2" style="display:none">
-        <div class="stage-header"><div class="stage-number">03</div><div><div class="stage-title">Análisis documental</div><div class="stage-desc">Detecta cobertura, brechas y redundancias. El prompt se arma automáticamente.</div></div></div>
-        <div class="validation-bar" id="val-2">⚠ Necesitas tener el TO-BE estructurado (etapa 02) antes de generar el análisis.</div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Prompt de análisis — autoconstruido</span><span class="panel-status status-ready">Listo para copiar</span></div>
-          <div class="panel-body">
-            <div class="info-bar"><span class="ib-icon">🔍</span> El prompt incluye automáticamente el TO-BE estructurado y todas las fichas guardadas en Documentos. Un clic y está listo para pegar en la IA.</div>
-            <div id="analysis-summary" style="margin-bottom:10px;font-size:11px;color:var(--text3);font-family:var(--mono)"></div>
-            <div class="prompt-block">
-              <div class="prompt-block-head"><span class="prompt-block-title">Prompt · Análisis cobertura y brechas</span>
-                <button class="copy-btn" onclick="copyPrompt('analysis',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar prompt</button>
-              </div>
-              <div class="prompt-text" id="prompt-analysis-display"></div>
-              <button class="prompt-toggle" onclick="togglePrompt('analysis-display')">Ver completo ↓</button>
-            </div>
-            <div class="divider"></div>
-            <div class="paste-label">↩ Resultado del análisis</div>
-            <textarea class="mono" id="resp-analysis" placeholder="Pega el análisis completo de la IA..." oninput="saveState();onRespPaste('resp-analysis','out-analysis-text','out-analysis','')"></textarea>
-            <div id="out-analysis" class="output-block" style="display:none">
-              <div class="output-label">Análisis documental
-                <button class="copy-btn" style="font-size:10px;padding:2px 8px" onclick="copyElementText('resp-analysis',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="10" height="10"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar</button>
-              </div>
-              <div class="output-text" id="out-analysis-text"></div>
-            </div>
-            <div class="action-row">
-              <button class="btn btn-secondary" onclick="gotoStage(1)">← Volver</button>
-              <button class="btn btn-primary" onclick="advanceStage(2,3)">Continuar → Construcción</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- STAGE 3 -->
-      <div class="stage-content" id="stage-3" style="display:none">
-        <div class="stage-header"><div class="stage-number">04</div><div><div class="stage-title">Construcción documental</div><div class="stage-desc">Genera el borrador con separación estricta de buenas prácticas</div></div></div>
-        <div class="validation-bar" id="val-3">⚠ Selecciona tipo documental, nivel de robustez y completa el brief antes de continuar.</div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Brief del documento</span></div>
-          <div class="panel-body">
-            <div class="two-col">
-              <div><div class="field-label">Tipo documental <span class="req">★</span></div>
-                <select id="build-type" oninput="saveState()"><option value="">— Seleccionar —</option><option>Política</option><option>Procedimiento</option><option>POE</option><option>Instructivo</option><option>Manual</option><option>SLA</option><option>Formato</option><option>Checklist</option><option>Matriz</option></select>
-              </div>
-              <div><div class="field-label">Nivel de robustez <span class="req">★</span></div>
-                <select id="build-robustness" oninput="saveState()"><option value="">— Seleccionar —</option><option>Básico</option><option>Estándar</option><option>Robusto</option></select>
-              </div>
-            </div>
-            <div style="height:9px"></div>
-            <div class="field-label">Nombre del documento</div>
-            <input type="text" id="build-name" placeholder="Ej: Procedimiento de Cierre de Mes Contable" oninput="saveState()">
-            <div style="height:9px"></div>
-            <div class="field-label">Brief del documento <span class="req">★</span></div>
-            <textarea id="build-brief" placeholder="Describe proceso, actores, entradas, salidas y pasos principales..." oninput="saveState()" style="min-height:90px"></textarea>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Prompt construcción + buenas prácticas</span><span class="panel-status status-ready">Listo para copiar</span></div>
-          <div class="panel-body">
-            <div class="info-bar"><span class="ib-icon">📌</span> La IA devolverá <strong>BLOQUE 1</strong> (borrador) y <strong>BLOQUE 2</strong> (buenas prácticas) claramente separados. Pega cada bloque en su área.</div>
-            <div class="prompt-block">
-              <div class="prompt-block-head"><span class="prompt-block-title">Prompt · Construcción con separación de BPs</span>
-                <button class="copy-btn" onclick="copyPrompt('construction',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar prompt</button>
-              </div>
-              <div class="prompt-text" id="prompt-construction-display"></div>
-              <button class="prompt-toggle" onclick="togglePrompt('construction-display')">Ver completo ↓</button>
-            </div>
-            <div class="divider"></div>
-            <div class="paste-label">↩ BLOQUE 1 — Contenido base</div>
-            <textarea class="mono" id="resp-draft" placeholder="Pega aquí SOLO el BLOQUE 1 (borrador del documento)..." oninput="saveState()" style="min-height:80px"></textarea>
-            <div style="height:8px"></div>
-            <div class="paste-label paste-label-warn">↩ BLOQUE 2 — Buenas prácticas (pega aquí para habilitar revisión)</div>
-            <textarea class="mono" id="resp-bp" placeholder="Pega aquí SOLO el BLOQUE 2 (sugerencias de buenas prácticas)..." oninput="saveState();parseBPs()" style="min-height:80px"></textarea>
-            <div class="action-row">
-              <button class="btn btn-secondary" onclick="gotoStage(2)">← Volver</button>
-              <button class="btn btn-primary" onclick="advanceStage(3,4)">Continuar → Consolidación</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- STAGE 4 -->
-      <div class="stage-content" id="stage-4" style="display:none">
-        <div class="stage-header"><div class="stage-number">05</div><div><div class="stage-title">Revisión y consolidación</div><div class="stage-desc">Aprueba, rechaza o ajusta cada buena práctica. El prompt final se arma con solo las aprobadas.</div></div></div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Revisión de buenas prácticas</span><span class="panel-status" id="bp-status-badge">Sin parsear</span></div>
-          <div class="panel-body">
-            <div id="bp-review-area">
-              <div class="empty-state"><span class="em-icon">📋</span><p>Pega el Bloque 2 en la etapa anterior para ver las sugerencias aquí.</p></div>
-            </div>
-            <div id="bp-summary" style="display:none;margin-top:10px;padding:8px 12px;background:#f0f6ff;border:1px solid var(--border2);border-radius:6px;font-size:11px;color:var(--text2);font-family:var(--mono)"></div>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><span class="panel-label">Prompt de consolidación — autoconstruido</span><span class="panel-status status-ready">Listo para copiar</span></div>
-          <div class="panel-body">
-            <div class="info-bar"><span class="ib-icon">⚙</span> El prompt incluye el borrador base + solo las buenas prácticas que aprobaste. Un clic y está listo.</div>
-            <div class="prompt-block">
-              <div class="prompt-block-head"><span class="prompt-block-title">Prompt · Consolidación final</span>
-                <button class="copy-btn" onclick="copyPrompt('audix',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar prompt</button>
-              </div>
-              <div class="prompt-text" id="prompt-audix-display"></div>
-              <button class="prompt-toggle" onclick="togglePrompt('audix-display')">Ver completo ↓</button>
-            </div>
-            <div class="divider"></div>
-            <div class="paste-label">↩ Borrador final consolidado</div>
-            <textarea class="mono" id="resp-final" placeholder="Pega el borrador final consolidado..." oninput="saveState()" style="min-height:120px"></textarea>
-            <div class="action-row">
-              <button class="btn btn-secondary" onclick="gotoStage(3)">← Volver</button>
-              <button class="btn btn-teal" onclick="markReady()">✓ Marcar como listo</button>
-              <button class="btn btn-ghost" onclick="exportProject()">Exportar JSON</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div><!-- /workflow -->
-
-    <!-- DOCS -->
-    <div class="screen" id="screen-docs">
-      <div class="stage-header"><div><div class="stage-title">Documentos guardados</div><div class="stage-desc">Fichas generadas en Etapa 01 — disponibles para el análisis</div></div></div>
-      <div id="docs-list"><div class="empty-state"><span class="em-icon">📄</span><p>Aún no hay fichas guardadas.<br>Completa la Etapa 01 y usa "Guardar ficha".</p></div></div>
-    </div>
-
-    <!-- HISTORY -->
-    <div class="screen" id="screen-history">
-      <div class="stage-header"><div><div class="stage-title">Historial de prompts</div><div class="stage-desc">Registro de cada prompt copiado durante la sesión</div></div></div>
-      <div id="history-list"><div class="empty-state"><span class="em-icon">🗂</span><p>El historial se construye mientras trabajas.</p></div></div>
-    </div>
-
-    <!-- PROJECT -->
-    <div class="screen" id="screen-project">
-      <div class="stage-header"><div><div class="stage-title">Proyecto activo</div><div class="stage-desc">Identifica el proyecto de esta sesión de trabajo</div></div></div>
-      <div class="stats-row" id="project-stats"></div>
-      <div class="panel">
-        <div class="panel-head"><span class="panel-label">Datos del proyecto</span></div>
-        <div class="panel-body">
-          <div class="project-field" style="margin-bottom:10px"><label>Nombre del proyecto / proceso</label><input type="text" id="proj-name" placeholder="Ej: Cierre de mes contable" oninput="saveState();updateTopbar()"></div>
-          <div class="two-col">
-            <div class="project-field"><label>Área funcional</label>
-              <select id="proj-area" oninput="saveState()"><option>Finanzas</option><option>Operaciones</option><option>Calidad</option><option>RRHH</option><option>Logística</option><option>Comercial</option><option>TI</option><option>Compras</option><option>Otro</option></select>
-            </div>
-            <div class="project-field"><label>Responsable</label><input type="text" id="proj-owner" placeholder="Nombre del responsable" oninput="saveState()"></div>
-          </div>
-          <div class="action-row">
-            <button class="btn btn-primary" onclick="saveProject()">Guardar proyecto</button>
-            <button class="btn btn-secondary" onclick="newProject()">Nuevo proyecto</button>
-            <button class="btn btn-ghost" onclick="exportProject()">Exportar JSON</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- CONFIG -->
-    <div class="screen" id="screen-config">
-      <div class="config-wrap">
-        <div class="stage-header"><div><div class="stage-title">⚙ Configuración base</div><div class="stage-desc">Administrador metodológico · Cambios aplican de inmediato</div></div></div>
-        <div class="config-section">
-          <div class="config-section-title">🔐 Acceso</div>
-          <div class="two-col">
-            <div><div class="field-label">Nueva contraseña</div><input type="password" id="new-pass" placeholder="Mínimo 4 caracteres"></div>
-            <div style="display:flex;align-items:flex-end"><button class="btn btn-secondary" style="height:38px;width:100%" onclick="changePassword()">Cambiar contraseña</button></div>
-          </div>
-        </div>
-        <div class="config-section">
-          <div class="config-section-title">📝 Prompts del sistema</div>
-          <div id="prompt-config-list"></div>
-          <div class="action-row">
-            <button class="btn btn-primary" onclick="savePrompts()">Guardar todos los prompts</button>
-            <span class="save-indicator" id="saveIndicator">✓ Guardado</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</main>
-</div>
-<div class="toast" id="toast"></div>
-
-<script>
-
-// ══════════════════════════════════════════════════════
-// SGMP · Loader de prompts desde Sheet
-// Incluir este bloque al inicio del <script> de cada módulo
-// ══════════════════════════════════════════════════════
-var SGMP_API = 'https://script.google.com/macros/s/AKfycbxacrnEiiTVyip9CqJSelbN81BBt-qVfrmwo2Yyb7SfLw9Co48Oua8OPlu-SDmhi1kj/exec';
+  <script>
+// ── SGMP Loader ──────────────────────────────────────────────
+var SGMP_API = 'https://script.google.com/macros/s/AKfycbyQZi1flaILc4e3I7MFp8gLctkzC6VccjfFz5aHluMrGZLwOUeS3uQaHPsMZ3l5yfDw-Q/exec';
 var SGMP_PROMPTS = {};
 var SGMP_LOADED  = false;
 
@@ -569,535 +36,213 @@ function sgmpLoadPrompts(moduleCode, onReady) {
   try {
     var cached = sessionStorage.getItem(cacheKey);
     if (cached) {
-      var arr = JSON.parse(cached);
-      arr.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
-      SGMP_LOADED = true;
-      onReady();
-      return;
+      JSON.parse(cached).forEach(function(p){ SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+      SGMP_LOADED = true; onReady(); return;
     }
   } catch(e) {}
-
   fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
+    .then(function(r){ return r.json(); })
+    .then(function(res){
       if (res.ok && res.data && res.data.length) {
-        res.data.forEach(function(p) { SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
+        res.data.forEach(function(p){ SGMP_PROMPTS[p.prompt_key] = p.prompt_text; });
         try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
       }
-      SGMP_LOADED = true;
-      onReady();
+      SGMP_LOADED = true; onReady();
     })
-    .catch(function() {
-      SGMP_LOADED = true;
-      onReady(); // continúa con prompts vacíos — módulo funciona igual
-    });
+    .catch(function(){ SGMP_LOADED = true; onReady(); });
 }
 
-// Obtener prompt — nunca falla, devuelve fallback si no hay nada
 function sgmpPrompt(key, fallback) {
   return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
 }
+// ── Fin SGMP Loader ──────────────────────────────────────────
+  </script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><h1>MIRA <span>GenDocs</span></h1><p>Orquestador documental v2</p></div>
+    <div class="nav">
+      <div class="nav-title">Flujo</div>
+      <button class="active" data-screen="config">⚙️ Configuración</button>
+      <button data-screen="input">📥 Entrada / Brief</button>
+      <button data-screen="prompt">📋 Prompt listo para IA</button>
+      <button data-screen="review">🧭 Revisión</button>
+      <button data-screen="final">📦 Entregables</button>
+      <div class="nav-title">Soporte</div>
+      <button data-screen="settings">🔐 Configuración base</button>
+      <button onclick="exportProject()">⬇️ Exportar JSON</button>
+      <button onclick="document.getElementById('jsonImport').click()">⬆️ Importar JSON</button>
+      <input id="jsonImport" type="file" accept=".json" class="hidden" onchange="importProject(event)">
+    </div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div><h2 id="pageTitle">Configuración inicial</h2><p id="pageSub">Define el modo, industria, normativas, metodología y formato esperado.</p></div>
+      <div class="actions"><button class="btn ghost" onclick="saveProject()">💾 Guardar sesión</button><button class="btn green" onclick="closeProject()">✅ Proyecto cerrado</button></div>
+    </div>
+    <div class="content">
+      <section id="config" class="screen active">
+        <div class="card"><h3>1. Modo de trabajo</h3><p class="desc">Selecciona si se mejorará un documento existente o si se construirá desde cero.</p>
+          <div class="mode-grid"><div id="modeExisting" class="mode active" onclick="setMode('existing')"><strong>Mejorar documento existente</strong><span>El usuario carga Word, Excel o texto; la salida conserva el mismo formato.</span></div><div id="modeNew" class="mode" onclick="setMode('new')"><strong>Crear documento desde cero</strong><span>El usuario define contexto y elige salida Word o Excel.</span></div></div>
+        </div>
+        <div class="card"><h3>2. Configuración común</h3><p class="desc">Estos campos alimentan el bloque maestro del prompt. La IA actuará como experta en industria, normativa, metodología y proceso.</p>
+          <div class="grid3">
+            <div class="field"><label>Tipo documental <span class="req">*</span></label><select id="docType" onchange="syncAll()"></select></div>
+            <div class="field"><label>Industria / sector <span class="req">*</span></label><select id="industry" onchange="syncAll()"></select></div>
+            <div class="field"><label>Nivel de exigencia <span class="req">*</span></label><select id="rigor" onchange="syncAll()"><option>Básico</option><option selected>Robusto</option><option>Profundo</option></select></div>
+            <div class="field"><label>Empresa</label><input id="company" placeholder="Nombre de la empresa" oninput="syncAll()"></div>
+            <div class="field"><label>Proceso donde se usará <span class="req">*</span></label><input id="process" placeholder="Ej. Compras, cierre contable, exportaciones" oninput="syncAll()"></div>
+            <div class="field" id="outputField"><label>Formato de salida</label><select id="outputFormat" onchange="syncAll()"><option value="word">Word (.docx)</option><option value="excel">Excel (.xlsx)</option></select></div>
+          </div>
+        </div>
+        <div class="card"><h3>3. Normativas y metodologías</h3><p class="desc">El usuario puede seleccionar las existentes o agregar nuevas. El prompt no inventará vigencias: pedirá declarar limitaciones cuando no haya certeza.</p>
+          <div class="grid2"><div><div class="field"><label>Normativas aplicables</label></div><div id="normPills" class="pill-row"></div><div class="add-row"><input id="normNew" placeholder="Agregar normativa no listada"><button class="btn" onclick="addItem('norm')">Agregar</button></div></div><div><div class="field"><label>Metodologías aplicables</label></div><div id="methodPills" class="pill-row"></div><div class="add-row"><input id="methodNew" placeholder="Agregar metodología no listada"><button class="btn" onclick="addItem('method')">Agregar</button></div></div></div>
+        </div>
+        <div class="card"><h3>4. Resumen de configuración</h3><div id="configSummary" class="summary-grid"></div><div class="actions" style="margin-top:16px"><button class="btn primary" onclick="go('input')">Continuar → Entrada / Brief</button></div></div>
+      </section>
 
-// Auth admin contra Sheet
-function sgmpAuthAdmin(username, password, onOk, onErr) {
-  var url = SGMP_API + '?action=auth_admin&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
-  fetch(url).then(function(r){return r.json();}).then(function(res){
-    if (res.ok) { sessionStorage.setItem('sgmp_admin_token', res.data.token); onOk(res.data); }
-    else onErr(res.error || 'Credenciales incorrectas.');
-  }).catch(function(){ onErr('Error de conexión.'); });
-}
+      <section id="input" class="screen">
+        <div id="existingInput">
+          <div class="card"><h3>Entrada del documento existente</h3><p class="desc">Carga un Word o Excel. También puedes pegar texto si el archivo no puede extraerse. Si entra Word, sale Word. Si entra Excel, sale Excel.</p>
+            <div class="drop" id="drop" onclick="document.getElementById('fileInput').click()" ondragover="drag(event,true)" ondragleave="drag(event,false)" ondrop="dropFile(event)"><b>📄 Cargar documento</b><span>.docx · .xlsx · .xls · .csv · .txt · .md</span></div><input id="fileInput" type="file" class="hidden" accept=".docx,.xlsx,.xls,.csv,.txt,.md" onchange="handleFile(event)"><div id="fileMsg"></div>
+            <div class="grid2" style="margin-top:14px"><div class="field"><label>Nombre del documento</label><input id="sourceName" oninput="syncAll()" placeholder="Ej. Procedimiento de compras"></div><div class="field"><label>Formato detectado</label><input id="inputFormat" readonly placeholder="Se detecta al cargar archivo"></div></div>
+            <div class="field" style="margin-top:12px"><label>Contenido extraído / pegado</label><textarea id="sourceContent" class="mono" oninput="syncAll()" placeholder="Aquí aparecerá el texto del Word o la estructura del Excel. También puedes pegar contenido manualmente."></textarea></div>
+            <div class="field" style="margin-top:12px"><label>Detalle de lo que se quiere mejorar <span class="req">*</span></label><textarea id="improveBrief" placeholder="Ej. mejorar claridad, incorporar controles, actualizar a normativa, reforzar responsabilidades, convertir en formato auditable..." oninput="syncAll()"></textarea></div>
+          </div>
+        </div>
+        <div id="newInput" class="hidden">
+          <div class="card"><h3>Brief para crear documento desde cero</h3><p class="desc">Define el contexto y el formato esperado. Para documentos Excel, orienta la estructura de hojas, columnas y validaciones esperadas.</p>
+            <div class="grid2"><div class="field"><label>Nombre del documento</label><input id="newName" placeholder="Ej. Matriz RACI del proceso de compras" oninput="syncAll()"></div><div class="field"><label>Objetivo</label><input id="newObjective" placeholder="¿Para qué debe existir?" oninput="syncAll()"></div></div>
+            <div class="grid2" style="margin-top:12px"><div class="field"><label>Alcance</label><textarea id="newScope" placeholder="Áreas, actividades, límites, usuarios del documento" oninput="syncAll()"></textarea></div><div class="field"><label>Controles / criterios clave</label><textarea id="newControls" placeholder="Registros, aprobaciones, indicadores, validaciones, campos obligatorios" oninput="syncAll()"></textarea></div></div>
+            <div class="field" style="margin-top:12px"><label>Contexto adicional</label><textarea id="newContext" placeholder="Información libre que debe considerar la IA para construir el documento" oninput="syncAll()"></textarea></div>
+          </div>
+        </div>
+        <div class="card"><h3>Validación rápida</h3><div id="inputValidation" class="alert info">Completa la entrada para generar el prompt.</div><div class="actions"><button class="btn ghost" onclick="go('config')">← Volver</button><button class="btn primary" onclick="buildPromptAndGo()">Generar prompt listo para IA →</button></div></div>
+      </section>
 
-// ══════════════════════════════════════════════════════
-// PROMPTS DEFAULT
-// ══════════════════════════════════════════════════════
-// Prompts gestionados desde SGMP Sheet — ver pestaña PROMPTS en Google Sheet
+      <section id="prompt" class="screen">
+        <div class="card"><h3>Prompt listo para IA</h3><p class="desc">Prompt genérico, portable y copiables para ChatGPT, Claude, Gemini, Copilot u otra IA. No depende de API.</p>
+          <div class="prompt"><div class="prompt-head"><strong>Prompt maestro</strong><button class="btn primary" onclick="copyPrompt('masterPrompt')">⎘ Copiar prompt</button></div><div id="masterPrompt" class="prompt-body">Completa configuración y entrada.</div></div>
+          <div class="alert warn">Ejecuta este prompt en la IA externa. Luego pega la respuesta completa en el campo de abajo. El prompt exige JSON/fenced blocks para reducir errores.</div>
+        </div>
+        <div class="card"><h3>Respuesta de la IA</h3><p class="desc">Pega la respuesta completa. El sistema intentará extraer JSON. Si la IA responde texto libre, igual podrás usar el contenido, pero la revisión automática puede ser limitada.</p>
+          <textarea id="aiResponse" class="mono" placeholder="Pega aquí la respuesta de la IA..." oninput="saveProject()"></textarea><div class="actions"><button class="btn ghost" onclick="go('input')">← Volver</button><button class="btn primary" onclick="processAiResponse()">Procesar respuesta → Revisión</button></div><div id="responseMsg"></div>
+        </div>
+      </section>
 
-// ── MANUAL EMBEBIDO ──
-const MANUAL_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Manual de Usuario · MiraGenDocs v1.1</title><style>body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4fb;color:#0f1c33;margin:0;padding:0}@media print{body{background:#fff}.no-print{display:none}.page-break{page-break-before:always}}.container{max-width:860px;margin:0 auto;padding:32px 24px}.brand-header{background:#12336b;color:#fff;padding:32px 40px;border-radius:12px 12px 0 0;margin-bottom:0}.brand-header h1{font-size:28px;margin:0 0 4px;font-weight:700}.brand-header p{margin:0;opacity:.65;font-size:13px}section{background:#fff;border:1px solid #dce6f5;border-radius:0 0 0 0;padding:28px 32px;margin-bottom:2px}section:last-child{border-radius:0 0 10px 10px}h2{font-size:18px;color:#12336b;border-bottom:2px solid #1a5fc8;padding-bottom:8px;margin:0 0 16px}h3{font-size:14px;color:#1a5fc8;margin:20px 0 8px}p{font-size:13px;line-height:1.7;color:#3d5478;margin:0 0 10px}ul,ol{font-size:13px;color:#3d5478;padding-left:22px;margin:0 0 10px}li{margin-bottom:4px;line-height:1.6}table{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:12px}th{background:#12336b;color:#fff;padding:8px 10px;text-align:left}td{padding:7px 10px;border-bottom:1px solid #dce6f5}tr:nth-child(even) td{background:#f5f8ff}.info{background:#eff6ff;border:1px solid #bfdbfe;border-left:3px solid #1a5fc8;border-radius:4px;padding:9px 12px;margin:10px 0;font-size:12px;color:#1e3a8a}.warn{background:#fffbeb;border:1px solid #fcd34d;border-left:3px solid #b45309;border-radius:4px;padding:9px 12px;margin:10px 0;font-size:12px;color:#92400e}.tip{background:#f0fdf4;border:1px solid #86efac;border-left:3px solid #15803d;border-radius:4px;padding:9px 12px;margin:10px 0;font-size:12px;color:#14532d}.badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;margin-right:4px}.b1{background:#fee2e2;color:#991b1b}.b2{background:#fef3c7;color:#92400e}.b3{background:#dbeafe;color:#1e3a8a}.b4{background:#dcfce7;color:#14532d}.step-num{display:inline-block;width:20px;height:20px;border-radius:50%;background:#1a5fc8;color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:20px;margin-right:6px;flex-shrink:0}footer{text-align:center;padding:16px;font-size:11px;color:#7a94b8;border-top:1px solid #dce6f5;margin-top:24px}@media print{.no-print{display:none}section{break-inside:avoid}.page-break{break-before:page}}</style></head><body><div class="container"><div class="brand-header"><h1>MiraGenDocs · Manual de Usuario</h1><p>Motor Documental MIRA · v1.1 · Uso interno · Metodología MIRA</p></div>
-<section><h2>1. ¿Qué es MiraGenDocs?</h2><p>MiraGenDocs es el motor documental de la Metodología MIRA. Es un archivo HTML que abre directamente en el navegador — sin instalación, sin servidores, sin internet — y organiza el ciclo completo de trabajo con IA para análisis y construcción de documentos.</p><div class="info">★ MiraGenDocs no reemplaza a la IA. La organiza, parametriza y captura sus resultados en un flujo metodológico trazable.</div><table><tr><th>Función</th><th>Descripción</th></tr><tr><td>Flujo guiado 5 etapas</td><td>Extracción → TO-BE → Análisis → Construcción → Consolidación</td></tr><tr><td>Prompts con 1 clic</td><td>Cada etapa arma el prompt completo con el contexto del proyecto</td></tr><tr><td>Autoconstrucción del prompt de análisis</td><td>Jala automáticamente el TO-BE + todas las fichas guardadas</td></tr><tr><td>Revisión real de buenas prácticas</td><td>Aprobar / Rechazar / Ajustar cada sugerencia del Bloque 2</td></tr><tr><td>Prompt de consolidación dinámico</td><td>Se arma solo con las BPs que aprobaste</td></tr><tr><td>Prompts protegidos</td><td>Configuración base con contraseña — usuarios no los ven</td></tr><tr><td>Exportar / Importar JSON</td><td>Todo el proyecto se guarda y recupera sin perder nada</td></tr></table></section>
-<section class="page-break"><h2>2. Primeros pasos</h2><h3>Cómo abrir MiraGenDocs</h3><ol><li>Descarga el archivo <strong>miragendocs_v1.html</strong> a tu equipo.</li><li>Haz doble clic sobre el archivo.</li><li>Se abre en el navegador. No necesitas nada más.</li></ol><div class="info">Recomendado: Chrome o Edge. Firefox también funciona. Safari puede tener restricciones con el portapapeles.</div><h3>Registrar el proyecto</h3><p>Antes de iniciar el flujo, ve a <strong>Proyecto activo</strong> en la barra lateral y completa nombre del proceso, área funcional y responsable. Esto identifica correctamente el JSON exportado.</p></section>
-<section><h2>3. El flujo de 5 etapas</h2><table><tr><th>#</th><th>Etapa</th><th>Qué produce</th></tr><tr><td>01</td><td>Extracción documental</td><td>Ficha estructurada de un documento existente</td></tr><tr><td>02</td><td>Estructuración TO-BE</td><td>Tabla de proceso con etapas, actores, entradas y salidas</td></tr><tr><td>03</td><td>Análisis documental</td><td>Cobertura, brechas, redundancias y arquitectura propuesta</td></tr><tr><td>04</td><td>Construcción documental</td><td>Borrador (Bloque 1) + Buenas prácticas (Bloque 2)</td></tr><tr><td>05</td><td>Revisión y consolidación</td><td>Borrador final con solo las BPs aprobadas</td></tr></table>
-<h3>Etapa 01 · Extracción</h3><ol><li>Escribe el nombre del documento.</li><li>Pega el texto del documento en el campo de contenido.</li><li>Clic en <strong>Copiar prompt</strong> — el prompt ya lleva el contenido del documento incluido.</li><li>Pega en Claude o ChatGPT y envía.</li><li>Copia la respuesta de la IA y pégala en el área verde de Audix.</li><li>Clic en <strong>Guardar ficha</strong> para que esté disponible en el análisis.</li></ol><div class="tip">★ En Claude: usa el ícono de copia al pie del mensaje. Copia toda la respuesta sin seleccionar manualmente.</div>
-<h3>Etapa 02 · TO-BE</h3><ol><li>Selecciona el tipo de insumo (SIPOC, tabla, descripción libre o flujograma).</li><li>Pega tu TO-BE en el campo de contenido.</li><li>Clic en Copiar prompt, pega en la IA, copia la respuesta y pégala en el área de respuesta.</li></ol>
-<h3>Etapa 03 · Análisis</h3><p>El prompt se <strong>autoconstruye</strong> al hacer clic en Copiar prompt: incluye el TO-BE estructurado + todas las fichas guardadas en Documentos. No tienes que pegar nada manualmente en el prompt — solo enviarlo a la IA.</p><div class="info">El sistema indica cuántas fichas tiene disponibles para incluir en el análisis.</div>
-<h3>Etapa 04 · Construcción</h3><p>Completa el brief: tipo documental, nivel de robustez, nombre y descripción. El prompt se arma automáticamente con esos datos.</p><div class="warn">La IA devolverá DOS BLOQUES separados. Pega el BLOQUE 1 en el área azul y el BLOQUE 2 en el área amarilla. Es fundamental mantenerlos separados para que la revisión funcione.</div>
-<h3>Etapa 05 · Revisión y consolidación</h3><ol><li>Las sugerencias del Bloque 2 aparecen como tarjetas individuales.</li><li>Para cada una: Aprobar, Rechazar o Ajustar (con nota).</li><li>El prompt de consolidación se arma solo con las aprobadas.</li><li>Copia el prompt, pega en la IA y recibe el borrador final limpio.</li><li>Pega el borrador final y clic en <strong>Marcar como listo</strong>.</li></ol></section>
-<section class="page-break"><h2>4. El botón de copia</h2><p>Cada prompt y cada área de respuesta tiene su botón de copia. El botón cambia a verde durante 2 segundos para confirmar. En caso de error, aparece un mensaje en la parte inferior.</p><div class="tip">En Claude: el ícono de copia (dos rectángulos) al pie de cada respuesta copia todo sin seleccionar. En ChatGPT: igual. Úsalo siempre.</div></section>
-<section><h2>5. Revisión de buenas prácticas</h2><p>Esta es la diferencia entre MiraGenDocs v1.1 y la versión anterior. El sistema parsea automáticamente el Bloque 2 y presenta cada sugerencia como una tarjeta con:</p><ul><li>Descripción de la mejora</li><li>Motivo y origen metodológico</li><li>Categoría: RECOMENDADA / OPCIONAL / ADVERTENCIA</li><li>Botones: <strong>Aprobar</strong>, <strong>Rechazar</strong>, <strong>Ajustar</strong> (con campo de nota)</li></ul><p>El prompt de consolidación solo incluye las sugerencias que marcaste como Aprobadas o Ajustadas. Las rechazadas no aparecen en el borrador final.</p><div class="info">Si el Bloque 2 no viene en el formato esperado, el sistema muestra el texto completo para revisión manual.</div></section>
-<section><h2>6. Configuración base</h2><h3>Cómo acceder</h3><ol><li>Clic en <strong>Configuración base</strong> al pie de la barra lateral.</li><li>Ingresa tu contraseña de administrador SGMP.</li><li>Clic en Acceder.</li></ol><div class="warn">Cambia la contraseña al primer uso: Configuración base → Acceso → Nueva contraseña.</div><h3>Editar prompts</h3><p>Cada etapa tiene su prompt editable. Expande el item, edita el texto y clic en <strong>Guardar todos los prompts</strong>. Los cambios se guardan en el navegador y aplican de inmediato.</p><p>Usa el botón <strong>Restaurar original</strong> para volver al texto base de cualquier prompt.</p><div class="info">No elimines las líneas de estructura marcadas con ━━━ — son las que garantizan que la IA devuelva el formato correcto para el parser de buenas prácticas.</div></section>
-<section><h2>7. Exportar e importar</h2><h3>Exportar</h3><p>Clic en <strong>Exportar JSON</strong> en la barra lateral. El navegador descarga un archivo .json con todo el proyecto: datos, fichas, respuestas de IA, decisiones sobre BPs e historial de prompts.</p><div class="warn">MiraGenDocs guarda el estado de trabajo en la sesión activa del navegador. Si cierras la pestaña sin exportar, el trabajo no guardado se pierde. El sistema te alertará si hay trabajo pendiente al intentar cerrar.</div><h3>Importar</h3><ol><li>Clic en Importar JSON en la barra lateral.</li><li>Selecciona el archivo .json del proyecto.</li><li>MiraGenDocs carga todo: etapa activa, fichas, respuestas y decisiones.</li></ol></section>
-<section><h2>8. Flujo completo de referencia</h2><table><tr><th>#</th><th>Acción</th><th>Dónde</th></tr><tr><td>1</td><td>Crear proyecto</td><td>Barra lateral → Proyecto activo</td></tr><tr><td>2</td><td>Cargar documento y copiar prompt</td><td>Flujo → Etapa 01</td></tr><tr><td>3</td><td>Pegar prompt en Claude/ChatGPT</td><td>Tu herramienta de IA</td></tr><tr><td>4</td><td>Copiar respuesta y pegarla en MiraGenDocs</td><td>Área verde Etapa 01</td></tr><tr><td>5</td><td>Guardar ficha</td><td>Botón "Guardar ficha"</td></tr><tr><td>6</td><td>Estructurar TO-BE</td><td>Etapa 02</td></tr><tr><td>7</td><td>Generar análisis (prompt autoconstruido)</td><td>Etapa 03</td></tr><tr><td>8</td><td>Construir documento con brief</td><td>Etapa 04</td></tr><tr><td>9</td><td>Revisar y aprobar BPs</td><td>Etapa 05 — tarjetas</td></tr><tr><td>10</td><td>Copiar prompt de consolidación</td><td>Etapa 05 — prompt final</td></tr><tr><td>11</td><td>Marcar como listo y exportar</td><td>Botón "Marcar como listo"</td></tr></table></section>
-<section><h2>9. Preguntas frecuentes</h2><h3>¿Necesito internet para usar MiraGenDocs?</h3><p>No para abrir MiraGenDocs. Sí para acceder a Claude o ChatGPT donde ejecutas los prompts.</p><h3>¿Qué pasa si la IA no separa los bloques?</h3><p>MiraGenDocs muestra el texto completo para revisión manual en la etapa de consolidación. Puedes también pedirle a la IA que repita la respuesta con el formato correcto.</p><h3>¿Puedo usar ChatGPT o Gemini en lugar de Claude?</h3><p>Sí. Los prompts funcionan con cualquier modelo. El resultado puede variar en formato pero el flujo funciona igual.</p><h3>¿Cómo retomo un proyecto?</h3><p>Exporta al terminar. Para retomar: Importar JSON → selecciona el archivo. Todo se restaura.</p><h3>¿Los prompts que edito afectan a otros usuarios?</h3><p>No. Los prompts se guardan en el navegador local. Cada equipo tiene su propia instancia independiente.</p></section>
-<section><h2>10. Glosario</h2><table><tr><th>Término</th><th>Significado</th></tr><tr><td>TO-BE</td><td>El proceso deseado o futuro, estructurado con etapas, actores y flujos</td></tr><tr><td>Ficha documental</td><td>Resumen estructurado de un documento existente generado por la IA</td></tr><tr><td>Brecha documental</td><td>Etapa del TO-BE sin soporte en ningún documento existente</td></tr><tr><td>Bloque 1</td><td>Parte de la respuesta IA con el borrador del documento (solo el brief)</td></tr><tr><td>Bloque 2</td><td>Parte de la respuesta IA con las sugerencias de buenas prácticas separadas</td></tr><tr><td>Brief</td><td>Descripción del documento a construir: tipo, proceso, actores, pasos</td></tr><tr><td>Robustez</td><td>Nivel de profundidad: Básico / Estándar / Robusto</td></tr><tr><td>JSON</td><td>Archivo de exportación con todo el proyecto, importable para continuar</td></tr><tr><td>Configuración base</td><td>Panel de administración protegido por contraseña para editar prompts</td></tr></table></section>
-<footer>MiraGenDocs v1.1 · Motor Documental MIRA · Uso interno · Confidencial</footer></div>
-<div class="no-print" style="position:fixed;bottom:20px;right:20px"><button onclick="window.print()" style="padding:8px 16px;background:#1a5fc8;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:sans-serif">Imprimir / Guardar PDF</button></div>
-</body></html>`;
+      <section id="review" class="screen">
+        <div class="card"><h3>Revisión de recomendaciones</h3><p class="desc">Cada recomendación debe poder aprobarse, rechazarse o editarse. Solo las aprobadas/ajustadas alimentan el prompt de reconstrucción o creación final.</p><div id="recList"></div></div>
+        <div class="card"><h3>Prompt de consolidación final</h3><p class="desc">Este prompt incorpora solo las recomendaciones aprobadas o ajustadas. También respeta el formato de salida definido.</p><div class="prompt"><div class="prompt-head"><strong>Prompt final</strong><button class="btn primary" onclick="copyPrompt('finalPrompt')">⎘ Copiar prompt final</button></div><div id="finalPrompt" class="prompt-body">Aún no generado.</div></div><div class="actions"><button class="btn" onclick="buildFinalPrompt()">⚡ Regenerar prompt final</button></div></div>
+        <div class="card"><h3>Respuesta final de la IA</h3><textarea id="finalResponse" class="mono" placeholder="Pega aquí el documento final o la estructura Excel final devuelta por la IA..." oninput="saveProject()"></textarea><div class="actions"><button class="btn ghost" onclick="go('prompt')">← Volver</button><button class="btn primary" onclick="prepareDeliverables()">Preparar entregables →</button></div></div>
+      </section>
 
-// ══════════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════════
-let STATE = {
-  project:{name:'',area:'Finanzas',owner:''},
-  stage:0, docs:[], history:[], workflow:{},
-  bpDecisions:[], audixReady:false
+      <section id="final" class="screen">
+        <div class="card"><h3>Documentos listos para descarga</h3><p class="desc">El sistema genera descargables con base en el formato de entrada o el formato definido para documento nuevo.</p><div id="deliverableStatus" class="alert info">Pendiente de preparar entregables.</div>
+          <div class="actions"><button class="btn primary" onclick="downloadMain()">⬇️ Descargar documento principal</button><button class="btn" onclick="downloadOnePage()">⬇️ Descargar one-page de cambios</button><button class="btn ghost" onclick="downloadJson()">⬇️ Descargar JSON del proyecto</button></div>
+        </div>
+        <div class="card"><h3>Vista previa del control de cambios</h3><div class="table-wrap"><table id="changesTable"><thead><tr><th>Cambio</th><th>Antes</th><th>Después</th><th>Justificación</th><th>Impacto</th></tr></thead><tbody></tbody></table></div></div>
+      </section>
+
+      <section id="settings" class="screen">
+        <div class="card"><h3>Configuración base</h3><p class="desc">Parámetros editables sin tocar código. En esta versión se mantienen en el navegador.</p><div class="grid2"><div class="field"><label>Tipos documentales</label><textarea id="cfgDocTypes" class="mono"></textarea></div><div class="field"><label>Industrias</label><textarea id="cfgIndustries" class="mono"></textarea></div></div><div class="grid2" style="margin-top:12px"><div class="field"><label>Normativas base</label><textarea id="cfgNorms" class="mono"></textarea></div><div class="field"><label>Metodologías base</label><textarea id="cfgMethods" class="mono"></textarea></div></div><div class="field" style="margin-top:12px"><label>Bloque de rol experto / anti-alucinación</label><textarea id="cfgRoleBlock" class="mono"></textarea></div><div class="actions"><button class="btn primary" onclick="saveSettings()">Guardar configuración base</button><button class="btn ghost" onclick="resetSettings()">Restaurar base</button></div></div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="toast" style="position:fixed;right:18px;bottom:18px;background:var(--navy);color:#fff;padding:11px 16px;border-radius:10px;opacity:0;transition:.2s;z-index:50;font-weight:800"></div>
+<script>
+const DEFAULT_SETTINGS={
+  docTypes:['Política','Procedimiento','POE','Instructivo','Manual','SLA','Formato','Checklist','Matriz','FMEA','RACI','Plan de acción','Scorecard','Otro'],
+  industries:['Procesamiento de alimentos','Manufactura industrial','Pesquero / Acuícola','Agroindustria','Financiero / Contable','Logística','Salud / Farmacéutico','Servicios','Comercio y distribución','Otro'],
+  norms:['ISO 9001','ISO 22000','HACCP','BPM/GMP','BRC Food Safety','FSSC 22000','IFS Food','NIIF/IFRS','NEC','SRI','BASC','ISO 14001','ISO 45001','ISO 17025'],
+  methods:['Gestión por procesos','Lean','Six Sigma / DMAIC','TOC','Kaizen','FMEA','RACI','SIPOC','BPM','TPM','5S','TRIZ','Scrum / Agile'],
+  roleBlock:`Actúa como consultor senior especialista simultáneamente en:\n1. Gestión por procesos y sistemas de gestión.\n2. Mejora continua y diseño documental.\n3. La industria seleccionada por el usuario.\n4. Las normativas aplicables definidas por el usuario.\n5. Las metodologías seleccionadas por el usuario.\n6. El proceso específico donde este documento será utilizado.\n\nNo actúes como redactor generalista. Actúa como experto técnico responsable de que el documento funcione en la operación real.\n\nReglas anti-alucinación:\n- No inventes requisitos normativos, versiones, controles ni obligaciones.\n- Si no puedes validar con certeza una normativa, declara la limitación.\n- Si haces supuestos, márcalos como SUPUESTO DECLARADO y justifícalos.\n- Si detectas conflicto entre normativa, buena práctica y operación real, prioriza: cumplimiento obligatorio, control crítico, viabilidad operativa y eficiencia documental.\n- Evita sobre-documentación, burocracia sin valor y recomendaciones genéricas no accionables.`
 };
-let PROMPTS = {};
-const PASS_KEY='mgd_pass', PROMPTS_KEY='mgd_prompts';
-const DEFAULT_PASS='mira2024';
-// SGMP_API declarada en el loader
-
-// ── INIT ──
-function init(){
-  const s=localStorage.getItem(PROMPTS_KEY);
-  PROMPTS=s?JSON.parse(s):{...DEFAULT_PROMPTS};
-  // Cargar prompts del Sheet (sobreescribe DEFAULT_PROMPTS si hay versión en Sheet)
-  sgmpLoadPrompts('GD', function() { /* prompts GD listos desde Sheet */ });
-  renderPromptDisplays();
-  buildConfigEditor();
-  const saved=sessionStorage.getItem('mgd_state');
-  if(saved){try{STATE={...STATE,...JSON.parse(saved)};restoreForm();}catch(e){}}
-  updateAnalysisSummary();
-  window.addEventListener('beforeunload',e=>{
-    const w=STATE.workflow||{};
-    const hasWork=w.respExtraction||w.respTobe||w.respAnalysis||w.respDraft||w.respFinal;
-    if(hasWork&&!STATE.audixReady){e.preventDefault();e.returnValue='Tienes trabajo no exportado. ¿Seguro que quieres salir?';}
-  });
+let SETTINGS=load('mira_gd_settings',DEFAULT_SETTINGS);
+let STATE=load('mira_gd_state',{mode:'existing',selectedNorms:[],selectedMethods:[],inputFormat:'',sourceWorkbook:null,recommendations:[],finalContent:'',controlChanges:[]});
+function storageFor(k){return k==='mira_gd_state'?sessionStorage:localStorage}
+function load(k,f){try{return JSON.parse(storageFor(k).getItem(k))||f}catch(e){return JSON.parse(JSON.stringify(f))}}
+function store(k,v){storageFor(k).setItem(k,JSON.stringify(v))}
+function $(id){return document.getElementById(id)}
+function toast(t){const el=$('toast');el.textContent=t;el.style.opacity=1;setTimeout(()=>el.style.opacity=0,1800)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function safeName(s){return String(s||'documento').replace(/[^a-z0-9áéíóúüñ_-]/gi,'_').replace(/_+/g,'_')}
+function init(){renderSettings();renderSelects();renderPills();restoreInputs();syncAll();document.querySelectorAll('.nav button[data-screen]').forEach(b=>b.onclick=()=>go(b.dataset.screen));}
+function renderSelects(){const dt=$('docType'),ind=$('industry');dt.innerHTML='<option value="">Seleccione...</option>'+SETTINGS.docTypes.map(x=>`<option>${esc(x)}</option>`).join('');ind.innerHTML='<option value="">Seleccione...</option>'+SETTINGS.industries.map(x=>`<option>${esc(x)}</option>`).join('');}
+function renderPills(){renderPillGroup('normPills',SETTINGS.norms,STATE.selectedNorms,'norm');renderPillGroup('methodPills',SETTINGS.methods,STATE.selectedMethods,'method');}
+function renderPillGroup(id,items,selected,type){$(id).innerHTML=items.map(x=>`<button class="pill ${selected.includes(x)?'on':''}" onclick="toggleItem('${type}', '${String(x).replace(/'/g,"\\'")}')">${esc(x)}</button>`).join('')}
+function toggleItem(type,item){let arr=type==='norm'?STATE.selectedNorms:STATE.selectedMethods;let i=arr.indexOf(item);i>=0?arr.splice(i,1):arr.push(item);renderPills();syncAll();}
+function addItem(type){let inp=$(type==='norm'?'normNew':'methodNew');let v=inp.value.trim();if(!v)return;let base=type==='norm'?SETTINGS.norms:SETTINGS.methods;if(!base.includes(v))base.push(v);let sel=type==='norm'?STATE.selectedNorms:STATE.selectedMethods;if(!sel.includes(v))sel.push(v);inp.value='';renderPills();syncAll();saveSettings(false)}
+function setMode(m){STATE.mode=m;$('modeExisting').classList.toggle('active',m==='existing');$('modeNew').classList.toggle('active',m==='new');$('existingInput').classList.toggle('hidden',m!=='existing');$('newInput').classList.toggle('hidden',m!=='new');$('outputField').classList.toggle('hidden',m==='existing');syncAll();saveProject(false)}
+function go(screen){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(screen).classList.add('active');document.querySelectorAll('.nav button[data-screen]').forEach(b=>b.classList.toggle('active',b.dataset.screen===screen));const titles={config:['Configuración inicial','Define modo, contexto, normativas y salida.'],input:['Entrada / Brief','Carga el documento o describe lo que quieres construir.'],prompt:['Prompt listo para IA','Copia el prompt y ejecútalo en la IA externa.'],review:['Revisión','Aprueba, rechaza o ajusta recomendaciones.'],final:['Entregables','Descarga Word, Excel, one-page o JSON.'],settings:['Configuración base','Administra catálogos y bloque experto.']};$('pageTitle').textContent=titles[screen][0];$('pageSub').textContent=titles[screen][1];}
+function drag(e,on){e.preventDefault();$('drop').classList.toggle('over',on)}
+function dropFile(e){e.preventDefault();$('drop').classList.remove('over');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0])}
+function handleFile(e){if(e.target.files[0])readFile(e.target.files[0]);e.target.value=''}
+async function readFile(f){const n=f.name.toLowerCase();$('sourceName').value=f.name;let msg='';try{if(n.endsWith('.docx')){if(!window.mammoth)throw new Error('mammoth no cargó');const ab=await f.arrayBuffer();const r=await mammoth.extractRawText({arrayBuffer:ab});$('sourceContent').value=r.value||'';STATE.inputFormat='word';msg=`<div class="alert ok">Word leído: ${(r.value||'').length.toLocaleString()} caracteres. Las imágenes/cuadros no extraíbles se manejarán con placeholders.</div>`;}else if(n.endsWith('.xlsx')||n.endsWith('.xls')||n.endsWith('.csv')){const ab=await f.arrayBuffer();const wb=XLSX.read(ab,{type:'array'});STATE.sourceWorkbook=workbookToJson(wb);$('sourceContent').value=workbookToText(STATE.sourceWorkbook);STATE.inputFormat='excel';msg=`<div class="alert ok">Excel leído: ${wb.SheetNames.length} hoja(s). La salida respetará formato Excel.</div>`;}else{$('sourceContent').value=await f.text();STATE.inputFormat='word';msg='<div class="alert ok">Archivo de texto cargado. Salida sugerida: Word.</div>'} $('inputFormat').value=STATE.inputFormat.toUpperCase();$('fileMsg').innerHTML=msg;syncAll();saveProject(false)}catch(err){$('fileMsg').innerHTML=`<div class="alert err">No se pudo leer el archivo: ${esc(err.message)}. Pega el contenido manualmente.</div>`}}
+function workbookToJson(wb){let out={sheets:[]};wb.SheetNames.forEach(name=>{const ws=wb.Sheets[name];const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});out.sheets.push({name,rows})});return out}
+function workbookToText(wb){return wb.sheets.map(s=>`HOJA: ${s.name}\n`+s.rows.map(r=>r.join(' | ')).join('\n')).join('\n\n')}
+function syncAll(){const data=[['Modo',STATE.mode==='existing'?'Mejorar existente':'Crear desde cero'],['Tipo',$('docType').value||'No definido'],['Industria',$('industry').value||'No definida'],['Normativas',STATE.selectedNorms.length?STATE.selectedNorms.join(', '):'Buenas prácticas sin normativa específica'],['Metodologías',STATE.selectedMethods.length?STATE.selectedMethods.join(', '):'No definidas'],['Exigencia',$('rigor').value],['Proceso',$('process').value||'No definido'],['Salida',getOutputFormat().toUpperCase()]];$('configSummary').innerHTML=data.map(([k,v])=>`<div class="summary"><div class="lbl">${esc(k)}</div><div class="val">${esc(v)}</div></div>`).join('');$('inputValidation').className='alert '+(validateInput(true).ok?'ok':'info');$('inputValidation').textContent=validateInput(true).msg;saveProject(false)}
+function getOutputFormat(){if(STATE.mode==='existing')return STATE.inputFormat||'word';return $('outputFormat').value||'word'}
+function validateInput(silent=false){if(!$('docType').value||!$('industry').value||!$('process').value)return{ok:false,msg:'Falta tipo documental, industria o proceso.'};if(STATE.mode==='existing'){if(!$('sourceContent').value.trim())return{ok:false,msg:'Carga o pega el documento existente.'};if(!$('improveBrief').value.trim())return{ok:false,msg:'Describe qué se quiere mejorar.'};}else{if(!($('newName').value.trim()||$('newObjective').value.trim()||$('newContext').value.trim()))return{ok:false,msg:'Completa nombre, objetivo o contexto del documento nuevo.'};}return{ok:true,msg:'Listo para generar el prompt.'}}
+function masterRoleBlock(){return sgmpPrompt('prompt_core', SETTINGS.roleBlock)+`\n\nContexto dinámico:\n- Industria: ${$('industry').value||'No definida'}\n- Proceso donde se usará el documento: ${$('process').value||'No definido'}\n- Tipo documental: ${$('docType').value||'No definido'}\n- Normativas seleccionadas: ${STATE.selectedNorms.length?STATE.selectedNorms.join(', '):'No se definieron normativas específicas; usar buenas prácticas operativas.'}\n- Metodologías seleccionadas: ${STATE.selectedMethods.length?STATE.selectedMethods.join(', '):'No se definieron metodologías específicas.'}\n- Nivel de exigencia: ${$('rigor').value}\n- Formato de salida esperado: ${getOutputFormat()==='excel'?'Excel estructurado (.xlsx)':'Word estructurado (.docx)'}`}
+function buildMasterPrompt(){const out=getOutputFormat();const formatRule=STATE.mode==='existing'?`La entrada es ${out.toUpperCase()}. La salida debe conservar el mismo formato de trabajo del usuario: ${out==='excel'?'devolver propuesta estructurada para Excel, respetando hojas, columnas, encabezados y lógica operativa.':'devolver documento Word mejorado, preservando jerarquía, títulos, tablas/listas y marcando elementos no replicables con placeholders.'}`:`El usuario construye desde cero y eligió salida ${out.toUpperCase()}. Debes generar una propuesta compatible con ese formato.`;let inputBlock='';if(STATE.mode==='existing'){inputBlock=`DOCUMENTO EXISTENTE / CONTENIDO EXTRAÍDO:\n${$('sourceContent').value}\n\nDETALLE DE MEJORA SOLICITADA:\n${$('improveBrief').value}`;}else{inputBlock=`BRIEF PARA DOCUMENTO NUEVO:\nNombre: ${$('newName').value}\nObjetivo: ${$('newObjective').value}\nAlcance: ${$('newScope').value}\nControles / criterios clave: ${$('newControls').value}\nContexto adicional: ${$('newContext').value}`;}const outputSchema=`Devuelve tu respuesta en un único bloque JSON válido entre los marcadores ===JSON_START=== y ===JSON_END=== con esta estructura exacta:\n{\n  "contexto_entendido":"",\n  "supuestos_declarados":[],\n  "riesgos_de_alucinacion_o_vacios":[],\n  "recomendaciones":[{\n    "id":"R1",\n    "estado_actual":"",\n    "recomendacion":"",\n    "justificacion":"",\n    "referencia_normativa_o_buena_practica":"",\n    "criticidad":"Alta|Media|Baja",\n    "tipo":"estructura|control|normativa|claridad|excel|word|otro",\n    "decision_sugerida":"aprobar|ajustar|rechazar"\n  }],\n  "borrador_base":"",\n  "placeholders_no_replicables":["[IMAGEN: descripción]","[CUADRO: descripción]","[DIAGRAMA: descripción]"],\n  "control_de_cambios":[{\n    "cambio":"",\n    "antes":"",\n    "despues":"",\n    "justificacion":"",\n    "impacto":""\n  }]\n}\nNo agregues texto fuera de los marcadores.`;return `${masterRoleBlock()}\n\nOBJETIVO DEL TRABAJO:\n${STATE.mode==='existing'?'Analizar y mejorar un documento existente.':'Crear un documento desde cero.'}\n\nREGLA DE FORMATO:\n${formatRule}\n\nREGLAS ESPECÍFICAS:\n- Los prompts y salidas deben ser genéricos, portables y utilizables en cualquier IA.\n- No resumas ni empobrezcas documentos existentes.\n- Si hay imágenes, cuadros, firmas, anexos o diagramas no replicables, marca la zona con placeholders controlados.\n- Para Excel, conserva la lógica de hojas, columnas y tablas. Propón nuevas columnas o validaciones solo si agregan control o valor.\n- Consulta tu conocimiento sobre la última versión disponible de las normativas/metodologías indicadas; si no tienes certeza, declara la limitación.\n- Separa diagnóstico, recomendaciones, borrador base y control de cambios.\n\n${inputBlock}\n\n${outputSchema}`;}
+function buildPromptAndGo(){const v=validateInput();if(!v.ok){toast(v.msg);return}$('masterPrompt').textContent=buildMasterPrompt();go('prompt')}
+async function copyPrompt(id){await copyTextSafe($(id).textContent);toast('Prompt copiado')}
+async function copyTextSafe(text){
+  try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return}}
+  catch(e){}
+  const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);
 }
-
-// ── RENDER PROMPT DISPLAYS ──
-function renderPromptDisplays(){
-  ['extraction','tobe','analysis','construction','audix'].forEach(k=>{
-    const el=document.getElementById('prompt-'+k+'-display');
-    if(!el)return;
-    const txt=PROMPTS[k]||sgmpPrompt('prompt_'+k, '⚠️ Prompt no disponible.');
-    el.textContent=txt.length>280?txt.slice(0,280)+'...':txt;
-    el.dataset.full=txt;el.dataset.collapsed='true';
-  });
-}
-
-// ── BUILD CONFIG EDITOR ──
-function buildConfigEditor(){
-  const c=document.getElementById('prompt-config-list');if(!c)return;
-  const labels={extraction:'01 · Extracción de ficha',tobe:'02 · Estructuración TO-BE',analysis:'03 · Análisis de cobertura',construction:'04 · Construcción con BPs',audix:'05 · Consolidación final'};
-  c.innerHTML='';
-  Object.keys(labels).forEach(k=>{
-    const d=document.createElement('div');d.className='prompt-config-item';
-    d.innerHTML=`<div class="prompt-config-head" onclick="toggleConfigItem('cfg-${k}')"><div class="prompt-config-name"><span style="font-size:10px;color:var(--accent)">▶</span>${labels[k]}</div><span style="font-size:10px;color:var(--text3)">Clic para editar</span></div><div class="prompt-config-body" id="cfg-${k}"><div class="field-label">Texto del prompt</div><textarea id="prompt-input-${k}" style="min-height:180px;font-family:var(--mono);font-size:11px">${(PROMPTS[k]||sgmpPrompt('prompt_'+k, '⚠️ Prompt no disponible.')).replace(/</g,'&lt;')}</textarea><div class="action-row" style="margin-top:6px"><button class="btn btn-secondary" style="font-size:10px;padding:4px 9px" onclick="resetPrompt('${k}')">Restaurar original</button></div></div>`;
-    c.appendChild(d);
-  });
-}
-
-// ── NAV ──
-function showScreen(name,btn){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.querySelectorAll('.mobile-nav-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('screen-'+name).classList.add('active');
-  const nav=document.getElementById('nav-'+name);if(nav)nav.classList.add('active');
-  if(btn)btn.classList.add('active');
-  const titles={workflow:'Flujo activo',docs:'Documentos',history:'Historial',project:'Proyecto activo',config:'Configuración base'};
-  document.getElementById('topbarTitle').textContent=titles[name]||name;
-  if(name==='workflow'){updateAnalysisSummary();renderPromptDisplays();}
-  if(name==='docs')renderDocs();
-  if(name==='history')renderHistory();
-  if(name==='project')renderProjectStats();
-}
-
-function gotoStage(n){
-  for(let i=0;i<5;i++){
-    const el=document.getElementById('stage-'+i);if(el)el.style.display=i===n?'block':'none';
-    const pill=document.getElementById('pill-'+i);
-    if(pill){pill.classList.remove('active','done');if(i===n)pill.classList.add('active');else if(i<n)pill.classList.add('done');}
-  }
-  STATE.stage=n;saveState();
-  document.querySelector('.content').scrollTop=0;
-  if(n===2)updateAnalysisSummary();
-  if(n===4){renderBPReview();updateAudixPromptDisplay();}
-}
-
-function advanceStage(from,to){
-  if(!validateStage(from))return;
-  gotoStage(to);
-}
-
-function validateStage(n){
-  const barId='val-'+n;
-  const bar=document.getElementById(barId);
-  let ok=true,msg='';
-  if(n===0){const nm=document.getElementById('doc-name')?.value.trim();const ct=document.getElementById('doc-content')?.value.trim();if(!nm||!ct){ok=false;msg='⚠ Completa el nombre y el contenido del documento antes de continuar.';}}
-  if(n===1){const ct=document.getElementById('tobe-content')?.value.trim();if(!ct){ok=false;msg='⚠ Pega el contenido del TO-BE antes de continuar.';}}
-  if(n===2){const tb=document.getElementById('resp-tobe')?.value.trim();if(!tb){ok=false;msg='⚠ Necesitas tener el TO-BE estructurado (etapa 02) antes de generar el análisis.';}}
-  if(n===3){const bt=document.getElementById('build-type')?.value;const br=document.getElementById('build-robustness')?.value;const bb=document.getElementById('build-brief')?.value.trim();if(!bt||!br||!bb){ok=false;msg='⚠ Selecciona tipo documental, nivel de robustez y completa el brief antes de continuar.';}}
-  if(bar){if(!ok){bar.textContent=msg;bar.classList.add('show');setTimeout(()=>bar.classList.remove('show'),4000);}else{bar.classList.remove('show');}}
-  return ok;
-}
-
-// ── PROMPTS ──
-function getPromptWithContext(key){
-  let base=PROMPTS[key]||sgmpPrompt('prompt_'+key, '⚠️ Prompt no disponible.');
-  if(key==='extraction'){
-    const c=document.getElementById('doc-content')?.value||'[PEGA EL CONTENIDO DEL DOCUMENTO AQUÍ]';
-    base=base.replace('[CONTENIDO_DOCUMENTO]',c);
-  }
-  if(key==='tobe'){
-    const c=document.getElementById('tobe-content')?.value||'[PEGA EL TO-BE AQUÍ]';
-    base=base.replace('[CONTENIDO_TOBE]',c);
-  }
-  if(key==='analysis'){
-    const tobe=document.getElementById('resp-tobe')?.value||'[TO-BE NO DISPONIBLE]';
-    const fichas=STATE.docs.map((d,i)=>`--- FICHA ${i+1}: ${d.name} ---\n${d.ficha}`).join('\n\n')||'[SIN FICHAS GUARDADAS]';
-    base=base.replace('[TOBE_ESTRUCTURADO]',tobe).replace('[FICHAS_DOCUMENTALES]',fichas);
-  }
-  if(key==='construction'){
-    const tp=document.getElementById('build-type')?.value||'[TIPO_DOCUMENTAL]';
-    const rb=document.getElementById('build-robustness')?.value||'[NIVEL_ROBUSTEZ]';
-    const br=document.getElementById('build-brief')?.value||'[BRIEF NO COMPLETADO]';
-    base=base.replace(/\[TIPO_DOCUMENTAL\]/g,tp).replace(/\[NIVEL_ROBUSTEZ\]/g,rb).replace('[BRIEF_DOCUMENTO]',br);
-  }
-  if(key==='audix'){
-    const draft=document.getElementById('resp-draft')?.value||'[BORRADOR NO DISPONIBLE]';
-    const approved=STATE.bpDecisions.filter(b=>b.decision==='aprobada'||b.decision==='ajustada').map((b,i)=>`BP ${i+1} (${b.decision.toUpperCase()}): ${b.desc}${b.nota?' — Ajuste: '+b.nota:''}`).join('\n')||'[SIN BUENAS PRÁCTICAS APROBADAS]';
-    base=base.replace('[BORRADOR_BASE]',draft).replace('[BPS_APROBADAS]',approved);
-  }
-  return base;
-}
-
-async function copyPrompt(key,btn){
-  const text=getPromptWithContext(key);
-  try{await navigator.clipboard.writeText(text);}
-  catch(e){const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}
-  btn.classList.add('copied');
-  const orig=btn.innerHTML;
-  btn.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="11" height="11"><path d="M2 8l4 4 8-8"/></svg> ¡Copiado!';
-  logHistory(key,text.length);
-  setTimeout(()=>{btn.classList.remove('copied');btn.innerHTML=orig;},2200);
-}
-
-async function copyElementText(id,btn){
-  const el=document.getElementById(id);if(!el)return;
-  try{await navigator.clipboard.writeText(el.value||el.textContent);}catch(e){}
-  btn.classList.add('copied');setTimeout(()=>btn.classList.remove('copied'),1800);
-  showToast('Copiado ✓');
-}
-
-function togglePrompt(id){
-  const el=document.getElementById('prompt-'+id);if(!el)return;
-  const btn=el.nextElementSibling;
-  if(el.dataset.collapsed==='true'){el.textContent=el.dataset.full||el.textContent;el.classList.add('expanded');el.dataset.collapsed='false';if(btn)btn.textContent='Colapsar ↑';}
-  else{const f=el.dataset.full||el.textContent;el.textContent=f.length>280?f.slice(0,280)+'...':f;el.classList.remove('expanded');el.dataset.collapsed='true';if(btn)btn.textContent='Ver completo ↓';}
-}
-
-// ── AUTO SHOW OUTPUT ──
-function onRespPaste(srcId,outTextId,outId,statusId){
-  const val=document.getElementById(srcId)?.value||'';
-  const outEl=document.getElementById(outId);
-  const outTxt=document.getElementById(outTextId);
-  if(val.trim().length>20){
-    if(outEl)outEl.style.display='block';
-    if(outTxt)outTxt.textContent=val.length>600?val.slice(0,600)+'…':val;
-    if(statusId)updateStatus(statusId,'done');
-  } else {
-    if(outEl)outEl.style.display='none';
-  }
-}
-
-function autoShowOutput(srcId,outId){
-  const val=document.getElementById(srcId)?.value||'';
-  const outEl=document.getElementById(outId);
-  if(outEl&&val.length<10)outEl.style.display='none';
-}
-
-function updateStatus(id,status){
-  const el=document.getElementById(id);if(!el)return;
-  el.className='panel-status status-'+status;
-  el.textContent={pending:'Pendiente',ready:'Listo',done:'Completo'}[status]||status;
-}
-
-// ── ANALYSIS SUMMARY ──
-function updateAnalysisSummary(){
-  const el=document.getElementById('analysis-summary');if(!el)return;
-  const hasTobe=!!(document.getElementById('resp-tobe')?.value.trim()||STATE.workflow?.respTobe);
-  const fichas=STATE.docs.length;
-  el.textContent=`TO-BE: ${hasTobe?'disponible':'no disponible'} · Fichas guardadas: ${fichas}`;
-  renderPromptDisplays();
-}
-
-// ── BP PARSER ──
-function parseBPs(){
-  const raw=document.getElementById('resp-bp')?.value||'';
-  if(!raw.trim())return;
-  const blocks=raw.split(/SUGERENCIA\s*#?\d+/i).filter(b=>b.trim().length>30);
-  if(blocks.length===0){STATE.bpDecisions=[{id:0,desc:raw,motivo:'',origen:'',cat:'RECOMENDADA',decision:'pendiente',nota:''}];}
-  else{
-    STATE.bpDecisions=blocks.map((b,i)=>{
-      const desc=(b.match(/[-·]\s*Descripci[oó]n:\s*(.+)/i)||b.match(/^(.{10,120})/)||[])[1]?.trim()||b.trim().slice(0,120);
-      const motivo=(b.match(/[-·]\s*Motivo:\s*(.+)/i)||[])[1]?.trim()||'';
-      const origen=(b.match(/[-·]\s*Origen:\s*(.+)/i)||[])[1]?.trim()||'';
-      const catRaw=(b.match(/[-·]\s*Categor[ií]a:\s*(\w+)/i)||[])[1]?.trim().toUpperCase()||'RECOMENDADA';
-      const cat=['RECOMENDADA','OPCIONAL','ADVERTENCIA'].includes(catRaw)?catRaw:'RECOMENDADA';
-      return{id:i,desc,motivo,origen,cat,decision:'pendiente',nota:''};
-    });
-  }
-  saveState();
-  renderBPReview();
-  const badge=document.getElementById('bp-status-badge');
-  if(badge){badge.className='panel-status status-done';badge.textContent=`${STATE.bpDecisions.length} sugerencias`;}
-}
-
-function renderBPReview(){
-  const area=document.getElementById('bp-review-area');if(!area)return;
-  if(!STATE.bpDecisions||STATE.bpDecisions.length===0){
-    area.innerHTML='<div class="empty-state"><span class="em-icon">📋</span><p>Pega el Bloque 2 en la etapa anterior para ver las sugerencias aquí.</p></div>';
-    return;
-  }
-  const catClass={RECOMENDADA:'cat-recomendada',OPCIONAL:'cat-opcional',ADVERTENCIA:'cat-advertencia'};
-  area.innerHTML=STATE.bpDecisions.map((bp,i)=>`
-    <div class="bp-card${bp.decision!=='pendiente'?' estado-'+bp.decision:''}" id="bpc-${i}">
-      <div class="bp-card-head">
-        <div class="bp-meta">
-          <div class="bp-num">Sugerencia ${i+1} <span class="bp-cat-badge ${catClass[bp.cat]||'cat-opcional'}">${bp.cat}</span></div>
-          <div class="bp-desc">${escHtml(bp.desc)}</div>
-          ${bp.motivo?`<div class="bp-origen">Motivo: ${escHtml(bp.motivo)}${bp.origen?' · Origen: '+escHtml(bp.origen):''}</div>`:''}
-        </div>
-        <div class="bp-actions">
-          <button class="bp-btn bp-btn-aprobar${bp.decision==='aprobada'?' sel':''}" onclick="setBP(${i},'aprobada')">Aprobar</button>
-          <button class="bp-btn bp-btn-rechazar${bp.decision==='rechazada'?' sel':''}" onclick="setBP(${i},'rechazada')">Rechazar</button>
-          <button class="bp-btn bp-btn-ajustar${bp.decision==='ajustada'?' sel':''}" onclick="toggleAdjust(${i})">Ajustar</button>
-        </div>
-      </div>
-      <div class="bp-adjust-area${bp.decision==='ajustada'?' open':''}" id="bpa-${i}">
-        <div class="field-label" style="margin-top:4px">Nota de ajuste</div>
-        <textarea style="min-height:50px;font-size:11.5px" placeholder="Describe cómo quieres ajustar esta sugerencia..." oninput="setBPNota(${i},this.value)">${escHtml(bp.nota||'')}</textarea>
-      </div>
-    </div>`).join('');
-  updateBPSummary();
-  updateAudixPromptDisplay();
-}
-
-function setBP(i,decision){
-  if(!STATE.bpDecisions[i])return;
-  STATE.bpDecisions[i].decision=decision;
-  if(decision==='ajustada'){const adj=document.getElementById('bpa-'+i);if(adj)adj.classList.add('open');}
-  const card=document.getElementById('bpc-'+i);
-  if(card){card.className='bp-card estado-'+decision;}
-  document.querySelectorAll(`#bpc-${i} .bp-btn`).forEach(b=>b.classList.remove('sel'));
-  const btn=document.querySelector(`#bpc-${i} .bp-btn-${decision==='aprobada'?'aprobar':decision==='rechazada'?'rechazar':'ajustar'}`);
-  if(btn)btn.classList.add('sel');
-  saveState();updateBPSummary();updateAudixPromptDisplay();
-}
-
-function setBPNota(i,val){if(STATE.bpDecisions[i]){STATE.bpDecisions[i].nota=val;STATE.bpDecisions[i].decision='ajustada';saveState();updateAudixPromptDisplay();}}
-
-function toggleAdjust(i){
-  const area=document.getElementById('bpa-'+i);if(!area)return;
-  area.classList.toggle('open');
-  if(area.classList.contains('open'))setBP(i,'ajustada');
-}
-
-function updateBPSummary(){
-  const el=document.getElementById('bp-summary');if(!el||!STATE.bpDecisions.length)return;
-  const ap=STATE.bpDecisions.filter(b=>b.decision==='aprobada').length;
-  const aj=STATE.bpDecisions.filter(b=>b.decision==='ajustada').length;
-  const re=STATE.bpDecisions.filter(b=>b.decision==='rechazada').length;
-  const pe=STATE.bpDecisions.filter(b=>b.decision==='pendiente').length;
-  el.style.display='block';
-  el.textContent=`Aprobadas: ${ap} · Ajustadas: ${aj} · Rechazadas: ${re} · Pendientes: ${pe} — Incluidas en consolidación: ${ap+aj}`;
-}
-
-function updateAudixPromptDisplay(){
-  const el=document.getElementById('prompt-audix-display');if(!el)return;
-  const txt=getPromptWithContext('audix');
-  el.textContent=txt.length>280?txt.slice(0,280)+'...':txt;
-  el.dataset.full=txt;el.dataset.collapsed='true';
-}
-
-// ── PROJECT / STATE ──
-function saveState(){
-  STATE.workflow={
-    docName:document.getElementById('doc-name')?.value||'',
-    docContent:document.getElementById('doc-content')?.value||'',
-    tobeType:document.getElementById('tobe-type')?.value||'',
-    tobeContent:document.getElementById('tobe-content')?.value||'',
-    respExtraction:document.getElementById('resp-extraction')?.value||'',
-    respTobe:document.getElementById('resp-tobe')?.value||'',
-    respAnalysis:document.getElementById('resp-analysis')?.value||'',
-    buildType:document.getElementById('build-type')?.value||'',
-    buildRobustness:document.getElementById('build-robustness')?.value||'',
-    buildName:document.getElementById('build-name')?.value||'',
-    buildBrief:document.getElementById('build-brief')?.value||'',
-    respDraft:document.getElementById('resp-draft')?.value||'',
-    respBp:document.getElementById('resp-bp')?.value||'',
-    respFinal:document.getElementById('resp-final')?.value||''
-  };
-  STATE.project.name=document.getElementById('proj-name')?.value||STATE.project.name;
-  STATE.project.area=document.getElementById('proj-area')?.value||STATE.project.area;
-  STATE.project.owner=document.getElementById('proj-owner')?.value||STATE.project.owner;
-  sessionStorage.setItem('mgd_state',JSON.stringify(STATE));
-}
-
-function restoreForm(){
-  const w=STATE.workflow||{};
-  const sv=(id,v)=>{const el=document.getElementById(id);if(el&&v!==undefined)el.value=v;};
-  sv('doc-name',w.docName);sv('doc-content',w.docContent);sv('tobe-type',w.tobeType);sv('tobe-content',w.tobeContent);
-  sv('resp-extraction',w.respExtraction);sv('resp-tobe',w.respTobe);sv('resp-analysis',w.respAnalysis);
-  sv('build-type',w.buildType);sv('build-robustness',w.buildRobustness);sv('build-name',w.buildName);sv('build-brief',w.buildBrief);
-  sv('resp-draft',w.respDraft);sv('resp-bp',w.respBp);sv('resp-final',w.respFinal);
-  sv('proj-name',STATE.project.name);sv('proj-area',STATE.project.area);sv('proj-owner',STATE.project.owner);
-  if(w.respExtraction)onRespPaste('resp-extraction','out-extraction-text','out-extraction','st0-status');
-  if(w.respTobe)onRespPaste('resp-tobe','out-tobe-text','out-tobe','');
-  if(w.respAnalysis)onRespPaste('resp-analysis','out-analysis-text','out-analysis','');
-  if(w.respBp)parseBPs();
-  if(STATE.stage)gotoStage(STATE.stage);
-  updateTopbar();renderDocs();renderHistory();
-}
-
-function updateTopbar(){
-  const n=document.getElementById('proj-name')?.value||STATE.project.name||'';
-  document.getElementById('topbarMeta').textContent=n?'· '+n:'Sin proyecto activo';
-}
-
-function saveProject(){
-  STATE.project.name=document.getElementById('proj-name')?.value||'';
-  STATE.project.area=document.getElementById('proj-area')?.value||'Finanzas';
-  STATE.project.owner=document.getElementById('proj-owner')?.value||'';
-  saveState();updateTopbar();renderProjectStats();showToast('Proyecto guardado ✓');
-}
-
-function newProject(){
-  if(!confirm('¿Crear nuevo proyecto? Se exportará el actual primero.'))return;
-  exportProject();sessionStorage.removeItem('mgd_state');
-  STATE={project:{name:'',area:'Finanzas',owner:''},stage:0,docs:[],history:[],workflow:{},bpDecisions:[],audixReady:false};
-  restoreForm();gotoStage(0);showToast('Nuevo proyecto iniciado');
-}
-
-function renderProjectStats(){
-  const el=document.getElementById('project-stats');if(!el)return;
-  const stats=[
-    {val:STATE.docs.length,lbl:'Fichas guardadas'},
-    {val:STATE.bpDecisions.filter(b=>b.decision==='aprobada'||b.decision==='ajustada').length,lbl:'BPs aprobadas'},
-    {val:STATE.history.length,lbl:'Prompts copiados'},
-    {val:STATE.audixReady?'✓':'—',lbl:'Listo'},
-  ];
-  el.innerHTML=stats.map(s=>`<div class="stat-card"><div class="stat-val">${s.val}</div><div class="stat-lbl">${s.lbl}</div></div>`).join('');
-}
-
-function saveDocToHistory(){
-  const name=document.getElementById('doc-name')?.value||'Documento sin nombre';
-  const resp=document.getElementById('resp-extraction')?.value||'';
-  if(!resp.trim()){showToast('Pega la respuesta de extracción antes de guardar');return;}
-  const existing=STATE.docs.findIndex(d=>d.name===name);
-  const doc={id:Date.now(),name,ficha:resp,timestamp:new Date().toLocaleString()};
-  if(existing>=0)STATE.docs[existing]=doc;else STATE.docs.push(doc);
-  saveState();renderDocs();updateAnalysisSummary();showToast('Ficha guardada ✓');
-}
-
-function renderDocs(){
-  const c=document.getElementById('docs-list');if(!c)return;
-  if(!STATE.docs.length){c.innerHTML='<div class="empty-state"><span class="em-icon">📄</span><p>Sin fichas guardadas aún.</p></div>';return;}
-  c.innerHTML=STATE.docs.map((d,i)=>`<div class="panel" style="margin-bottom:10px"><div class="panel-head"><span class="panel-label">${escHtml(d.name)}</span><span class="panel-status status-done">${d.timestamp}</span></div><div class="panel-body"><div class="output-block"><div class="output-label">Ficha <button class="copy-btn" style="font-size:10px;padding:2px 7px" onclick="copyText(${i},this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" width="10" height="10"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 001 1h2"/></svg> Copiar</button><button class="btn btn-ghost" style="font-size:10px;padding:2px 7px;color:var(--red)" onclick="deleteDoc(${i})">Eliminar</button></div><div class="output-text">${escHtml(d.ficha.slice(0,400))}${d.ficha.length>400?'…':''}</div></div></div></div>`).join('');
-}
-
-function deleteDoc(i){if(confirm('¿Eliminar esta ficha?')){STATE.docs.splice(i,1);saveState();renderDocs();updateAnalysisSummary();showToast('Ficha eliminada');}}
-
-async function copyText(i,btn){
-  const d=STATE.docs[i];if(!d)return;
-  try{await navigator.clipboard.writeText(d.ficha);}catch(e){}
-  btn.classList.add('copied');setTimeout(()=>btn.classList.remove('copied'),1800);showToast('Ficha copiada ✓');
-}
-
-function logHistory(key,len){
-  const labels={extraction:'Extracción',tobe:'TO-BE',analysis:'Análisis',construction:'Construcción',audix:'Consolidación'};
-  STATE.history.push({key,label:labels[key]||key,timestamp:new Date().toLocaleString(),len});
-  if(STATE.history.length>40)STATE.history=STATE.history.slice(-40);
-  saveState();renderHistory();
-}
-
-function renderHistory(){
-  const c=document.getElementById('history-list');if(!c)return;
-  if(!STATE.history.length){c.innerHTML='<div class="empty-state"><span class="em-icon">🗂</span><p>El historial se construye mientras trabajas.</p></div>';return;}
-  c.innerHTML=[...STATE.history].reverse().map(h=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px"><span style="font-family:var(--mono);font-size:10px;color:var(--accent);min-width:100px">${h.label}</span><span style="color:var(--text2)">${h.timestamp}</span><span style="color:var(--text3);font-family:var(--mono)">${h.len.toLocaleString()} chars</span></div>`).join('');
-}
-
-function markReady(){
-  STATE.audixReady=true;saveState();
-  showToast('✓ Marcado como listo. Exporta el proyecto.');
-}
-
-// ── EXPORT / IMPORT ──
-function exportProject(){
-  saveState();
-  const data={...STATE,exported_at:new Date().toISOString(),schema_version:'1.1',product:'MiraGenDocs'};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='miragendocs_'+((STATE.project.name||'proyecto').replace(/\s+/g,'_'))+'_'+Date.now()+'.json';
-  a.click();showToast('Proyecto exportado ✓');
-}
-
-function importProject(evt){
-  const file=evt.target.files[0];if(!file)return;
-  const r=new FileReader();
-  r.onload=e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      if(data.product&&data.product!=='MiraGenDocs'){if(!confirm('Este JSON fue generado con una versión anterior. ¿Importar de todas formas?'))return;}
-      STATE={...STATE,...data};
-      sessionStorage.setItem('mgd_state',JSON.stringify(STATE));
-      restoreForm();renderDocs();renderHistory();
-      showToast('Proyecto importado ✓');
-    }catch(err){showToast('Error: archivo JSON inválido');}
-  };
-  r.readAsText(file);evt.target.value='';
-}
-
-// ── MANUAL DOWNLOAD ──
-function downloadManual(){
-  const blob=new Blob([MANUAL_HTML],{type:'text/html;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='Manual_MiraGenDocs_v1.1.html';
-  a.click();
-  showToast('Manual descargado ✓');
-}
-
-// ── CONFIG ──
-function openConfigOverlay(){document.getElementById('configOverlay').classList.remove('hidden');document.getElementById('configPass').focus();document.getElementById('configError').style.display='none';document.getElementById('configPass').value='';}
-function closeConfigOverlay(){document.getElementById('configOverlay').classList.add('hidden');}
-function checkConfig(){
-  const p=document.getElementById('configPass').value;
-  if(!p) return;
-  document.getElementById('configError').style.display='none';
-  // Validar contra SGMP Sheet
-  const url=SGMP_API+'?action=auth_admin&username='+encodeURIComponent('sgmp_admin')+'&password='+encodeURIComponent(p);
-  fetch(url).then(r=>r.json()).then(res=>{
-    if(res.ok){
-      sessionStorage.setItem('sgmp_admin_token',res.data.token);
-      closeConfigOverlay();showScreen('config');
-    } else {
-      // Fallback contraseña local
-      const stored=localStorage.getItem(PASS_KEY)||DEFAULT_PASS;
-      if(p===stored){closeConfigOverlay();showScreen('config');}
-      else{document.getElementById('configError').style.display='block';document.getElementById('configPass').value='';document.getElementById('configPass').focus();}
+function processAiResponse(){const raw=$('aiResponse').value.trim();if(!raw){$('responseMsg').innerHTML='<div class="alert err">Pega la respuesta de la IA.</div>';return}let txt=extractBetween(raw,'===JSON_START===','===JSON_END===')||extractCodeJson(raw)||raw;let parsed=null;try{parsed=JSON.parse(txt)}catch(e){parsed={contexto_entendido:'Respuesta no JSON procesada como texto libre.',supuestos_declarados:[],riesgos_de_alucinacion_o_vacios:['La respuesta no vino en JSON válido.'],recomendaciones:[],borrador_base:raw,placeholders_no_replicables:[],control_de_cambios:[]}}STATE.analysis=parsed;STATE.recommendations=(parsed.recomendaciones||[]).map((r,i)=>({...r,id:r.id||`R${i+1}`,decision:'pendiente',edit:''}));STATE.controlChanges=parsed.control_de_cambios||[];renderRecommendations();$('responseMsg').innerHTML='<div class="alert ok">Respuesta procesada. Revisa recomendaciones.</div>';saveProject(false);go('review')}
+function extractBetween(s,a,b){const i=s.indexOf(a),j=s.lastIndexOf(b);if(i>=0&&j>i)return s.slice(i+a.length,j).trim();return null}
+function extractCodeJson(s){const m=s.match(/```(?:json)?\s*([\s\S]*?)```/);return m?m[1].trim():null}
+function renderRecommendations(){const arr=STATE.recommendations||[];if(!arr.length){$('recList').innerHTML='<div class="alert warn">No se detectaron recomendaciones estructuradas. Puedes continuar con el borrador base, pero se pierde revisión detallada.</div>';buildFinalPrompt();return}$('recList').innerHTML=arr.map((r,i)=>`<div class="rec ${r.decision==='rechazar'?'rejected':''}"><div class="rec-head"><div><div class="rec-title">${esc(r.id)} · ${esc(r.tipo||'recomendación')}</div><div class="rec-meta">Criticidad: ${esc(r.criticidad||'Media')} · Referencia: ${esc(r.referencia_normativa_o_buena_practica||'No indicada')}</div></div><div class="rec-actions"><button class="btn green" onclick="decide(${i},'aprobar')">Aprobar</button><button class="btn" onclick="decide(${i},'ajustar')">Ajustar</button><button class="btn red" onclick="decide(${i},'rechazar')">Rechazar</button></div></div><div class="rec-body"><div class="rec-grid"><div><div class="mini-label">Estado actual</div><div class="mini-box">${esc(r.estado_actual||'No identificado')}</div></div><div><div class="mini-label">Cómo debería quedar</div><div class="mini-box">${esc(r.recomendacion||'')}</div></div></div><div style="margin-top:10px"><div class="mini-label">Justificación</div><div class="mini-box">${esc(r.justificacion||'')}</div></div><div class="field ${r.decision==='ajustar'?'':'hidden'}" id="editBox${i}" style="margin-top:10px"><label>Ajuste del usuario</label><textarea oninput="STATE.recommendations[${i}].edit=this.value;saveProject(false)">${esc(r.edit||'')}</textarea></div><div class="alert info">Decisión actual: <b>${esc(r.decision||'pendiente')}</b></div></div></div>`).join('');buildFinalPrompt()}
+function decide(i,d){STATE.recommendations[i].decision=d;if(d==='ajustar')STATE.recommendations[i].edit=STATE.recommendations[i].edit||STATE.recommendations[i].recomendacion;renderRecommendations();saveProject(false)}
+function buildFinalPrompt(){const accepted=(STATE.recommendations||[]).filter(r=>r.decision==='aprobar'||r.decision==='ajustar'||r.decision==='pendiente');const instr=accepted.map((r,i)=>`${i+1}. ${r.decision==='ajustar'&&r.edit?r.edit:r.recomendacion}\n   Justificación: ${r.justificacion||'No indicada'}\n   Referencia: ${r.referencia_normativa_o_buena_practica||'No indicada'}`).join('\n');const base=STATE.analysis?.borrador_base||'';const placeholders=(STATE.analysis?.placeholders_no_replicables||[]).join('\n');const out=getOutputFormat();const prompt=`${masterRoleBlock()}\n\nOBJETIVO:\nGenera la versión final consolidada del documento, incorporando únicamente las recomendaciones aprobadas, ajustadas o pendientes no rechazadas.\n\nFORMATO FINAL ESPERADO: ${out==='excel'?'Excel estructurado. Devuelve una especificación tabular clara por hojas, columnas, validaciones, fórmulas si aplican y datos sugeridos.':'Word estructurado. Devuelve el contenido completo del documento con títulos, tablas en Markdown y placeholders controlados.'}\n\nREGLAS:\n- No inventes normativa ni contenido no sustentado.\n- Declara supuestos si hacen falta.\n- No elimines controles críticos.\n- Si hay imágenes/cuadros no replicables, conserva placeholders.\n- Entrega el documento completo entre ===DOC_START=== y ===DOC_END===.\n- Entrega al final una sección CONTROL DE CAMBIOS entre ===CHANGES_START=== y ===CHANGES_END=== en formato tabla Markdown.\n\nBORRADOR BASE:\n${base}\n\nPLACEHOLDERS DETECTADOS:\n${placeholders||'Ninguno declarado.'}\n\nRECOMENDACIONES A INCORPORAR:\n${instr||'No hay recomendaciones aprobadas; mejorar solo con buenas prácticas y brief definido.'}`;$('finalPrompt').textContent=prompt;return prompt}
+function prepareDeliverables(){let raw=$('finalResponse').value.trim();if(!raw)raw=STATE.analysis?.borrador_base||'';STATE.finalContent=extractBetween(raw,'===DOC_START===','===DOC_END===')||raw;let ch=extractBetween(raw,'===CHANGES_START===','===CHANGES_END===');if(ch)STATE.controlChanges=parseMarkdownChanges(ch);if(!STATE.controlChanges.length)STATE.controlChanges=deriveChanges();renderChanges();$('deliverableStatus').className='alert ok';$('deliverableStatus').textContent=`Entregables preparados. Formato principal: ${getOutputFormat().toUpperCase()}.`;saveProject(false);go('final')}
+function parseMarkdownChanges(md){return md.split('\n').filter(l=>/^\|/.test(l)&&!/---/.test(l)).slice(1).map(l=>{let c=l.replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());return{cambio:c[0]||'',antes:c[1]||'',despues:c[2]||'',justificacion:c[3]||'',impacto:c[4]||''}})}
+function deriveChanges(){return (STATE.recommendations||[]).filter(r=>r.decision!=='rechazar').map(r=>({cambio:r.id,antes:r.estado_actual||'',despues:r.decision==='ajustar'?r.edit:r.recomendacion,justificacion:r.justificacion||'',impacto:r.criticidad||''}))}
+function renderChanges(){const tbody=$('changesTable').querySelector('tbody');tbody.innerHTML=(STATE.controlChanges||[]).map(c=>`<tr><td>${esc(c.cambio)}</td><td>${esc(c.antes)}</td><td>${esc(c.despues)}</td><td>${esc(c.justificacion)}</td><td>${esc(c.impacto)}</td></tr>`).join('')}
+async function downloadMain(){const out=getOutputFormat();if(out==='excel')downloadMainXlsx();else await downloadMainDocx()}
+async function downloadMainDocx(){if(!window.docx){downloadTxt(STATE.finalContent,'documento_final.txt');return}const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType}=docx;const children=[new Paragraph({text:'Documento final MIRA GenDocs',heading:HeadingLevel.HEADING_1}),...textToDocx(STATE.finalContent)];const doc=new Document({sections:[{children}]});const blob=await Packer.toBlob(doc);dl(blob,`${safeName($('sourceName').value||$('newName').value||'documento_final')}.docx`)}
+function textToDocx(txt){
+  if(!txt)return[new docx.Paragraph('')];
+  let out=[];
+  const lines=txt.split('\n');
+  for(let i=0;i<lines.length;i++){
+    let line=lines[i];
+    if(/^\|.*\|$/.test(line.trim())){
+      const tableLines=[];
+      while(i<lines.length && /^\|.*\|$/.test(lines[i].trim())){tableLines.push(lines[i].trim());i++;}
+      i--;
+      const data=tableLines.filter((l,idx)=>!(idx===1 && /^\|?\s*:?[-| ]+:?\s*(\|\s*:?[-| ]+:?\s*)+\|?$/.test(l))).map(l=>l.replace(/^\|/,'').replace(/\|$/,'').split('\|').map(c=>c.trim()));
+      if(data.length){
+        out.push(new docx.Table({width:{size:100,type:docx.WidthType.PERCENTAGE},rows:data.map((row,ridx)=>new docx.TableRow({children:row.map(c=>new docx.TableCell({children:[new docx.Paragraph({children:[new docx.TextRun({text:c,bold:ridx===0})]})]}))}))}));
+      }
+      continue;
     }
-  }).catch(()=>{
-    const stored=localStorage.getItem(PASS_KEY)||DEFAULT_PASS;
-    if(p===stored){closeConfigOverlay();showScreen('config');}
-    else{document.getElementById('configError').style.display='block';document.getElementById('configPass').value='';document.getElementById('configPass').focus();}
-  });
+    let clean=line.replace(/^#+\s*/,'').trim();
+    if(!clean){out.push(new docx.Paragraph(''));continue}
+    if(/^\[.*\]$/.test(clean))out.push(new docx.Paragraph({children:[new docx.TextRun({text:clean,bold:true,italics:true,color:'1D5FBF'})]}));
+    else out.push(new docx.Paragraph({children:[new docx.TextRun(clean)]}))
+  }
+  return out;
 }
-function changePassword(){
-  const p=document.getElementById('new-pass').value;
-  if(!p||p.length<4){showToast('La contraseña debe tener al menos 4 caracteres');return;}
-  localStorage.setItem(PASS_KEY,p);document.getElementById('new-pass').value='';showToast('Contraseña actualizada ✓');
-}
-
-// ── UTILS ──
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600);}
-function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-// ── BOOT ──
-init();
+function downloadMainXlsx(){let wb=XLSX.utils.book_new();if(STATE.finalContent&&STATE.finalContent.trim().startsWith('{')){try{let obj=JSON.parse(STATE.finalContent);Object.keys(obj).forEach(k=>{let rows=Array.isArray(obj[k])?obj[k]:[obj[k]];XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),k.slice(0,31))})}catch(e){}}if(!wb.SheetNames.length){let rows=[['Documento / matriz generada'],...STATE.finalContent.split('\n').map(x=>[x])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Documento')}let ch=(STATE.controlChanges||[]).map(c=>({Cambio:c.cambio,Antes:c.antes,Despues:c.despues,Justificacion:c.justificacion,Impacto:c.impacto}));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ch.length?ch:[{}]),'Control de cambios');XLSX.writeFile(wb,`${safeName($('sourceName').value||$('newName').value||'documento_final')}.xlsx`)}
+async function downloadOnePage(){if(getOutputFormat()==='excel'){let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(STATE.controlChanges||[]),'One Page Cambios');XLSX.writeFile(wb,'one_page_control_cambios.xlsx');return}if(!window.docx){downloadTxt(JSON.stringify(STATE.controlChanges,null,2),'one_page_control_cambios.txt');return}const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType}=docx;let rows=[new TableRow({children:['Cambio','Antes','Después','Justificación','Impacto'].map(h=>new TableCell({children:[new Paragraph({children:[new TextRun({text:h,bold:true})]})]}))})];(STATE.controlChanges||[]).forEach(c=>rows.push(new TableRow({children:[c.cambio,c.antes,c.despues,c.justificacion,c.impacto].map(x=>new TableCell({children:[new Paragraph({children:[new TextRun(String(x||''))]})]}))})));const doc=new Document({sections:[{children:[new Paragraph({text:'One Page — Control de cambios',heading:HeadingLevel.HEADING_1}),new Table({width:{size:100,type:WidthType.PERCENTAGE},rows})]}]});dl(await Packer.toBlob(doc),'one_page_control_cambios.docx')}
+function downloadTxt(content,name){dl(new Blob([content],{type:'text/plain;charset=utf-8'}),name)}
+function dl(blob,name){let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function downloadJson(){dl(new Blob([JSON.stringify({state:STATE,settings:SETTINGS,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'}),'miragendocs_project.json')}
+function exportProject(){downloadJson()}
+function importProject(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=ev=>{try{let o=JSON.parse(ev.target.result);STATE=o.state||o;SETTINGS=o.settings||SETTINGS;store('mira_gd_state',STATE);store('mira_gd_settings',SETTINGS);location.reload()}catch(err){toast('JSON inválido')}};r.readAsText(f)}
+function saveProject(show=true){STATE.form={docType:$('docType').value,industry:$('industry').value,rigor:$('rigor').value,company:$('company').value,process:$('process').value,outputFormat:$('outputFormat').value,sourceName:$('sourceName').value,inputFormat:$('inputFormat').value,sourceContent:$('sourceContent').value,improveBrief:$('improveBrief').value,newName:$('newName').value,newObjective:$('newObjective').value,newScope:$('newScope').value,newControls:$('newControls').value,newContext:$('newContext').value,aiResponse:$('aiResponse').value,finalResponse:$('finalResponse').value};store('mira_gd_state',STATE);if(show)toast('Sesión guardada')}
+function restoreInputs(){setMode(STATE.mode||'existing');const f=STATE.form||{};Object.keys(f).forEach(k=>{if($(k))$(k).value=f[k]});if(STATE.inputFormat)$('inputFormat').value=STATE.inputFormat.toUpperCase();if(STATE.recommendations?.length)renderRecommendations();if(STATE.controlChanges?.length)renderChanges();}
+function closeProject(){downloadJson();sessionStorage.removeItem('mira_gd_state');toast('Proyecto exportado y limpiado');setTimeout(()=>location.reload(),800)}
+function renderSettings(){ $('cfgDocTypes').value=SETTINGS.docTypes.join('\n');$('cfgIndustries').value=SETTINGS.industries.join('\n');$('cfgNorms').value=SETTINGS.norms.join('\n');$('cfgMethods').value=SETTINGS.methods.join('\n');$('cfgRoleBlock').value=SETTINGS.roleBlock;}
+function saveSettings(reload=true){SETTINGS.docTypes=$('cfgDocTypes').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.industries=$('cfgIndustries').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.norms=$('cfgNorms').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.methods=$('cfgMethods').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.roleBlock=$('cfgRoleBlock').value;store('mira_gd_settings',SETTINGS);if(reload){renderSelects();renderPills();toast('Configuración base guardada')}}
+function resetSettings(){SETTINGS=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));store('mira_gd_settings',SETTINGS);renderSettings();renderSelects();renderPills();toast('Configuración restaurada')}
+sgmpLoadPrompts('GD', function(){ init(); });
 </script>
 </body>
 </html>
-G
