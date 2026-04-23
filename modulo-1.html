@@ -709,6 +709,9 @@
         }
 
         prepPreviewContext(context);
+        if (typeof window.hydrateContextFromState === "function") {
+          window.hydrateContextFromState();
+        }
         prepShowMessage("ok", "Parámetros de preparación guardados correctamente.");
         return context;
       }
@@ -1987,6 +1990,18 @@ function showSection(id){
   qsa('.section').forEach(s => s.classList.toggle('active', s.id === id));
   qsa('.step-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === id));
   state.metadata.currentStage = id;
+  if(id === 'contexto' && typeof hydrateContextFromState === 'function'){
+    hydrateContextFromState();
+  }
+  if(id === 'preparacion' && typeof window.hydratePreparationFromState === 'function'){
+    window.hydratePreparationFromState();
+  }
+  if(id === 'asis' && typeof hydrateAsIsFromMaster === 'function'){
+    hydrateAsIsFromMaster();
+  }
+  if(id === 'analisis' && typeof renderAnalysisFromState === 'function'){
+    renderAnalysisFromState();
+  }
   updateTopStatus();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -2794,48 +2809,178 @@ function renderToBeSummary(){
    RESULTADOS
 ========================= */
 
-function buildSBJson(){
-  const ctx = state.context;
+function normalizeContractString(value){
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\u0000-\u001f]+/g, ' ')
+    .trim();
+}
+
+function normalizeCatalogValue(value){
+  return normalizeContractString(value).replace(/[.;:,\s]+$/g, '').trim();
+}
+
+function dedupeCatalog(items){
+  const out = [];
+  const seen = new Set();
+  safeArray(items).forEach(item => {
+    const clean = normalizeCatalogValue(item);
+    if(!clean) return;
+    const key = clean.toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  });
+  return out;
+}
+
+function asArray(value){
+  if(Array.isArray(value)) return value;
+  if(value === undefined || value === null || value === '') return [];
+  return [value];
+}
+
+function canonicalActivityType(value){
+  const raw = normalizeContractString(value).toLowerCase();
+  if(['operation','decision','control','document','end'].includes(raw)) return raw;
+  if(raw.includes('decis')) return 'decision';
+  if(raw.includes('control') || raw.includes('valid')) return 'control';
+  if(raw.includes('document')) return 'document';
+  if(raw.includes('end') || raw.includes('fin')) return 'end';
+  return 'operation';
+}
+
+function buildSipocActivities(){
+  const source = safeArray(state.asis?.activities || []).map(normalizeActivity).filter(a => a.name);
+  return source.map((a, idx, arr) => ({
+    name: normalizeContractString(a.name || a.title || ''),
+    type: canonicalActivityType(a.type),
+    actor: normalizeCatalogValue(a.actor || a.owner || ''),
+    document: normalizeCatalogValue(a.document || ''),
+    previous: a.previous?.length ? a.previous.map(normalizeContractString).filter(Boolean) : (idx === 0 ? [] : [normalizeContractString(arr[idx - 1].name || arr[idx - 1].title || '')].filter(Boolean)),
+    next: a.next?.length ? a.next.map(normalizeContractString).filter(Boolean) : (idx === arr.length - 1 ? [] : [normalizeContractString(arr[idx + 1].name || arr[idx + 1].title || '')].filter(Boolean)),
+    ext_suppliers: dedupeCatalog(a.ext_suppliers || []),
+    ext_inputs: dedupeCatalog(a.ext_inputs || []),
+    ext_outputs: dedupeCatalog(a.ext_outputs || []),
+    ext_customers: dedupeCatalog(a.ext_customers || []),
+    is_start: a.is_start || idx === 0,
+    is_end: a.is_end || idx === arr.length - 1,
+    note: normalizeContractString(a.note || a.problems || '')
+  }));
+}
+
+function buildSipocNotes(){
+  const parts = [];
+  const brief = getBriefPayload();
+  const flowSummary = normalizeContractString(brief?.summary?.flowSummary || '');
+  const executiveSummary = normalizeContractString(brief?.summary?.executiveSummary || '');
+  if(flowSummary) parts.push(flowSummary);
+  if(executiveSummary && executiveSummary !== flowSummary) parts.push(executiveSummary);
+  const futureVision = normalizeContractString(brief?.futureState?.futureVision || '');
+  if(futureVision) parts.push(futureVision);
+  const notes = parts.join('\n');
+  return notes || 'Sin notas adicionales del proceso.';
+}
+
+function buildAnalysisMetrics(){
+  const analysis = state.analysis || {};
+  const summary = analysis.summary || {};
+  return {
+    total_activities: safeArray(state.asis?.activities || []).length,
+    ava: summary.ava || {},
+    wastes_count: safeArray(analysis.wastes).length,
+    problems_count: safeArray(analysis.problems).length,
+    quick_wins_count: safeArray(analysis.quickWins).length,
+    constraints_count: safeArray(analysis.constraints).length,
+    warnings: safeArray(summary.warnings || [])
+  };
+}
+
+function buildSipocContract(){
+  const ctx = state.context || {};
   const sipoc = state.master?.sipoc || {suppliers:[],inputs:[],outputs:[],customers:[],actors:[],documentsSystems:[]};
   const artifacts = buildToBeArtifacts();
-  const activities = (state.asis.activities || []).map((a, idx, arr) => ({
-    name:a.name || '',
-    type:a.type || 'operation',
-    actor:a.actor || '',
-    document:a.note || '',
-    previous: idx === 0 ? '' : arr[idx - 1].name,
-    next: idx === arr.length - 1 ? '' : arr[idx + 1].name,
-    ext_suppliers: [],
-    ext_inputs: [],
-    ext_outputs: [],
-    ext_customers: [],
-    is_start: idx === 0,
-    is_end: idx === arr.length - 1,
-    note: a.problems || a.note || ''
-  }));
-
+  const activities = buildSipocActivities();
+  const processName = normalizeContractString(ctx.processName || state.master?.processName || '');
+  const purpose = normalizeContractString(ctx.purpose || getBriefPayload()?.summary?.purposeSummary || '');
+  const processCode = normalizeContractString(ctx.processCode || '');
+  const suppliers = dedupeCatalog(sipoc.suppliers || []);
+  const inputs = dedupeCatalog(sipoc.inputs || []);
+  const outputs = dedupeCatalog(sipoc.outputs || []);
+  const customers = dedupeCatalog(sipoc.customers || []);
+  const actors = dedupeCatalog(sipoc.actors || activities.map(x => x.actor));
+  const documents = dedupeCatalog(sipoc.documentsSystems || activities.map(x => x.document));
+  const startEvent = activities.length ? ('Inicio en: ' + activities[0].name) : '';
+  const endEvent = activities.length ? ('Cierre en: ' + activities[activities.length - 1].name) : '';
   return {
+    contract_version: '1.0',
+    source_module: 'lmp',
+    target_module: 'sipoc_builder',
+    generated_at: new Date().toISOString(),
     sipoc_input: {
-      process_code: ctx.processCode || '',
-      process_name: ctx.processName || '',
-      purpose: ctx.purpose || '',
-      notes: state.analysis ? JSON.stringify(state.analysis.summary) : '',
-      suppliers: sipoc.suppliers || [],
-      inputs: sipoc.inputs || [],
-      outputs: sipoc.outputs || [],
-      customers: sipoc.customers || [],
-      actors: sipoc.actors || [],
-      documents: sipoc.documentsSystems || [],
+      process_code: processCode,
+      process_name: processName,
+      purpose: purpose,
+      start_event: startEvent,
+      end_event: endEvent,
+      notes: buildSipocNotes(),
+      suppliers,
+      inputs,
+      outputs,
+      customers,
+      actors,
+      documents,
       activities
     },
+    analysis_metrics: buildAnalysisMetrics(),
     to_be_package: {
       mode_a: artifacts.modeA,
       mode_b: artifacts.modeB,
       document_proposal: artifacts.documentProposal,
       integration_input: artifacts.integrationInput,
       integration_analysis_base: artifacts.integrationAnalysisBase
-    }
+    },
+    integration_input: artifacts.integrationInput || {}
   };
+}
+
+function validateSipocContract(sp){
+  const errors = [];
+  const warnings = [];
+  if(!sp || typeof sp !== 'object'){
+    errors.push('sipoc_input no existe o no es objeto.');
+    return { errors, warnings };
+  }
+  if(!normalizeContractString(sp.process_name)) errors.push('sipoc_input.process_name es obligatorio.');
+  if(!normalizeContractString(sp.purpose)) errors.push('sipoc_input.purpose es obligatorio.');
+  if(!Array.isArray(sp.activities) || !sp.activities.length) errors.push('sipoc_input.activities debe tener al menos una actividad.');
+  if(!normalizeContractString(sp.process_code)) warnings.push('sipoc_input.process_code viene vacío.');
+  const notes = String(sp.notes || '').trim();
+  if((notes.startsWith('{') && notes.endsWith('}')) || /totalActivities|ava|wastesCount/i.test(notes)){
+    warnings.push('sipoc_input.notes parece contener JSON serializado o métricas; usa analysis_metrics.');
+  }
+  ['suppliers','inputs','outputs','customers','actors','documents'].forEach(key => {
+    const arr = Array.isArray(sp[key]) ? sp[key] : [];
+    const normalized = arr.map(v => normalizeCatalogValue(v)).filter(Boolean);
+    if(normalized.length !== dedupeCatalog(arr).length) warnings.push('sipoc_input.' + key + ' contiene duplicados o variantes.');
+  });
+  const activityTypes = new Set();
+  safeArray(sp.activities).forEach((act, idx) => {
+    const name = normalizeContractString(act?.name || '');
+    const actor = normalizeContractString(act?.actor || '');
+    const typ = canonicalActivityType(act?.type || '');
+    if(!name) errors.push('Actividad #' + (idx + 1) + ' sin name válido.');
+    if(!actor) errors.push('Actividad #' + (idx + 1) + ' sin actor válido.');
+    if(!typ) errors.push('Actividad #' + (idx + 1) + ' sin type válido.');
+    activityTypes.add(typ);
+    if(!Array.isArray(act?.previous) || !Array.isArray(act?.next)) warnings.push('Actividad #' + (idx + 1) + ' tiene previous/next no canonizados.');
+  });
+  if(activityTypes.size === 1 && activityTypes.has('operation')) warnings.push('Todas las actividades vienen como operation; puede empobrecer la diagramación.');
+  return { errors, warnings };
+}
+
+function buildSBJson(){
+  return buildSipocContract();
 }
 
 
@@ -3010,7 +3155,16 @@ function buildImplementationHtml(){
 function generateResults(){
   syncVisibleStage();
   renderToBeSummary();
-  state.results.sbJson = buildSBJson();
+  const sbContract = buildSBJson();
+  const sbValidation = validateSipocContract(sbContract.sipoc_input);
+  if(sbValidation.errors.length){
+    showMsg('resultsMsg','err','No se puede generar el JSON para SIPOC Builder:\n- ' + sbValidation.errors.join('\n- '));
+    state.results.sbJson = null;
+    if(qs('sbJsonView')) qs('sbJsonView').textContent = '';
+    return;
+  }
+  state.results.sbJson = sbContract;
+  state.results.sbValidation = sbValidation;
   state.results.executiveHtml = buildExecutiveHtml();
   state.results.technicalHtml = buildTechnicalHtml();
   state.results.implementationHtml = buildImplementationHtml();
@@ -3031,7 +3185,11 @@ function generateResults(){
   qs('executiveText').value = stripHtml(state.results.executiveHtml);
   qs('technicalText').value = stripHtml(state.results.technicalHtml);
 
-  showMsg('resultsMsg','ok','Resultados generados correctamente.');
+  if(sbValidation.warnings.length){
+    showMsg('resultsMsg','warn','Resultados generados con advertencias para SIPOC Builder:\n- ' + sbValidation.warnings.join('\n- '));
+  } else {
+    showMsg('resultsMsg','ok','Resultados generados correctamente.');
+  }
 }
 
 
@@ -3185,7 +3343,7 @@ function resetAll(){
     analysis:null,
     decision:{route:null},
     tobe:{improvements:[]},
-    results:{sbJson:null,executiveHtml:'',technicalHtml:'',implementationHtml:''}
+    results:{sbJson:null,sbValidation:null,executiveHtml:'',technicalHtml:'',implementationHtml:''}
   };
   Object.keys(state).forEach(k => delete state[k]);
   Object.assign(state, fresh);
@@ -3234,6 +3392,49 @@ if(typeof window.hydratePreparationFromState === 'function'){ window.hydratePrep
 /* =========================
    PATCH DE INTEGRACIÓN IA Y REFACTOR CONTEXTO/CARGA
 ========================= */
+function hydrateContextFromState(){
+  const c = state.context || {};
+
+  const setText = (id, value) => {
+    const el = qs(id);
+    if (el) el.textContent = value || '-';
+  };
+
+  const setValue = (id, value) => {
+    const el = qs(id);
+    if (el) el.value = value || '';
+  };
+
+  renderContextReadOnly();
+
+  setText('ctxCompanyValue', c.company);
+  setText('ctxProcessValue', c.processName);
+  setText('ctxCodeValue', c.processCode);
+  setText('ctxOwnerValue', c.owner);
+  setText('ctxAnalystValue', c.analyst);
+  setText('ctxIndustryValue', c.industry);
+  setText('ctxTypeValue', c.processType);
+  setText('ctxActivityValue', c.activity);
+  setText('ctxPurposeValue', c.purpose);
+
+  setValue('ctx_company', c.company);
+  setValue('ctx_process', c.processName);
+  setValue('ctx_code', c.processCode);
+  setValue('ctx_owner', c.owner);
+  setValue('ctx_analyst', c.analyst);
+  setValue('ctx_type', c.processType);
+  setValue('ctx_industry', c.industry);
+  setValue('ctx_activity', c.activity);
+  setValue('ctx_purpose', c.purpose);
+  setValue('ctx_processName', c.processName);
+  setValue('ctx_processCode', c.processCode);
+
+  if(qs('ctx_observation')) qs('ctx_observation').value = c.observation || '';
+
+  renderIndicatorsChips();
+  updateTopStatus();
+}
+
 function renderContextReadOnly(){
   const wrap = qs('contextReadOnly');
   if(!wrap) return;
@@ -3462,12 +3663,75 @@ function renderBriefDraft(){
 function buildBriefPrompt(master){
   const c = master.context || {};
   const docs = safeArray(master.notes?.additionalDocuments).map(d => `DOCUMENTO: ${d.name}\n${d.content || d.preview || ''}`).join('\n\n----------------\n\n') || '[Sin documentos adicionales]';
+  const prePack = JSON.stringify(safeArray(master.preInterview || master.pre || []), null, 2);
+  const interviewPack = JSON.stringify(safeArray(master.interview || []), null, 2);
+  const docNotes = master.notes?.docNotes || '';
 
-  const dynamicSection = `ENTRADA CONSOLIDADA:
+  const dynamicSection = `ENTRADA CONSOLIDADA COMPLETA (NO RESUMIR PREMATURAMENTE):
 ${JSON.stringify(master, null, 2)}
+
+EVIDENCIA DE PREENTREVISTAS (PRESERVAR MATICES, DIFERENCIAS Y CONTRADICCIONES):
+${prePack}
+
+EVIDENCIA DE ENTREVISTAS (PRESERVAR EXCEPCIONES, REGLAS IMPLÍCITAS, CONTROLES NO DOCUMENTADOS Y DECISIONES REALES):
+${interviewPack}
+
+NOTAS COMPLEMENTARIAS DEL ANALISTA:
+${docNotes || '[Sin notas adicionales]'}
 
 DOCUMENTOS ADICIONALES:
 ${docs}`;
+
+  const hardening = `
+
+REGLAS CRÍTICAS DE PRESERVACIÓN DE EVIDENCIA:
+- NO resumas demasiado pronto.
+- NO sustituyas diferencias entre entrevistados por una sola versión armonizada si hay contradicción relevante.
+- PRESERVA explícitamente excepciones, handoffs, controles manuales, aprobaciones informales, retrabajos, demoras, dependencias de personas y reglas implícitas.
+- DISTINGUE entre: hecho declarado, inferencia razonable, supuesto y vacío de información.
+- SI detectas contradicciones, repórtalas en lugar de ocultarlas.
+- SI una conclusión depende de una sola fuente, indícalo.
+- NO conviertas el brief en texto bonito; conviértelo en una base consultiva defendible.
+- NO confundas áreas o departamentos con procesos reales.
+- NO aceptes definiciones vagas del tipo “gestionar”, “coordinar”, “dar seguimiento” sin concretar qué ocurre realmente.
+- INCLUYE lo que todavía debe validarse antes del análisis profundo.
+
+DEBES ENTREGAR ADEMÁS:
+- flowSummary
+- contradictionsDetected
+- openQuestions
+- visibleRisks
+- processCriticality
+- hiddenControls
+- manualDependencies
+- suspectedConstraints
+- evidenceHighlights
+
+JSON OBLIGATORIO DEL BRIEF:
+{
+  "brief": {
+    "executiveSummary": "",
+    "processPurpose": "",
+    "scope": "",
+    "actors": [],
+    "sipoc_preliminary": {"suppliers": [], "inputs": [], "process": [], "outputs": [], "customers": []},
+    "flowSummary": [],
+    "mainPainPoints": [],
+    "preliminaryRestrictions": [],
+    "preliminaryQuickWins": [],
+    "mentionedIndicators": [],
+    "informationGaps": [],
+    "assumptions": [],
+    "contradictionsDetected": [],
+    "openQuestions": [],
+    "visibleRisks": [],
+    "processCriticality": "",
+    "hiddenControls": [],
+    "manualDependencies": [],
+    "suspectedConstraints": [],
+    "evidenceHighlights": []
+  }
+}`;
 
   const staticBase = sgmpPrompt('prompt_brief', null);
   if (staticBase) {
@@ -3475,10 +3739,9 @@ ${docs}`;
       .replace('{{industry}}', c.industry || '[INDUSTRIA]')
       .replace('{{activity}}', c.activity || '[ACTIVIDAD]')
       .replace('{{processType}}', c.processType || '[TIPO_PROCESO]')
-      + '\n\n' + dynamicSection;
+      + hardening + '\n\n' + dynamicSection;
   }
 
-  // Fallback hardcodeado
   return `ACTÚA COMO:
 
 1. Consultor senior en procesos, Lean, Six Sigma y TOC
@@ -3487,40 +3750,11 @@ ${docs}`;
 4. Experto en el tipo de proceso: ${c.processType || '[TIPO_PROCESO]'}
 
 OBJETIVO GENERAL:
-Analizar la información proveniente de preentrevistas múltiples, entrevista principal y archivos adicionales relevantes para construir el BRIEF FORMAL DEL PROCESO.
+Analizar la información proveniente de preentrevistas múltiples, entrevista principal y archivos adicionales relevantes para construir el BRIEF FORMAL DEL PROCESO como consolidado consultivo estructurado, no como resumen superficial.
 
-` + dynamicSection + `
+${hardening}
 
-ENTREGAR COMO MÍNIMO:
-- resumen ejecutivo del proceso
-- propósito del proceso
-- alcance preliminar
-- actores clave
-- SIPOC preliminar
-- flujo resumido
-- principales problemas visibles
-- restricciones preliminares
-- quick wins preliminares
-- indicadores mencionados
-- vacíos detectados
-- supuestos asumidos
-
-JSON OBLIGATORIO:
-{
-  "brief": {
-    "executiveSummary": "",
-    "processPurpose": "",
-    "scope": "",
-    "actors": [],
-    "sipoc_preliminary": {"suppliers": [], "inputs": [], "process": [], "outputs": [], "customers": []},
-    "mainPainPoints": [],
-    "preliminaryRestrictions": [],
-    "preliminaryQuickWins": [],
-    "mentionedIndicators": [],
-    "informationGaps": [],
-    "assumptions": []
-  }
-}`;
+${dynamicSection}`;
 }
 
 function generateBriefPromptFromMaster(){
@@ -3571,14 +3805,61 @@ function generateAnalysisPromptFromApprovedBrief(){
   const brief = state.briefReview.raw;
   const master = state.master || mergeMaster();
   const c = master.context || state.context || {};
-  const dynamic = `BRIEF APROBADO:
+  const evidencePack = {
+    preInterview: safeArray(master.preInterview || master.pre || []),
+    interview: safeArray(master.interview || []),
+    docNotes: master.notes?.docNotes || '',
+    additionalDocuments: safeArray(master.notes?.additionalDocuments).map(d => ({name:d.name, preview:d.preview || d.content || ''})),
+    context: c
+  };
+  const dynamic = `BRIEF APROBADO (NO RECONSTRUIR, USAR COMO BASE OFICIAL):
 ${JSON.stringify(brief, null, 2)}
 
-CONTEXT0 DEL PROCESO:
-${JSON.stringify(c, null, 2)}
+EVIDENCIA OPERATIVA COMPLEMENTARIA (NO PERDERLA POR RESUMEN EXCESIVO):
+${JSON.stringify(evidencePack, null, 2)}`;
+  const hardening = `
 
-COMPLEMENTOS EXTERNOS:
-${JSON.stringify({docNotes: master.notes?.docNotes || '', docs: safeArray(master.notes?.additionalDocuments).map(d => ({name:d.name, preview:d.preview || d.content || ''}))}, null, 2)}`;
+REGLAS CRÍTICAS DE ANÁLISIS CONSULTIVO:
+- NO resumas demasiado pronto ni borres evidencia operativa valiosa.
+- PRESERVA excepciones, retrabajos, controles manuales, aprobaciones informales, handoffs, variaciones y dependencias de personas.
+- DISTINGUE hechos observados, inferencias, supuestos y vacíos.
+- NO confundas áreas funcionales con procesos.
+- NO aceptes procesos mal definidos; si la definición es débil, señálalo explícitamente.
+- NO propongas mejoras decorativas, teóricas o genéricas.
+- NO llames “quick win” a algo que requiera rediseño complejo, dependencia transversal o cambio cultural profundo.
+- NO conviertas todas las actividades en operation; clasifica correctamente decision, control, document y end cuando aplique.
+- EVITA verbos genéricos como “gestionar”, “coordinar”, “dar seguimiento” si no explican la acción real.
+- INCLUYE handoffs, controles, excepciones, criterios de aprobación y reprocesos cuando aparezcan en la evidencia.
+- DEFINE indicadores de control además de indicadores resultado.
+- El TO BE debe ser implementable, conectado al AS IS y defendible operativamente.
+- La salida debe servir simultáneamente para LMP, Evaluador documental, Integrador y SIPOC Builder.
+
+OBLIGATORIO PRESERVAR Y REPORTAR:
+- evidence_highlights
+- contradictions_detected
+- hidden_controls
+- manual_dependencies
+- suspected_constraints
+- stage_details
+- handoffs
+- exceptions_and_criteria
+- undocumented_knowledge
+
+JSON DEBE INCLUIR, ADEMÁS DE LO YA DEFINIDO:
+- as_is.stage_details
+- as_is.handoffs
+- as_is.exceptions_and_criteria
+- ava.evidence
+- findings.evidence_highlights
+- findings.contradictions_detected
+- findings.hidden_controls
+- findings.manual_dependencies
+- findings.suspected_constraints
+- improvements.support_basis
+- to_be.assumptions
+- indicators.control_indicators
+- sipoc_builder_ready.sipoc_input_precheck
+`;
   const staticBase = sgmpPrompt('prompt_warroom', '');
   const fallback = `ACTÚA COMO:
 
@@ -3588,28 +3869,73 @@ ${JSON.stringify({docNotes: master.notes?.docNotes || '', docs: safeArray(master
 4. Experto en el tipo de proceso: ${c.processType || '[TIPO_PROCESO]'}
 
 OBJETIVO GENERAL
-Analizar el BRIEF APROBADO del proceso y la información complementaria disponible para construir AS IS, AVA, hallazgos, mejoras, one page, TO BE, propuesta documental, input integrador e indicadores, entregando JSON estructurado completo.
+Analizar el BRIEF APROBADO del proceso y la evidencia operativa complementaria para construir AS IS robusto, AVA serio, hallazgos defendibles, mejoras con sustento, one page útil, TO BE implementable, propuesta documental, input integrador, indicadores de control y un JSON contractual realmente usable.
 
-ENTREGAR COMO MÍNIMO:
-- entendimiento ejecutivo final
-- SIPOC validado
-- AS IS detallado
-- análisis AVA
-- findings
-- improvements
-- one page
-- decisión AS IS / TO BE
-- TO BE
-- plan Modo A
-- plan Modo B
-- propuesta documental
-- input Integrador
-- indicadores
-- preinforme ejecutivo
-- JSON completo equivalente`;
-  const prompt = (staticBase ? staticBase.replace('{{industry}}', c.industry || '[INDUSTRIA]').replace('{{activity}}', c.activity || '[ACTIVIDAD]').replace('{{processType}}', c.processType || '[TIPO_PROCESO]') : fallback) + '\n\n' + dynamic;
+${hardening}`;
+  const prompt = (staticBase ? staticBase.replace('{{industry}}', c.industry || '[INDUSTRIA]').replace('{{activity}}', c.activity || '[ACTIVIDAD]').replace('{{processType}}', c.processType || '[TIPO_PROCESO]') + hardening : fallback) + '\n\n' + dynamic;
   if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
+  try{ state.results = state.results || {}; state.results.sbNormalizationPrompt = buildSbNormalizationPrompt(); }catch(e){}
   showMsg('cargaMsg','ok','Prompt MASTER B generado correctamente.');
+}
+
+function buildSbNormalizationPrompt(){
+  const analysis = state.analysis || {};
+  const asis = state.asis || {};
+  const decision = state.decision || {};
+  const tobe = state.tobe || {};
+  const c = state.context || {};
+  return `ACTÚA COMO normalizador contractual entre módulos SGMP.
+
+OBJETIVO:
+Tomar el análisis completo, el AS IS validado, el TO BE aprobado y las decisiones finales del proceso para construir SOLO un bloque sipoc_input limpio y compatible con SIPOC Builder.
+
+REGLAS CRÍTICAS:
+- Devuelve SOLO JSON válido.
+- Construye SOLO el bloque sipoc_input listo para el contrato LMP → SIPOC Builder.
+- NO copies métricas AVA, waste counts ni quick wins dentro de notes.
+- notes debe contener solo notas semánticas del proceso en texto.
+- process_name y purpose no pueden quedar vacíos.
+- activities debe tener al menos una actividad.
+- previous y next deben ser arrays.
+- type debe ser uno de: operation, decision, control, document, end.
+- Limpia y deduplica actors, documents, suppliers, inputs, outputs y customers.
+- No mezcles actores internos con proveedores o clientes externos.
+- Si falta evidencia para algún campo, completa con la mejor inferencia razonable y marca la limitación en notes.
+
+SALIDA ESPERADA:
+{
+  "sipoc_input": {
+    "process_code": "",
+    "process_name": "",
+    "purpose": "",
+    "start_event": "",
+    "end_event": "",
+    "notes": "",
+    "suppliers": [],
+    "inputs": [],
+    "outputs": [],
+    "customers": [],
+    "actors": [],
+    "documents": [],
+    "activities": []
+  }
+}
+
+INSUMOS:
+CONTEXT:
+${JSON.stringify(c, null, 2)}
+
+AS_IS:
+${JSON.stringify(asis, null, 2)}
+
+ANALYSIS:
+${JSON.stringify(analysis, null, 2)}
+
+DECISION:
+${JSON.stringify(decision, null, 2)}
+
+TO_BE:
+${JSON.stringify(tobe, null, 2)}`;
 }
 
 async function loadInstrumentFiles(type){
@@ -3861,7 +4187,74 @@ function extractJsonFromText(raw){
 }
 
 function normalizeActivity(item){
-  return {name:item.name||item.activity||item.nombre||'', actor:item.actor||item.role||item.responsable||'', type:item.type||item.tipo||'operation', time:item.time||item.tiempo||'', ava:item.ava||item.classification||item.clasificacion||'NNVA', problems:item.problems||item.problemas||'', wastes:item.wastes||item.desperdicios||'', quickWin:item.quickWin||item.quick_win||item.quickwin||'No', constraint:item.constraint||item.restriction||item.restriccion||'No', note:item.note||item.description||item.descripcion||''};
+  item = item || {};
+  const name = item.name || item.activity || item.activity_name || item.nombre || item.step || item.stage || item.title || '';
+  const actor = item.actor || item.role || item.responsable || item.owner || item.executor || item.area || '';
+  const documentName = item.document || item.documento || item.record || item.form || item.formato || '';
+  const previous = safeArray(item.previous || item.prev || item.predecessors || item.before).map(x => normalizeContractString(x)).filter(Boolean);
+  const next = safeArray(item.next || item.successors || item.after).map(x => normalizeContractString(x)).filter(Boolean);
+  const controls = safeArray(item.controls || item.controles).join('; ');
+  const handoff = item.handoff || item.handoffs || item.transfer || item.entrega || '';
+  const exceptions = safeArray(item.exceptions || item.excepciones || item.exception_criteria || item.criterios_excepcion).join('; ');
+  const description = item.note || item.notes || item.description || item.descripcion || item.detail || item.detalle || '';
+  const problems = item.problems || item.problemas || item.issue || item.issues || '';
+  const wastes = item.wastes || item.desperdicios || item.waste || '';
+  const quickRaw = item.quickWin || item.quick_win || item.quickwin || item.quick_win_candidate || item.quickWinCandidate || 'No';
+  const resRaw = item.constraint || item.restriction || item.restriccion || item.is_constraint || 'No';
+  return {
+    name: normalizeContractString(name),
+    actor: normalizeCatalogValue(actor),
+    type: canonicalActivityType(item.type || item.tipo || item.activity_type || ''),
+    document: normalizeCatalogValue(documentName),
+    previous,
+    next,
+    time:item.time || item.tiempo || item.duration || '',
+    ava:item.ava || item.classification || item.clasificacion || item.value_classification || 'NNVA',
+    problems: normalizeContractString(problems),
+    wastes: normalizeContractString(wastes),
+    quickWin: (String(quickRaw).toLowerCase().includes('s') || quickRaw === true) ? 'Sí' : (quickRaw === true ? 'Sí' : 'No'),
+    constraint: (String(resRaw).toLowerCase().includes('s') || resRaw === true) ? 'Sí' : 'No',
+    controls: normalizeContractString(controls),
+    handoff: normalizeContractString(handoff),
+    exceptions: normalizeContractString(exceptions),
+    ext_suppliers: dedupeCatalog(item.ext_suppliers || item.external_suppliers || item.suppliers || []),
+    ext_inputs: dedupeCatalog(item.ext_inputs || item.external_inputs || item.inputs || []),
+    ext_outputs: dedupeCatalog(item.ext_outputs || item.external_outputs || item.outputs || []),
+    ext_customers: dedupeCatalog(item.ext_customers || item.external_customers || item.customers || []),
+    is_start: !!(item.is_start || item.start || item.isStart),
+    is_end: !!(item.is_end || item.end || item.isEnd),
+    note: normalizeContractString([description, controls ? 'Controles: ' + controls : '', handoff ? 'Handoff: ' + handoff : '', exceptions ? 'Criterios/excepciones: ' + exceptions : ''].filter(Boolean).join(' | '))
+  };
+}
+
+function extractAsIsActivitiesFromPayload(payload){
+  const p = payload || {};
+  const candidates = [
+    p.as_is?.activities,
+    p.asIs?.activities,
+    p.as_is?.stage_details,
+    p.asIs?.stage_details,
+    p.as_is?.stages,
+    p.asIs?.stages,
+    p.activities,
+    p.process?.activities,
+    p.sipoc?.activities,
+    p.sipoc?.process,
+    p.sipoc_input?.activities,
+    p.structured_process?.activities,
+    p.integration_input?.activities
+  ];
+  for(const candidate of candidates){
+    const arr = safeArray(candidate).map(normalizeActivity).filter(a => a.name);
+    if(arr.length) return arr.map((a, idx, all) => ({
+      ...a,
+      previous: a.previous?.length ? a.previous : (idx === 0 ? [] : [all[idx-1].name]),
+      next: a.next?.length ? a.next : (idx === all.length - 1 ? [] : [all[idx+1].name]),
+      is_start: a.is_start || idx === 0,
+      is_end: a.is_end || idx === all.length - 1
+    }));
+  }
+  return [];
 }
 function normalizeImprovement(item){
   return { title:item.title||item.name||item.titulo||'Mejora propuesta', summary:item.problem||item.problema||'', problem:item.problem||item.problema||'', currentState:item.currentState||item.as_is||item.estado_actual||'', proposedState:item.proposedState||item.to_be||item.estado_propuesto||'', support:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||''].filter(Boolean).join(' | '), impact:item.impact||item.impacto||'', justification:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||'', item.impact||item.impacto||''].filter(Boolean).join(' | '), status:(item.status==='adjust'?'custom':item.status==='discard'?'reject':(item.status||'pending')), customText:item.customText||item.adjustedState||'' };
@@ -3890,7 +4283,7 @@ function processIAResponse(){
       sipoc: parsed.sipoc || state.master?.sipoc || {},
       as_is: {
         summary: asisBlock.summary || parsed.summary || '',
-        activities: safeArray(asisBlock.activities || parsed.activities || []).map(normalizeActivity)
+        activities: extractAsIsActivitiesFromPayload(parsed)
       },
       ava: {
         summary: (parsed.ava||{}).summary || '',
@@ -3955,7 +4348,7 @@ function processIAResponse(){
     state.master.documentProposal = data.document_proposal || [];
     state.master.integrationInput = data.integration_input || {};
     state.master.integrationAnalysisBase = data.integration_analysis_base || {};
-    if(!state.asis.activities.length) state.asis.activities = data.as_is.activities.map(a => ({...a}));
+    if(data.as_is.activities.length) state.asis.activities = data.as_is.activities.map(a => ({...a}));
     state.tobe.improvements = data.improvements.map(item => ({...item, id:item.id || ('imp-' + Math.random().toString(36).slice(2,8)), status:item.status || 'reject', customText:item.customText || ''}));
     if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = JSON.stringify(data, null, 2);
     if(qs('iaActsKpi')) qs('iaActsKpi').textContent = data.as_is.activities.length;
@@ -4006,16 +4399,27 @@ function renderAnalysisFromState(){
 }
 
 function hydrateAsIsFromMaster(){
-  if(state.analysis?.activities?.length){
-    state.asis.activities = state.analysis.activities.map(a => ({...a}));
-    renderAsIsActivities();
-    return;
+  const sources = [
+    state.analysis?.raw,
+    state.analysisRun?.raw,
+    state.analysis,
+    state.master,
+    state.master?.raw,
+    { activities: state.master?.activities || [] },
+    { sipoc: state.master?.sipoc || {} }
+  ];
+  for(const source of sources){
+    const acts = extractAsIsActivitiesFromPayload(source);
+    if(acts.length){
+      state.asis.activities = acts.map(a => ({...a}));
+      renderAsIsActivities();
+      updateTopStatus();
+      return true;
+    }
   }
-  if(!state.master) return;
-  if(!state.asis.activities.length){
-    state.asis.activities = (state.master.activities || []).map(a => ({ name:a.name || '', actor:a.actor || '', type:a.type || 'operation', time:a.time || '', ava:a.ava || 'NNVA', problems:a.problems || '', wastes:a.wastes || '', quickWin:a.quickWin || 'No', constraint:a.constraint || 'No', note:a.note || '' }));
-    renderAsIsActivities();
-  }
+  renderAsIsActivities();
+  updateTopStatus();
+  return false;
 }
 
 function runAnalysis(){
@@ -4080,9 +4484,7 @@ function saveToBeAndContinue(){
 
 function renderAllFromState(){
   updateTopStatus();
-  renderContextReadOnly();
-  if(qs('ctx_observation')) qs('ctx_observation').value = state.context.observation || '';
-  renderIndicatorsChips();
+  if(typeof hydrateContextFromState === 'function') hydrateContextFromState();
   if(typeof window.hydratePreparationFromState === 'function') window.hydratePreparationFromState();
   updateLoadKpis();
   if(state.master){ qs('masterEditor').value = JSON.stringify(state.master, null, 2); qs('masterPreview').textContent = JSON.stringify(state.master, null, 2); }
@@ -4104,90 +4506,242 @@ function renderAllFromState(){
 showSection('inicio');
 renderAllFromState();
 
-function buildUserManualHtml(){
-  const steps = [
-    ["Inicio","Selecciona cómo arrancar el trabajo: nuevo proceso, continuar desde respaldo, actualizar proceso o iniciar desde proceso documentado."],
-    ["Preparación","Define el contexto base del proceso y genera los HTML externos de preentrevista, entrevista y brief."],
-    ["Contexto","Revisa la información heredada y agrega observaciones e indicadores globales simples del proceso."],
-    ["Carga y consolidación","Carga los JSON de instrumentos, agrega archivos complementarios, consolida la información y genera el prompt maestro para IA."],
-    ["AS IS","Revisa y valida la estructura actual del proceso propuesta por la IA. Ajusta solo si hace falta."],
-    ["Análisis","Valida AVA, desperdicios, problemas, quick wins y restricciones detectadas."],
-    ["One page","Revisa cada mejora propuesta, su estado actual, propuesta, sustento e impacto esperado. Decide ejecutar, personalizar o rechazar."],
-    ["Decisión","Define si cierras en AS IS o si pasas a TO BE. Para ir a TO BE debe existir al menos una mejora execute o custom."],
-    ["TO BE","Revisa el flujo futuro, diferencias frente al AS IS, beneficios, propuesta documental y plan de implementación Modo A / Modo B."],
-    ["Resultados","Consulta, copia o descarga los entregables finales, incluyendo propuesta documental e input para integrador."]
-  ];
-  const stepsHtml = steps.map(([t,d],i)=>`<div class="step"><div class="num">${i+1}</div><div><h3>${t}</h3><p>${d}</p></div></div>`).join('');
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>Manual de usuario - LMP</title>
-<style>
-body{font-family:Arial,sans-serif;background:#0b1f40;color:#eef4ff;margin:0;padding:24px}
-.wrap{max-width:980px;margin:0 auto}
-.hero{background:linear-gradient(135deg,#11264a 0%,#17396f 58%,#214c8f 100%);border-radius:20px;padding:24px;margin-bottom:18px}
-.hero h1{margin:0 0 8px}
-.hero p{margin:0;line-height:1.5;color:#dbe8ff}
-.card{background:#10284d;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:18px;margin-bottom:16px}
-.step{display:grid;grid-template-columns:44px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08)}
-.step:last-child{border-bottom:none}
-.num{width:44px;height:44px;border-radius:999px;background:#3d78ff;display:flex;align-items:center;justify-content:center;font-weight:700}
-h2,h3{margin:0 0 8px}
-p,li{line-height:1.55}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
-button{background:#3d78ff;color:#fff;border:none;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer}
-.note{color:#afc3e7}
-@media print{button{display:none}.card,.hero{break-inside:avoid}}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="actions">
-    <button onclick="window.print()">Imprimir / Guardar PDF</button>
-  </div>
-  <div class="hero">
-    <h1>Manual de usuario del LMP</h1>
-    <p>Guía rápida para operar el Laboratorio de Procesos desde el inicio hasta los resultados, incluyendo el uso de IA, la revisión AS IS / TO BE y la generación de entregables para Evaluador documental e Integrador.</p>
-  </div>
-  <div class="card">
-    <h2>Ruta recomendada de uso</h2>
-    ${stepsHtml}
-  </div>
-  <div class="card">
-    <h2>Recomendaciones</h2>
-    <ul>
-      <li>Trabaja preferiblemente con el HTML abierto desde servidor local para evitar bloqueos del navegador con rutas file://.</li>
-      <li>Genera y completa los instrumentos fuera del LMP, luego carga sus JSON en la etapa de Carga y consolidación.</li>
-      <li>Usa la respuesta estructurada de la IA para alimentar AS IS, análisis, mejoras y TO BE.</li>
-      <li>Antes de pasar a TO BE, valida las mejoras en el one page y define si ejecutar, personalizar o rechazar.</li>
-    </ul>
-    <p class="note">Este manual es imprimible y puede guardarse como PDF desde el navegador.</p>
-  </div>
-</div>
-</body>
-</html>`;
+function buildUserManualTxt(){
+  const ctx = state.context || {};
+  const title = 'MANUAL OPERATIVO Y DE USUARIO - LMP (MÓDULO 1)';
+  return `${title}
+${'='.repeat(title.length)}
+
+Versión del manual: 1.0
+Módulo: LMP - Laboratorio de Mejora de Procesos
+Uso recomendado: analistas de procesos, líderes de proceso y equipo de mejora continua.
+
+1. PROPÓSITO DEL LMP
+--------------------
+El LMP permite levantar, consolidar, analizar y estructurar procesos con apoyo de IA. El módulo no reemplaza el criterio del analista: organiza evidencia, genera prompts, recibe respuestas estructuradas, permite validar AS IS, decidir mejoras, construir TO BE y generar entregables para otros módulos del SGMP.
+
+2. PRINCIPIOS DE USO
+-------------------
+- IA propone; el analista valida y decide.
+- No avanzar si el contexto del proceso está incompleto o ambiguo.
+- No convertir entrevistas en resúmenes pobres: preservar evidencia operativa, excepciones, controles, handoffs, restricciones y contradicciones.
+- Diferenciar borrador de proceso formalizado.
+- No exportar a SIPOC Builder si el contrato no cumple process_name, purpose y activities.
+
+3. FLUJO GENERAL
+----------------
+Inicio → Preparación → Contexto → Carga y consolidación → AS IS → Análisis → Decisión → TO BE → Resultados.
+
+4. INICIO
+---------
+Selecciona la ruta de trabajo:
+- Nuevo proceso: inicia un levantamiento desde cero.
+- Continuar desde respaldo: carga un JSON borrador para seguir trabajando.
+- Actualizar proceso existente: carga un respaldo y formaliza datos oficiales.
+- Proceso documentado: parte de documentación existente.
+
+Validación esperada:
+- Si cargas respaldo, revisa que el contexto se restaure automáticamente.
+- Si formalizas, valida código, nombre, finalidad y responsable definitivo.
+
+5. PREPARACIÓN
+--------------
+Completa los parámetros base que heredarán los módulos:
+- Empresa: ${ctx.company || '[pendiente]'}
+- Proceso: ${ctx.processName || '[pendiente]'}
+- Código: ${ctx.processCode || '[pendiente]'}
+- Líder: ${ctx.owner || '[pendiente]'}
+- Analista: ${ctx.analyst || '[pendiente]'}
+- Industria: ${ctx.industry || '[pendiente]'}
+- Tipo de proceso: ${ctx.processType || '[pendiente]'}
+- Actividad del negocio: ${ctx.activity || '[pendiente]'}
+- Propósito: ${ctx.purpose || '[pendiente]'}
+
+Acciones:
+1. Guardar parámetros.
+2. Descargar HTML de preentrevista.
+3. Descargar HTML de entrevista.
+4. Enviar instrumentos a usuarios o usarlos en entrevista.
+5. Recibir JSON generados por los instrumentos.
+
+Regla crítica:
+El Brief no debe tratarse como formulario vacío principal. Debe construirse desde preentrevistas, entrevistas y anexos.
+
+6. CONTEXTO
+-----------
+Aquí se revisa la información heredada de Preparación. No debe pedirse nuevamente la misma información.
+
+Indicadores globales:
+- Solo nombre y descripción.
+- No pedir unidad ni meta en esta etapa.
+- Usar chips eliminables para mantener simpleza.
+
+7. CARGA Y CONSOLIDACIÓN
+------------------------
+Esta etapa tiene dos subfases.
+
+SUBFASE A - CONSTRUCCIÓN DEL BRIEF
+Entradas:
+- JSON de preentrevista (pueden ser varios).
+- JSON de entrevista (pueden ser varios).
+- Brief externo opcional.
+- Archivos adicionales.
+
+Pasos:
+1. Cargar los JSON de preentrevista y entrevista.
+2. Verificar que las cargas sean acumulativas y no reemplacen archivos anteriores.
+3. Generar el objeto consolidado.
+4. Copiar el Prompt MASTER A.
+5. Ejecutarlo en la IA.
+6. Pegar el JSON de Brief devuelto por la IA.
+7. Revisar el Brief en el editor.
+8. Ajustar si hace falta.
+9. Aprobar Brief.
+
+El Brief debe preservar:
+- contradicciones, vacíos, supuestos, riesgos visibles, controles ocultos, dependencias manuales, restricciones sospechadas y evidencia destacada.
+
+SUBFASE B - ANÁLISIS COMPLETO
+Requisito:
+- No se puede ejecutar sin Brief aprobado.
+
+Pasos:
+1. Generar Prompt MASTER B.
+2. Ejecutarlo en la IA con el Brief aprobado y complementos.
+3. Pegar respuesta JSON de análisis.
+4. Procesar respuesta IA.
+5. Aplicar al LMP y continuar.
+
+La respuesta debe alimentar:
+- AS IS, AVA, findings, improvements, one page, TO BE, indicadores, propuesta documental, input integrador y JSON para Builder.
+
+8. AS IS
+--------
+Objetivo:
+Revisar la estructura actual del proceso propuesta por IA. El usuario no debe construirla desde cero.
+
+Debe aparecer automáticamente si el análisis contiene:
+- as_is.activities
+- activities
+- sipoc.activities
+- sipoc.process
+- sipoc_input.activities
+- integration_input.activities
+
+Validar:
+- Secuencia de actividades.
+- Actor por actividad.
+- Tipo de actividad: operation, decision, control, document o end.
+- Problemas/desperdicios asociados.
+- Notas, controles, handoffs y excepciones relevantes.
+
+Si no aparece AS IS:
+- revisar que el JSON de IA tenga actividades en alguno de los bloques esperados.
+- volver a procesar análisis.
+
+9. ANÁLISIS
+-----------
+Valida:
+- AVA: VA, NNVA, NVA.
+- Desperdicios.
+- Problemas.
+- Restricciones.
+- Quick wins.
+
+No aceptar análisis genérico. Cada hallazgo debe tener relación con evidencia del proceso.
+
+10. ONE PAGE DE MEJORAS
+-----------------------
+Cada mejora debe mostrar:
+- problema, estado actual, estado propuesto, sustento e impacto esperado.
+
+Estados:
+- Ejecutar: pasa a TO BE y resultados.
+- Personalizar: pasa a TO BE usando el texto personalizado.
+- Rechazar: no pasa a TO BE.
+
+11. DECISIÓN
+------------
+Opciones:
+- Cerrar en AS IS: genera entregables con análisis actual y oportunidades como anexo.
+- Pasar a TO BE: exige al menos una mejora en Ejecutar o Personalizar.
+
+12. TO BE
+---------
+Debe construir:
+- flujo futuro, diferencias vs AS IS, beneficios esperados, plan Modo A, plan Modo B y propuesta documental.
+
+Modo A:
+Quick wins o implementación directa.
+
+Modo B:
+Cambios estructurales, dependencias, validaciones, riesgos e indicadores.
+
+13. RESULTADOS
+--------------
+Entregables esperados:
+- Informe ejecutivo.
+- Informe técnico.
+- JSON maestro.
+- JSON para SIPOC Builder.
+- Propuesta documental para Evaluador documental.
+- Input para Integrador.
+- Plan Modo A / Modo B.
+
+14. CONTRATO LMP → SIPOC BUILDER
+--------------------------------
+El bloque oficial para Builder es sipoc_input.
+
+Obligatorios:
+- process_name no vacío.
+- purpose no vacío.
+- activities con al menos una actividad.
+
+notes debe ser texto de proceso, no métricas serializadas.
+Las métricas deben ir en analysis_metrics.
+
+15. RESPALDOS Y FORMALIZACIÓN
+-----------------------------
+Usa respaldo JSON para continuar trabajo.
+Para formalizar, valida datos oficiales:
+- código definitivo, nombre definitivo, finalidad, responsable, versión y fecha.
+
+16. ERRORES COMUNES
+------------------
+- Cargar versión antigua del HTML.
+- Abrir por file:// y tener restricciones de navegador.
+- Pegar respuesta IA sin JSON válido.
+- Intentar análisis sin Brief aprobado.
+- Exportar a SB con process_name vacío.
+- Aceptar mejoras genéricas sin sustento.
+
+17. CHECKLIST FINAL
+-------------------
+[ ] Contexto heredado visible.
+[ ] Brief aprobado.
+[ ] Análisis procesado.
+[ ] AS IS hidratado con actividades.
+[ ] Mejoras clasificadas.
+[ ] Decisión tomada.
+[ ] Resultados generados.
+[ ] JSON SB validado.
+[ ] Respaldo descargado.
+`;
 }
 
 function openUserManual(){
-  const html = buildUserManualHtml();
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-  } else {
-    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'LMP_Manual_Usuario.html';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
+  const text = buildUserManualTxt();
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'LMP_Manual_Operativo_Usuario.txt';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
 
 </script>
 </body>
