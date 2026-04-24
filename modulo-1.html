@@ -2896,52 +2896,146 @@ function buildAnalysisMetrics(){
   };
 }
 
+  function getResolvedContext(){
+const current = state.context || {};
+const masterContext = state.master?.context || {};
+const brief = getBriefPayload ? getBriefPayload() : {};
+const briefSummary = brief?.summary || {};
+const briefContext = brief?.context || {};
+
+const resolved = {
+company: normalizeContractString(
+current.company ||
+masterContext.company ||
+state.master?.company ||
+briefContext.company ||
+''
+),
+processName: normalizeContractString(
+current.processName ||
+masterContext.processName ||
+state.master?.processName ||
+state.master?.process_name ||
+briefContext.processName ||
+briefContext.process_name ||
+''
+),
+processCode: normalizeContractString(
+current.processCode ||
+masterContext.processCode ||
+state.master?.processCode ||
+state.master?.process_code ||
+briefContext.processCode ||
+briefContext.process_code ||
+''
+),
+owner: normalizeContractString(
+current.owner ||
+masterContext.owner ||
+state.master?.owner ||
+briefContext.owner ||
+''
+),
+analyst: normalizeContractString(
+current.analyst ||
+masterContext.analyst ||
+state.master?.analyst ||
+briefContext.analyst ||
+''
+),
+industry: normalizeContractString(
+current.industry ||
+masterContext.industry ||
+state.master?.industry ||
+briefContext.industry ||
+''
+),
+processType: normalizeContractString(
+current.processType ||
+masterContext.processType ||
+state.master?.processType ||
+state.master?.process_type ||
+briefContext.processType ||
+briefContext.process_type ||
+''
+),
+activity: normalizeContractString(
+current.activity ||
+masterContext.activity ||
+state.master?.activity ||
+briefContext.activity ||
+''
+),
+purpose: normalizeContractString(
+current.purpose ||
+masterContext.purpose ||
+state.master?.purpose ||
+briefContext.purpose ||
+briefSummary.purposeSummary ||
+''
+),
+observation: normalizeContractString(
+current.observation ||
+masterContext.observation ||
+''
+)
+};
+
+state.context = Object.assign({}, current, resolved);
+return state.context;
+}
+
+  
 function buildSipocContract(){
-  const ctx = state.context || {};
-  const sipoc = state.master?.sipoc || {suppliers:[],inputs:[],outputs:[],customers:[],actors:[],documentsSystems:[]};
-  const artifacts = buildToBeArtifacts();
-  const activities = buildSipocActivities();
-  const processName = normalizeContractString(ctx.processName || state.master?.processName || '');
-  const purpose = normalizeContractString(ctx.purpose || getBriefPayload()?.summary?.purposeSummary || '');
-  const processCode = normalizeContractString(ctx.processCode || '');
-  const suppliers = dedupeCatalog(sipoc.suppliers || []);
-  const inputs = dedupeCatalog(sipoc.inputs || []);
-  const outputs = dedupeCatalog(sipoc.outputs || []);
-  const customers = dedupeCatalog(sipoc.customers || []);
-  const actors = dedupeCatalog(sipoc.actors || activities.map(x => x.actor));
-  const documents = dedupeCatalog(sipoc.documentsSystems || activities.map(x => x.document));
-  const startEvent = activities.length ? ('Inicio en: ' + activities[0].name) : '';
-  const endEvent = activities.length ? ('Cierre en: ' + activities[activities.length - 1].name) : '';
-  return {
-    contract_version: '1.0',
-    source_module: 'lmp',
-    target_module: 'sipoc_builder',
-    generated_at: new Date().toISOString(),
-    sipoc_input: {
-      process_code: processCode,
-      process_name: processName,
-      purpose: purpose,
-      start_event: startEvent,
-      end_event: endEvent,
-      notes: buildSipocNotes(),
-      suppliers,
-      inputs,
-      outputs,
-      customers,
-      actors,
-      documents,
-      activities
-    },
-    analysis_metrics: buildAnalysisMetrics(),
-    to_be_package: {
-      mode_a: artifacts.modeA,
-      mode_b: artifacts.modeB,
-      document_proposal: artifacts.documentProposal,
-      integration_input: artifacts.integrationInput,
-      integration_analysis_base: artifacts.integrationAnalysisBase
-    },
-    integration_input: artifacts.integrationInput || {}
-  };
+const ctx = getResolvedContext();
+const sipoc = state.master?.sipoc || {suppliers:[],inputs:[],outputs:[],customers:[],actors:[],documentsSystems:[]};
+const artifacts = buildToBeArtifacts();
+const activities = buildSipocActivities();
+
+const processName = normalizeContractString(ctx.processName);
+const purpose = normalizeContractString(ctx.purpose);
+const processCode = normalizeContractString(ctx.processCode);
+
+const suppliers = dedupeCatalog(sipoc.suppliers || []);
+const inputs = dedupeCatalog(sipoc.inputs || []);
+const outputs = dedupeCatalog(sipoc.outputs || []);
+const customers = dedupeCatalog(sipoc.customers || []);
+const actors = dedupeCatalog(sipoc.actors || activities.map(x => x.actor));
+const documents = dedupeCatalog(sipoc.documentsSystems || activities.map(x => x.document));
+
+const startEvent = activities.length ? ('Inicio en: ' + activities[0].name) : '';
+const endEvent = activities.length ? ('Cierre en: ' + activities[activities.length - 1].name) : '';
+
+return {
+contract_version: '1.0',
+source_module: 'lmp',
+target_module: 'sipoc_builder',
+generated_at: new Date().toISOString(),
+sipoc_input: {
+process_code: processCode,
+process_name: processName,
+purpose: purpose,
+start_event: startEvent,
+end_event: endEvent,
+notes: buildSipocNotes(),
+suppliers,
+inputs,
+outputs,
+customers,
+actors,
+documents,
+activities
+},
+analysis_metrics: buildAnalysisMetrics(),
+to_be_package: {
+mode_a: artifacts.modeA,
+mode_b: artifacts.modeB,
+document_proposal: artifacts.documentProposal,
+integration_input: artifacts.integrationInput,
+integration_analysis_base: artifacts.integrationAnalysisBase
+},
+integration_input: artifacts.integrationInput || {}
+};
 }
 
 function validateSipocContract(sp){
@@ -2970,7 +3064,7 @@ function validateSipocContract(sp){
     const actor = normalizeContractString(act?.actor || '');
     const typ = canonicalActivityType(act?.type || '');
     if(!name) errors.push('Actividad #' + (idx + 1) + ' sin name válido.');
-    if(!actor) errors.push('Actividad #' + (idx + 1) + ' sin actor válido.');
+    if(!actor) warnings.push('Actividad #' + (idx + 1) + ' sin actor válido; se recomienda completar responsable antes de enviar a SIPOC Builder.');
     if(!typ) errors.push('Actividad #' + (idx + 1) + ' sin type válido.');
     activityTypes.add(typ);
     if(!Array.isArray(act?.previous) || !Array.isArray(act?.next)) warnings.push('Actividad #' + (idx + 1) + ' tiene previous/next no canonizados.');
@@ -3393,46 +3487,46 @@ if(typeof window.hydratePreparationFromState === 'function'){ window.hydratePrep
    PATCH DE INTEGRACIÓN IA Y REFACTOR CONTEXTO/CARGA
 ========================= */
 function hydrateContextFromState(){
-  const c = state.context || {};
+const c = getResolvedContext();
 
-  const setText = (id, value) => {
-    const el = qs(id);
-    if (el) el.textContent = value || '-';
-  };
+const setText = (id, value) => {
+const el = qs(id);
+if (el) el.textContent = value || '-';
+};
 
-  const setValue = (id, value) => {
-    const el = qs(id);
-    if (el) el.value = value || '';
-  };
+const setValue = (id, value) => {
+const el = qs(id);
+if (el) el.value = value || '';
+};
 
-  renderContextReadOnly();
+renderContextReadOnly();
 
-  setText('ctxCompanyValue', c.company);
-  setText('ctxProcessValue', c.processName);
-  setText('ctxCodeValue', c.processCode);
-  setText('ctxOwnerValue', c.owner);
-  setText('ctxAnalystValue', c.analyst);
-  setText('ctxIndustryValue', c.industry);
-  setText('ctxTypeValue', c.processType);
-  setText('ctxActivityValue', c.activity);
-  setText('ctxPurposeValue', c.purpose);
+setText('ctxCompanyValue', c.company);
+setText('ctxProcessValue', c.processName);
+setText('ctxCodeValue', c.processCode);
+setText('ctxOwnerValue', c.owner);
+setText('ctxAnalystValue', c.analyst);
+setText('ctxIndustryValue', c.industry);
+setText('ctxTypeValue', c.processType);
+setText('ctxActivityValue', c.activity);
+setText('ctxPurposeValue', c.purpose);
 
-  setValue('ctx_company', c.company);
-  setValue('ctx_process', c.processName);
-  setValue('ctx_code', c.processCode);
-  setValue('ctx_owner', c.owner);
-  setValue('ctx_analyst', c.analyst);
-  setValue('ctx_type', c.processType);
-  setValue('ctx_industry', c.industry);
-  setValue('ctx_activity', c.activity);
-  setValue('ctx_purpose', c.purpose);
-  setValue('ctx_processName', c.processName);
-  setValue('ctx_processCode', c.processCode);
+setValue('ctx_company', c.company);
+setValue('ctx_process', c.processName);
+setValue('ctx_code', c.processCode);
+setValue('ctx_owner', c.owner);
+setValue('ctx_analyst', c.analyst);
+setValue('ctx_type', c.processType);
+setValue('ctx_industry', c.industry);
+setValue('ctx_activity', c.activity);
+setValue('ctx_purpose', c.purpose);
+setValue('ctx_processName', c.processName);
+setValue('ctx_processCode', c.processCode);
 
-  if(qs('ctx_observation')) qs('ctx_observation').value = c.observation || '';
+if(qs('ctx_observation')) qs('ctx_observation').value = c.observation || '';
 
-  renderIndicatorsChips();
-  updateTopStatus();
+renderIndicatorsChips();
+updateTopStatus();
 }
 
 function renderContextReadOnly(){
