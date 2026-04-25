@@ -589,9 +589,9 @@ function init() {
       if (loginRequired && !SESSION.username) {
         showLoginModal(modules);
       } else {
-        renderModules(modules);
+        renderModules(applyPermissions(modules));
         if (SESSION.username) {
-          document.getElementById('userPill').textContent = '👤 ' + SESSION.username;
+          document.getElementById('userPill').textContent = '👤 ' + (SESSION.name || SESSION.username);
           document.getElementById('userPill').style.display = 'inline-block';
           document.getElementById('logoutBtn').style.display = 'inline-block';
         }
@@ -648,11 +648,7 @@ apiGet('user_login', { username: u, password: p })
   document.getElementById('userPill').style.display  = 'inline-block';
   document.getElementById('logoutBtn').style.display = 'inline-block';
 
-  var filteredModules = modules.filter(function(m) {
-    return SESSION.allowed_modules.indexOf(m.code) !== -1;
-  });
-
-  renderModules(filteredModules);
+  renderModules(applyPermissions(modules));
       } else {
         showMsg(err, res.error || 'Credenciales incorrectas.');
         btn.textContent = 'Ingresar';
@@ -670,6 +666,50 @@ document.getElementById('logoutBtn').addEventListener('click', function() {
   clearSession();
   location.reload();
 });
+
+
+// ══════════════════════════════════════════════
+// PERMISOS Y NAVEGACIÓN SEGURA
+// ══════════════════════════════════════════════
+function normalizeCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function applyPermissions(modules) {
+  if (!Array.isArray(modules)) return [];
+
+  if (!SESSION || !SESSION.username || !Array.isArray(SESSION.allowed_modules)) {
+    return modules;
+  }
+
+  var allowed = SESSION.allowed_modules.map(function(x) {
+    return normalizeCode(x);
+  }).filter(Boolean);
+
+  return modules.filter(function(m) {
+    return allowed.indexOf(normalizeCode(m.code)) !== -1;
+  });
+}
+
+function resolveModuleUrl(url) {
+  var raw = String(url || '').trim();
+  if (!raw || raw === '#') return '';
+
+  // Si viene relativa desde Google Sheet, la resuelve contra el launcher actual.
+  try {
+    return new URL(raw, window.location.href).href;
+  } catch(e) {
+    return raw;
+  }
+}
+
+function persistSessionBeforeOpen() {
+  try {
+    if (SESSION && SESSION.username) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(SESSION));
+    }
+  } catch(e) {}
+}
 
 // ══════════════════════════════════════════════
 // RENDER MÓDULOS
@@ -735,7 +775,11 @@ function renderModules(modules) {
       '<div class="arrow">›</div>';
 
     function openModule() {
-      if (mod.url && mod.url !== '#') window.location.href = mod.url;
+      var targetUrl = resolveModuleUrl(mod.url);
+      if (!targetUrl) return;
+
+      persistSessionBeforeOpen();
+      window.location.href = targetUrl;
     }
 
     card.addEventListener('click', openModule);
