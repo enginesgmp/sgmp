@@ -294,8 +294,24 @@ const DEFAULT_SETTINGS={
   methods:['Gestión por procesos','Lean','Six Sigma / DMAIC','TOC','Kaizen','FMEA','RACI','SIPOC','BPM','TPM','5S','TRIZ','Scrum / Agile'],
   roleBlock:`Actúa como consultor senior especialista simultáneamente en:\n1. Gestión por procesos y sistemas de gestión.\n2. Mejora continua y diseño documental.\n3. La industria seleccionada por el usuario.\n4. Las normativas aplicables definidas por el usuario.\n5. Las metodologías seleccionadas por el usuario.\n6. El proceso específico donde este documento será utilizado.\n\nNo actúes como redactor generalista. Actúa como experto técnico responsable de que el documento funcione en la operación real.\n\nReglas anti-alucinación:\n- No inventes requisitos normativos, versiones, controles ni obligaciones.\n- Si no puedes validar con certeza una normativa, declara la limitación.\n- Si haces supuestos, márcalos como SUPUESTO DECLARADO y justifícalos.\n- Si detectas conflicto entre normativa, buena práctica y operación real, prioriza: cumplimiento obligatorio, control crítico, viabilidad operativa y eficiencia documental.\n- Evita sobre-documentación, burocracia sin valor y recomendaciones genéricas no accionables.`
 };
-let SETTINGS=load('mira_gd_settings',DEFAULT_SETTINGS);
-let STATE=load('mira_gd_state',{mode:'existing',selectedNorms:[],selectedMethods:[],inputFormat:'',sourceWorkbook:null,recommendations:[],finalContent:'',controlChanges:[]});
+function normalizeSettings(raw){
+  const base=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  const o=(raw&&typeof raw==='object')?raw:{};
+  ['docTypes','industries','norms','methods'].forEach(k=>{
+    if(Array.isArray(o[k])&&o[k].filter(x=>String(x||'').trim()).length){
+      base[k]=o[k].map(x=>String(x).trim()).filter(Boolean);
+    }
+  });
+  if(o.roleBlock&&String(o.roleBlock).trim()) base.roleBlock=String(o.roleBlock);
+  return base;
+}
+function normalizeState(raw){
+  const base={mode:'existing',selectedNorms:[],selectedMethods:[],inputFormat:'',sourceWorkbook:null,recommendations:[],finalContent:'',controlChanges:[]};
+  const o=(raw&&typeof raw==='object')?raw:{};
+  return Object.assign(base,o);
+}
+let SETTINGS=normalizeSettings(load('mira_gd_settings',DEFAULT_SETTINGS));
+let STATE=normalizeState(load('mira_gd_state',{mode:'existing',selectedNorms:[],selectedMethods:[],inputFormat:'',sourceWorkbook:null,recommendations:[],finalContent:'',controlChanges:[]}));
 function storageFor(k){return k==='mira_gd_state'?sessionStorage:localStorage}
 function load(k,f){try{return JSON.parse(storageFor(k).getItem(k))||f}catch(e){return JSON.parse(JSON.stringify(f))}}
 function store(k,v){storageFor(k).setItem(k,JSON.stringify(v))}
@@ -304,7 +320,14 @@ function toast(t){const el=$('toast');el.textContent=t;el.style.opacity=1;setTim
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function safeName(s){return String(s||'documento').replace(/[^a-z0-9áéíóúüñ_-]/gi,'_').replace(/_+/g,'_')}
 function init(){renderSettings();renderSelects();renderPills();restoreInputs();syncAll();document.querySelectorAll('.nav button[data-screen]').forEach(b=>b.onclick=()=>go(b.dataset.screen));}
-function renderSelects(){const dt=$('docType'),ind=$('industry');dt.innerHTML='<option value="">Seleccione...</option>'+SETTINGS.docTypes.map(x=>`<option>${esc(x)}</option>`).join('');ind.innerHTML='<option value="">Seleccione...</option>'+SETTINGS.industries.map(x=>`<option>${esc(x)}</option>`).join('');}
+function renderSelects(){
+  SETTINGS=normalizeSettings(SETTINGS);
+  const dt=$('docType'),ind=$('industry');
+  const docTypes=(SETTINGS.docTypes&&SETTINGS.docTypes.length)?SETTINGS.docTypes:DEFAULT_SETTINGS.docTypes;
+  const industries=(SETTINGS.industries&&SETTINGS.industries.length)?SETTINGS.industries:DEFAULT_SETTINGS.industries;
+  dt.innerHTML='<option value="">Seleccione...</option>'+docTypes.map(x=>`<option>${esc(x)}</option>`).join('');
+  ind.innerHTML='<option value="">Seleccione...</option>'+industries.map(x=>`<option>${esc(x)}</option>`).join('');
+}
 function renderPills(){renderPillGroup('normPills',SETTINGS.norms,STATE.selectedNorms,'norm');renderPillGroup('methodPills',SETTINGS.methods,STATE.selectedMethods,'method');}
 function renderPillGroup(id,items,selected,type){$(id).innerHTML=items.map(x=>`<button class="pill ${selected.includes(x)?'on':''}" onclick="toggleItem('${type}', '${String(x).replace(/'/g,"\\'")}')">${esc(x)}</button>`).join('')}
 function toggleItem(type,item){let arr=type==='norm'?STATE.selectedNorms:STATE.selectedMethods;let i=arr.indexOf(item);i>=0?arr.splice(i,1):arr.push(item);renderPills();syncAll();}
@@ -477,7 +500,7 @@ function importProject(e){let f=e.target.files[0];if(!f)return;let r=new FileRea
 function saveProject(show=true){STATE.form={docType:$('docType').value,industry:$('industry').value,rigor:$('rigor').value,company:$('company').value,process:$('process').value,outputFormat:$('outputFormat').value,sourceName:$('sourceName').value,inputFormat:$('inputFormat').value,sourceContent:$('sourceContent').value,improveBrief:$('improveBrief').value,newName:$('newName').value,newObjective:$('newObjective').value,newScope:$('newScope').value,newControls:$('newControls').value,newContext:$('newContext').value,aiResponse:$('aiResponse').value,finalResponse:$('finalResponse').value};store('mira_gd_state',STATE);if(show)toast('Sesión guardada')}
 function restoreInputs(){setMode(STATE.mode||'existing');const f=STATE.form||{};Object.keys(f).forEach(k=>{if($(k))$(k).value=f[k]});if(STATE.inputFormat)$('inputFormat').value=STATE.inputFormat.toUpperCase();if(STATE.recommendations?.length)renderRecommendations();if(STATE.controlChanges?.length)renderChanges();}
 function closeProject(){downloadJson();sessionStorage.removeItem('mira_gd_state');toast('Proyecto exportado y limpiado');setTimeout(()=>location.reload(),800)}
-function renderSettings(){ $('cfgDocTypes').value=SETTINGS.docTypes.join('\n');$('cfgIndustries').value=SETTINGS.industries.join('\n');$('cfgNorms').value=SETTINGS.norms.join('\n');$('cfgMethods').value=SETTINGS.methods.join('\n');$('cfgRoleBlock').value=SETTINGS.roleBlock;}
+function renderSettings(){ SETTINGS=normalizeSettings(SETTINGS);$('cfgDocTypes').value=SETTINGS.docTypes.join('\n');$('cfgIndustries').value=SETTINGS.industries.join('\n');$('cfgNorms').value=SETTINGS.norms.join('\n');$('cfgMethods').value=SETTINGS.methods.join('\n');$('cfgRoleBlock').value=SETTINGS.roleBlock;}
 function saveSettings(reload=true){SETTINGS.docTypes=$('cfgDocTypes').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.industries=$('cfgIndustries').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.norms=$('cfgNorms').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.methods=$('cfgMethods').value.split('\n').map(x=>x.trim()).filter(Boolean);SETTINGS.roleBlock=$('cfgRoleBlock').value;store('mira_gd_settings',SETTINGS);if(reload){renderSelects();renderPills();toast('Configuración base guardada')}}
 function resetSettings(){SETTINGS=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));store('mira_gd_settings',SETTINGS);renderSettings();renderSelects();renderPills();toast('Configuración restaurada')}
 sgmpLoadPrompts('GD', function(){ init(); });
