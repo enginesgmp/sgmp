@@ -1710,7 +1710,81 @@ function renderLoadDiagnostics(payload) {
     ${warnings.length ? `<div style="margin-top:8px;color:#92400e;font-size:12px"><strong>Advertencias:</strong><ul style="margin:6px 0 0 18px">${warnings.map(x=>`<li>${ex(x)}</li>`).join('')}</ul></div>` : ''}
   `;
 }
+function processIncomingJson(raw, source = 'unknown') {
+  try {
+    if (!raw || !String(raw).trim()) {
+      gMsg('warn', 'No hay JSON para procesar.');
+      return;
+    }
 
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const normalized = normalizeIncomingPayload(parsed);
+    const sp = normalized.sp || normalized;
+
+    if (!sp || typeof sp !== 'object') {
+      gMsg('err', 'El JSON cargado no contiene una estructura SIPOC válida.');
+      return;
+    }
+
+    const blocking = [];
+    const warnings = [];
+
+    if (!sp.process_name) blocking.push('Falta process_name.');
+    if (!sp.purpose) blocking.push('Falta purpose.');
+    if (!Array.isArray(sp.activities) || !sp.activities.length) blocking.push('Faltan activities.');
+
+    if (looksLikeSerializedJson(sp.notes)) {
+      warnings.push('notes parece contener JSON serializado; debe ser texto descriptivo.');
+    }
+
+    S.sp = sp;
+
+    S.cats.suppliers = (sp.suppliers || []).map(x => ({ name: x }));
+    S.cats.inputs = (sp.inputs || []).map(x => ({ name: x }));
+    S.cats.outputs = (sp.outputs || []).map(x => ({ name: x }));
+    S.cats.customers = (sp.customers || []).map(x => ({ name: x }));
+    S.cats.actors = (sp.actors || []).map(x => ({ name: x }));
+    S.cats.documents = (sp.documents || []).map(x => ({ name: x, ref: '' }));
+    S.acts = Array.isArray(sp.activities) ? sp.activities : [];
+
+    if ($('g_name')) $('g_name').value = sp.process_name || '';
+    if ($('g_code')) $('g_code').value = sp.process_code || '';
+    if ($('g_purpose')) $('g_purpose').value = sp.purpose || '';
+
+    ['suppliers', 'inputs', 'outputs', 'customers', 'actors', 'documents'].forEach(type => {
+      if (typeof renderCatTable === 'function') renderCatTable(type);
+    });
+
+    if (typeof renderActsTable === 'function') renderActsTable();
+    if (typeof syncSelects === 'function') syncSelects();
+
+    S.loadTrace = {
+      source,
+      loadedAt: new Date().toISOString(),
+      processName: sp.process_name || '',
+      activityCount: Array.isArray(sp.activities) ? sp.activities.length : 0,
+      warningsCount: warnings.length,
+      blockingCount: blocking.length
+    };
+
+    if (typeof renderIncomingDiagnostic === 'function') {
+      renderIncomingDiagnostic(sp, blocking, warnings);
+    }
+
+    if (blocking.length) {
+      gMsg('warn', 'JSON cargado con bloqueantes:\n- ' + blocking.join('\n- '));
+      return;
+    }
+
+    genTemplate();
+    switchTab('tab_tpl');
+    gMsg('ok', 'JSON del LMP cargado y plantilla XML generada correctamente.');
+
+  } catch (error) {
+    gMsg('err', 'No fue posible procesar el JSON cargado: ' + error.message);
+  }
+}
+  
 function loadLMP() {
   readFile($('lmp_file'), raw => processIncomingJson(raw, 'lmp_json'));
 }
