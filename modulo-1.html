@@ -3245,31 +3245,83 @@ async function loadRouteJson(mode){
    DOCUMENTACIÓN EXISTENTE
 ========================= */
 function buildDocPrompt(type){
-  const common = `
+  const profiles = {
+    pdf_sipoc: {
+      sourceType: 'pdf_sipoc_flujo',
+      title: 'PDF SIPOC / flujo del proceso',
+      focus: `
+Interpreta el PDF como SIPOC, flujo de proceso o diagrama exportado.
+Extrae Suppliers, Inputs, Process, Outputs, Customers, actores internos, documentos, sistemas y secuencia de actividades.
+Si el PDF contiene un flujo visual, convierte cada nodo ejecutable en una actividad.
+Si hay decisiones, controles o documentos, clasifícalos con type = decision, control o document.
+`
+    },
+    pdf_documento: {
+      sourceType: 'pdf_documento_operativo',
+      title: 'PDF documento operativo',
+      focus: `
+Interpreta el PDF como documento operativo: manual, procedimiento, instructivo, política, registro, formato, especificación o PR.
+Extrae objetivo, alcance, responsables, reglas, actividades, controles, entradas, salidas, documentos usados, sistemas y evidencias.
+No conviertas definiciones, políticas generales o campos de un formato en actividades si no representan pasos ejecutables.
+`
+    },
+    json_consolidacion: {
+      sourceType: 'json_consolidacion_documental',
+      title: 'Consolidar JSON documentales',
+      focus: `
+Consolida varios JSON documentales parciales generados previamente desde PDFs.
+Unifica contexto, SIPOC, actividades, documentos, actores, entradas, salidas y trazabilidad.
+Detecta duplicados, contradicciones, vacíos y diferencias entre fuentes.
+No fuerces una sola versión si existen contradicciones: consérvalas en traceability.contradictions_detected.
+`
+    }
+  };
+
+  const profile = profiles[type] || profiles.pdf_documento;
+
+  return `
 ACTÚA COMO:
-1. Consultor senior en gestión por procesos.
-2. Especialista en estructuración documental para LMP.
-3. Experto en convertir documentos PDF, Word, manuales, procedimientos, SIPOC o diagramas en JSON estructurado.
+1. Arquitecto senior de procesos.
+2. Especialista en documentación operativa.
+3. Experto en conversión PDF/JSON para LMP y SIPOC Builder.
+
+TIPO DE CONVERSIÓN:
+${profile.title}
 
 OBJETIVO:
-Analizar el documento proporcionado y convertirlo en una estructura JSON limpia, estandarizada y usable para la etapa de Carga y consolidación del LMP.
+Convertir la información fuente en un JSON documental limpio, trazable y compatible con la etapa Carga y consolidación del LMP.
 
-REGLAS:
+ENFOQUE:
+${profile.focus}
+
+REGLAS CRÍTICAS:
+- Responde SOLO con JSON válido.
+- No agregues explicación fuera del JSON.
 - No hagas análisis de mejora.
 - No propongas soluciones.
 - No diseñes TO BE.
 - No inventes información.
 - Si falta información, usa "pendiente_validacion".
-- Si algo se infiere, márcalo como "inferido".
-- Si algo está explícito en el documento, márcalo como "evidenciado".
-- Diferencia claramente actores internos, proveedores, entradas, salidas, clientes, documentos y actividades.
-- Responde solo con JSON válido. No agregues explicación fuera del JSON.
+- Si el actor no está claro, usa "Responsable pendiente de validación".
+- No uses "pendiente_validacion" como actor.
+- Diferencia Suppliers, Inputs, Outputs y Customers de actores internos.
+- No confundas documentos, sistemas o registros con actividades.
+- Cada actividad debe tener actor válido, aunque sea "Responsable pendiente de validación".
+- Cada actividad debe tener previous y next como arrays.
+- En previous y next usa nombres de actividades, no IDs.
+- Cada actividad debe incluir siempre ext_suppliers, ext_inputs, ext_outputs y ext_customers, aunque sean arrays vacíos.
+- Si una actividad recibe un input externo, decláralo en ext_inputs.
+- Si una actividad genera una salida externa, declárala en ext_outputs.
+- Si una actividad inicia el proceso, is_start debe ser true.
+- Si una actividad cierra el proceso, is_end debe ser true.
+- Clasifica type usando solo: operation, decision, control, document, end.
+- No pongas todas las actividades como operation si existen controles, decisiones o documentos.
 
 ESTRUCTURA JSON OBLIGATORIA:
 {
   "instrument": "document_conversion",
-  "version": "1.0",
-  "source_type": "",
+  "version": "1.1",
+  "source_type": "${profile.sourceType}",
   "context": {
     "company": "pendiente_validacion",
     "processName": "pendiente_validacion",
@@ -3299,7 +3351,7 @@ ESTRUCTURA JSON OBLIGATORIA:
         "id": "A1",
         "name": "",
         "type": "operation | decision | control | document | end",
-        "actor": "",
+        "actor": "Responsable pendiente de validación",
         "document": "",
         "previous": [],
         "next": [],
@@ -3307,7 +3359,7 @@ ESTRUCTURA JSON OBLIGATORIA:
         "ext_inputs": [],
         "ext_outputs": [],
         "ext_customers": [],
-        "is_start": false,
+        "is_start": true,
         "is_end": false,
         "evidence": "",
         "source_status": "evidenciado | inferido | pendiente_validacion",
@@ -3355,34 +3407,19 @@ ESTRUCTURA JSON OBLIGATORIA:
   }
 }
 
-DOCUMENTO A CONVERTIR:
-Adjunto o pego a continuación el contenido del documento.
+VALIDACIÓN ANTES DE RESPONDER:
+1. El JSON debe ser parseable.
+2. No debe existir texto fuera del JSON.
+3. Todas las actividades deben tener actor distinto de vacío.
+4. Ninguna actividad debe tener actor = "pendiente_validacion".
+5. previous y next deben contener nombres de actividades, no IDs.
+6. Todas las actividades deben incluir ext_suppliers, ext_inputs, ext_outputs y ext_customers.
+7. Los catálogos deben estar alineados con las actividades.
+8. No mezcles AS IS con propuestas de mejora.
+
+FUENTE A CONVERTIR:
+Adjunto o pego a continuación el PDF, texto extraído del PDF o JSON documental parcial.
 `;
-
-  const extra = {
-    pdf_word: `
-ENFOQUE ESPECÍFICO:
-Interpreta el PDF o Word como documento operativo. Extrae objetivo, alcance, responsables, actividades, documentos usados, controles, entradas, salidas y clientes del proceso.
-`,
-    sipoc: `
-ENFOQUE ESPECÍFICO:
-Extrae Suppliers, Inputs, Process, Outputs y Customers. No confundas suppliers/customers con actores internos. Si el SIPOC tiene macroetapas, conviértelas en actividades solo si son ejecutables.
-`,
-    visio: `
-ENFOQUE ESPECÍFICO:
-Interpreta el flujo visual. Convierte nodos, decisiones, conectores y carriles en actividades secuenciales con previous y next. Si una conexión no es clara, marca pendiente_validacion.
-`,
-    manual: `
-ENFOQUE ESPECÍFICO:
-Extrae roles, reglas, actividades, controles, registros, excepciones y criterios operativos. No conviertas definiciones o políticas generales en actividades.
-`,
-    mixto: `
-ENFOQUE ESPECÍFICO:
-Consolida varias fuentes. Conserva contradicciones, duplicidades, vacíos y diferencias entre documentos. No fuerces una sola versión si la evidencia no es clara.
-`
-  };
-
-  return common + (extra[type] || extra.pdf_word);
 }
 
 function generateDocPrompt(){
