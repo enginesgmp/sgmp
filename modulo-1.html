@@ -3643,7 +3643,17 @@ function normalizeCatalogValue(value){
 function dedupeCatalog(items){
   const out = [];
   const seen = new Set();
-  safeArray(items).forEach(item => {
+
+  const explodeCatalogValue = (value) => {
+    if(Array.isArray(value)) return value.flatMap(explodeCatalogValue);
+    if(value === undefined || value === null || value === '') return [];
+    return String(value)
+      .split(/\n|;|\|/)
+      .map(v => v.trim())
+      .filter(Boolean);
+  };
+
+  safeArray(items).flatMap(explodeCatalogValue).forEach(item => {
     const clean = normalizeCatalogValue(item);
     if(!clean) return;
     const key = clean.toLowerCase();
@@ -3651,6 +3661,7 @@ function dedupeCatalog(items){
     seen.add(key);
     out.push(clean);
   });
+
   return out;
 }
 
