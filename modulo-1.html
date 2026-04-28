@@ -3817,55 +3817,197 @@ return state.context;
 }
   
 function buildSipocContract(){
-const ctx = getResolvedContext();
-const sipoc = state.master?.sipoc || {suppliers:[],inputs:[],outputs:[],customers:[],actors:[],documentsSystems:[]};
-const artifacts = buildToBeArtifacts();
-const activities = buildSipocActivities();
+  const ctx = getResolvedContext();
+  const artifacts = buildToBeArtifacts();
+  const activities = buildSipocActivities();
 
-const processName = normalizeContractString(ctx.processName);
-const purpose = normalizeContractString(ctx.purpose);
-const processCode = normalizeContractString(ctx.processCode);
+  const masterSipoc = state.master?.sipoc || {};
+  const briefPayload = typeof getBriefPayload === 'function' ? getBriefPayload() : {};
+  const briefSipoc = briefPayload?.sipoc || state.briefReview?.raw?.sipoc || {};
+  const prelimSipoc = state.master?.sipoc_preliminary || state.master?.sipocPreliminary || {};
+  const catalogs = state.master?.catalogs || {};
 
-const suppliers = dedupeCatalog(sipoc.suppliers || []);
-const inputs = dedupeCatalog(sipoc.inputs || []);
-const outputs = dedupeCatalog(sipoc.outputs || []);
-const customers = dedupeCatalog(sipoc.customers || []);
-const actors = dedupeCatalog(sipoc.actors || activities.map(x => x.actor));
-const documents = dedupeCatalog(sipoc.documentsSystems || activities.map(x => x.document));
+  const rawAnalysis =
+    state.analysis?.raw ||
+    state.master?.raw ||
+    state.master?.analysis_raw ||
+    {};
 
-const startEvent = activities.length ? ('Inicio en: ' + activities[0].name) : '';
-const endEvent = activities.length ? ('Cierre en: ' + activities[activities.length - 1].name) : '';
+  const sbInput =
+    rawAnalysis?.sb_contract?.sipoc_input ||
+    rawAnalysis?.sipoc_builder_ready?.sipoc_input ||
+    rawAnalysis?.sipoc_input ||
+    state.master?.sb_contract?.sipoc_input ||
+    state.master?.sipoc_builder_ready?.sipoc_input ||
+    {};
 
-return {
-contract_version: '1.0',
-source_module: 'lmp',
-target_module: 'sipoc_builder',
-generated_at: new Date().toISOString(),
-sipoc_input: {
-process_code: processCode,
-process_name: processName,
-purpose: purpose,
-start_event: startEvent,
-end_event: endEvent,
-notes: buildSipocNotes(),
-suppliers,
-inputs,
-outputs,
-customers,
-actors,
-documents,
-activities
-},
-analysis_metrics: buildAnalysisMetrics(),
-to_be_package: {
-mode_a: artifacts.modeA,
-mode_b: artifacts.modeB,
-document_proposal: artifacts.documentProposal,
-integration_input: artifacts.integrationInput,
-integration_analysis_base: artifacts.integrationAnalysisBase
-},
-integration_input: artifacts.integrationInput || {}
-};
+  const analysisSipoc =
+    rawAnalysis?.sipoc ||
+    rawAnalysis?.as_is?.sipoc ||
+    rawAnalysis?.asIs?.sipoc ||
+    {};
+
+  const collect = (...items) => {
+    const out = [];
+    items.forEach(item => {
+      safeArray(item).forEach(v => {
+        if(Array.isArray(v)){
+          v.forEach(x => out.push(x));
+        } else {
+          out.push(v);
+        }
+      });
+    });
+    return dedupeCatalog(out);
+  };
+
+  const collectActivityField = (field) => {
+    return activities.flatMap(act => safeArray(act?.[field]));
+  };
+
+  const processName = normalizeContractString(
+    ctx.processName ||
+    sbInput.process_name ||
+    rawAnalysis?.process_name ||
+    state.master?.process_name ||
+    ''
+  );
+
+  const purpose = normalizeContractString(
+    ctx.purpose ||
+    sbInput.purpose ||
+    rawAnalysis?.purpose ||
+    state.master?.purpose ||
+    ''
+  );
+
+  const processCode = normalizeContractString(
+    ctx.processCode ||
+    sbInput.process_code ||
+    rawAnalysis?.process_code ||
+    state.master?.process_code ||
+    ''
+  );
+
+  const suppliers = collect(
+    sbInput.suppliers,
+    sbInput.catalogs?.suppliers,
+    masterSipoc.suppliers,
+    briefSipoc.suppliers,
+    prelimSipoc.suppliers,
+    catalogs.suppliers,
+    analysisSipoc.suppliers,
+    collectActivityField('ext_suppliers')
+  );
+
+  const inputs = collect(
+    sbInput.inputs,
+    sbInput.catalogs?.inputs,
+    masterSipoc.inputs,
+    briefSipoc.inputs,
+    prelimSipoc.inputs,
+    catalogs.inputs,
+    analysisSipoc.inputs,
+    collectActivityField('ext_inputs')
+  );
+
+  const outputs = collect(
+    sbInput.outputs,
+    sbInput.catalogs?.outputs,
+    masterSipoc.outputs,
+    briefSipoc.outputs,
+    prelimSipoc.outputs,
+    catalogs.outputs,
+    analysisSipoc.outputs,
+    collectActivityField('ext_outputs')
+  );
+
+  const customers = collect(
+    sbInput.customers,
+    sbInput.catalogs?.customers,
+    masterSipoc.customers,
+    briefSipoc.customers,
+    prelimSipoc.customers,
+    catalogs.customers,
+    analysisSipoc.customers,
+    collectActivityField('ext_customers')
+  );
+
+  const actors = collect(
+    sbInput.actors,
+    sbInput.catalogs?.actors,
+    masterSipoc.actors,
+    briefSipoc.actors,
+    prelimSipoc.actors,
+    catalogs.actors,
+    analysisSipoc.actors,
+    activities.map(x => x.actor)
+  );
+
+  const documents = collect(
+    sbInput.documents,
+    sbInput.catalogs?.documents,
+    masterSipoc.documents,
+    masterSipoc.documentsSystems,
+    briefSipoc.documents,
+    briefSipoc.documentsSystems,
+    prelimSipoc.documents,
+    prelimSipoc.documentsSystems,
+    catalogs.documents,
+    catalogs.documentsSystems,
+    analysisSipoc.documents,
+    analysisSipoc.documentsSystems,
+    activities.map(x => x.document)
+  );
+
+  const startEvent = normalizeContractString(
+    sbInput.start_event ||
+    sbInput.startEvent ||
+    rawAnalysis?.start_event ||
+    rawAnalysis?.startEvent ||
+    ctx.startEvent ||
+    (activities.length ? ('Inicio en: ' + activities[0].name) : '')
+  );
+
+  const endEvent = normalizeContractString(
+    sbInput.end_event ||
+    sbInput.endEvent ||
+    rawAnalysis?.end_event ||
+    rawAnalysis?.endEvent ||
+    ctx.endEvent ||
+    (activities.length ? ('Cierre en: ' + activities[activities.length - 1].name) : '')
+  );
+
+  return {
+    contract_version: '1.0',
+    source_module: 'lmp',
+    target_module: 'sipoc_builder',
+    generated_at: new Date().toISOString(),
+    sipoc_input: {
+      process_code: processCode,
+      process_name: processName,
+      purpose: purpose,
+      start_event: startEvent,
+      end_event: endEvent,
+      notes: buildSipocNotes(),
+      suppliers,
+      inputs,
+      outputs,
+      customers,
+      actors,
+      documents,
+      activities
+    },
+    analysis_metrics: buildAnalysisMetrics(),
+    to_be_package: {
+      mode_a: artifacts.modeA,
+      mode_b: artifacts.modeB,
+      document_proposal: artifacts.documentProposal,
+      integration_input: artifacts.integrationInput,
+      integration_analysis_base: artifacts.integrationAnalysisBase
+    },
+    integration_input: artifacts.integrationInput || {}
+  };
 }
 
 function validateSipocContract(sp){
