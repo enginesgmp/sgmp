@@ -4662,35 +4662,73 @@ function copyTextFromId(id,msgId,okMsg){
 
 function normalizeBriefPayload(parsed){
   const b = parsed.brief || parsed;
+  const ctx = b.context || parsed.context || {};
+
   return {
     instrument:'brief',
-    version:'2.0',
+    version:'2.1',
     generatedAt:new Date().toISOString(),
+
+    context: {
+      company: normalizeContractString(ctx.company || ''),
+      processName: normalizeContractString(ctx.processName || ''),
+      processCode: normalizeContractString(ctx.processCode || ''),
+      owner: normalizeContractString(ctx.owner || ''),
+      analyst: normalizeContractString(ctx.analyst || ''),
+      industry: normalizeContractString(ctx.industry || ''),
+      processType: normalizeContractString(ctx.processType || ''),
+      activity: normalizeContractString(ctx.activity || ''),
+      purpose: normalizeContractString(ctx.purpose || b.processPurpose || '')
+    },
+
     summary:{
-      executiveSummary:b.executiveSummary || b.summary?.executiveSummary || '',
-      purposeSummary:b.processPurpose || b.summary?.purposeSummary || '',
-      scope:b.scope || b.summary?.scope || '',
-      flowSummary:safeArray(b.flowSummary || b.summary?.flowSummary || b.sipoc_preliminary?.process).join('\n')
+      executiveSummary: b.executiveSummary || b.summary?.executiveSummary || '',
+      purposeSummary: b.processPurpose || b.summary?.purposeSummary || ctx.purpose || '',
+      scope: b.scope || b.summary?.scope || '',
+      startEvent: b.startEvent || b.summary?.startEvent || '',
+      endEvent: b.endEvent || b.summary?.endEvent || '',
+      flowSummary: safeArray(b.flowSummary || b.summary?.flowSummary || b.sipoc_preliminary?.process).join('\n')
     },
+
     sipoc:{
-      suppliers:safeArray(b.sipoc_preliminary?.suppliers || b.sipoc?.suppliers).join('\n'),
-      inputs:safeArray(b.sipoc_preliminary?.inputs || b.sipoc?.inputs).join('\n'),
-      outputs:safeArray(b.sipoc_preliminary?.outputs || b.sipoc?.outputs).join('\n'),
-      customers:safeArray(b.sipoc_preliminary?.customers || b.sipoc?.customers).join('\n'),
-      actors:safeArray(b.actors || b.sipoc?.actors).join('\n'),
-      documentsSystems:''
+      suppliers: safeArray(b.sipoc_preliminary?.suppliers || b.sipoc?.suppliers).join('\n'),
+      inputs: safeArray(b.sipoc_preliminary?.inputs || b.sipoc?.inputs).join('\n'),
+      outputs: safeArray(b.sipoc_preliminary?.outputs || b.sipoc?.outputs).join('\n'),
+      customers: safeArray(b.sipoc_preliminary?.customers || b.sipoc?.customers).join('\n'),
+      actors: safeArray(b.actors || b.sipoc?.actors).join('\n'),
+      documentsSystems: safeArray([
+        ...safeArray(b.documents || b.sipoc?.documents),
+        ...safeArray(b.systems || b.sipoc?.systems)
+      ]).join('\n')
     },
+
+    activities_preliminary: safeArray(b.activities_preliminary || b.activities || []),
+
     insights:{
-      keyIssues:safeArray(b.mainPainPoints || b.keyIssues).join('\n'),
-      quickWins:safeArray(b.preliminaryQuickWins || b.quickWins).join('\n'),
-      constraints:safeArray(b.preliminaryRestrictions || b.constraints).join('\n')
+      keyIssues: safeArray(b.mainPainPoints || b.keyIssues).join('\n'),
+      quickWins: safeArray(b.preliminaryQuickWins || b.quickWins).join('\n'),
+      constraints: safeArray(b.preliminaryRestrictions || b.constraints).join('\n')
     },
+
     futureState:{
-      futureVision:safeArray(b.informationGaps).length ? 'Existen vacíos de información por resolver antes de formalizar el análisis.' : ''
+      futureVision: safeArray(b.informationGaps).length
+        ? 'Existen vacíos de información por resolver antes de formalizar el análisis.'
+        : ''
     },
-    indicators:safeArray(b.mentionedIndicators || b.indicators).join('\n'),
-    informationGaps:safeArray(b.informationGaps || []),
-    assumptions:safeArray(b.assumptions || [])
+
+    indicators: safeArray(b.mentionedIndicators || b.indicators).join('\n'),
+
+    operationalRules: safeArray(b.operationalRules || []),
+    hiddenControls: safeArray(b.hiddenControls || []),
+    manualDependencies: safeArray(b.manualDependencies || []),
+    visibleRisks: safeArray(b.visibleRisks || []),
+    suspectedConstraints: safeArray(b.suspectedConstraints || []),
+    assumptions: safeArray(b.assumptions || []),
+    informationGaps: safeArray(b.informationGaps || []),
+    contradictionsDetected: safeArray(b.contradictionsDetected || []),
+    openQuestions: safeArray(b.openQuestions || []),
+    evidenceHighlights: safeArray(b.evidenceHighlights || []),
+    validation: b.validation || {}
   };
 }
 
@@ -4966,7 +5004,7 @@ JSON DEBE INCLUIR, ADEMÁS DE LO YA DEFINIDO:
 - indicators.control_indicators
 - sipoc_builder_ready.sipoc_input_precheck
 `;
-  const staticBase = sgmpPrompt('prompt_warroom', '');
+  const staticBase = sgmpPrompt('prompt_analysis', '');
   const fallback = `ACTÚA COMO:
 
 1. Consultor senior en procesos, Lean, Six Sigma y TOC
