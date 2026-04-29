@@ -276,7 +276,7 @@ function sgmpPrompt(key, fallback) {
         <div class="card"><h3>Documentos listos para descarga</h3><p class="desc">El sistema genera descargables con base en el formato de entrada o el formato definido para documento nuevo.</p><div id="deliverableStatus" class="alert info">Pendiente de preparar entregables.</div>
           <div class="actions"><button class="btn primary" onclick="downloadMain()">⬇️ Descargar documento principal</button><button class="btn" onclick="downloadOnePage()">⬇️ Descargar one-page de cambios</button><button class="btn ghost" onclick="downloadJson()">⬇️ Descargar JSON del proyecto</button></div>
         </div>
-        <div class="card"><h3>Vista previa del control de cambios</h3><div class="table-wrap"><table id="changesTable"><thead><tr><th>Cambio</th><th>Antes</th><th>Después</th><th>Justificación</th><th>Impacto</th></tr></thead><tbody></tbody></table></div></div>
+        <div class="card"><h3>Vista previa del control de cambios</h3><div class="table-wrap"><table id="changesTable"><thead><tr><th>Cambio</th><th>Antes</th><th>Después</th><th>Justificación</th><th>Impacto</th><th>Riesgo mitigado</th><th>Validación requerida</th></tr></thead><tbody></tbody></table></div></div>
       </section>
 
       <section id="settings" class="screen">
@@ -340,85 +340,61 @@ function handleFile(e){if(e.target.files[0])readFile(e.target.files[0]);e.target
 async function readFile(f){const n=f.name.toLowerCase();$('sourceName').value=f.name;let msg='';try{if(n.endsWith('.docx')){if(!window.mammoth)throw new Error('mammoth no cargó');const ab=await f.arrayBuffer();const r=await mammoth.extractRawText({arrayBuffer:ab});$('sourceContent').value=r.value||'';STATE.inputFormat='word';msg=`<div class="alert ok">Word leído: ${(r.value||'').length.toLocaleString()} caracteres. Las imágenes/cuadros no extraíbles se manejarán con placeholders.</div>`;}else if(n.endsWith('.xlsx')||n.endsWith('.xls')||n.endsWith('.csv')){const ab=await f.arrayBuffer();const wb=XLSX.read(ab,{type:'array'});STATE.sourceWorkbook=workbookToJson(wb);$('sourceContent').value=workbookToText(STATE.sourceWorkbook);STATE.inputFormat='excel';msg=`<div class="alert ok">Excel leído: ${wb.SheetNames.length} hoja(s). La salida respetará formato Excel.</div>`;}else{$('sourceContent').value=await f.text();STATE.inputFormat='word';msg='<div class="alert ok">Archivo de texto cargado. Salida sugerida: Word.</div>'} $('inputFormat').value=STATE.inputFormat.toUpperCase();$('fileMsg').innerHTML=msg;syncAll();saveProject(false)}catch(err){$('fileMsg').innerHTML=`<div class="alert err">No se pudo leer el archivo: ${esc(err.message)}. Pega el contenido manualmente.</div>`}}
 function workbookToJson(wb){let out={sheets:[]};wb.SheetNames.forEach(name=>{const ws=wb.Sheets[name];const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});out.sheets.push({name,rows})});return out}
 function workbookToText(wb){return wb.sheets.map(s=>`HOJA: ${s.name}\n`+s.rows.map(r=>r.join(' | ')).join('\n')).join('\n\n')}
-function syncAll(){const data=[['Modo',STATE.mode==='existing'?'Mejorar existente':'Crear desde cero'],['Tipo',$('docType').value||'No definido'],['Industria',$('industry').value||'No definida'],['Normativas',STATE.selectedNorms.length?STATE.selectedNorms.join(', '):'Buenas prácticas sin normativa específica'],['Metodologías',STATE.selectedMethods.length?STATE.selectedMethods.join(', '):'No definidas'],['Exigencia',$('rigor').value],['Proceso',$('process').value||'No definido'],['Salida',getOutputFormat().toUpperCase()]];$('configSummary').innerHTML=data.map(([k,v])=>`<div class="summary"><div class="lbl">${esc(k)}</div><div class="val">${esc(v)}</div></div>`).join('');$('inputValidation').className='alert '+(validateInput(true).ok?'ok':'info');$('inputValidation').textContent=validateInput(true).msg;saveProject(false)}
+function syncAll(){const data=[['Modo',STATE.mode==='existing'?'Mejorar existente':'Crear desde cero'],['Tipo',$('docType').value||'No definido'],['Industria',$('industry').value||'No definida'],['Normativas',STATE.selectedNorms.length?STATE.selectedNorms.join(', '):'Buenas prácticas sin normativa específica'],['Metodologías',STATE.selectedMethods.length?STATE.selectedMethods.join(', '):'No definidas'],['Exigencia',$('rigor').value],['Proceso',$('process').value||'No definido'],['Salida',getOutputFormat().toUpperCase()],['Prompts',promptHealthText()]];$('configSummary').innerHTML=data.map(([k,v])=>`<div class="summary"><div class="lbl">${esc(k)}</div><div class="val">${esc(v)}</div></div>`).join('');$('inputValidation').className='alert '+(validateInput(true).ok?'ok':'info');$('inputValidation').textContent=validateInput(true).msg;saveProject(false)}
 function getOutputFormat(){if(STATE.mode==='existing')return STATE.inputFormat||'word';return $('outputFormat').value||'word'}
 function validateInput(silent=false){if(!$('docType').value||!$('industry').value||!$('process').value)return{ok:false,msg:'Falta tipo documental, industria o proceso.'};if(STATE.mode==='existing'){if(!$('sourceContent').value.trim())return{ok:false,msg:'Carga o pega el documento existente.'};if(!$('improveBrief').value.trim())return{ok:false,msg:'Describe qué se quiere mejorar.'};}else{if(!($('newName').value.trim()||$('newObjective').value.trim()||$('newContext').value.trim()))return{ok:false,msg:'Completa nombre, objetivo o contexto del documento nuevo.'};}return{ok:true,msg:'Listo para generar el prompt.'}}
 function masterRoleBlock(){return sgmpPrompt('prompt_core', SETTINGS.roleBlock)+`\n\nContexto dinámico:\n- Industria: ${$('industry').value||'No definida'}\n- Proceso donde se usará el documento: ${$('process').value||'No definido'}\n- Tipo documental: ${$('docType').value||'No definido'}\n- Normativas seleccionadas: ${STATE.selectedNorms.length?STATE.selectedNorms.join(', '):'No se definieron normativas específicas; usar buenas prácticas operativas.'}\n- Metodologías seleccionadas: ${STATE.selectedMethods.length?STATE.selectedMethods.join(', '):'No se definieron metodologías específicas.'}\n- Nivel de exigencia: ${$('rigor').value}\n- Formato de salida esperado: ${getOutputFormat()==='excel'?'Excel estructurado (.xlsx)':'Word estructurado (.docx)'}`}
 function replaceTokenAll(txt,map){txt=String(txt||'');Object.keys(map).forEach(k=>{txt=txt.split(k).join(map[k]??'')});return txt}
 function getPromptTemplateBlock(key,title,map){const tpl=sgmpPrompt(key,'');if(!tpl||!tpl.trim())return '';return `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${replaceTokenAll(tpl,map)}\n`}
+function promptHealth(){
+  const required=['prompt_extraction','prompt_tobe','prompt_analysis','prompt_construction','prompt_consolidation'];
+  const missing=required.filter(k=>!sgmpPrompt(k,'').trim());
+  return {required,missing,ok:missing.length===0,msg:missing.length?'Faltan: '+missing.join(', '):'Completos'};
+}
+function promptHealthText(){const h=promptHealth();return h.ok?'Prompts completos':'Prompts con fallback · '+h.msg}
+function replaceTokenAll(txt,map){txt=String(txt||'');Object.keys(map).forEach(k=>{txt=txt.split(k).join(map[k]??'')});return txt}
+function getPromptTemplateBlock(key,title,map){
+  const tpl=sgmpPrompt(key,'');
+  if(!tpl||!tpl.trim())return `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n[Prompt ${key} no recibido desde Sheets. Usar fallback operativo integrado del aplicativo.]\n`;
+  return `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${title}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${replaceTokenAll(tpl,map)}\n`;
+}
 function buildPromptMap(){
-  const briefExisting=`Solicitud del usuario: ${$('improveBrief').value||'No definida'}\n\nNombre del documento base: ${$('sourceName').value||'No indicado'}\nFormato detectado: ${STATE.inputFormat||'word'}\nProceso donde se usará: ${$('process').value||'No definido'}\nEmpresa: ${$('company').value||'No indicada'}`;
-  const briefNew=`Nombre del documento: ${$('newName').value||'No definido'}\nObjetivo: ${$('newObjective').value||'No definido'}\nAlcance: ${$('newScope').value||'No definido'}\nControles / criterios clave: ${$('newControls').value||'No definidos'}\nContexto adicional: ${$('newContext').value||'No definido'}\nProceso donde se usará: ${$('process').value||'No definido'}\nEmpresa: ${$('company').value||'No indicada'}`;
+  const targetName=STATE.mode==='existing'?($('process').value||'Proceso destino no definido'):($('newName').value||$('process').value||'Documento nuevo no definido');
+  const briefExisting=`Solicitud del usuario: ${$('improveBrief').value||'No definida'}\n\nDocumento base cargado: ${$('sourceName').value||'No indicado'}\nFormato detectado: ${STATE.inputFormat||'word'}\nDocumento/proceso destino esperado: ${targetName}\nProceso donde se usará: ${$('process').value||'No definido'}\nEmpresa: ${$('company').value||'No indicada'}\nModo: ${STATE.mode==='existing'?'Mejorar / adaptar documento existente':'Crear desde cero'}`;
+  const briefNew=`Nombre del documento: ${$('newName').value||'No definido'}\nObjetivo: ${$('newObjective').value||'No definido'}\nAlcance: ${$('newScope').value||'No definido'}\nControles / criterios clave: ${$('newControls').value||'No definidos'}\nContexto adicional: ${$('newContext').value||'No definido'}\nProceso donde se usará: ${$('process').value||'No definido'}\nEmpresa: ${$('company').value||'No indicada'}\nModo: Crear documento desde cero`;
+  const approved=(STATE.recommendations||[]).filter(r=>r.decision==='aprobar'||r.decision==='ajustar'||r.decision==='pendiente').map((r,i)=>`${i+1}. ${r.decision==='ajustar'&&r.edit?r.edit:r.recomendacion}\n   Justificación: ${r.justificacion||'No indicada'}\n   Referencia: ${r.referencia_normativa_o_buena_practica||'No indicada'}`).join('\n');
   return {
     '[TIPO_DOCUMENTAL]': $('docType').value||'No definido',
     '[NIVEL_ROBUSTEZ]': $('rigor').value||'Robusto',
     '[BRIEF_DOCUMENTO]': STATE.mode==='existing'?briefExisting:briefNew,
     '[DOCUMENTO_BASE]': $('sourceContent').value||'No se proporcionó documento base.',
-    '[TOBE_ESTRUCTURADO]': $('process').value?`Proceso objetivo: ${$('process').value}. Alcance y flujo deberán inferirse del brief/documento base con supuestos declarados.`:'No se proporcionó TO-BE estructurado.',
-    '[ARQUITECTURA_PROPUESTA]': 'Usar arquitectura documental coherente con el tipo documental seleccionado, el proceso, la industria, las normativas y el nivel de exigencia.',
+    '[CONTENIDO_DOCUMENTO]': $('sourceContent').value||'No se proporcionó documento base.',
+    '[CONTENIDO_TOBE]': STATE.mode==='existing'?briefExisting:briefNew,
+    '[TOBE_ESTRUCTURADO]': $('process').value?`Proceso objetivo: ${$('process').value}. El flujo deberá reconstruirse desde el brief, el documento base y las instrucciones del usuario. Si hay desalineación entre documento base y proceso destino, priorizar el proceso destino declarado por el usuario y usar el documento base solo como plantilla estructural/metodológica.`:'No se proporcionó TO-BE estructurado.',
+    '[ARQUITECTURA_PROPUESTA]': 'Usar arquitectura documental coherente con el tipo documental seleccionado, el proceso destino, la industria, las normativas, los controles requeridos y el nivel de exigencia. Mantener estructura del documento base solo cuando sea aplicable al objetivo declarado.',
     '[FICHAS_DOCUMENTALES]': $('sourceContent').value||'No se proporcionaron fichas documentales.',
     '[BORRADOR_BASE]': STATE.analysis?.borrador_base||'',
-    '[BPS_APROBADAS]': (STATE.recommendations||[]).filter(r=>r.decision==='aprobar'||r.decision==='ajustar'||r.decision==='pendiente').map((r,i)=>`${i+1}. ${r.decision==='ajustar'&&r.edit?r.edit:r.recomendacion}`).join('\n')||'No hay buenas prácticas aprobadas.'
+    '[BPS_APROBADAS]': approved||'No hay buenas prácticas aprobadas.'
   }
 }
-function buildMasterPrompt(){const out=getOutputFormat();const map=buildPromptMap();const analysisRules=getPromptTemplateBlock('prompt_analysis','REGLAS SGMP ETAPA 03 — ANÁLISIS DOCUMENTAL APLICABLE',map);const constructionRules=getPromptTemplateBlock('prompt_construction','REGLAS SGMP ETAPA 04 — CONSTRUCCIÓN DOCUMENTAL APLICABLE',map);const extractionRules=getPromptTemplateBlock('prompt_extraction','REGLAS SGMP ETAPA 01 — EXTRACCIÓN DOCUMENTAL APLICABLE',map);const tobeRules=getPromptTemplateBlock('prompt_tobe','REGLAS SGMP ETAPA 02 — ESTRUCTURACIÓN TO-BE APLICABLE',map);const formatRule=STATE.mode==='existing'?`La entrada es ${out.toUpperCase()}. La salida debe conservar el mismo formato de trabajo del usuario: ${out==='excel'?'devolver propuesta estructurada para Excel, respetando hojas, columnas, encabezados y lógica operativa.':'devolver documento Word mejorado, preservando jerarquía, títulos, tablas/listas y marcando elementos no replicables con placeholders controlados.'}`:`El usuario construye desde cero y eligió salida ${out.toUpperCase()}. Debes generar una propuesta compatible con ese formato.`;let inputBlock='';if(STATE.mode==='existing'){inputBlock=`DOCUMENTO EXISTENTE / CONTENIDO EXTRAÍDO:
-${$('sourceContent').value}
-
-DETALLE DE MEJORA SOLICITADA:
-${$('improveBrief').value}`;}else{inputBlock=`BRIEF PARA DOCUMENTO NUEVO:
-Nombre: ${$('newName').value}
-Objetivo: ${$('newObjective').value}
-Alcance: ${$('newScope').value}
-Controles / criterios clave: ${$('newControls').value}
-Contexto adicional: ${$('newContext').value}`;}const outputSchema=`Devuelve tu respuesta en un único bloque JSON válido entre los marcadores ===JSON_START=== y ===JSON_END=== con esta estructura exacta:
-{
-  "contexto_entendido":"",
-  "supuestos_declarados":[],
-  "riesgos_de_alucinacion_o_vacios":[],
-  "recomendaciones":[{
-    "id":"R1",
-    "estado_actual":"",
-    "recomendacion":"",
-    "justificacion":"",
-    "referencia_normativa_o_buena_practica":"",
-    "criticidad":"Alta|Media|Baja",
-    "tipo":"estructura|control|normativa|claridad|excel|word|otro",
-    "decision_sugerida":"aprobar|ajustar|rechazar"
-  }],
-  "borrador_base":"",
-  "placeholders_no_replicables":["Insertar aquí [elemento exacto], proveniente de [documento origen], manteniendo versión oficial aprobada."],
-  "control_de_cambios":[{
-    "cambio":"",
-    "antes":"",
-    "despues":"",
-    "justificacion":"",
-    "impacto":""
-  }]
+function buildMasterPrompt(){
+  const out=getOutputFormat();
+  const map=buildPromptMap();
+  const health=promptHealth();
+  const extractionRules=getPromptTemplateBlock('prompt_extraction','ETAPA 01 — EXTRACCIÓN DOCUMENTAL COMO REGLA INTERNA',map);
+  const tobeRules=getPromptTemplateBlock('prompt_tobe','ETAPA 02 — ESTRUCTURACIÓN TO-BE COMO REGLA INTERNA',map);
+  const analysisRules=getPromptTemplateBlock('prompt_analysis','ETAPA 03 — ANÁLISIS DOCUMENTAL COMO REGLA INTERNA',map);
+  const constructionRules=getPromptTemplateBlock('prompt_construction','ETAPA 04 — CONSTRUCCIÓN DOCUMENTAL COMO REGLA INTERNA',map);
+  const formatRule=STATE.mode==='existing'?`La entrada es ${out.toUpperCase()}. La salida debe conservar el formato de trabajo del usuario: ${out==='excel'?'propuesta estructurada para Excel, respetando hojas, columnas, encabezados y lógica operativa.':'documento Word mejorado/adaptado, preservando jerarquía, títulos, tablas/listas y marcando elementos no replicables con placeholders controlados.'}`:`El usuario construye desde cero y eligió salida ${out.toUpperCase()}. Debes generar una propuesta compatible con ese formato.`;
+  let inputBlock='';
+  if(STATE.mode==='existing'){
+    inputBlock=`DOCUMENTO EXISTENTE / CONTENIDO EXTRAÍDO:\n${$('sourceContent').value}\n\nDETALLE DE LO QUE SE QUIERE GENERAR / MEJORAR / ADAPTAR:\n${$('improveBrief').value}`;
+  }else{
+    inputBlock=`BRIEF PARA DOCUMENTO NUEVO:\nNombre: ${$('newName').value}\nObjetivo: ${$('newObjective').value}\nAlcance: ${$('newScope').value}\nControles / criterios clave: ${$('newControls').value}\nContexto adicional: ${$('newContext').value}`;
+  }
+  const outputSchema=`Devuelve tu respuesta en un único bloque JSON válido entre los marcadores ===JSON_START=== y ===JSON_END=== con esta estructura exacta. No agregues texto fuera de los marcadores.\n{\n  "modo_trabajo":"existente|nuevo",\n  "documento_destino":"",\n  "documento_base_usado_como_plantilla":true,\n  "contexto_entendido":"",\n  "supuestos_declarados":[],\n  "riesgos_de_alucinacion_o_vacios":[],\n  "criterios_tecnicos_generados":[{"criterio":"","seccion":"","base":"normativa|buena practica|inferencia conservadora|documento base"}],\n  "criterios_inferidos":[{"criterio":"","supuesto":"","validacion_requerida":""}],\n  "datos_no_inferibles":[{"dato":"","por_que_no_es_inferible":"","decision_requerida":""}],\n  "secciones_adaptadas":[{"seccion":"","accion":"mantener|adaptar|reemplazar|no_aplica_controlado","detalle":""}],\n  "recomendaciones":[{\n    "id":"R1",\n    "estado_actual":"",\n    "recomendacion":"",\n    "justificacion":"",\n    "referencia_normativa_o_buena_practica":"",\n    "criticidad":"Alta|Media|Baja",\n    "tipo":"estructura|control|normativa|claridad|excel|word|criterio_tecnico|trazabilidad|otro",\n    "decision_sugerida":"aprobar|ajustar|rechazar"\n  }],\n  "borrador_base":"",\n  "placeholders_no_replicables":["Insertar aquí [elemento exacto], proveniente de [documento origen], manteniendo versión oficial aprobada."],\n  "control_de_cambios":[{\n    "cambio":"",\n    "antes":"",\n    "despues":"",\n    "justificacion":"",\n    "impacto":"",\n    "riesgo_mitigado":"",\n    "validacion_requerida":""\n  }]\n}`;
+  return `${masterRoleBlock()}\n\nESTADO DE PROMPTS SGMP CARGADOS DESDE SHEETS:\n- ${health.ok?'Todos los prompts requeridos fueron cargados.':'Algunos prompts no fueron cargados y se usarán reglas fallback: '+health.missing.join(', ')}\n\nOBJETIVO DEL TRABAJO:\n${STATE.mode==='existing'?'Generar un documento mejorado o un nuevo documento adaptado usando un documento existente como base. Si el usuario indica que el documento base es solo plantilla, NO mejores el proceso del documento base; crea el documento destino solicitado.':'Crear un documento desde cero.'}\n\nREGLA DE FORMATO:\n${formatRule}\n\nREGLA DE PRIORIDAD PARA EVITAR CONTRADICCIONES:\n1. Prioridad máxima: instrucción específica del usuario sobre documento destino.\n2. Luego: tipo documental, industria, proceso, normativas y nivel de exigencia definidos en el aplicativo.\n3. Luego: documento base como estructura, método y profundidad.\n4. Luego: prompts SGMP como reglas internas de análisis/construcción.\n5. La salida final SIEMPRE debe cumplir el JSON de este aplicativo, aunque los prompts internos indiquen otros formatos.\n\nREGLA CRÍTICA PARA ADAPTACIÓN DESDE DOCUMENTO BASE:\n- El documento base NO es necesariamente el documento a mejorar; puede ser una plantilla estructural.\n- Si el usuario pide crear otro documento usando el base, el resultado debe enfocarse 100% en el documento destino.\n- Reutiliza estructura, rigor, secuencia, trazabilidad, controles y nivel de detalle.\n- Reemplaza todo contenido específico del insumo/proceso original por contenido técnico del nuevo insumo/proceso.\n- No dejes mejoras parciales: completa criterios, decisiones, responsables, registros, defectología y controles cuando sean inferibles con criterio conservador.\n- Solo deja datos no inferibles en el campo datos_no_inferibles; no bloquees la generación del borrador por ellos.\n\nBLOQUES SGMP CARGADOS DESDE ADMIN / SHEETS — USAR COMO REGLAS INTERNAS, NO COMO FORMATO DE SALIDA:\n${extractionRules}${tobeRules}${analysisRules}${constructionRules}\nREGLAS ESPECÍFICAS DEL APLICATIVO:\n- No resumas ni empobrezcas documentos existentes.\n- Si hay imágenes, cuadros, firmas, anexos o diagramas no replicables, marca la zona con PLACEHOLDER CONTROLADO, no con placeholder genérico.\n- PLACEHOLDER CONTROLADO obligatorio: "Insertar aquí [elemento exacto], proveniente de [documento origen], manteniendo versión oficial aprobada."\n- Prohibido usar: [CUADRO], [TABLA], [IMAGEN], [SE MANTIENE], [COMPLETAR], [CÓDIGO], "según aplique" sin criterio.\n- Para Excel, conserva la lógica de hojas, columnas y tablas. Propón nuevas columnas o validaciones solo si agregan control o valor.\n- Si no tienes certeza normativa, declara la limitación en riesgos_de_alucinacion_o_vacios o datos_no_inferibles, pero genera el mejor borrador posible.\n- Separa diagnóstico, recomendaciones, borrador base y control de cambios dentro del JSON.\n\n${inputBlock}\n\n${outputSchema}`;
 }
-No agregues texto fuera de los marcadores.`;return `${masterRoleBlock()}
-
-OBJETIVO DEL TRABAJO:
-${STATE.mode==='existing'?'Analizar y mejorar un documento existente. Si el usuario pide reutilizar estructura de un documento base, aplica clonación controlada.':'Crear un documento desde cero.'}
-
-REGLA DE FORMATO:
-${formatRule}
-
-REGLA DE INTEGRACIÓN SGMP:
-Los bloques SGMP cargados desde el administrador son reglas de comportamiento obligatorio. Debes aplicarlos, pero tu salida final debe mantenerse en el JSON solicitado por este aplicativo para permitir revisión, aprobación, control de cambios y descarga.
-${extractionRules}${tobeRules}${analysisRules}${constructionRules}
-REGLAS ESPECÍFICAS DEL APLICATIVO:
-- Los prompts y salidas deben ser genéricos, portables y utilizables en cualquier IA.
-- No resumas ni empobrezcas documentos existentes.
-- Si hay imágenes, cuadros, firmas, anexos o diagramas no replicables, marca la zona con PLACEHOLDER CONTROLADO, no con placeholder genérico.
-- PLACEHOLDER CONTROLADO obligatorio: "Insertar aquí [elemento exacto], proveniente de [documento origen], manteniendo versión oficial aprobada."
-- Prohibido usar: [CUADRO], [TABLA], [IMAGEN], [SE MANTIENE], [COMPLETAR], [CÓDIGO], "según aplique" sin criterio.
-- Para Excel, conserva la lógica de hojas, columnas y tablas. Propón nuevas columnas o validaciones solo si agregan control o valor.
-- Consulta tu conocimiento sobre la última versión disponible de las normativas/metodologías indicadas; si no tienes certeza, declara la limitación.
-- Separa diagnóstico, recomendaciones, borrador base y control de cambios.
-
-${inputBlock}
-
-${outputSchema}`;}
 function buildPromptAndGo(){const v=validateInput();if(!v.ok){toast(v.msg);return}$('masterPrompt').textContent=buildMasterPrompt();go('prompt')}
 async function copyPrompt(id){await copyTextSafe($(id).textContent);toast('Prompt copiado')}
 async function copyTextSafe(text){
@@ -426,47 +402,68 @@ async function copyTextSafe(text){
   catch(e){}
   const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);
 }
-function processAiResponse(){const raw=$('aiResponse').value.trim();if(!raw){$('responseMsg').innerHTML='<div class="alert err">Pega la respuesta de la IA.</div>';return}let txt=extractBetween(raw,'===JSON_START===','===JSON_END===')||extractCodeJson(raw)||raw;let parsed=null;try{parsed=JSON.parse(txt)}catch(e){parsed={contexto_entendido:'Respuesta no JSON procesada como texto libre.',supuestos_declarados:[],riesgos_de_alucinacion_o_vacios:['La respuesta no vino en JSON válido.'],recomendaciones:[],borrador_base:raw,placeholders_no_replicables:[],control_de_cambios:[]}}STATE.analysis=parsed;STATE.recommendations=(parsed.recomendaciones||[]).map((r,i)=>({...r,id:r.id||`R${i+1}`,decision:'pendiente',edit:''}));STATE.controlChanges=parsed.control_de_cambios||[];renderRecommendations();$('responseMsg').innerHTML='<div class="alert ok">Respuesta procesada. Revisa recomendaciones.</div>';saveProject(false);go('review')}
+function sanitizeJsonText(s){
+  return String(s||'').trim().replace(/^\uFEFF/,'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+}
+function extractJsonCandidate(raw){
+  const s=String(raw||'').trim();
+  let txt=extractBetween(s,'===JSON_START===','===JSON_END===')||extractCodeJson(s);
+  if(txt)return sanitizeJsonText(txt);
+  const first=s.indexOf('{');
+  const last=s.lastIndexOf('}');
+  if(first>=0&&last>first)return sanitizeJsonText(s.slice(first,last+1));
+  return sanitizeJsonText(s);
+}
+function normalizeAiPayload(parsed,raw){
+  const p=(parsed&&typeof parsed==='object')?parsed:{};
+  if(!Array.isArray(p.recomendaciones))p.recomendaciones=[];
+  if(!Array.isArray(p.control_de_cambios))p.control_de_cambios=[];
+  if(!Array.isArray(p.placeholders_no_replicables))p.placeholders_no_replicables=[];
+  if(!p.borrador_base)p.borrador_base=String(raw||'');
+  if(!p.modo_trabajo)p.modo_trabajo=STATE.mode==='existing'?'existente':'nuevo';
+  if(!p.documento_destino)p.documento_destino=$('process').value||$('newName').value||$('sourceName').value||'';
+  if(typeof p.documento_base_usado_como_plantilla==='undefined')p.documento_base_usado_como_plantilla=STATE.mode==='existing';
+  ['supuestos_declarados','riesgos_de_alucinacion_o_vacios','criterios_tecnicos_generados','criterios_inferidos','datos_no_inferibles','secciones_adaptadas'].forEach(k=>{if(!Array.isArray(p[k]))p[k]=[]});
+  return p;
+}
+function processAiResponse(){
+  const raw=$('aiResponse').value.trim();
+  if(!raw){$('responseMsg').innerHTML='<div class="alert err">Pega la respuesta de la IA.</div>';return}
+  let parsed=null, txt=extractJsonCandidate(raw);
+  try{parsed=JSON.parse(txt)}catch(e){parsed={contexto_entendido:'Respuesta no JSON procesada como texto libre.',supuestos_declarados:[],riesgos_de_alucinacion_o_vacios:['La respuesta no vino en JSON válido.'],recomendaciones:[],borrador_base:raw,placeholders_no_replicables:[],control_de_cambios:[]}}
+  STATE.analysis=normalizeAiPayload(parsed,raw);
+  STATE.recommendations=(STATE.analysis.recomendaciones||[]).map((r,i)=>({...r,id:r.id||`R${i+1}`,decision:'pendiente',edit:''}));
+  STATE.controlChanges=STATE.analysis.control_de_cambios||[];
+  renderRecommendations();
+  $('responseMsg').innerHTML='<div class="alert ok">Respuesta procesada. Revisa recomendaciones.</div>';
+  saveProject(false);go('review')
+}
 function extractBetween(s,a,b){const i=s.indexOf(a),j=s.lastIndexOf(b);if(i>=0&&j>i)return s.slice(i+a.length,j).trim();return null}
 function extractCodeJson(s){const m=s.match(/```(?:json)?\s*([\s\S]*?)```/);return m?m[1].trim():null}
 function renderRecommendations(){const arr=STATE.recommendations||[];if(!arr.length){$('recList').innerHTML='<div class="alert warn">No se detectaron recomendaciones estructuradas. Puedes continuar con el borrador base, pero se pierde revisión detallada.</div>';buildFinalPrompt();return}$('recList').innerHTML=arr.map((r,i)=>`<div class="rec ${r.decision==='rechazar'?'rejected':''}"><div class="rec-head"><div><div class="rec-title">${esc(r.id)} · ${esc(r.tipo||'recomendación')}</div><div class="rec-meta">Criticidad: ${esc(r.criticidad||'Media')} · Referencia: ${esc(r.referencia_normativa_o_buena_practica||'No indicada')}</div></div><div class="rec-actions"><button class="btn green" onclick="decide(${i},'aprobar')">Aprobar</button><button class="btn" onclick="decide(${i},'ajustar')">Ajustar</button><button class="btn red" onclick="decide(${i},'rechazar')">Rechazar</button></div></div><div class="rec-body"><div class="rec-grid"><div><div class="mini-label">Estado actual</div><div class="mini-box">${esc(r.estado_actual||'No identificado')}</div></div><div><div class="mini-label">Cómo debería quedar</div><div class="mini-box">${esc(r.recomendacion||'')}</div></div></div><div style="margin-top:10px"><div class="mini-label">Justificación</div><div class="mini-box">${esc(r.justificacion||'')}</div></div><div class="field ${r.decision==='ajustar'?'':'hidden'}" id="editBox${i}" style="margin-top:10px"><label>Ajuste del usuario</label><textarea oninput="STATE.recommendations[${i}].edit=this.value;saveProject(false)">${esc(r.edit||'')}</textarea></div><div class="alert info">Decisión actual: <b>${esc(r.decision||'pendiente')}</b></div></div></div>`).join('');buildFinalPrompt()}
 function decide(i,d){STATE.recommendations[i].decision=d;if(d==='ajustar')STATE.recommendations[i].edit=STATE.recommendations[i].edit||STATE.recommendations[i].recomendacion;renderRecommendations();saveProject(false)}
-function buildFinalPrompt(){const accepted=(STATE.recommendations||[]).filter(r=>r.decision==='aprobar'||r.decision==='ajustar'||r.decision==='pendiente');const instr=accepted.map((r,i)=>`${i+1}. ${r.decision==='ajustar'&&r.edit?r.edit:r.recomendacion}
-   Justificación: ${r.justificacion||'No indicada'}
-   Referencia: ${r.referencia_normativa_o_buena_practica||'No indicada'}`).join('\n');
-
-const base=STATE.analysis?.borrador_base||'';
-
-const placeholders=(STATE.analysis?.placeholders_no_replicables||[]).join('\n');;const out=getOutputFormat();const map=buildPromptMap();const consolidationRules=getPromptTemplateBlock('prompt_consolidation','REGLAS SGMP ETAPA 05 — CONSOLIDACIÓN FINAL Y GATE DE VALIDACIÓN',map);const prompt=`${masterRoleBlock()}
-
-OBJETIVO:
-Genera la versión final consolidada del documento, incorporando únicamente las recomendaciones aprobadas, ajustadas o pendientes no rechazadas.
-${consolidationRules}
-FORMATO FINAL ESPERADO: ${out==='excel'?'Excel estructurado. Devuelve una especificación tabular clara por hojas, columnas, validaciones, fórmulas si aplican y datos sugeridos.':'Word estructurado. Devuelve el contenido completo del documento con títulos, tablas en Markdown y placeholders controlados.'}
-
-REGLAS DEL APLICATIVO:
-- Aplica el gate de validación del prompt de consolidación SGMP, pero entrega una respuesta compatible con este aplicativo.
-- Si el documento debe ser rechazado, entrega primero "DOCUMENTO RECHAZADO — REQUIERE CORRECCIÓN" dentro de ===DOC_START=== y ===DOC_END=== con las causas de rechazo.
-- No inventes normativa ni contenido no sustentado.
-- Declara supuestos si hacen falta.
-- No elimines controles críticos.
-- Si hay imágenes/cuadros no replicables, conserva solo placeholders controlados.
-- Prohibido usar placeholders genéricos como [CUADRO], [TABLA], [IMAGEN], [SE MANTIENE], [COMPLETAR], [CÓDIGO].
-- Entrega el documento completo entre ===DOC_START=== y ===DOC_END===.
-- Entrega al final una sección CONTROL DE CAMBIOS entre ===CHANGES_START=== y ===CHANGES_END=== en formato tabla Markdown con columnas: Cambio | Antes | Después | Justificación | Impacto.
-
-BORRADOR BASE:
-${base}
-
-PLACEHOLDERS DETECTADOS:
-${placeholders||'Ninguno declarado.'}
-
-RECOMENDACIONES A INCORPORAR:
-${instr||'No hay recomendaciones aprobadas; mejorar solo con buenas prácticas y brief definido.'}`;$('finalPrompt').textContent=prompt;return prompt}
+function buildFinalPrompt(){
+  const accepted=(STATE.recommendations||[]).filter(r=>r.decision==='aprobar'||r.decision==='ajustar'||r.decision==='pendiente');
+  const instr=accepted.map((r,i)=>`${i+1}. ${r.decision==='ajustar'&&r.edit?r.edit:r.recomendacion}\n   Justificación: ${r.justificacion||'No indicada'}\n   Referencia: ${r.referencia_normativa_o_buena_practica||'No indicada'}`).join('\n');
+  const base=STATE.analysis?.borrador_base||'';
+  const placeholders=(STATE.analysis?.placeholders_no_replicables||[]).join('\n');
+  const nonInfer=(STATE.analysis?.datos_no_inferibles||[]).map((d,i)=>`${i+1}. ${typeof d==='string'?d:(d.dato||'Dato no inferible')} — ${d.decision_requerida||d.por_que_no_es_inferible||''}`).join('\n');
+  const inferred=(STATE.analysis?.criterios_inferidos||[]).map((d,i)=>`${i+1}. ${typeof d==='string'?d:(d.criterio||'Criterio inferido')} — Validación: ${d.validacion_requerida||''}`).join('\n');
+  const out=getOutputFormat();
+  const map=buildPromptMap();
+  const consolidationRules=getPromptTemplateBlock('prompt_consolidation','ETAPA 05 — CONSOLIDACIÓN FINAL COMO REFERENCIA DE CONTROL',map);
+  const prompt=`${masterRoleBlock()}\n\nOBJETIVO:\nGenera la versión final consolidada del documento incorporando únicamente las recomendaciones aprobadas, ajustadas o pendientes no rechazadas.\n\nMODO OBLIGATORIO — CONSOLIDACIÓN CORRECTIVA:\n- Tu prioridad es CORREGIR y COMPLETAR el documento, no rechazarlo.\n- Si detectas vacíos corregibles, corrígelos con criterio profesional conservador y decláralos como supuestos o criterios inferidos.\n- Solo deja condicionado lo que dependa de datos internos no inferibles: códigos oficiales, nombres reales de responsables internos no indicados, registros corporativos inexistentes o decisiones empresariales pendientes.\n- No devuelvas únicamente un listado de errores. Debes entregar documento final completo siempre que sea posible.\n- Si algo requiere validación humana, inclúyelo en el documento como "Validación requerida" o en el control de cambios, sin bloquear la generación.\n\nREGLA DE USO DEL PROMPT DE CONSOLIDACIÓN SGMP:\nEl siguiente bloque cargado desde Sheets se usa como referencia de control de calidad. Si contiene reglas de rechazo, reinterpretarlas así: primero corregir lo corregible; solo condicionar o rechazar lo imposible de inferir. GD no debe comportarse como auditor bloqueante.\n${consolidationRules}\nFORMATO FINAL ESPERADO: ${out==='excel'?'Excel estructurado. Devuelve una especificación tabular clara por hojas, columnas, validaciones, fórmulas si aplican y datos sugeridos.':'Word estructurado. Devuelve el contenido completo del documento con títulos, tablas en Markdown y placeholders controlados.'}\n\nREGLAS DEL APLICATIVO:\n- Entrega el documento completo entre ===DOC_START=== y ===DOC_END===.\n- Entrega al final una sección CONTROL DE CAMBIOS entre ===CHANGES_START=== y ===CHANGES_END=== en formato tabla Markdown con columnas: Cambio | Antes | Después | Justificación | Impacto | Riesgo mitigado | Validación requerida.\n- No inventes normativa ni códigos oficiales internos.\n- Sí puedes inferir criterios técnicos conservadores cuando sean buenas prácticas operativas razonables.\n- No elimines controles críticos.\n- Si hay imágenes/cuadros no replicables, conserva solo placeholders controlados.\n- Prohibido usar placeholders genéricos como [CUADRO], [TABLA], [IMAGEN], [SE MANTIENE], [COMPLETAR], [CÓDIGO].\n- Si el documento base era plantilla para otro proceso, mantén el documento final 100% enfocado en el proceso destino.\n\nBORRADOR BASE:\n${base}\n\nPLACEHOLDERS DETECTADOS:\n${placeholders||'Ninguno declarado.'}\n\nCRITERIOS INFERIDOS EN LA PRIMERA RESPUESTA:\n${inferred||'No declarados.'}\n\nDATOS NO INFERIBLES / VALIDACIONES PENDIENTES:\n${nonInfer||'No declarados.'}\n\nRECOMENDACIONES A INCORPORAR:\n${instr||'No hay recomendaciones aprobadas; consolidar el borrador base y corregir vacíos evidentes con criterio profesional conservador.'}`;
+  $('finalPrompt').textContent=prompt;return prompt
+}
 function prepareDeliverables(){let raw=$('finalResponse').value.trim();if(!raw)raw=STATE.analysis?.borrador_base||'';STATE.finalContent=extractBetween(raw,'===DOC_START===','===DOC_END===')||raw;let ch=extractBetween(raw,'===CHANGES_START===','===CHANGES_END===');if(ch)STATE.controlChanges=parseMarkdownChanges(ch);if(!STATE.controlChanges.length)STATE.controlChanges=deriveChanges();renderChanges();$('deliverableStatus').className='alert ok';$('deliverableStatus').textContent=`Entregables preparados. Formato principal: ${getOutputFormat().toUpperCase()}.`;saveProject(false);go('final')}
-function parseMarkdownChanges(md){return md.split('\n').filter(l=>/^\|/.test(l)&&!/---/.test(l)).slice(1).map(l=>{let c=l.replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());return{cambio:c[0]||'',antes:c[1]||'',despues:c[2]||'',justificacion:c[3]||'',impacto:c[4]||''}})}
-function deriveChanges(){return (STATE.recommendations||[]).filter(r=>r.decision!=='rechazar').map(r=>({cambio:r.id,antes:r.estado_actual||'',despues:r.decision==='ajustar'?r.edit:r.recomendacion,justificacion:r.justificacion||'',impacto:r.criticidad||''}))}
-function renderChanges(){const tbody=$('changesTable').querySelector('tbody');tbody.innerHTML=(STATE.controlChanges||[]).map(c=>`<tr><td>${esc(c.cambio)}</td><td>${esc(c.antes)}</td><td>${esc(c.despues)}</td><td>${esc(c.justificacion)}</td><td>${esc(c.impacto)}</td></tr>`).join('')}
+function parseMarkdownChanges(md){
+  return md.split('\n').filter(l=>/^\|/.test(l)&&!/---/.test(l)).slice(1).map(l=>{
+    let c=l.replace(/^\|/,'').replace(/\|$/,'').split('|').map(x=>x.trim());
+    return{cambio:c[0]||'',antes:c[1]||'',despues:c[2]||'',justificacion:c[3]||'',impacto:c[4]||'',riesgo_mitigado:c[5]||'',validacion_requerida:c[6]||''}
+  })
+}
+function deriveChanges(){return (STATE.recommendations||[]).filter(r=>r.decision!=='rechazar').map(r=>({cambio:r.id,antes:r.estado_actual||'',despues:r.decision==='ajustar'?r.edit:r.recomendacion,justificacion:r.justificacion||'',impacto:r.criticidad||'',riesgo_mitigado:r.riesgo_mitigado||r.impacto_si_se_omite||'',validacion_requerida:r.validacion_requerida||''}))}
+function renderChanges(){const tbody=$('changesTable').querySelector('tbody');tbody.innerHTML=(STATE.controlChanges||[]).map(c=>`<tr><td>${esc(c.cambio)}</td><td>${esc(c.antes)}</td><td>${esc(c.despues)}</td><td>${esc(c.justificacion)}</td><td>${esc(c.impacto)}</td><td>${esc(c.riesgo_mitigado||'')}</td><td>${esc(c.validacion_requerida||'')}</td></tr>`).join('')}
 async function downloadMain(){const out=getOutputFormat();if(out==='excel')downloadMainXlsx();else await downloadMainDocx()}
 async function downloadMainDocx(){if(!window.docx){downloadTxt(STATE.finalContent,'documento_final.txt');return}const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType}=docx;const children=[new Paragraph({text:'Documento final MIRA GenDocs',heading:HeadingLevel.HEADING_1}),...textToDocx(STATE.finalContent)];const doc=new Document({sections:[{children}]});const blob=await Packer.toBlob(doc);dl(blob,`${safeName($('sourceName').value||$('newName').value||'documento_final')}.docx`)}
 function textToDocx(txt){
@@ -492,8 +489,8 @@ function textToDocx(txt){
   }
   return out;
 }
-function downloadMainXlsx(){let wb=XLSX.utils.book_new();if(STATE.finalContent&&STATE.finalContent.trim().startsWith('{')){try{let obj=JSON.parse(STATE.finalContent);Object.keys(obj).forEach(k=>{let rows=Array.isArray(obj[k])?obj[k]:[obj[k]];XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),k.slice(0,31))})}catch(e){}}if(!wb.SheetNames.length){let rows=[['Documento / matriz generada'],...STATE.finalContent.split('\n').map(x=>[x])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Documento')}let ch=(STATE.controlChanges||[]).map(c=>({Cambio:c.cambio,Antes:c.antes,Despues:c.despues,Justificacion:c.justificacion,Impacto:c.impacto}));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ch.length?ch:[{}]),'Control de cambios');XLSX.writeFile(wb,`${safeName($('sourceName').value||$('newName').value||'documento_final')}.xlsx`)}
-async function downloadOnePage(){if(getOutputFormat()==='excel'){let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(STATE.controlChanges||[]),'One Page Cambios');XLSX.writeFile(wb,'one_page_control_cambios.xlsx');return}if(!window.docx){downloadTxt(JSON.stringify(STATE.controlChanges,null,2),'one_page_control_cambios.txt');return}const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType}=docx;let rows=[new TableRow({children:['Cambio','Antes','Después','Justificación','Impacto'].map(h=>new TableCell({children:[new Paragraph({children:[new TextRun({text:h,bold:true})]})]}))})];(STATE.controlChanges||[]).forEach(c=>rows.push(new TableRow({children:[c.cambio,c.antes,c.despues,c.justificacion,c.impacto].map(x=>new TableCell({children:[new Paragraph({children:[new TextRun(String(x||''))]})]}))})));const doc=new Document({sections:[{children:[new Paragraph({text:'One Page — Control de cambios',heading:HeadingLevel.HEADING_1}),new Table({width:{size:100,type:WidthType.PERCENTAGE},rows})]}]});dl(await Packer.toBlob(doc),'one_page_control_cambios.docx')}
+function downloadMainXlsx(){let wb=XLSX.utils.book_new();if(STATE.finalContent&&STATE.finalContent.trim().startsWith('{')){try{let obj=JSON.parse(STATE.finalContent);Object.keys(obj).forEach(k=>{let rows=Array.isArray(obj[k])?obj[k]:[obj[k]];XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),k.slice(0,31))})}catch(e){}}if(!wb.SheetNames.length){let rows=[['Documento / matriz generada'],...STATE.finalContent.split('\n').map(x=>[x])];XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Documento')}let ch=(STATE.controlChanges||[]).map(c=>({Cambio:c.cambio,Antes:c.antes,Despues:c.despues,Justificacion:c.justificacion,Impacto:c.impacto,Riesgo_mitigado:c.riesgo_mitigado||'',Validacion_requerida:c.validacion_requerida||''}));XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ch.length?ch:[{}]),'Control de cambios');XLSX.writeFile(wb,`${safeName($('sourceName').value||$('newName').value||'documento_final')}.xlsx`)}
+async function downloadOnePage(){if(getOutputFormat()==='excel'){let wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(STATE.controlChanges||[]),'One Page Cambios');XLSX.writeFile(wb,'one_page_control_cambios.xlsx');return}if(!window.docx){downloadTxt(JSON.stringify(STATE.controlChanges,null,2),'one_page_control_cambios.txt');return}const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType}=docx;let rows=[new TableRow({children:['Cambio','Antes','Después','Justificación','Impacto','Riesgo mitigado','Validación requerida'].map(h=>new TableCell({children:[new Paragraph({children:[new TextRun({text:h,bold:true})]})]}))})];(STATE.controlChanges||[]).forEach(c=>rows.push(new TableRow({children:[c.cambio,c.antes,c.despues,c.justificacion,c.impacto,c.riesgo_mitigado||'',c.validacion_requerida||''].map(x=>new TableCell({children:[new Paragraph({children:[new TextRun(String(x||''))]})]}))})));const doc=new Document({sections:[{children:[new Paragraph({text:'One Page — Control de cambios',heading:HeadingLevel.HEADING_1}),new Table({width:{size:100,type:WidthType.PERCENTAGE},rows})]}]});dl(await Packer.toBlob(doc),'one_page_control_cambios.docx')}
 function downloadTxt(content,name){dl(new Blob([content],{type:'text/plain;charset=utf-8'}),name)}
 function dl(blob,name){let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function downloadJson(){dl(new Blob([JSON.stringify({state:STATE,settings:SETTINGS,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'}),'miragendocs_project.json')}
