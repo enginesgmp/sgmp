@@ -4149,6 +4149,13 @@ function buildToBeArtifacts(){
   const sourceActs = state.asis.activities || [];
   const sipoc = state.master?.sipoc || {inputs:[], outputs:[], actors:[]};
 
+  const aiDocumentProposal = safeArray(
+    state.analysis?.documentProposal ||
+    state.analysis?.raw?.documentProposal ||
+    state.analysis?.raw?.document_proposal ||
+    state.master?.documentProposal
+  );
+
   const modeA = [];
   const modeB = [];
 
@@ -4190,27 +4197,29 @@ function buildToBeArtifacts(){
     ? `<ul>${selected.map(x => `<li><strong>${escapeHtml(x.title)}</strong>: ${escapeHtml(x.impact || 'Mejora operativa esperada en tiempo, calidad, costo o servicio.')}</li>`).join('')}</ul>`
     : '<p>No hay beneficios esperados porque no hay mejoras aprobadas.</p>';
 
-  const documentProposal = selected.map((x, i) => ({
-    document_name: `Documento ${i+1} · ${x.title}`,
-    document_type: /formato|registro|checklist/i.test((x.action || '') + ' ' + (x.currentState || '')) ? 'Formato / Registro' : /instructivo|paso/i.test((x.action || '') + ' ' + (x.currentState || '')) ? 'Instructivo' : 'Procedimiento',
-    purpose: `Dar soporte a la mejora "${x.title}" y asegurar trazabilidad, estandarización o control del proceso.`,
-    required_contents: [
-      'objetivo',
-      'alcance',
-      'responsables',
-      'pasos clave o criterios de control',
-      'registros o evidencias requeridas'
-    ],
-    reason_for_existence: x.status === 'custom'
-      ? `La mejora fue personalizada por el usuario y requiere lineamientos específicos para su aplicación: ${x.action}`
-      : `La mejora aprobada requiere documentación de soporte para que la implementación sea repetible y controlada.`,
-    support_basis: {
-      logical_need: `La mejora impacta el proceso ${processName} y requiere soporte documental para evitar ambigüedades o pérdida de control.`,
-      industry_practice: 'Aplicación de documentación operativa y controles formales como práctica habitual de gestión por procesos.',
-      normative_reference: 'Verificar si aplica soporte documental vinculado a sistemas de gestión, control interno o requisitos regulatorios del sector.',
-      cross_industry_practice: 'Uso de procedimientos, instructivos, formatos y registros para asegurar estandarización y trazabilidad.'
-    }
-  }));
+  const documentProposal = aiDocumentProposal.length
+  ? aiDocumentProposal
+  : selected.map((x, i) => ({
+  document_name: `Documento ${i+1}: ${x.title}`,
+  document_type: /formato|registro|checklist/i.test((x.action || '') + ' ' + (x.currentState || '')) ? 'Formato / Registro' : /instructivo|paso/i.test((x.action || '') + ' ' + (x.currentState || '')) ? 'Instructivo' : 'Procedimiento / Guía',
+  purpose: `Dar soporte a la mejora "${x.title}" y asegurar trazabilidad, estandarización o control del proceso.`,
+  required_contents: [
+    'objetivo',
+    'alcance',
+    'responsables',
+    'pasos clave o criterios de control',
+    'registros o evidencias requeridas'
+  ],
+  reason_for_existence: x.status === 'custom'
+    ? `La mejora fue personalizada por el usuario y requiere lineamientos específicos para su aplicación: ${x.action}`
+    : `La mejora aprobada requiere documentación de soporte para que la implementación sea repetible y controlada.`,
+  support_basis: {
+    logical_need: `La mejora impacta el proceso ${processName} y requiere soporte documental para evitar ambigüedades o pérdida de control.`,
+    industry_practice: 'Aplicación de documentación operativa y controles formales como práctica habitual de gestión por procesos.',
+    normative_reference: 'Verificar si aplica soporte documental vinculado a sistemas de gestión, control interno o requisitos regulatorios del sector.',
+    cross_industry_practice: 'Uso de procedimientos, instructivos, formatos y registros para asegurar estandarización y trazabilidad.'
+  }
+}));
 
   const docs = documentProposal.length
     ? `<ul>${documentProposal.map(d => `<li><strong>${escapeHtml(d.document_name)}</strong> · ${escapeHtml(d.document_type)}<br><strong>Objetivo:</strong> ${escapeHtml(d.purpose)}<br><strong>Razón de ser:</strong> ${escapeHtml(d.reason_for_existence)}</li>`).join('')}</ul>`
@@ -5933,7 +5942,7 @@ DOCUMENTOS ADICIONALES:
 ${docs}`;
 
   // Parte estática: obtener del Sheet, con fallback al prompt base
-  const staticBase = sgmpPrompt('prompt_warroom', null);
+  const staticBase = sgmpPrompt('prompt_analysis', null);
 
   if (staticBase) {
     // Usar instrucciones del Sheet + variables dinámicas
@@ -6101,114 +6110,267 @@ function normalizeImprovement(item){
   return { title:item.title||item.name||item.titulo||'Mejora propuesta', summary:item.problem||item.problema||'', problem:item.problem||item.problema||'', currentState:item.currentState||item.as_is||item.estado_actual||'', proposedState:item.proposedState||item.to_be||item.estado_propuesto||'', support:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||''].filter(Boolean).join(' | '), impact:item.impact||item.impacto||'', justification:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||'', item.impact||item.impacto||''].filter(Boolean).join(' | '), status:(item.status==='adjust'?'custom':item.status==='discard'?'reject':(item.status||'pending')), customText:item.customText||item.adjustedState||'' };
 }
 
+function firstObject(...items){
+  return items.find(x => x && typeof x === 'object' && !Array.isArray(x)) || {};
+}
+
+function getSbInputFromAnalysisPayload(parsed){
+  return firstObject(
+    parsed?.sb_contract?.sipoc_input,
+    parsed?.sbContract?.sipoc_input,
+    parsed?.sipoc_builder_ready?.sipoc_input,
+    parsed?.sipocBuilderReady?.sipoc_input,
+    parsed?.sipoc_input
+  );
+}
+
+function normalizeDocumentProposalItem(item){
+  const d = item || {};
+  return {
+    documentName: d.documentName || d.document_name || d.name || d.title || '',
+    documentType: d.documentType || d.document_type || d.type || '',
+    purpose: d.purpose || d.objective || d.objetivo || '',
+    reasonNeeded: d.reasonNeeded || d.reason_needed || d.reason_for_existence || d.justification || d.justificacion || '',
+    relatedActivities: safeArray(d.relatedActivities || d.related_activities || d.activities),
+    priority: d.priority || d.prioridad || '',
+    owner: d.owner || d.responsable || '',
+    minimumContent: safeArray(d.minimumContent || d.minimum_content || d.required_contents || d.contenido_minimo),
+    controlSuggested: d.controlSuggested || d.control_suggested || d.control || '',
+    supportBasis: d.supportBasis || d.support_basis || {}
+  };
+}
+
+function normalizeAnalysisPayload(parsed){
+  const sbInput = getSbInputFromAnalysisPayload(parsed);
+  const asisBlock = parsed.as_is || parsed.asIs || {};
+  const findings = parsed.findings || {};
+  const topFindings = {
+    wastes: parsed.wastes,
+    problems: parsed.problems,
+    restrictions: parsed.restrictions,
+    quickWins: parsed.quickWins
+  };
+
+  const context = Object.assign(
+    {},
+    state.context || {},
+    state.master?.context || {},
+    parsed.context || {}
+  );
+
+  if(!context.processName && sbInput.process_name) context.processName = sbInput.process_name;
+  if(!context.processCode && sbInput.process_code) context.processCode = sbInput.process_code;
+  if(!context.purpose && sbInput.purpose) context.purpose = sbInput.purpose;
+
+  const activities = extractAsIsActivitiesFromPayload(parsed);
+
+  const sipoc = Object.assign(
+    {},
+    state.master?.sipoc || {},
+    parsed.sipoc || {},
+    {
+      suppliers: safeArray(parsed.sipoc?.suppliers || sbInput.suppliers),
+      inputs: safeArray(parsed.sipoc?.inputs || sbInput.inputs),
+      outputs: safeArray(parsed.sipoc?.outputs || sbInput.outputs),
+      customers: safeArray(parsed.sipoc?.customers || sbInput.customers),
+      actors: safeArray(parsed.sipoc?.actors || sbInput.actors),
+      documents: safeArray(parsed.sipoc?.documents || sbInput.documents),
+      systems: safeArray(parsed.sipoc?.systems),
+      startEvent: parsed.sipoc?.startEvent || sbInput.start_event || '',
+      endEvent: parsed.sipoc?.endEvent || sbInput.end_event || ''
+    }
+  );
+
+  const documentProposal = safeArray(
+    parsed.documentProposal ||
+    parsed.document_proposal ||
+    parsed.to_be_package?.document_proposal
+  ).map(normalizeDocumentProposalItem);
+
+  const sbActivities = safeArray(sbInput.activities);
+  const finalActivities = sbActivities.length ? sbActivities : activities;
+
+  return {
+    raw_original: parsed,
+    context,
+    brief_reference: parsed.brief_reference || state.briefReview?.raw || {},
+    sipoc,
+    sb_contract: {
+      sipoc_input: Object.assign({}, sbInput, {
+        process_code: sbInput.process_code || context.processCode || '',
+        process_name: sbInput.process_name || context.processName || '',
+        purpose: sbInput.purpose || context.purpose || '',
+        start_event: sbInput.start_event || sipoc.startEvent || '',
+        end_event: sbInput.end_event || sipoc.endEvent || '',
+        notes: typeof sbInput.notes === 'string' ? sbInput.notes : '',
+        suppliers: safeArray(sbInput.suppliers || sipoc.suppliers),
+        inputs: safeArray(sbInput.inputs || sipoc.inputs),
+        outputs: safeArray(sbInput.outputs || sipoc.outputs),
+        customers: safeArray(sbInput.customers || sipoc.customers),
+        actors: safeArray(sbInput.actors || sipoc.actors),
+        documents: safeArray(sbInput.documents || sipoc.documents),
+        activities: finalActivities
+      })
+    },
+    as_is: {
+      summary: asisBlock.summary || parsed.summary || '',
+      activities: finalActivities
+    },
+    ava: {
+      summary: parsed.ava?.summary || '',
+      distribution: parsed.ava?.distribution || parsed.ava?.percentages || {},
+      sourcesOfNVA: safeArray(parsed.ava?.sourcesOfNVA || parsed.ava?.nva_sources),
+      evidence: parsed.ava?.evidence || {}
+    },
+    findings: {
+      wastes: safeArray(findings.wastes || topFindings.wastes || findings.desperdicios),
+      problems: safeArray(findings.problems || topFindings.problems || findings.problemas),
+      restrictions: safeArray(findings.restrictions || topFindings.restrictions || findings.constraints || findings.restricciones),
+      quickWins: safeArray(findings.quickWins || topFindings.quickWins || findings.quick_wins || findings.quickwins),
+      risks: safeArray(findings.risks || findings.riesgos),
+      rootCauseHypotheses: safeArray(findings.rootCauseHypotheses || findings.root_cause_hypotheses),
+      controlIssues: safeArray(findings.controlIssues || findings.control_issues),
+      dataGaps: safeArray(findings.dataGaps || findings.data_gaps),
+      contradictions: safeArray(findings.contradictions || findings.contradictions_detected),
+      evidenceHighlights: safeArray(findings.evidence_highlights),
+      hiddenControls: safeArray(findings.hidden_controls),
+      manualDependencies: safeArray(findings.manual_dependencies),
+      suspectedConstraints: safeArray(findings.suspected_constraints)
+    },
+    improvements: safeArray(parsed.improvements || parsed.mejoras).map(normalizeImprovement),
+    one_page: parsed.one_page || parsed.onePage || {},
+    decision: parsed.decision || {},
+    to_be: parsed.to_be || parsed.toBe || {},
+    implementation_plan: parsed.implementation_plan || parsed.implementationPlan || {},
+    document_proposal: documentProposal,
+    documentProposal,
+    integration_input: parsed.integration_input || parsed.integrationInput || {},
+    integration_analysis_base: parsed.integration_analysis_base || parsed.integrationAnalysisBase || {},
+    indicators: safeArray(parsed.indicators || parsed.control_indicators),
+    validation: parsed.validation || {}
+  };
+}
+
 function processIAResponse(){
   const raw = qs('iaResponseEditor')?.value.trim() || '';
-  if(!raw){ showMsg('iaMsg','warn','Pega primero la respuesta de la IA.'); return; }
+
+  if(!raw){
+    showMsg('iaMsg','warn','Pega primero la respuesta de la IA.');
+    return;
+  }
+
   if(!(state.briefReview && state.briefReview.approved)){
     showMsg('iaMsg','warn','Debes aprobar primero el Brief antes de procesar el análisis completo.');
     return;
   }
+
   try{
     const parsed = extractJsonFromText(raw);
-    const findings = parsed.findings || {};
-    const topFindings = {
-      wastes: parsed.wastes,
-      problems: parsed.problems,
-      restrictions: parsed.restrictions,
-      quickWins: parsed.quickWins
-    };
-    const asisBlock = parsed.as_is || parsed.asIs || {};
-const sbInput =
-  parsed.sb_contract?.sipoc_input ||
-  parsed.sipoc_builder_ready?.sipoc_input ||
-  parsed.sbContract?.sipoc_input ||
-  parsed.sipocBuilderReady?.sipoc_input ||
-  parsed.sipoc_input ||
-  {};
-
-const data = {
-  context: parsed.context || state.master?.context || state.context || {},
-  brief_reference: parsed.brief_reference || state.briefReview.raw || {},
-  sipoc: Object.assign({}, state.master?.sipoc || {}, sbInput || {}, parsed.sipoc || {}),
-      as_is: {
-        summary: asisBlock.summary || parsed.summary || '',
-        activities: extractAsIsActivitiesFromPayload(parsed)
-      },
-      ava: {
-        summary: (parsed.ava||{}).summary || '',
-        distribution: (parsed.ava||{}).distribution || (parsed.ava||{}).percentages || {},
-        sourcesOfNVA: safeArray((parsed.ava||{}).sourcesOfNVA || (parsed.ava||{}).nva_sources)
-      },
-      findings: {
-        wastes: safeArray(findings.wastes || topFindings.wastes || findings.desperdicios),
-        problems: safeArray(findings.problems || topFindings.problems || findings.problemas),
-        restrictions: safeArray(findings.restrictions || topFindings.restrictions || findings.constraints || findings.restricciones),
-        quickWins: safeArray(findings.quickWins || topFindings.quickWins || findings.quick_wins || findings.quickwins)
-      },
-      improvements: safeArray(parsed.improvements || parsed.mejoras).map(normalizeImprovement),
-      one_page: parsed.one_page || parsed.onePage || {},
-      decision: parsed.decision || {},
-      to_be: parsed.to_be || parsed.toBe || {},
-      implementation_plan: parsed.implementation_plan || {},
-      document_proposal: safeArray(parsed.document_proposal || parsed.documentProposal),
-      integration_input: parsed.integration_input || {},
-      integration_analysis_base: parsed.integration_analysis_base || {},
-      indicators: safeArray(parsed.indicators)
-    };
+    const data = normalizeAnalysisPayload(parsed);
 
     if(!data.improvements.length && data.findings.quickWins.length){
       data.improvements = data.findings.quickWins.map((q, i) => normalizeImprovement({
-        title:`Quick win ${i+1}`,
-        problem:q,
-        currentState:q,
-        proposedState:`Aplicar mejora para: ${q}`,
-        support:'Derivado del análisis',
-        impact:'Impacto esperado por validar'
+        title: `Quick win ${i + 1}`,
+        problem: typeof q === 'string' ? q : (q.problem || q.description || q.title || JSON.stringify(q)),
+        currentState: typeof q === 'string' ? q : (q.currentState || q.as_is || ''),
+        proposedState: typeof q === 'string' ? `Aplicar mejora para: ${q}` : (q.action || q.proposedState || q.description || ''),
+        support: 'Derivado del análisis',
+        impact: typeof q === 'string' ? 'Impacto esperado por validar' : (q.impact || q.expectedImpact || '')
       }));
     }
 
     state.analysis = {
       raw: data,
-      process:{name:data.context.processName || state.context.processName || '', code:data.context.processCode || state.context.processCode || '', purpose:data.context.purpose || state.context.purpose || ''},
-      summary:{ totalActivities:data.as_is.activities.length, ava:{ VA_pct:data.ava.distribution?.VA_pct || data.ava.distribution?.VA || 0, NNVA_pct:data.ava.distribution?.NNVA_pct || data.ava.distribution?.NNVA || 0, NVA_pct:data.ava.distribution?.NVA_pct || data.ava.distribution?.NVA || 0 }, wastesCount:data.findings.wastes.length, problemsCount:data.findings.problems.length, quickWinsCount:data.findings.quickWins.length, constraintsCount:data.findings.restrictions.length },
-      wastes:data.findings.wastes,
-      problems:data.findings.problems,
-      quickWins:data.findings.quickWins,
-      constraints:data.findings.restrictions,
-      activities:data.as_is.activities,
-      avaRaw:data.ava,
-      improvements:data.improvements,
-      documentProposal:data.document_proposal,
-      integrationInput:data.integration_input,
-      integrationAnalysisBase:data.integration_analysis_base,
-      qa:false
+      process: {
+        name: data.context.processName || state.context?.processName || '',
+        code: data.context.processCode || state.context?.processCode || '',
+        purpose: data.context.purpose || state.context?.purpose || ''
+      },
+      summary: {
+        totalActivities: data.as_is.activities.length,
+        ava: {
+          VA_pct: data.ava.distribution?.VA_pct || data.ava.distribution?.VA || 0,
+          NNVA_pct: data.ava.distribution?.NNVA_pct || data.ava.distribution?.NNVA || 0,
+          NVA_pct: data.ava.distribution?.NVA_pct || data.ava.distribution?.NVA || 0
+        },
+        wastesCount: data.findings.wastes.length,
+        problemsCount: data.findings.problems.length,
+        quickWinsCount: data.findings.quickWins.length,
+        constraintsCount: data.findings.restrictions.length,
+        warnings: safeArray(data.validation?.warnings)
+      },
+      wastes: data.findings.wastes,
+      problems: data.findings.problems,
+      quickWins: data.findings.quickWins,
+      constraints: data.findings.restrictions,
+      risks: data.findings.risks,
+      activities: data.as_is.activities,
+      avaRaw: data.ava,
+      improvements: data.improvements,
+      onePage: data.one_page,
+      toBe: data.to_be,
+      implementationPlan: data.implementation_plan,
+      documentProposal: data.documentProposal,
+      indicators: data.indicators,
+      validation: data.validation,
+      sbContract: data.sb_contract,
+      integrationInput: data.integration_input,
+      integrationAnalysisBase: data.integration_analysis_base,
+      qa: false
     };
-    state.analysisRun = { raw:data, qa:false };
+
+    state.analysisRun = { raw: data, qa: false };
+
     state.master = state.master || {};
-    state.master.context = {...(state.master.context||{}), ...(data.context||{})};
+    state.master.context = Object.assign({}, state.master.context || {}, data.context || {});
     state.master.sipoc = data.sipoc || {};
-    state.master.issues = {
-      keyIssues:data.findings.problems || [],
-      constraints:data.findings.restrictions || [],
-      quickWins:data.findings.quickWins || [],
-      wastes:data.findings.wastes || []
-    };
+    state.master.sb_contract = data.sb_contract || {};
+    state.master.validation = data.validation || {};
+    state.master.one_page = data.one_page || {};
+    state.master.to_be = data.to_be || {};
+    state.master.implementation_plan = data.implementation_plan || {};
+    state.master.indicators = data.indicators || [];
     state.master.brief = state.briefReview.raw;
-    state.master.documentProposal = data.document_proposal || [];
+
+    state.master.issues = {
+      keyIssues: data.findings.problems || [],
+      constraints: data.findings.restrictions || [],
+      quickWins: data.findings.quickWins || [],
+      wastes: data.findings.wastes || [],
+      risks: data.findings.risks || [],
+      dataGaps: data.findings.dataGaps || [],
+      contradictions: data.findings.contradictions || []
+    };
+
+    state.master.documentProposal = data.documentProposal || [];
     state.master.integrationInput = data.integration_input || {};
     state.master.integrationAnalysisBase = data.integration_analysis_base || {};
-    if(data.as_is.activities.length) state.asis.activities = data.as_is.activities.map(a => ({...a}));
-    state.tobe.improvements = data.improvements.map(item => ({...item, id:item.id || ('imp-' + Math.random().toString(36).slice(2,8)), status:item.status || 'reject', customText:item.customText || ''}));
+
+    state.context = Object.assign({}, state.context || {}, data.context || {});
+
+    if(data.as_is.activities.length){
+      state.asis.activities = data.as_is.activities.map(a => Object.assign({}, a));
+    }
+
+    state.tobe.improvements = data.improvements.map(item => Object.assign({}, item, {
+      id: item.id || ('imp-' + Math.random().toString(36).slice(2,8)),
+      status: item.status || 'pending',
+      customText: item.customText || ''
+    }));
+
     if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = JSON.stringify(data, null, 2);
     if(qs('iaActsKpi')) qs('iaActsKpi').textContent = data.as_is.activities.length;
     if(qs('iaImpKpi')) qs('iaImpKpi').textContent = data.improvements.length;
     if(qs('iaQwKpi')) qs('iaQwKpi').textContent = data.findings.quickWins.length;
     if(qs('iaResKpi')) qs('iaResKpi').textContent = data.findings.restrictions.length;
+
     const analysisIssues = renderAnalysisValidation();
     state.analysis.qa = analysisIssues.length === 0;
     state.analysisRun.qa = analysisIssues.length === 0;
+
     showMsg('iaMsg','ok','Análisis procesado correctamente. Ya puedes aplicarlo al LMP y continuar.');
     updateTopStatus();
+
   }catch(error){
     showMsg('iaMsg','err',`No fue posible procesar la respuesta IA. Detalle: ${error.message}`);
   }
