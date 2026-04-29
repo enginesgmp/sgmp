@@ -4009,19 +4009,88 @@ function improvementTemplate(data = {}){
 }
 
 function addImprovement(data = {}){
+  const relatedActivities = Array.isArray(data.relatedActivities)
+    ? data.relatedActivities.join(', ')
+    : (data.relatedActivities || '');
+
   const improvement = {
-    id:data.id || cryptoRandom(),
-    title:data.title || 'Mejora propuesta',
-    summary:data.summary || '',
-    problem:data.problem || data.summary || '',
-    currentState:data.currentState || '',
-    proposedState:data.proposedState || '',
-    support:data.support || data.justification || '',
-    impact:data.impact || '',
-    justification:data.justification || data.support || '',
-    status:data.status || 'pending',
-    customText:data.customText || data.adjustedState || ''
+    id: data.id || cryptoRandom(),
+
+    title:
+      data.title ||
+      data.name ||
+      data.improvementTitle ||
+      'Mejora propuesta',
+
+    summary:
+      data.summary ||
+      data.description ||
+      data.technicalRationale ||
+      '',
+
+    problem:
+      data.problem ||
+      data.problemSolved ||
+      data.relatedProblem ||
+      data.summary ||
+      '',
+
+    currentState:
+      data.currentState ||
+      data.asIsState ||
+      data.problemSolved ||
+      data.rootCauseAddressed ||
+      '',
+
+    proposedState:
+      data.proposedState ||
+      data.toBeState ||
+      data.action ||
+      data.title ||
+      data.description ||
+      '',
+
+    support:
+      data.support ||
+      data.justification ||
+      data.technicalRationale ||
+      data.rootCauseAddressed ||
+      data.requiredDependency ||
+      '',
+
+    impact:
+      data.impact ||
+      data.expectedImpact ||
+      data.benefit ||
+      '',
+
+    justification:
+      data.justification ||
+      data.technicalRationale ||
+      data.rootCauseAddressed ||
+      '',
+
+    mode:
+      data.mode || '',
+
+    improvementType:
+      data.improvementType || '',
+
+    priority:
+      data.priority || '',
+
+    effort:
+      data.effort || '',
+
+    timeHorizon:
+      data.timeHorizon || '',
+
+    relatedActivities,
+
+    status: data.status || 'pending',
+    customText: data.customText || data.adjustedState || ''
   };
+
   state.tobe.improvements.push(improvement);
   renderImprovements();
   updateTopStatus();
@@ -5074,6 +5143,59 @@ if(typeof window.hydratePreparationFromState === 'function'){ window.hydratePrep
 /* =========================
    PATCH DE INTEGRACIÓN IA Y REFACTOR CONTEXTO/CARGA
 ========================= */
+function renderIndicatorsChips(){
+  const wrap = qs('globalIndicatorsChips');
+  if(!wrap) return;
+
+  wrap.innerHTML = '';
+
+  const indicators = state.context?.globalIndicators || [];
+
+  indicators.forEach((item, idx) => {
+    const name = item?.name || '';
+    const description = item?.description || '';
+
+    const chip = document.createElement('div');
+
+    chip.style.cssText = `
+      width:100%;
+      background:#0b2d4f;
+      color:#ffffff;
+      border:1px solid rgba(0,194,255,.35);
+      border-radius:16px;
+      padding:12px 14px;
+      margin-top:8px;
+      box-shadow:0 8px 18px rgba(0,0,0,.12);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    `;
+
+    chip.innerHTML = `
+      <div style="min-width:0;">
+        <strong style="display:block;color:#ffffff;font-weight:800;">${name}</strong>
+        <small style="display:block;color:rgba(255,255,255,.82);margin-top:4px;">${description}</small>
+      </div>
+      <button type="button"
+        onclick="removeSimpleIndicator(${idx})"
+        style="
+          background:#b8322a;
+          color:#ffffff;
+          border:none;
+          border-radius:999px;
+          width:34px;
+          height:34px;
+          font-weight:800;
+          cursor:pointer;
+          flex:0 0 auto;
+        ">X</button>
+    `;
+
+    wrap.appendChild(chip);
+  });
+}
+  
 function hydrateContextFromState(){
   const prepIds = [
     'prep_company',
@@ -6066,15 +6188,73 @@ function applyIAResponseAndContinue(){
 
 function renderAnalysisFromState(){
   if(!state.analysis) return;
-  if(qs('analysisEditor')) qs('analysisEditor').value = JSON.stringify(state.analysis, null, 2);
-  if(qs('avaKpi')) qs('avaKpi').textContent = `${state.analysis.summary?.ava?.VA_pct || 0}%`;
-  if(qs('nnvaKpi')) qs('nnvaKpi').textContent = `${state.analysis.summary?.ava?.NNVA_pct || 0}%`;
-  if(qs('nvaKpi')) qs('nvaKpi').textContent = `${state.analysis.summary?.ava?.NVA_pct || 0}%`;
-  if(qs('qwKpi')) qs('qwKpi').textContent = state.analysis.summary?.quickWinsCount || 0;
-  if(qs('resKpi')) qs('resKpi').textContent = state.analysis.summary?.constraintsCount || 0;
-  if(qs('wasteBox')) qs('wasteBox').textContent = (state.analysis.wastes || []).join('\n');
-  if(qs('problemBox')) qs('problemBox').textContent = (state.analysis.problems || []).join('\n');
-  if(qs('qwrBox')) qs('qwrBox').textContent = `Quick wins:\n${(state.analysis.quickWins || []).join('\n')}\n\nRestricciones:\n${(state.analysis.constraints || []).join('\n')}`;
+
+  const data = state.analysis.raw || state.analysis;
+
+  if(qs('analysisEditor')){
+    qs('analysisEditor').value = JSON.stringify(data, null, 2);
+  }
+
+  const toArray = (value) => {
+    if(Array.isArray(value)) return value;
+    if(value === undefined || value === null || value === '') return [];
+    return [value];
+  };
+
+  const labelItem = (x) => {
+    if(typeof x === 'string') return x;
+    return x.title || x.problem || x.waste || x.restriction || x.quickWin || x.name || x.description || x.summary || JSON.stringify(x);
+  };
+
+  const fmtList = (arr) => {
+    return toArray(arr).map(labelItem).filter(Boolean).join('\n');
+  };
+
+  const ava = data.ava || {};
+  const dist = ava.distribution || {};
+  const avaSummary = ava.summary || {};
+
+  let VA_pct = Number(dist.VA_pct || 0);
+  let NNVA_pct = Number(dist.NNVA_pct || 0);
+  let NVA_pct = Number(dist.NVA_pct || 0);
+
+  if(!VA_pct && !NNVA_pct && !NVA_pct){
+    const vaCount = toArray(avaSummary.value_added).length;
+    const nnvaCount =
+      toArray(avaSummary.necessary_non_value_added).length +
+      toArray(avaSummary.business_value_added).length;
+    const nvaCount = toArray(avaSummary.non_value_added).length;
+
+    const total = vaCount + nnvaCount + nvaCount;
+
+    if(total > 0){
+      VA_pct = Math.round((vaCount / total) * 1000) / 10;
+      NNVA_pct = Math.round((nnvaCount / total) * 1000) / 10;
+      NVA_pct = Math.round((nvaCount / total) * 1000) / 10;
+    }
+  }
+
+  const findings = data.findings || {};
+
+  const wastes = toArray(findings.wastes || data.wastes || []);
+  const problems = toArray(findings.problems || data.problems || []);
+  const quickWins = toArray(findings.quickWins || data.quickWins || []);
+  const restrictions = toArray(findings.restrictions || findings.constraints || data.restrictions || data.constraints || []);
+
+  if(qs('avaKpi')) qs('avaKpi').textContent = `${VA_pct}%`;
+  if(qs('nnvaKpi')) qs('nnvaKpi').textContent = `${NNVA_pct}%`;
+  if(qs('nvaKpi')) qs('nvaKpi').textContent = `${NVA_pct}%`;
+
+  if(qs('qwKpi')) qs('qwKpi').textContent = quickWins.length;
+  if(qs('resKpi')) qs('resKpi').textContent = restrictions.length;
+
+  if(qs('wasteBox')) qs('wasteBox').textContent = fmtList(wastes);
+  if(qs('problemBox')) qs('problemBox').textContent = fmtList(problems);
+
+  if(qs('qwrBox')){
+    qs('qwrBox').textContent =
+      `Quick wins:\n${fmtList(quickWins)}\n\nRestricciones:\n${fmtList(restrictions)}`;
+  }
 }
 
 function hydrateAsIsFromMaster(){
@@ -6137,17 +6317,64 @@ function continueFromDecision(){
 }
 
 function seedImprovementsFromAnalysis(){
-  if(!state.analysis){ showMsg('tobeMsg','warn','Genera o carga primero el análisis.'); return; }
-  if(state.tobe.improvements.length){ showMsg('tobeMsg','warn','Ya existen mejoras registradas.'); return; }
-  const sourceImprovements = safeArray(state.analysis.improvements);
+  if(!state.analysis){
+    showMsg('tobeMsg','warn','Genera o carga primero el análisis.');
+    return;
+  }
+
+  if(state.tobe.improvements.length){
+    showMsg('tobeMsg','warn','Ya existen mejoras registradas.');
+    return;
+  }
+
+  const data = state.analysis.raw || state.analysis;
+  const findings = data.findings || {};
+
+  const toArray = (value) => {
+    if(Array.isArray(value)) return value;
+    if(value === undefined || value === null || value === '') return [];
+    return [value];
+  };
+
+  const sourceImprovements = toArray(data.improvements);
+
   if(sourceImprovements.length){
     sourceImprovements.forEach(item => addImprovement(item));
     showMsg('tobeMsg','ok','Se cargaron mejoras detectadas por la IA.');
     return;
   }
-  state.analysis.quickWins.forEach((q, i) => addImprovement({ title:`Quick win ${i+1}`, summary:'Oportunidad rápida derivada del análisis.', currentState:q, proposedState:`Aplicar una mejora puntual para resolver: ${q}`, justification:'Derivada del análisis del proceso.' }));
-  state.analysis.constraints.forEach((c, i) => addImprovement({ title:`Restricción ${i+1}`, summary:'Mejora orientada a mitigar una restricción.', currentState:c, proposedState:`Reducir o eliminar la restricción detectada: ${c}`, justification:'La restricción afecta el flujo, el tiempo de ciclo o la capacidad del proceso.' }));
-  state.analysis.problems.slice(0,5).forEach((p, i) => addImprovement({ title:`Mejora derivada de problema ${i+1}`, summary:'Propuesta construida a partir de un problema relevante.', currentState:p, proposedState:`Replantear la actividad o el control relacionado con: ${p}`, justification:'Resolver este problema reduce fricción, retrabajo o demoras.' }));
+
+  const quickWins = toArray(findings.quickWins || data.quickWins || []);
+  const restrictions = toArray(findings.restrictions || findings.constraints || data.restrictions || data.constraints || []);
+  const problems = toArray(findings.problems || data.problems || []);
+
+  quickWins.forEach((q, i) => addImprovement({
+    title: `Quick win ${i + 1}`,
+    summary: 'Oportunidad rápida derivada del análisis.',
+    problemSolved: typeof q === 'string' ? q : (q.problem || q.description || q.title || JSON.stringify(q)),
+    proposedState: typeof q === 'string' ? `Aplicar una mejora puntual para resolver: ${q}` : (q.action || q.description || q.title || ''),
+    technicalRationale: 'Derivada del análisis del proceso.',
+    expectedImpact: typeof q === 'string' ? 'Mejora rápida de control, trazabilidad o reducción de reproceso.' : (q.expectedImpact || q.impact || '')
+  }));
+
+  restrictions.forEach((r, i) => addImprovement({
+    title: `Restricción ${i + 1}`,
+    summary: 'Mejora orientada a mitigar una restricción.',
+    problemSolved: typeof r === 'string' ? r : (r.restriction || r.description || r.title || JSON.stringify(r)),
+    proposedState: typeof r === 'string' ? `Reducir o eliminar la restricción detectada: ${r}` : (r.action || r.description || r.title || ''),
+    technicalRationale: typeof r === 'string' ? 'La restricción afecta el flujo, el tiempo de ciclo o la capacidad del proceso.' : (r.evidence || r.impact || ''),
+    expectedImpact: typeof r === 'string' ? 'Reducción de bloqueo operativo o dependencia crítica.' : (r.impact || r.expectedImpact || '')
+  }));
+
+  problems.slice(0,5).forEach((p, i) => addImprovement({
+    title: `Mejora derivada de problema ${i + 1}`,
+    summary: 'Propuesta construida a partir de un problema relevante.',
+    problemSolved: typeof p === 'string' ? p : (p.problem || p.description || p.title || JSON.stringify(p)),
+    proposedState: typeof p === 'string' ? `Replantear la actividad o el control relacionado con: ${p}` : (p.action || p.description || p.title || ''),
+    technicalRationale: 'Resolver este problema reduce fricción, retrabajo o demoras.',
+    expectedImpact: typeof p === 'string' ? 'Mejora del desempeño operativo del proceso.' : (p.impact || p.expectedImpact || '')
+  }));
+
   renderImprovements();
   showMsg('tobeMsg','ok','Se generaron mejoras a partir del análisis.');
 }
