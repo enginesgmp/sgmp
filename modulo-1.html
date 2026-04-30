@@ -1597,6 +1597,9 @@
     }
     #preparacion .btn:hover,#preparacion .btn-ghost:hover,#preparacion .btn-ok:hover,#preparacion .btn-warn:hover,#preparacion .btn-danger:hover{transform:translateY(-1px)}
     #preparacion button:disabled{opacity:.48;cursor:not-allowed;transform:none}
+    #preparacion .btn-soft{background:rgba(255,255,255,.08);color:#d9e6ff;border:1px solid rgba(255,255,255,.14);padding:9px 13px;font-size:.9rem}
+    #preparacion .save-card{border-color:rgba(61,120,255,.32);background:linear-gradient(180deg, rgba(61,120,255,.12), rgba(255,255,255,.03))}
+    #preparacion .save-card .btn{font-size:1rem;padding:13px 20px}
     #preparacion .btn{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff}
     #preparacion .btn-ok{background:linear-gradient(135deg,#19a85f,#1fb06b);color:#fff}
     #preparacion .btn-warn{background:linear-gradient(135deg,#c58b1e,#d8a136);color:#fff}
@@ -1661,7 +1664,7 @@
 <div class="field w-4"><label>Nombre del indicador global</label><input id="gi_name_input" placeholder="Ej. Tiempo de ciclo total" type="text"/></div>
 <div class="field w-8"><label>Descripción breve</label><textarea id="gi_desc_input" placeholder="Explica cómo se relaciona con el negocio o la empresa."></textarea></div>
 </div>
-<div class="actions"><div class="actions-left"><button class="btn" onclick="addSimpleIndicator()" type="button">Agregar indicador</button></div></div>
+<div class="actions"><div class="actions-left"><button class="btn-soft" onclick="addSimpleIndicator()" type="button">Agregar indicador</button></div></div>
 <div class="pill-row" id="globalIndicatorsChips" style="margin-top:12px"></div>
 </article>
 <article class="card">
@@ -1670,12 +1673,17 @@
 <div class="field w-12"><label>Observación contextual adicional (opcional)</label><textarea id="ctx_observation" placeholder="Agrega notas contextuales que ayuden al análisis."></textarea></div>
 </div>
 </article>
+<article class="card save-card">
+<h3>Guardar preparación y contexto</h3>
+<p>Guarda los parámetros para habilitar la generación de instrumentos.</p>
+<div class="actions"><div class="actions-left"><button class="btn" id="prep_save_btn" type="button">Guardar parámetros</button></div></div>
+</article>
 <article class="card" id="prep_generation_card">
 <h3>Generación de instrumentos</h3>
 <p>Cada botón genera un HTML externo independiente, con contexto precargado, listo para descargarse y usarse fuera del LMP.</p>
 <div class="pill-row"><span class="pill">HTML externos</span><span class="pill">Retorno vía JSON</span></div>
 <div class="actions" style="margin-top:16px;"><div class="actions-left">
-<button class="btn-ok" id="prep_generate_pre_btn" type="button" disabled>Generar preentrevista</button>
+<button class="btn-ok" id="prep_generate_pre_btn" type="button" disabled>Generar cuestionario actores internos</button>
 <button class="btn-ok" id="prep_generate_interview_btn" type="button" disabled>Generar entrevista</button>
 </div></div>
 <div class="note">Después de usar los instrumentos, vuelve al LMP y carga los JSON en la etapa <strong>Carga y consolidación</strong>.</div>
@@ -1820,6 +1828,7 @@
         const badge = prepEscapeHtml(config.badge || "SGMP · LMP");
         const body = config.body || "";
         const script = config.script || "";
+        const intro = prepEscapeHtml(config.intro || "Este instrumento fue generado desde el LMP y puede trabajarse fuera del módulo principal. Al final podrás exportar un JSON para devolver el resultado al flujo de carga y consolidación.");
 
         return `<!DOCTYPE html>
 <html lang="es">
@@ -1890,10 +1899,7 @@
     </div>
   </section>
 
-  <section class="strip">
-    Este instrumento fue generado desde el LMP y puede trabajarse fuera del módulo principal.
-    Al final podrás exportar un JSON para devolver el resultado al flujo de carga y consolidación.
-  </section>
+  <section class="strip">${intro}</section>
 
   ${body}
 </div>
@@ -1966,17 +1972,14 @@ ${script}
       function buildPreInterviewHTML(context = {}) {
         const body = `
           <section class="panel">
-            <h2 class="section-title">Contexto precargado</h2>
+            <h2 class="section-title">Contexto del cuestionario</h2>
             <div class="grid-3">
-              <div class="field"><label>Empresa</label><input id="ctx_company" /></div>
-              <div class="field"><label>Proceso</label><input id="ctx_process" /></div>
-              <div class="field"><label>Código</label><input id="ctx_code" /></div>
-              <div class="field"><label>Líder del proceso</label><input id="ctx_owner" /></div>
-              <div class="field"><label>Analista</label><input id="ctx_analyst" /></div>
-              <div class="field"><label>Tipo de proceso</label><input id="ctx_type" /></div>
-              <div class="field"><label>Industria</label><input id="ctx_industry" /></div>
-              <div class="field"><label>Actividad del negocio</label><input id="ctx_activity" /></div>
-              <div class="field" style="grid-column:1/-1"><label>Finalidad del proceso</label><textarea id="ctx_purpose"></textarea></div>
+              <div class="field"><label>Empresa</label><input id="ctx_company" readonly /></div>
+              <div class="field"><label>Proceso</label><input id="ctx_process" readonly /></div>
+              <div class="field"><label>Código</label><input id="ctx_code" readonly /></div>
+              <div class="field"><label>Líder del proceso</label><input id="ctx_owner" readonly /></div>
+              <div class="field"><label>Tipo de proceso</label><input id="ctx_type" readonly /></div>
+              <div class="field"><label>Industria</label><input id="ctx_industry" readonly /></div>
             </div>
           </section>
 
@@ -2003,7 +2006,6 @@ ${script}
               <div class="field"><label>Volumen aproximado</label><input id="volume" /></div>
               <div class="field"><label>Actores involucrados</label><textarea id="actors"></textarea></div>
               <div class="field"><label>Sistemas / herramientas</label><textarea id="systems"></textarea></div>
-              <div class="field" style="grid-column:1/-1"><label>Desde tu punto de vista, ¿cómo ocurre el proceso?</label><textarea id="process_view"></textarea></div>
               <div class="field"><label>¿Cuál es tu función y qué actividades realizas dentro del proceso?</label><textarea id="role_activities"></textarea></div>
               <div class="field"><label>¿Qué pasaría si no cumples tus funciones dentro del proceso?</label><textarea id="impact_if_missing"></textarea></div>
               <div class="field"><label>¿Qué necesitas recibir para hacer tu parte?</label><textarea id="inputs_needed"></textarea></div>
@@ -2014,11 +2016,11 @@ ${script}
           </section>
 
           <section class="panel">
-            <h2 class="section-title">Exportar JSON</h2>
-            <div class="help">Exporta el JSON al finalizar y devuélvelo al LMP en la etapa de carga y consolidación.</div>
+            <h2 class="section-title">Enviar respuestas</h2>
+            <div class="help">Al terminar, descarga tus respuestas y envía el archivo al analista del proceso.</div>
             <div class="actions" style="margin-top:14px">
-              <button class="btn-ok" type="button" onclick="exportQuestionnaireJson()">Descargar JSON</button>
-              <button class="btn-ghost" type="button" onclick="previewQuestionnaireJson()">Ver JSON</button>
+              <button class="btn-ok" type="button" onclick="exportQuestionnaireJson()">Descargar respuestas</button>
+              <button class="btn-ghost" type="button" onclick="previewQuestionnaireJson()">Ver respuestas</button>
             </div>
             <div id="questionnaire_msg" class="msg"></div>
             <div id="questionnaire_preview" class="pre" style="margin-top:14px"></div>
@@ -2036,11 +2038,13 @@ ${script}
           function buildQuestionnaireJson(){
             const knowledgeLevel = document.getElementById("knowledge_level").value;
             return {
-              instrument: "preinterview",
-              version: "1.1",
+              instrument: "internal_actor_questionnaire",
+              legacyInstrument: "preinterview",
+              version: "1.2",
               generatedAt: new Date().toISOString(),
               context: {
                 ...gatherContext("ctx"),
+                purpose: "",
                 participantName: document.getElementById("participant_name").value.trim(),
                 participantRole: document.getElementById("participant_role").value.trim(),
                 knowledgeLevel,
@@ -2058,7 +2062,6 @@ ${script}
                 systems: document.getElementById("systems").value.trim(),
                 documents: "",
                 analystNotes: document.getElementById("problems_restrictions").value.trim(),
-                processView: document.getElementById("process_view").value.trim(),
                 roleActivities: document.getElementById("role_activities").value.trim(),
                 impactIfMissing: document.getElementById("impact_if_missing").value.trim(),
                 inputsNeeded: document.getElementById("inputs_needed").value.trim(),
@@ -2067,7 +2070,6 @@ ${script}
                 idealProcess: document.getElementById("ideal_process").value.trim()
               },
               participantPerspective: {
-                processView: document.getElementById("process_view").value.trim(),
                 roleActivities: document.getElementById("role_activities").value.trim(),
                 impactIfMissing: document.getElementById("impact_if_missing").value.trim(),
                 inputsNeeded: document.getElementById("inputs_needed").value.trim(),
@@ -2081,14 +2083,14 @@ ${script}
           function previewQuestionnaireJson(){
             const data = buildQuestionnaireJson();
             document.getElementById("questionnaire_preview").textContent = JSON.stringify(data, null, 2);
-            showMsg("questionnaire_msg", "ok", "Vista previa del JSON generada.");
+            showMsg("questionnaire_msg", "ok", "Vista previa generada.");
           }
 
           function exportQuestionnaireJson(){
             const data = buildQuestionnaireJson();
             document.getElementById("questionnaire_preview").textContent = JSON.stringify(data, null, 2);
-            downloadJson("lmp_preentrevista.json", data);
-            showMsg("questionnaire_msg", "ok", "JSON exportado correctamente.");
+            downloadJson("respuestas_cuestionario_actores_internos.json", data);
+            showMsg("questionnaire_msg", "ok", "Archivo descargado correctamente.");
           }
 
           initQuestionnaire();
@@ -2096,9 +2098,10 @@ ${script}
 
         return createExternalToolShell({
           context,
-          title: "Preentrevista LMP",
-          subtitle: "Instrumento previo para levantar información inicial del proceso desde la perspectiva del participante.",
-          badge: "SGMP · Preentrevista",
+          title: "Cuestionario para actores internos",
+          subtitle: "",
+          badge: "Cuestionario del proceso",
+          intro: "Este cuestionario ayuda a entender cómo se vive el proceso desde tu función. Tus respuestas permitirán identificar actividades, necesidades, entregas, dificultades y oportunidades de mejora.",
           body,
           script
         });
@@ -2108,6 +2111,7 @@ ${script}
         const body = `
           <section class="panel">
             <h2 class="section-title">Contexto precargado</h2>
+            <p class="section-sub">Ajusta el contexto antes de iniciar la entrevista.</p>
             <div class="grid-3">
               <div class="field"><label>Empresa</label><input id="ctx_company" /></div>
               <div class="field"><label>Proceso</label><input id="ctx_process" /></div>
@@ -2143,13 +2147,13 @@ ${script}
           <section class="panel">
             <h2 class="section-title">SIPOC y actividades</h2>
             <div class="grid-3">
-              <div class="field"><label>Actor interno</label><input id="internal_actor_name" /><button class="btn" type="button" onclick="addInternalActor()">Agregar actor</button><div id="internal_actor_list" class="list"></div></div>
-              <div class="field"><label>Proveedor</label><input id="supplier_name" /><label>Entrada que entrega</label><textarea id="supplier_input"></textarea><button class="btn" type="button" onclick="addSupplier()">Agregar proveedor</button><div id="supplier_list" class="list"></div></div>
-              <div class="field"><label>Cliente</label><input id="customer_name" /><label>Salida que recibe</label><textarea id="customer_output"></textarea><button class="btn" type="button" onclick="addCustomer()">Agregar cliente</button><div id="customer_list" class="list"></div></div>
+              <div class="field"><label>Actor interno</label><input id="internal_actor_name" /><button class="btn" id="btn_add_internal_actor" type="button">Agregar actor</button><div id="internal_actor_list" class="list"></div></div>
+              <div class="field"><label>Proveedor</label><input id="supplier_name" /><label>Entrada que entrega</label><textarea id="supplier_input"></textarea><button class="btn" id="btn_add_supplier" type="button">Agregar proveedor</button><div id="supplier_list" class="list"></div></div>
+              <div class="field"><label>Cliente</label><input id="customer_name" /><label>Salida que recibe</label><textarea id="customer_output"></textarea><button class="btn" id="btn_add_customer" type="button">Agregar cliente</button><div id="customer_list" class="list"></div></div>
             </div>
-            <div class="help" style="margin-top:16px">Las actividades usan los actores internos registrados arriba.</div>
+            <div class="help" style="margin-top:16px">Las actividades usan los actores internos, entradas y salidas registrados arriba.</div>
             <div id="activity_editor" class="repeat-item" style="display:none;margin-top:14px"></div>
-            <div class="actions" style="margin-top:14px"><button class="btn" type="button" onclick="openActivityEditor()">Agregar actividad</button></div>
+            <div class="actions" style="margin-top:14px"><button class="btn" id="btn_open_activity" type="button">Agregar actividad</button></div>
             <div id="activities" class="list" style="margin-top:14px"></div>
           </section>
 
@@ -2172,8 +2176,8 @@ ${script}
             <h2 class="section-title">Exportar JSON</h2>
             <div class="help">Exporta el JSON al finalizar y devuélvelo al LMP en la etapa de carga y consolidación.</div>
             <div class="actions" style="margin-top:14px">
-              <button class="btn-ok" type="button" onclick="exportInterviewJson()">Descargar JSON</button>
-              <button class="btn-ghost" type="button" onclick="previewInterviewJson()">Ver JSON</button>
+              <button class="btn-ok" id="btn_export_interview" type="button">Descargar JSON</button>
+              <button class="btn-ghost" id="btn_preview_interview" type="button">Ver JSON</button>
             </div>
             <div id="interview_msg" class="msg"></div>
             <div id="interview_preview" class="pre" style="margin-top:14px"></div>
@@ -2181,144 +2185,243 @@ ${script}
         `;
 
         const script = `
-          let internalActors = [];
-          let suppliers = [];
-          let customers = [];
-          let activities = [];
-          let activityEditIndex = null;
+          const interviewState = { internalActors: [], suppliers: [], customers: [], activities: [], activityEditIndex: null };
+
+          function clean(value){ return String(value || "").trim(); }
+          function unique(values){ return Array.from(new Set(values.map(clean).filter(Boolean))); }
+          function textToList(value){ return unique(String(value || "").split(/\n|,|;/)); }
+          function selectedValues(id){ return Array.from(document.getElementById(id)?.selectedOptions || []).map(option => option.value).filter(Boolean); }
+          function supplierLabel(item){ return item.input ? item.name + " → " + item.input : item.name; }
+          function customerLabel(item){ return item.output ? item.name + " → " + item.output : item.name; }
 
           function initInterview(){
             fillContext("ctx", LMP_CONTEXT);
             const today = new Date().toISOString().slice(0,10);
             const dateEl = document.getElementById("interview_date");
             if(dateEl && !dateEl.value) dateEl.value = today;
+            bindInterviewEvents();
             renderAllLists();
           }
 
-          function clean(value){ return String(value || "").trim(); }
-          function itemText(name, detail){ return detail ? name + ": " + detail : name; }
+          function bindInterviewEvents(){
+            document.getElementById("btn_add_internal_actor")?.addEventListener("click", addInternalActor);
+            document.getElementById("btn_add_supplier")?.addEventListener("click", addSupplier);
+            document.getElementById("btn_add_customer")?.addEventListener("click", addCustomer);
+            document.getElementById("btn_open_activity")?.addEventListener("click", function(){ openActivityEditor(); });
+            document.getElementById("btn_preview_interview")?.addEventListener("click", previewInterviewJson);
+            document.getElementById("btn_export_interview")?.addEventListener("click", exportInterviewJson);
+            document.getElementById("internal_actor_list")?.addEventListener("click", handleListRemove);
+            document.getElementById("supplier_list")?.addEventListener("click", handleListRemove);
+            document.getElementById("customer_list")?.addEventListener("click", handleListRemove);
+            document.getElementById("activities")?.addEventListener("click", handleActivityListClick);
+          }
 
-          function renderCollection(id, items, formatter, removeFn){
+          function handleListRemove(event){
+            const btn = event.target.closest("button[data-list]");
+            if(!btn) return;
+            const index = Number(btn.dataset.index);
+            const list = btn.dataset.list;
+            if(list === "actors") interviewState.internalActors.splice(index, 1);
+            if(list === "suppliers") interviewState.suppliers.splice(index, 1);
+            if(list === "customers") interviewState.customers.splice(index, 1);
+            renderAllLists();
+          }
+
+          function renderCollection(id, items, formatter, listName){
             const el = document.getElementById(id);
             if(!el) return;
-            if(!items.length){ el.innerHTML = ""; return; }
+            if(!items.length){ el.innerHTML = '<div class="help">Sin registros.</div>'; return; }
             el.innerHTML = items.map(function(item, index){
-              return '<div class="repeat-item" style="padding:10px"><div class="repeat-head"><strong>' + esc(formatter(item)) + '</strong><button class="btn-danger" type="button" onclick="' + removeFn + '(' + index + ')">Eliminar</button></div></div>';
+              return '<div class="repeat-item" style="padding:10px"><div class="repeat-head"><strong>' + esc(formatter(item)) + '</strong><button class="btn-danger" type="button" data-list="' + listName + '" data-index="' + index + '">Eliminar</button></div></div>';
             }).join("");
           }
 
           function renderAllLists(){
-            renderCollection("internal_actor_list", internalActors, function(x){ return x; }, "removeInternalActor");
-            renderCollection("supplier_list", suppliers, function(x){ return itemText(x.name, x.input); }, "removeSupplier");
-            renderCollection("customer_list", customers, function(x){ return itemText(x.name, x.output); }, "removeCustomer");
+            renderCollection("internal_actor_list", interviewState.internalActors, function(x){ return x; }, "actors");
+            renderCollection("supplier_list", interviewState.suppliers, supplierLabel, "suppliers");
+            renderCollection("customer_list", interviewState.customers, customerLabel, "customers");
             renderActivities();
-            updateActorSelect();
+            refreshActivityEditorOptions();
           }
 
           function addInternalActor(){
             const input = document.getElementById("internal_actor_name");
             const value = clean(input.value);
             if(!value) return;
-            if(!internalActors.includes(value)) internalActors.push(value);
+            if(!interviewState.internalActors.includes(value)) interviewState.internalActors.push(value);
             input.value = "";
             renderAllLists();
           }
-          function removeInternalActor(index){ internalActors.splice(index, 1); renderAllLists(); }
 
           function addSupplier(){
             const name = clean(document.getElementById("supplier_name").value);
             const input = clean(document.getElementById("supplier_input").value);
             if(!name) return;
-            suppliers.push({ name, input });
+            interviewState.suppliers.push({ name, input });
             document.getElementById("supplier_name").value = "";
             document.getElementById("supplier_input").value = "";
             renderAllLists();
           }
-          function removeSupplier(index){ suppliers.splice(index, 1); renderAllLists(); }
 
           function addCustomer(){
             const name = clean(document.getElementById("customer_name").value);
             const output = clean(document.getElementById("customer_output").value);
             if(!name) return;
-            customers.push({ name, output });
+            interviewState.customers.push({ name, output });
             document.getElementById("customer_name").value = "";
             document.getElementById("customer_output").value = "";
             renderAllLists();
           }
-          function removeCustomer(index){ customers.splice(index, 1); renderAllLists(); }
 
           function actorOptions(selected){
-            const opts = ['<option value="">Selecciona actor</option>'];
-            internalActors.forEach(function(actor){ opts.push('<option value="' + esc(actor) + '"' + (actor === selected ? ' selected' : '') + '>' + esc(actor) + '</option>'); });
-            return opts.join("");
+            const options = ['<option value="">Selecciona actor</option>'];
+            interviewState.internalActors.forEach(function(actor){
+              options.push('<option value="' + esc(actor) + '"' + (actor === selected ? ' selected' : '') + '>' + esc(actor) + '</option>');
+            });
+            return options.join("");
+          }
+
+          function relationOptions(items, formatter, selected){
+            const selectedSet = new Set(selected || []);
+            return items.map(function(item, index){
+              const value = String(index);
+              return '<option value="' + value + '"' + (selectedSet.has(value) ? ' selected' : '') + '>' + esc(formatter(item)) + '</option>';
+            }).join("");
           }
 
           function openActivityEditor(index){
-            activityEditIndex = Number.isInteger(index) ? index : null;
-            const data = activityEditIndex === null ? { type:"operation" } : activities[activityEditIndex];
+            interviewState.activityEditIndex = Number.isInteger(index) ? index : null;
+            const data = interviewState.activityEditIndex === null ? { type:"operation", supplierRefs:[], customerRefs:[] } : interviewState.activities[interviewState.activityEditIndex];
             const editor = document.getElementById("activity_editor");
             editor.style.display = "block";
-            editor.innerHTML = '<div class="repeat-head"><strong>' + (activityEditIndex === null ? 'Nueva actividad' : 'Editar actividad') + '</strong><button class="btn-ghost" type="button" onclick="closeActivityEditor()">Cerrar</button></div>' +
+            editor.innerHTML = '<div class="repeat-head"><strong>' + (interviewState.activityEditIndex === null ? 'Nueva actividad' : 'Editar actividad') + '</strong><button class="btn-ghost" id="btn_close_activity" type="button">Cerrar</button></div>' +
               '<div class="grid-3">' +
               '<div class="field"><label>Nombre de la actividad</label><input id="act_name" value="' + esc(data.name || '') + '" /></div>' +
               '<div class="field"><label>Tipo</label><select id="act_type"><option value="operation">Actividad</option><option value="decision">Decisión</option></select></div>' +
               '<div class="field"><label>Actor</label><select id="act_actor">' + actorOptions(data.actor || '') + '</select></div>' +
               '<div class="field"><label>Documento/sistema</label><input id="act_doc" value="' + esc(data.document || '') + '" /></div>' +
-              '<div class="field"><label>Actividad previa</label><input id="act_prev" value="' + esc(data.previous || '') + '" /></div>' +
-              '<div class="field"><label>Actividad siguiente</label><input id="act_next" value="' + esc(data.next || '') + '" /></div>' +
+              '<div class="field"><label>Actividad previa</label><input id="act_prev" value="' + esc((data.previous || []).join(', ')) + '" /></div>' +
+              '<div class="field"><label>Actividad siguiente</label><input id="act_next" value="' + esc((data.next || []).join(', ')) + '" /></div>' +
+              '<div class="field"><label>Entradas/proveedores asociados</label><select id="act_supplier_refs" multiple>' + relationOptions(interviewState.suppliers, supplierLabel, data.supplierRefs || []) + '</select></div>' +
+              '<div class="field"><label>Salidas/clientes asociados</label><select id="act_customer_refs" multiple>' + relationOptions(interviewState.customers, customerLabel, data.customerRefs || []) + '</select></div>' +
               '<div class="field" style="grid-column:1/-1"><label>Nota de la actividad</label><textarea id="act_note">' + esc(data.note || '') + '</textarea></div>' +
               '<div class="field" style="grid-column:1/-1"><label>Observaciones</label><textarea id="act_obs">' + esc(data.observations || '') + '</textarea></div>' +
-              '</div><div class="actions" style="margin-top:14px"><button class="btn-ok" type="button" onclick="saveActivity()">Guardar actividad</button></div>';
+              '</div><div class="actions" style="margin-top:14px"><button class="btn-ok" id="btn_save_activity" type="button">Guardar actividad</button></div>';
             document.getElementById("act_type").value = data.type || "operation";
+            document.getElementById("btn_close_activity")?.addEventListener("click", closeActivityEditor);
+            document.getElementById("btn_save_activity")?.addEventListener("click", saveActivity);
           }
 
-          function updateActorSelect(){
-            const select = document.getElementById("act_actor");
-            if(select) select.innerHTML = actorOptions(select.value);
+          function refreshActivityEditorOptions(){
+            const actorSelect = document.getElementById("act_actor");
+            if(actorSelect) actorSelect.innerHTML = actorOptions(actorSelect.value);
           }
-          function closeActivityEditor(){ document.getElementById("activity_editor").style.display = "none"; activityEditIndex = null; }
+
+          function closeActivityEditor(){
+            document.getElementById("activity_editor").style.display = "none";
+            interviewState.activityEditIndex = null;
+          }
 
           function saveActivity(){
+            const supplierRefs = selectedValues("act_supplier_refs");
+            const customerRefs = selectedValues("act_customer_refs");
+            const selectedSuppliers = supplierRefs.map(i => interviewState.suppliers[Number(i)]).filter(Boolean);
+            const selectedCustomers = customerRefs.map(i => interviewState.customers[Number(i)]).filter(Boolean);
             const activity = {
               name: clean(document.getElementById("act_name").value),
               type: document.getElementById("act_type").value,
               actor: clean(document.getElementById("act_actor").value),
               document: clean(document.getElementById("act_doc").value),
-              previous: clean(document.getElementById("act_prev").value),
-              next: clean(document.getElementById("act_next").value),
+              previous: textToList(document.getElementById("act_prev").value),
+              next: textToList(document.getElementById("act_next").value),
+              supplierRefs,
+              customerRefs,
+              ext_suppliers: selectedSuppliers.map(x => x.name),
+              ext_inputs: selectedSuppliers.map(x => x.input).filter(Boolean),
+              ext_outputs: selectedCustomers.map(x => x.output).filter(Boolean),
+              ext_customers: selectedCustomers.map(x => x.name),
               note: clean(document.getElementById("act_note").value),
               observations: clean(document.getElementById("act_obs").value)
             };
             if(!activity.name) return;
-            if(activityEditIndex === null) activities.push(activity); else activities[activityEditIndex] = activity;
+            if(interviewState.activityEditIndex === null) interviewState.activities.push(activity);
+            else interviewState.activities[interviewState.activityEditIndex] = activity;
             renderActivities();
             closeActivityEditor();
+          }
+
+          function handleActivityListClick(event){
+            const deleteBtn = event.target.closest("button[data-delete-activity]");
+            if(deleteBtn){
+              interviewState.activities.splice(Number(deleteBtn.dataset.deleteActivity), 1);
+              renderActivities();
+              return;
+            }
+            const item = event.target.closest("[data-edit-activity]");
+            if(item) openActivityEditor(Number(item.dataset.editActivity));
           }
 
           function renderActivities(){
             const el = document.getElementById("activities");
             if(!el) return;
-            if(!activities.length){ el.innerHTML = '<div class="help">Sin actividades agregadas.</div>'; return; }
-            el.innerHTML = activities.map(function(item, index){
-              return '<div class="repeat-item" onclick="openActivityEditor(' + index + ')" style="cursor:pointer"><div class="repeat-head"><strong>' + esc(item.name) + '</strong><button class="btn-danger" type="button" onclick="event.stopPropagation(); removeActivity(' + index + ')">Eliminar</button></div><small>' + esc(item.actor || 'Sin actor') + '</small></div>';
+            if(!interviewState.activities.length){ el.innerHTML = '<div class="help">Sin actividades agregadas.</div>'; return; }
+            el.innerHTML = interviewState.activities.map(function(item, index){
+              return '<div class="repeat-item" data-edit-activity="' + index + '" style="cursor:pointer"><div class="repeat-head"><strong>' + esc(item.name) + '</strong><button class="btn-danger" type="button" data-delete-activity="' + index + '">Eliminar</button></div><small>' + esc(item.actor || 'Sin actor') + '</small></div>';
             }).join("");
           }
-          function removeActivity(index){ activities.splice(index, 1); renderActivities(); }
-          function collectActivities(){ return activities.slice(); }
+
+          function collectActivities(){ return interviewState.activities.slice(); }
+
+          function buildLmpSipocDraftFromInterview(context, activities){
+            return {
+              process_code: context.processCode || "",
+              process_name: context.processName || "",
+              purpose: context.purpose || "",
+              start_event: document.getElementById("trigger").value.trim(),
+              end_event: document.getElementById("end_criteria").value.trim(),
+              notes: document.getElementById("notes").value.trim(),
+              suppliers: unique(interviewState.suppliers.map(x => x.name)),
+              inputs: unique(interviewState.suppliers.map(x => x.input)),
+              outputs: unique(interviewState.customers.map(x => x.output)),
+              customers: unique(interviewState.customers.map(x => x.name)),
+              actors: unique(interviewState.internalActors),
+              documents: unique(activities.map(x => x.document)),
+              activities: activities.map(function(activity, index){
+                return {
+                  name: activity.name,
+                  type: activity.type,
+                  actor: activity.actor,
+                  document: activity.document,
+                  previous: activity.previous || [],
+                  next: activity.next || [],
+                  ext_suppliers: activity.ext_suppliers || [],
+                  ext_inputs: activity.ext_inputs || [],
+                  ext_outputs: activity.ext_outputs || [],
+                  ext_customers: activity.ext_customers || [],
+                  is_start: !(activity.previous || []).length || index === 0,
+                  is_end: !(activity.next || []).length || index === activities.length - 1,
+                  note: [activity.note, activity.observations].filter(Boolean).join(' | ')
+                };
+              })
+            };
+          }
 
           function buildInterviewJson(){
+            const context = {
+              ...gatherContext("ctx"),
+              leaderName: document.getElementById("participant_name").value.trim(),
+              leaderRole: document.getElementById("participant_role").value.trim(),
+              participantName: document.getElementById("participant_name").value.trim(),
+              participantRole: document.getElementById("participant_role").value.trim(),
+              date: document.getElementById("interview_date").value.trim()
+            };
+            const activities = collectActivities();
+            const sipocDraft = buildLmpSipocDraftFromInterview(context, activities);
             return {
               instrument: "interview",
-              version: "1.1",
+              version: "1.2",
               generatedAt: new Date().toISOString(),
-              context: {
-                ...gatherContext("ctx"),
-                leaderName: document.getElementById("participant_name").value.trim(),
-                leaderRole: document.getElementById("participant_role").value.trim(),
-                participantName: document.getElementById("participant_name").value.trim(),
-                participantRole: document.getElementById("participant_role").value.trim(),
-                date: document.getElementById("interview_date").value.trim()
-              },
+              context,
               interviewContext: {
                 trigger: document.getElementById("trigger").value.trim(),
                 endCriteria: document.getElementById("end_criteria").value.trim(),
@@ -2326,14 +2429,20 @@ ${script}
                 variability: document.getElementById("variability").value.trim()
               },
               sipoc: {
-                suppliers: suppliers.map(function(x){ return itemText(x.name, x.input); }).join("\n"),
-                inputs: suppliers.map(function(x){ return x.input; }).filter(Boolean).join("\n"),
-                outputs: customers.map(function(x){ return x.output; }).filter(Boolean).join("\n"),
-                customers: customers.map(function(x){ return itemText(x.name, x.output); }).join("\n"),
-                actors: internalActors.join("\n")
+                suppliers: sipocDraft.suppliers.join("\n"),
+                inputs: sipocDraft.inputs.join("\n"),
+                outputs: sipocDraft.outputs.join("\n"),
+                customers: sipocDraft.customers.join("\n"),
+                actors: sipocDraft.actors.join("\n")
               },
-              sipocStructured: { internalActors, suppliers, customers },
-              activities: collectActivities(),
+              sipocStructured: {
+                internalActors: interviewState.internalActors,
+                suppliers: interviewState.suppliers,
+                customers: interviewState.customers
+              },
+              activities,
+              lmpSipocDraft: sipocDraft,
+              
               painPoints: {
                 problems: document.getElementById("problems").value.trim(),
                 constraints: document.getElementById("constraints").value.trim(),
@@ -2373,12 +2482,13 @@ ${script}
           script
         });
       }
+
       function generatePreInterviewFromPreparation(){
         const context = savePreparationContext();
         if (!validatePreparationContext(context)) return;
         const html = buildPreInterviewHTML(context);
-        prepDownloadGeneratedHtml("lmp_preentrevista.html", html);
-        prepShowMessage("ok", "HTML de preentrevista generado y descargado correctamente.");
+        prepDownloadGeneratedHtml("cuestionario_actores_internos.html", html);
+        prepShowMessage("ok", "HTML de cuestionario para actores internos generado y descargado correctamente.");
       }
 
       function generateInterviewFromPreparation(){
@@ -5864,6 +5974,22 @@ function mergeMaster(){
     splitItems(item.discovery?.idealProcess).forEach(v => uniquePush(master.issues.futureVision, v));
   });
   allInterview.forEach(item => {
+    safeArray(item.sipocStructured?.suppliers).forEach(s => {
+      uniquePush(master.sipoc.suppliers, s.name);
+      uniquePush(master.sipoc.inputs, s.input);
+    });
+    safeArray(item.sipocStructured?.customers).forEach(c => {
+      uniquePush(master.sipoc.customers, c.name);
+      uniquePush(master.sipoc.outputs, c.output);
+    });
+    safeArray(item.sipocStructured?.internalActors).forEach(v => uniquePush(master.sipoc.actors, v));
+    const lmpDraft = item.lmpSipocDraft || item.sipocDraft || item.sipoc_input || {};
+    safeArray(lmpDraft.suppliers).forEach(v => uniquePush(master.sipoc.suppliers, v));
+    safeArray(lmpDraft.inputs).forEach(v => uniquePush(master.sipoc.inputs, v));
+    safeArray(lmpDraft.outputs).forEach(v => uniquePush(master.sipoc.outputs, v));
+    safeArray(lmpDraft.customers).forEach(v => uniquePush(master.sipoc.customers, v));
+    safeArray(lmpDraft.actors).forEach(v => uniquePush(master.sipoc.actors, v));
+    safeArray(lmpDraft.documents).forEach(v => uniquePush(master.sipoc.documentsSystems, v));
     splitItems(item.sipoc?.suppliers).forEach(v => uniquePush(master.sipoc.suppliers, v));
     splitItems(item.sipoc?.inputs).forEach(v => uniquePush(master.sipoc.inputs, v));
     splitItems(item.sipoc?.outputs).forEach(v => uniquePush(master.sipoc.outputs, v));
@@ -5873,7 +5999,7 @@ function mergeMaster(){
       const key = [a.name, a.actor, a.type, a.previous, a.next].join('|').toLowerCase();
       if(!seenAct.has(key) && a.name){
         seenAct.add(key);
-        master.activities.push({ name:a.name||'', actor:a.actor||'', type:a.type||'operation', document:a.document||'', previous:a.previous||'', next:a.next||'', time:'', ava:'NNVA', problems:'', wastes:'', quickWin:'No', constraint:'No', note:[a.note, a.observations].filter(Boolean).join(' | ') });
+        master.activities.push({ name:a.name||'', actor:a.actor||'', type:a.type||'operation', document:a.document||'', previous:a.previous||'', next:a.next||'', ext_suppliers:a.ext_suppliers||[], ext_inputs:a.ext_inputs||[], ext_outputs:a.ext_outputs||[], ext_customers:a.ext_customers||[], time:'', ava:'NNVA', problems:'', wastes:'', quickWin:'No', constraint:'No', note:[a.note, a.observations].filter(Boolean).join(' | ') });
       }
     });
     splitItems(item.painPoints?.problems).forEach(v => uniquePush(master.issues.keyIssues, v));
