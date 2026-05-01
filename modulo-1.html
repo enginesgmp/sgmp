@@ -1170,6 +1170,38 @@
   filter:grayscale(.35);
 }
 
+.drop-zone{
+  border:1px dashed rgba(61,120,255,.35);
+  border-radius:14px;
+  background:rgba(61,120,255,.06);
+  color:#42617F;
+  padding:12px;
+  min-height:72px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:8px;
+}
+
+.drop-zone.dragover{
+  border-color:#1A56DB;
+  background:rgba(0,194,255,.12);
+}
+
+.drop-zone input{
+  width:100%;
+}
+
+.repeat-item.locked{
+  opacity:.45;
+  pointer-events:none;
+  filter:grayscale(.25);
+}
+
+.carga-clean .card{
+  border-radius:18px;
+}
+
 @media(max-width:920px){
   .route-grid-two{
     grid-template-columns:1fr;
@@ -1184,6 +1216,10 @@
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:14px;
   margin-top:14px;
+}
+
+.doc-prompt-grid.single{
+  grid-template-columns:minmax(0,1fr);
 }
 
 .doc-prompt-grid .card{
@@ -1427,12 +1463,12 @@
   <div class="section-head">
     <div>
       <h2>Documentación existente del proceso</h2>
-      <p>Convierte el documento PR y el diagrama SIPOC/flujo en JSON estructurado para cargarlos luego en Carga y consolidación. Esta etapa solo ordena la evidencia documental.</p>
+      <p>Convierte el diagrama SIPOC/flujo existente en JSON estructurado para cargarlo luego como entrevista/documentación base en Carga y consolidación.</p>
     </div>
-    <div class="step-pill">Conversión documental</div>
+    <div class="step-pill">SIPOC existente</div>
   </div>
 
-  <div class="doc-prompt-grid">
+  <div class="doc-prompt-grid single">
     <div class="card">
       <h3>Prompt para Visio / SIPOC / flujo</h3>
       <p>Genera el prompt, úsalo con el PDF del diagrama y pega abajo el JSON estructurado que entregue la IA.</p>
@@ -1446,27 +1482,13 @@
       <div class="actions"><div class="actions-left"><button class="btn-ghost" onclick="copyDocJson('docSipocJson','docSipocMsg')" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadDocJson('docSipocJson','lmp_documentacion_sipoc_flujo.json','docSipocMsg')" type="button">Descargar JSON</button></div></div>
       <div class="msg" id="docSipocMsg"></div>
     </div>
-
-    <div class="card">
-      <h3>Prompt para PR / procedimiento</h3>
-      <p>Genera el prompt, úsalo con el PR o procedimiento y pega abajo el JSON estructurado que entregue la IA.</p>
-      <div class="actions"><div class="actions-left"><button class="btn" onclick="generateDocPrompt('docPromptPr','pdf_documento','docPromptPrPreview','docPromptPrMsg')" type="button">Generar prompt</button><button class="btn-ghost" onclick="copyFixedDocPrompt('docPromptPr','docPromptPrMsg')" type="button">Copiar prompt</button></div></div>
-      <textarea class="doc-prompt-box" id="docPromptPr" placeholder="Aquí aparecerá el prompt para PR, procedimiento o documento maestro del proceso."></textarea>
-      <div class="doc-prompt-preview" id="docPromptPrPreview"><strong>Prompt generado</strong><pre></pre></div>
-      <div class="msg" id="docPromptPrMsg"></div>
-      <div class="field-grid">
-        <div class="field w-12"><label>JSON generado desde PR / procedimiento</label><textarea id="docPrJson" placeholder="Pega aquí el JSON generado por la IA."></textarea></div>
-      </div>
-      <div class="actions"><div class="actions-left"><button class="btn-ghost" onclick="copyDocJson('docPrJson','docPrMsg')" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadDocJson('docPrJson','lmp_documentacion_pr_procedimiento.json','docPrMsg')" type="button">Descargar JSON</button></div></div>
-      <div class="msg" id="docPrMsg"></div>
-    </div>
   </div>
 
   <div class="msg" id="docExistingMsg"></div>
 
   <div class="actions">
     <div class="actions-left">
-      <button class="btn-ghost" onclick="goToPrev('documentacion_existente')" type="button">Volver a Preparacion</button>
+      <button class="btn-ghost" onclick="goToPrev('documentacion_existente')" type="button">Volver a Preparación</button>
     </div>
     <div class="actions-right">
       <button class="btn" onclick="goToNext('documentacion_existente')" type="button">Continuar a Carga y consolidación</button>
@@ -2535,85 +2557,81 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="section-head">
 <div>
 <h2>Carga y consolidación</h2>
-<p>Esta etapa opera en dos subfases: A) construcción del Brief oficial y B) análisis completo desde Brief aprobado.</p>
+<p>Consolida los archivos JSON según la ruta: proceso nuevo con cuestionarios/entrevista, o proceso existente con SIPOC estructurado.</p>
 </div>
 <div class="step-pill">Paso 3</div>
 </div>
-<div class="cards">
+<div class="cards carga-clean">
 <article class="card">
-<h3>Subfase A · Carga acumulativa de insumos</h3>
-<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:10px 0 14px;">
-  <div class="kpi-card"><h4>1. Cargar</h4><small>Pre, entrevista, briefs y anexos</small></div>
-  <div class="kpi-card"><h4>2. Consolidar</h4><small>Objeto maestro base</small></div>
-  <div class="kpi-card"><h4>3. Generar brief</h4><small>Prompt MASTER A</small></div>
-  <div class="kpi-card"><h4>4. Revisar</h4><small>Leer, ajustar y validar</small></div>
-  <div class="kpi-card"><h4>5. Aprobar</h4><small>Habilita análisis profundo</small></div>
+<h3>Carga de archivos</h3>
+<div class="split2">
+  <div class="repeat-item" id="newProcessLoadPanel">
+    <div class="repeat-head"><strong>Proceso nuevo</strong><span class="status-badge">Cuestionarios + entrevista</span></div>
+    <div class="field-grid">
+      <div class="field w-12"><label>JSON de cuestionarios / preentrevistas</label><div class="drop-zone" data-input="filePre">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="filePre" multiple type="file"/></div></div>
+      <div class="field w-12"><label>JSON de entrevista</label><div class="drop-zone" data-input="fileInterview">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="fileInterview" multiple type="file"/></div></div>
+    </div>
+  </div>
+  <div class="repeat-item" id="existingProcessLoadPanel">
+    <div class="repeat-head"><strong>Proceso existente documentado</strong><span class="status-badge">SIPOC existente</span></div>
+    <div class="field-grid">
+      <div class="field w-12"><label>JSON de SIPOC / flujo estructurado</label><div class="drop-zone" data-input="fileSipoc">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="fileSipoc" multiple type="file"/></div></div>
+    </div>
+  </div>
 </div>
-<div class="msg" id="briefFlowMsg" style="display:block;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#d9e6ff">Primero carga insumos, luego consolida, genera el brief, revísalo y apruébalo. El análisis completo permanece bloqueado hasta entonces.</div>
-<div class="field-grid">
-<div class="field w-12"><label>JSON de preentrevista</label><input accept=".json" id="filePre" multiple type="file"/></div>
-<div class="field w-12"><label>JSON de entrevista</label><input accept=".json" id="fileInterview" multiple type="file"/></div>
-<div class="field w-12"><label>JSON de brief externo (opcional / compatibilidad)</label><input accept=".json" id="fileBrief" multiple type="file"/></div>
-<div class="field w-12"><label>Archivos adicionales</label><input id="docFiles" multiple type="file"/></div>
-<div class="field w-12"><label>Notas de consolidación documental</label><textarea id="docNotes" placeholder="Notas opcionales para complementar el análisis documental."></textarea></div>
+<div class="field-grid" style="margin-top:14px">
+  <div class="field w-12"><label>Archivos adicionales</label><div class="drop-zone" data-input="docFiles">Arrastra archivos aquí o elige archivos<input id="docFiles" multiple type="file"/></div></div>
 </div>
 <div class="actions">
 <div class="actions-left">
-<button class="btn-ok" onclick="loadAllInputs()" type="button">Cargar insumos</button>
-<button class="btn-ghost" onclick="clearLoadsGroup('pre')" type="button">Limpiar preentrevistas</button>
-<button class="btn-ghost" onclick="clearLoadsGroup('interview')" type="button">Limpiar entrevistas</button>
-<button class="btn-ghost" onclick="clearLoadsGroup('brief')" type="button">Limpiar briefs</button>
-<button class="btn-ghost" onclick="clearLoadsGroup('docs')" type="button">Limpiar adicionales</button>
-<button class="btn-warn" onclick="useLatestExternalBrief()" type="button">Usar último brief externo</button>
+<button class="btn-ok" id="btnLoadInputs" onclick="loadAllInputs()" type="button">Cargar insumos</button>
+<button class="btn-ghost" onclick="clearAllLoads()" type="button">Limpiar todo</button>
 </div>
 </div>
 <div class="kpi-wrap">
-<div class="kpi-card"><h4>Preentrevistas</h4><div class="big" id="kpiPreLoads">0</div><small>archivos</small></div>
-<div class="kpi-card"><h4>Entrevistas</h4><div class="big" id="kpiInterviewLoads">0</div><small>archivos</small></div>
-<div class="kpi-card"><h4>Briefs</h4><div class="big" id="kpiBriefLoads">0</div><small>archivos</small></div>
+<div class="kpi-card"><h4>Cuestionarios</h4><div class="big" id="kpiPreLoads">0</div><small>archivos</small></div>
+<div class="kpi-card"><h4>Entrevistas / SIPOC</h4><div class="big" id="kpiInterviewLoads">0</div><small>archivos</small></div>
 <div class="kpi-card"><h4>Adicionales</h4><div class="big" id="kpiDocLoads">0</div><small>archivos</small></div>
 </div>
-<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:14px">
-<div><h3 style="margin-bottom:8px">Preentrevistas cargadas</h3><div class="box" id="preLoadList">Sin archivos cargados.</div></div>
-<div><h3 style="margin-bottom:8px">Entrevistas cargadas</h3><div class="box" id="interviewLoadList">Sin archivos cargados.</div></div>
-<div><h3 style="margin-bottom:8px">Briefs externos cargados</h3><div class="box" id="briefLoadList">Sin archivos cargados.</div></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px">
+<div><h3 style="margin-bottom:8px">Cuestionarios cargados</h3><div class="box" id="preLoadList">Sin archivos cargados.</div></div>
+<div><h3 style="margin-bottom:8px">Entrevista / SIPOC cargado</h3><div class="box" id="interviewLoadList">Sin archivos cargados.</div></div>
 <div><h3 style="margin-bottom:8px">Archivos adicionales</h3><div class="box" id="docLoadList">Sin archivos cargados.</div></div>
 </div>
-<div class="msg" id="briefExternalMsg"></div>
 <div class="msg" id="cargaMsg"></div>
 </article>
 
 <article class="card half">
-<h3>Objeto maestro consolidado</h3>
-<p>Consolidado base para construir el Brief. Aquí se unifican preentrevistas, entrevistas y anexos.</p>
+<h3>Consolidar archivos</h3>
+<p>Unifica los JSON cargados en una estructura base para generar el Brief.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
-<button class="btn" onclick="buildMaster()" type="button">Consolidar objeto maestro</button>
-<button class="btn-ghost" onclick="copyMasterJson()" type="button">Copiar consolidado</button>
+<button class="btn" id="btnBuildMaster" onclick="buildMaster()" type="button">Consolidar archivos</button>
+<button class="btn-ghost" id="btnCopyMaster" onclick="copyMasterJson()" type="button">Copiar consolidado</button>
 </div>
 </div>
-<textarea id="masterEditor" placeholder="Aquí aparecerá el objeto maestro consolidado." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de archivos." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card half">
-<h3>Subfase A · Prompt MASTER A (Brief)</h3>
-<p>Genera el prompt para construir el Brief oficial a partir del objeto maestro.</p>
+<h3>Prompt A · Estructura de Brief</h3>
+<p>Genera el prompt para construir el Brief oficial a partir de la consolidación.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
-<button class="btn" onclick="generateBriefPromptFromMaster()" type="button">Generar Brief</button>
-<button class="btn-ghost" onclick="copyTextFromId('briefPromptEditor','cargaMsg','Prompt MASTER A copiado correctamente.')" type="button">Copiar prompt</button>
+<button class="btn" id="btnGenerateBriefPrompt" onclick="generateBriefPromptFromMaster()" type="button">Generar Prompt A</button>
+<button class="btn-ghost" id="btnCopyBriefPrompt" onclick="copyTextFromId('briefPromptEditor','cargaMsg','Prompt A copiado correctamente.')" type="button">Copiar prompt</button>
 </div>
 </div>
-<textarea id="briefPromptEditor" placeholder="Aquí aparecerá el prompt MASTER A." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="briefPromptEditor" placeholder="Aquí aparecerá el Prompt A." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card two-third">
-<h3>Subfase A · JSON de Brief generado por IA</h3>
-<p>Pega aquí la respuesta IA del Prompt MASTER A. El sistema construirá el brief editable y no permitirá análisis profundo hasta que el brief quede aprobado.</p>
-<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<h3>JSON de Brief generado por IA</h3>
+<p>Pega aquí la respuesta IA del Prompt A. El sistema construirá el brief editable y no habilitará el análisis hasta aprobarlo.</p>
+<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
-<div class="actions-left"><button class="btn-ok" onclick="processBriefResponse()" type="button">Procesar Brief</button></div>
-<div class="actions-right"><button class="btn" onclick="approveBriefAndUnlockAnalysis()" type="button">Aprobar Brief</button></div>
+<div class="actions-left"><button class="btn-ok" id="btnProcessBrief" onclick="processBriefResponse()" type="button">Procesar Brief</button></div>
+<div class="actions-right"><button class="btn" id="btnApproveBrief" onclick="approveBriefAndUnlockAnalysis()" type="button">Aprobar Brief</button></div>
 </div>
 <div class="msg" id="briefIaMsg"></div>
 </article>
@@ -2624,39 +2642,40 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="kpi-card"><h4>Estado</h4><div class="big" id="briefApprovedKpi">No</div><small>aprobado</small></div>
 <div class="kpi-card"><h4>Vacíos</h4><div class="big" id="briefGapsKpi">0</div><small>detectados</small></div>
 </div>
-<div class="pre" id="briefDetectedPreview" style="margin-top:14px"></div><div class="msg" id="briefValidationMsg"></div>
+<div class="box" id="briefGapsList" style="margin-top:14px">Sin vacíos detectados.</div>
+<div class="msg" id="briefValidationMsg"></div>
 </article>
 
 <article class="card">
 <h3>Brief oficial editable</h3>
-<p>Revisa, ajusta y valida el brief oficial. Este brief aprobado es el único insumo permitido para el análisis profundo.</p>
-<textarea id="briefEditor" placeholder="Aquí aparecerá el Brief estructurado y editable." style="width:100%;min-height:280px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<p>Revisa, ajusta y valida el brief oficial. Este brief aprobado es el único insumo permitido para el análisis.</p>
+<textarea id="briefEditor" placeholder="Aquí aparecerá el Brief estructurado y editable." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card half">
-<h3>Subfase B · Prompt MASTER B (Análisis)</h3>
-<p>Solo se habilita cuando el Brief fue aprobado. Usa el brief oficial y los complementos externos para generar el análisis completo.</p>
+<h3>Prompt B · Análisis del Brief</h3>
+<p>Se habilita cuando el Brief fue aprobado. Usa el brief oficial y los complementos cargados para generar el análisis completo.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
-<button class="btn" onclick="generateAnalysisPromptFromApprovedBrief()" type="button">Generar análisis</button>
-<button class="btn-ghost" onclick="copyTextFromId('analysisPromptEditor','cargaMsg','Prompt MASTER B copiado correctamente.')" type="button">Copiar prompt</button>
+<button class="btn" id="btnGenerateAnalysisPrompt" onclick="generateAnalysisPromptFromApprovedBrief()" type="button">Generar Prompt B</button>
+<button class="btn-ghost" id="btnCopyAnalysisPrompt" onclick="copyTextFromId('analysisPromptEditor','cargaMsg','Prompt B copiado correctamente.')" type="button">Copiar prompt</button>
 </div>
 </div>
-<textarea id="analysisPromptEditor" placeholder="Aquí aparecerá el prompt MASTER B una vez aprobado el Brief." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="analysisPromptEditor" placeholder="Aquí aparecerá el Prompt B una vez aprobado el Brief." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card half">
-<h3>Subfase B · JSON maestro generado por IA</h3>
-<p>Pega aquí la respuesta del Prompt MASTER B. El sistema debe poder procesar estructuras parciales sin romper el flujo.</p>
-<textarea id="iaResponseEditor" placeholder="Pega aquí la respuesta completa de la IA..." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<h3>JSON maestro generado por IA</h3>
+<p>Pega aquí la respuesta del Prompt B. El sistema debe poder procesar estructuras parciales sin romper el flujo.</p>
+<textarea id="iaResponseEditor" placeholder="Pega aquí la respuesta completa de la IA..." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
-<div class="actions-left"><button class="btn-ok" onclick="processIAResponse()" type="button">Procesar análisis</button></div>
-<div class="actions-right"><button class="btn" onclick="applyIAResponseAndContinue()" type="button">Aplicar al LMP y continuar</button></div>
+<div class="actions-left"><button class="btn-ok" id="btnProcessAnalysis" onclick="processIAResponse()" type="button">Procesar análisis</button></div>
+<div class="actions-right"><button class="btn" id="btnApplyAnalysis" onclick="applyIAResponseAndContinue()" type="button">Aplicar al LMP y continuar</button></div>
 </div>
 <div class="msg" id="iaMsg"></div><div class="msg" id="analysisValidationMsg"></div>
 </article>
 
-<article class="card third">
+<article class="card">
 <h3>Resumen detectado</h3>
 <div class="kpi-wrap">
 <div class="kpi-card"><h4>AS IS</h4><div class="big" id="iaActsKpi">0</div><small>actividades</small></div>
@@ -2664,7 +2683,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="kpi-card"><h4>Quick wins</h4><div class="big" id="iaQwKpi">0</div><small>hallazgos</small></div>
 <div class="kpi-card"><h4>Restricciones</h4><div class="big" id="iaResKpi">0</div><small>detectadas</small></div>
 </div>
-<div class="pre" id="iaDetectedPreview" style="margin-top:14px"></div>
+<div class="pre" id="iaDetectedPreview" style="margin-top:14px;min-height:240px"></div>
 </article>
 </div>
 <div class="actions">
@@ -2672,7 +2691,6 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="actions-right"><button class="btn" onclick="saveMasterAndContinue()" type="button">Guardar y continuar</button></div>
 </div>
 </section>
-
 <!-- AS IS -->
 <section class="section" id="asis">
 <div class="section-head">
@@ -3112,6 +3130,10 @@ function showSection(id){
   }
   if(id === 'analisis' && typeof renderAnalysisFromState === 'function'){
     renderAnalysisFromState();
+  }
+  if(id === 'carga'){
+    initDropZones();
+    refreshCargaFlowState();
   }
   updateTopStatus();
   refreshStageAccess();
@@ -3845,7 +3867,8 @@ function buildMaster(){
   mergeMaster();
   if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
   previewJson('masterPreview', state.master);
-  showMsg('cargaMsg','ok','Objeto maestro generado correctamente.');
+  refreshCargaFlowState();
+  showMsg('cargaMsg','ok','Archivos consolidados correctamente.');
 }
 
 function saveMasterAndContinue(){
@@ -5423,8 +5446,8 @@ function renderLoadList(targetId, items, mode){
 function refreshLoadViews(){
   renderLoadList('preLoadList', state.loads.pre, 'pre');
   renderLoadList('interviewLoadList', state.loads.interview, 'interview');
-  renderLoadList('briefLoadList', state.loads.brief, 'brief');
   renderLoadList('docLoadList', state.loads.docs, 'docs');
+  refreshCargaFlowState();
 }
 
 function removeLoadedItem(type, index){
@@ -5440,6 +5463,29 @@ function clearLoadsGroup(type){
   updateLoadKpis();
   refreshLoadViews();
   if(type==='brief'){ state.briefReview = { raw:null, approved:false }; if(qs('briefEditor')) qs('briefEditor').value=''; if(qs('briefDetectedPreview')) qs('briefDetectedPreview').textContent=''; }
+}
+
+function clearAllLoads(){
+  state.loads.pre = [];
+  state.loads.interview = [];
+  state.loads.docs = [];
+  state.loads.brief = [];
+  state.master = null;
+  state.briefReview = { raw:null, approved:false };
+  state.brief = null;
+  if(qs('masterEditor')) qs('masterEditor').value = '';
+  if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
+  if(qs('briefResponseEditor')) qs('briefResponseEditor').value = '';
+  if(qs('briefEditor')) qs('briefEditor').value = '';
+  if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = '';
+  if(qs('iaResponseEditor')) qs('iaResponseEditor').value = '';
+  if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = '';
+  if(qs('briefGapsList')) qs('briefGapsList').textContent = 'Sin vacíos detectados.';
+  updateLoadKpis();
+  refreshLoadViews();
+  renderBriefDraft();
+  renderAnalysisValidation();
+  showMsg('cargaMsg','ok','Carga limpiada correctamente.');
 }
 
 function copyTextFromId(id,msgId,okMsg){
@@ -5539,10 +5585,18 @@ function evaluateBriefCompleteness(brief){
 function renderBriefValidation(){
   const brief = getBriefPayload();
   const issues = evaluateBriefCompleteness(brief);
+  const detectedGaps = safeArray(brief?.informationGaps || brief?.infoGaps || []);
+  const gapList = [...detectedGaps, ...issues];
   const msgId = 'briefValidationMsg';
-  if(!brief){ showMsg(msgId,'warn','Estado: brief incompleto. Aún no existe un brief utilizable.'); return issues; }
+  if(qs('briefGapsList')){
+    qs('briefGapsList').innerHTML = gapList.length
+      ? '<ul style="margin:0;padding-left:18px">' + gapList.map(item => '<li>' + escapeHtml(typeof item === 'string' ? item : JSON.stringify(item)) + '</li>').join('') + '</ul>'
+      : 'Sin vacíos detectados.';
+  }
+  if(!brief){ showMsg(msgId,'warn','Estado: brief incompleto. Aún no existe un brief utilizable.'); refreshCargaFlowState(); return issues; }
   if(issues.length){ showMsg(msgId,'warn','Estado: brief incompleto. Revisa antes de aprobar:\n- ' + issues.join('\n- ')); }
   else { showMsg(msgId,'ok','Estado: brief completo. Puede aprobarse para habilitar el análisis.'); }
+  refreshCargaFlowState();
   return issues;
 }
 
@@ -5603,7 +5657,6 @@ function buildBriefPrompt(master){
   const docs = safeArray(master.notes?.additionalDocuments).map(d => `DOCUMENTO: ${d.name}\n${d.content || d.preview || ''}`).join('\n\n----------------\n\n') || '[Sin documentos adicionales]';
   const prePack = JSON.stringify(safeArray(master.preInterview || master.pre || []), null, 2);
   const interviewPack = JSON.stringify(safeArray(master.interview || []), null, 2);
-  const docNotes = master.notes?.docNotes || '';
 
   const dynamicSection = `ENTRADA CONSOLIDADA COMPLETA (NO RESUMIR PREMATURAMENTE):
 ${JSON.stringify(master, null, 2)}
@@ -5613,9 +5666,6 @@ ${prePack}
 
 EVIDENCIA DE ENTREVISTAS (PRESERVAR EXCEPCIONES, REGLAS IMPLÍCITAS, CONTROLES NO DOCUMENTADOS Y DECISIONES REALES):
 ${interviewPack}
-
-NOTAS COMPLEMENTARIAS DEL ANALISTA:
-${docNotes || '[Sin notas adicionales]'}
 
 DOCUMENTOS ADICIONALES:
 ${docs}`;
@@ -5699,7 +5749,8 @@ function generateBriefPromptFromMaster(){
   const master = state.master || mergeMaster();
   const prompt = buildBriefPrompt(master);
   if(qs('briefPromptEditor')) qs('briefPromptEditor').value = prompt;
-  showMsg('cargaMsg','ok','Prompt MASTER A generado correctamente.');
+  refreshCargaFlowState();
+  showMsg('cargaMsg','ok','Prompt A generado correctamente.');
 }
 
 function processBriefResponse(){
@@ -5711,6 +5762,7 @@ function processBriefResponse(){
     state.briefReview = { raw: brief, approved:false };
     renderBriefDraft();
     renderBriefValidation();
+    refreshCargaFlowState();
     showMsg('briefIaMsg','ok','Brief procesado correctamente. Revisa el contenido y apruébalo para habilitar el análisis.');
   }catch(error){
     showMsg('briefIaMsg','err', `No fue posible procesar el Brief. Detalle: ${error.message}`);
@@ -5726,12 +5778,14 @@ function approveBriefAndUnlockAnalysis(){
     if(issues.length){
       state.briefReview = { raw: parsed, approved:false };
       renderBriefDraft();
+      refreshCargaFlowState();
       showMsg('briefIaMsg','warn','No se puede aprobar el Brief porque está incompleto.');
       return;
     }
     state.briefReview = { raw: parsed, approved:true };
     state.brief = parsed;
     renderBriefDraft();
+    refreshCargaFlowState();
     showMsg('briefIaMsg','ok','Brief aprobado correctamente. Ya puedes generar el análisis completo.');
   }catch(error){
     showMsg('briefIaMsg','err', `El Brief editable no contiene un JSON válido. Detalle: ${error.message}`);
@@ -5746,7 +5800,6 @@ function generateAnalysisPromptFromApprovedBrief(){
   const evidencePack = {
     preInterview: safeArray(master.preInterview || master.pre || []),
     interview: safeArray(master.interview || []),
-    docNotes: master.notes?.docNotes || '',
     additionalDocuments: safeArray(master.notes?.additionalDocuments).map(d => ({name:d.name, preview:d.preview || d.content || ''})),
     context: c
   };
@@ -5813,7 +5866,8 @@ ${hardening}`;
   const prompt = (staticBase ? staticBase.replace('{{industry}}', c.industry || '[INDUSTRIA]').replace('{{activity}}', c.activity || '[ACTIVIDAD]').replace('{{processType}}', c.processType || '[TIPO_PROCESO]') + hardening : fallback) + '\n\n' + dynamic;
   if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
   try{ state.results = state.results || {}; state.results.sbNormalizationPrompt = buildSbNormalizationPrompt(); }catch(e){}
-  showMsg('cargaMsg','ok','Prompt MASTER B generado correctamente.');
+  refreshCargaFlowState();
+  showMsg('cargaMsg','ok','Prompt B generado correctamente.');
 }
 
 function buildSbNormalizationPrompt(){
@@ -5876,26 +5930,52 @@ TO_BE:
 ${JSON.stringify(tobe, null, 2)}`;
 }
 
+function normalizeSipocJsonAsInterview(parsed){
+  const source = parsed || {};
+  const draft = source.lmpSipocDraft || source.sipocDraft || source.sipoc_input || source.sipoc || source.documented_as_is || source.lmp_load_input?.brief_seed || source;
+  const activities = safeArray(
+    source.activities ||
+    source.documented_as_is?.activities ||
+    source.lmpSipocDraft?.activities ||
+    source.sipoc_input?.activities ||
+    source.lmp_load_input?.brief_seed?.activities ||
+    draft.activities ||
+    []
+  );
+  const suppliers = safeArray(source.sipocStructured?.suppliers || draft.suppliers).map(item => typeof item === 'string' ? {name:item,input:''} : item);
+  const customers = safeArray(source.sipocStructured?.customers || draft.customers).map(item => typeof item === 'string' ? {name:item,output:''} : item);
+  const internalActors = safeArray(source.sipocStructured?.internalActors || draft.actors || draft.internalActors);
+  return Object.assign({}, source, {
+    instrument: source.instrument || 'interview',
+    source_type: source.source_type || 'existing_sipoc_conversion',
+    context: source.context || state.context || {},
+    sipocStructured: { internalActors, suppliers, customers },
+    activities,
+    lmpSipocDraft: Object.assign({}, draft, { activities })
+  });
+}
+
 async function loadInstrumentFiles(type){
-  const inputMap = { pre:qs('filePre'), interview:qs('fileInterview'), brief:qs('fileBrief') };
+  const inputMap = { pre:qs('filePre'), interview:qs('fileInterview'), sipoc:qs('fileSipoc') };
   const input = inputMap[type];
   const files = Array.from((input?.files || []));
   if(!files.length) return [];
   try{
     const loaded = [];
     for(const file of files){
-      const parsed = JSON.parse(await file.text());
+      let parsed = JSON.parse(await file.text());
+      if(type === 'sipoc') parsed = normalizeSipocJsonAsInterview(parsed);
       if(parsed && typeof parsed === 'object'){
         parsed.__fileName = file.name;
         parsed.__loadedAt = new Date().toISOString();
         loaded.push(parsed);
       }
     }
-    state.loads[type] = [...(state.loads[type] || []), ...loaded];
+    const targetType = type === 'sipoc' ? 'interview' : type;
+    state.loads[targetType] = [...(state.loads[targetType] || []), ...loaded];
     updateLoadKpis();
     refreshLoadViews();
-    showMsg('cargaMsg','ok',`Se agregaron ${loaded.length} archivo(s) en ${type}.`);
-    if(type==='brief'){ showMsg('briefExternalMsg','ok','Briefs externos cargados. Puedes revisarlos en la lista y usar el último como base del brief oficial.'); }
+    showMsg('cargaMsg','ok',`Se agregaron ${loaded.length} archivo(s).`);
     return loaded;
   }catch(error){
     showMsg('cargaMsg','err',`No fue posible cargar archivo(s) en ${type}. Detalle: ${error.message}`);
@@ -5904,9 +5984,13 @@ async function loadInstrumentFiles(type){
 }
 
 async function loadAllInputs(){
-  await loadInstrumentFiles('pre');
-  await loadInstrumentFiles('interview');
-  await loadInstrumentFiles('brief');
+  const route = state.metadata?.route;
+  if(route === 'doc'){
+    await loadInstrumentFiles('sipoc');
+  } else {
+    await loadInstrumentFiles('pre');
+    await loadInstrumentFiles('interview');
+  }
   const docs = Array.from((qs('docFiles')?.files || []));
   const additions = [];
   for(const file of docs){
@@ -5935,8 +6019,72 @@ async function loadAllInputs(){
 function updateLoadKpis(){
   if(qs('kpiPreLoads')) qs('kpiPreLoads').textContent = (state.loads.pre || []).length;
   if(qs('kpiInterviewLoads')) qs('kpiInterviewLoads').textContent = (state.loads.interview || []).length;
-  if(qs('kpiBriefLoads')) qs('kpiBriefLoads').textContent = (state.loads.brief || []).length;
   if(qs('kpiDocLoads')) qs('kpiDocLoads').textContent = (state.loads.docs || []).length;
+  refreshCargaFlowState();
+}
+
+function refreshCargaFlowState(){
+  const route = state.metadata?.route;
+  const isDocRoute = route === 'doc';
+  const isNewRoute = route === 'new';
+  const hasLoads = (state.loads.pre || []).length || (state.loads.interview || []).length || (state.loads.docs || []).length;
+  const hasMaster = !!state.master || !!(qs('masterEditor')?.value || '').trim();
+  const hasBriefPrompt = !!(qs('briefPromptEditor')?.value || '').trim();
+  const hasBriefResponse = !!(qs('briefResponseEditor')?.value || '').trim();
+  const hasBrief = !!(qs('briefEditor')?.value || '').trim();
+  const briefApproved = !!(state.briefReview && state.briefReview.approved);
+  const hasAnalysisPrompt = !!(qs('analysisPromptEditor')?.value || '').trim();
+  const hasAnalysisResponse = !!(qs('iaResponseEditor')?.value || '').trim();
+
+  qs('newProcessLoadPanel')?.classList.toggle('locked', isDocRoute);
+  qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewRoute);
+
+  const disabledMap = {
+    btnBuildMaster: !hasLoads,
+    btnCopyMaster: !hasMaster,
+    btnGenerateBriefPrompt: !hasMaster,
+    btnCopyBriefPrompt: !hasBriefPrompt,
+    btnProcessBrief: !hasBriefResponse,
+    btnApproveBrief: !hasBrief,
+    btnGenerateAnalysisPrompt: !briefApproved,
+    btnCopyAnalysisPrompt: !hasAnalysisPrompt,
+    btnProcessAnalysis: !hasAnalysisResponse,
+    btnApplyAnalysis: !(state.analysisRun && state.analysisRun.qa)
+  };
+  Object.keys(disabledMap).forEach(id => {
+    const el = qs(id);
+    if(el) el.disabled = !!disabledMap[id];
+  });
+}
+
+function initDropZones(){
+  qsa('.drop-zone').forEach(zone => {
+    if(zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    const input = qs(zone.dataset.input);
+    zone.addEventListener('dragover', event => {
+      event.preventDefault();
+      zone.classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', event => {
+      event.preventDefault();
+      zone.classList.remove('dragover');
+      if(input && event.dataTransfer?.files?.length){
+        input.files = event.dataTransfer.files;
+        showMsg('cargaMsg','ok','Archivo(s) listos para cargar. Presiona Cargar insumos.');
+        refreshCargaFlowState();
+      }
+    });
+    input?.addEventListener('change', refreshCargaFlowState);
+  });
+  ['briefPromptEditor','briefResponseEditor','briefEditor','analysisPromptEditor','iaResponseEditor','masterEditor'].forEach(id => {
+    const el = qs(id);
+    if(el && el.dataset.boundCarga !== '1'){
+      el.dataset.boundCarga = '1';
+      el.addEventListener('input', refreshCargaFlowState);
+    }
+  });
 }
 
 function mergeContextSources(){
@@ -5968,7 +6116,7 @@ function mergeMaster(){
     activities: [],
     issues: { keyIssues:[], delays:[], rework:[], constraints:[], frictions:[], quickWins:[], futureVision:[], wastes:[] },
     indicators: [],
-    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: qs('docNotes') ? qs('docNotes').value.trim() : '' }
+    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: '' }
   };
 
   const seenAct = new Set();
@@ -6487,6 +6635,7 @@ function processIAResponse(){
     state.analysis.qa = analysisIssues.length === 0;
     state.analysisRun.qa = analysisIssues.length === 0;
 
+    refreshCargaFlowState();
     showMsg('iaMsg','ok','Análisis procesado correctamente. Ya puedes aplicarlo al LMP y continuar.');
     updateTopStatus();
 
