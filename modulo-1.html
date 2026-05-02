@@ -1202,6 +1202,26 @@
   border-radius:18px;
 }
 
+.brief-status-card .kpi-wrap{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+
+.brief-status-card .kpi-card{
+  min-height:110px;
+}
+
+.brief-status-card .big{
+  font-size:1.45rem;
+  line-height:1.1;
+  word-break:break-word;
+}
+
+.brief-status-card #briefGapsList{
+  line-height:1.45;
+  max-height:240px;
+  overflow:auto;
+}
+
 @media(max-width:920px){
   .route-grid-two{
     grid-template-columns:1fr;
@@ -2636,7 +2656,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="msg" id="briefIaMsg"></div>
 </article>
 
-<article class="card third">
+<article class="card third brief-status-card">
 <h3>Estado del Brief</h3>
 <div class="kpi-wrap">
 <div class="kpi-card"><h4>Estado</h4><div class="big" id="briefApprovedKpi">No</div><small>aprobado</small></div>
@@ -2696,12 +2716,12 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="section-head">
 <div>
 <h2>AS IS</h2>
-<p>Revisa y valida la estructura AS IS propuesta por la IA. Puedes ajustarla manualmente si es necesario, pero no parte vacía.</p>
+<p>Revisa y valida únicamente las actividades de flujo/SIPOC provenientes del JSON de entrevista o del JSON de SIPOC convertido.</p>
 </div>
 <div class="step-pill">Paso 4</div>
 </div>
 <div class="cards">
-<article class="card two-third">
+<article class="card">
 <h3>Proceso estructurado editable</h3>
 <div class="list" id="asisActivities"></div>
 <div class="actions">
@@ -2709,19 +2729,6 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <button class="btn" onclick="addAsisActivity()" type="button">Agregar actividad</button>
 </div>
 </div>
-</article>
-<article class="card third">
-<h3>Guía rápida</h3>
-<div class="box">Para cada actividad registra:
-- nombre
-- actor / rol
-- tipo
-- tiempo estimado
-- clasificación AVA
-- problemas observados
-- desperdicios
-- quick win
-- restricción</div>
 </article>
 </div>
 <div class="actions">
@@ -3399,54 +3406,20 @@ async function loadRouteJson(mode){
    DOCUMENTACIÓN EXISTENTE
 ========================= */
 function buildDocPrompt(type){
-  const profiles = {
-    pdf_sipoc: {
-      sourceType: 'pdf_sipoc_flujo',
-      title: 'PDF SIPOC / flujo del proceso',
-      focus: `
-Interpreta el PDF como SIPOC, flujo de proceso o diagrama exportado.
-Extrae Suppliers, Inputs, Process, Outputs, Customers, actores internos, documentos, sistemas y secuencia de actividades.
-Si el PDF contiene un flujo visual, convierte cada nodo ejecutable en una actividad.
-Si hay decisiones, controles o documentos, clasifícalos con type = decision, control o document.
-`
-    },
-    pdf_documento: {
-      sourceType: 'pdf_documento_operativo',
-      title: 'PDF documento operativo',
-      focus: `
-Interpreta el PDF como documento operativo: manual, procedimiento, instructivo, política, registro, formato, especificación o PR.
-Extrae objetivo, alcance, responsables, reglas, actividades, controles, entradas, salidas, documentos usados, sistemas y evidencias.
-No conviertas definiciones, políticas generales o campos de un formato en actividades si no representan pasos ejecutables.
-`
-    },
-    json_consolidacion: {
-      sourceType: 'json_consolidacion_documental',
-      title: 'Consolidar JSON documentales',
-      focus: `
-Consolida varios JSON documentales parciales generados previamente desde PDFs.
-Unifica contexto, SIPOC, actividades, documentos, actores, entradas, salidas y trazabilidad.
-Detecta duplicados, contradicciones, vacíos y diferencias entre fuentes.
-No fuerces una sola versión si existen contradicciones: consérvalas en traceability.contradictions_detected.
-`
-    }
-  };
-
-  const profile = profiles[type] || profiles.pdf_documento;
-
   return `
 ACTÚA COMO:
 1. Arquitecto senior de procesos.
-2. Especialista en documentación operativa.
-3. Experto en conversión PDF/JSON para LMP y SIPOC Builder.
+2. Especialista en lectura de SIPOC, Visio y diagramas de flujo.
+3. Experto en convertir documentación visual en JSON compatible con el LMP.
 
 TIPO DE CONVERSIÓN:
-${profile.title}
+SIPOC / Visio / flujo del proceso a JSON tipo entrevista LMP.
 
 OBJETIVO:
-Convertir la información fuente en un JSON documental limpio, trazable y compatible con la etapa Carga y consolidación del LMP.
+Convertir el SIPOC, Visio o diagrama de flujo en un JSON con la misma estructura operativa que entrega la entrevista del LMP, para que el módulo pueda consumirlo como base del flujo de actividades.
 
-ENFOQUE:
-${profile.focus}
+NO solicites ni inventes datos de preparación y contexto. Esos datos ya se capturan dentro del LMP.
+No hagas análisis profundo. Solo estructura lo evidente del SIPOC/flujo y registra inferencias operativas obvias cuando estén sustentadas por el diagrama.
 
 REGLAS CRÍTICAS:
 - Responde SOLO con JSON válido.
@@ -3455,12 +3428,11 @@ REGLAS CRÍTICAS:
 - No propongas soluciones.
 - No diseñes TO BE.
 - No inventes información.
-- Si falta información, usa "pendiente_validacion".
-- Si el actor no está claro, usa "Responsable pendiente de validación".
-- No uses "pendiente_validacion" como actor.
+- Todo campo que no pueda saberse desde el SIPOC/flujo debe quedar vacío: "", [] u objeto vacío según corresponda.
+- Si el actor de una actividad no está claro, usa "".
 - Diferencia Suppliers, Inputs, Outputs y Customers de actores internos.
 - No confundas documentos, sistemas o registros con actividades.
-- Cada actividad debe tener actor válido, aunque sea "Responsable pendiente de validación".
+- Cada actividad debe tener nombre.
 - Cada actividad debe tener previous y next como arrays.
 - En previous y next usa nombres de actividades, no IDs.
 - Cada actividad debe incluir siempre ext_suppliers, ext_inputs, ext_outputs y ext_customers, aunque sean arrays vacíos.
@@ -3468,111 +3440,103 @@ REGLAS CRÍTICAS:
 - Si una actividad genera una salida externa, declárala en ext_outputs.
 - Si una actividad inicia el proceso, is_start debe ser true.
 - Si una actividad cierra el proceso, is_end debe ser true.
-- Clasifica type usando solo: operation, decision, control, document, end.
-- No pongas todas las actividades como operation si existen controles, decisiones o documentos.
+- Clasifica type usando solo: operation o decision.
+- Usa operation para actividad normal y decision para puntos de decisión.
+- No incluyas actividades mencionadas en notas generales si no forman parte del flujo.
 
 ESTRUCTURA JSON OBLIGATORIA:
 {
-  "instrument": "document_conversion",
-  "version": "1.1",
-  "source_type": "${profile.sourceType}",
-  "context": {
-    "company": "pendiente_validacion",
-    "processName": "pendiente_validacion",
-    "processCode": "pendiente_validacion",
-    "owner": "pendiente_validacion",
-    "analyst": "pendiente_validacion",
-    "industry": "pendiente_validacion",
-    "processType": "pendiente_validacion",
-    "activity": "pendiente_validacion",
-    "purpose": "pendiente_validacion",
-    "startEvent": "pendiente_validacion",
-    "endEvent": "pendiente_validacion"
+  "instrument": "interview",
+  "source_type": "existing_sipoc_conversion",
+  "version": "1.2",
+  "generatedAt": "",
+  "context": {},
+  "interviewContext": {
+    "trigger": "",
+    "endCriteria": "",
+    "scope": "",
+    "variability": ""
   },
-  "catalogs": {
+  "sipoc": {
+    "suppliers": "",
+    "inputs": "",
+    "outputs": "",
+    "customers": "",
+    "actors": ""
+  },
+  "sipocStructured": {
+    "internalActors": [],
+    "suppliers": [
+      {"name": "", "input": ""}
+    ],
+    "customers": [
+      {"name": "", "output": ""}
+    ]
+  },
+  "activities": [
+    {
+      "name": "",
+      "type": "operation",
+      "actor": "",
+      "document": "",
+      "previous": [],
+      "next": [],
+      "supplierRefs": [],
+      "customerRefs": [],
+      "ext_suppliers": [],
+      "ext_inputs": [],
+      "ext_outputs": [],
+      "ext_customers": [],
+      "note": "",
+      "observations": ""
+    }
+  ],
+  "lmpSipocDraft": {
+    "process_code": "",
+    "process_name": "",
+    "purpose": "",
+    "start_event": "",
+    "end_event": "",
+    "notes": "",
     "suppliers": [],
     "inputs": [],
     "outputs": [],
     "customers": [],
     "actors": [],
-    "documents_systems": []
+    "documents": [],
+    "activities": []
   },
-  "documented_as_is": {
-    "summary": "",
-    "sequence_quality": "completa | parcial | ambigua | incompleta",
-    "activities": [
-      {
-        "id": "A1",
-        "name": "",
-        "type": "operation | decision | control | document | end",
-        "actor": "Responsable pendiente de validación",
-        "document": "",
-        "previous": [],
-        "next": [],
-        "ext_suppliers": [],
-        "ext_inputs": [],
-        "ext_outputs": [],
-        "ext_customers": [],
-        "is_start": true,
-        "is_end": false,
-        "evidence": "",
-        "source_status": "evidenciado | inferido | pendiente_validacion",
-        "notes": ""
-      }
-    ]
+  "painPoints": {
+    "problems": "",
+    "constraints": "",
+    "currentIndicators": ""
   },
-  "operational_context": {
-    "controls": [],
-    "approvals": [],
-    "handoffs": [],
-    "exceptions": [],
-    "decision_criteria": [],
-    "manual_dependencies": [],
-    "rules_detected": []
+  "futureProcess": {
+    "futureVision": ""
   },
-  "traceability": {
-    "evidence_highlights": [],
-    "contradictions_detected": [],
-    "open_questions": [],
-    "missing_information": [],
-    "assumptions": []
+  "analystObservations": {
+    "notes": ""
   },
-  "lmp_load_input": {
-    "target_stage": "carga_y_consolidacion",
-    "brief_seed": {
-      "context": {},
-      "sipoc": {
-        "suppliers": [],
-        "inputs": [],
-        "outputs": [],
-        "customers": [],
-        "actors": [],
-        "documentsSystems": []
-      },
-      "activities": [],
-      "observations": []
-    }
+  "conversionTraceability": {
+    "obviousInferences": [],
+    "emptyBecauseNotInSipoc": [],
+    "warnings": []
   },
-  "conversion_status": {
-    "status": "listo_para_master_a | requiere_validacion | bloqueado",
-    "blocking_issues": [],
-    "warnings": [],
-    "next_action": ""
-  }
+  "flowSource": "sipoc_conversion"
 }
 
 VALIDACIÓN ANTES DE RESPONDER:
 1. El JSON debe ser parseable.
 2. No debe existir texto fuera del JSON.
-3. Todas las actividades deben tener actor distinto de vacío.
-4. Ninguna actividad debe tener actor = "pendiente_validacion".
-5. previous y next deben contener nombres de actividades, no IDs.
-6. Todas las actividades deben incluir ext_suppliers, ext_inputs, ext_outputs y ext_customers.
-7. Los catálogos deben estar alineados con las actividades.
-8. No mezcles AS IS con propuestas de mejora.
+3. activities y lmpSipocDraft.activities deben representar el mismo flujo.
+4. previous y next deben contener nombres de actividades, no IDs.
+5. Todas las actividades deben incluir ext_suppliers, ext_inputs, ext_outputs y ext_customers.
+6. Los proveedores/clientes/entradas/salidas deben estar alineados con las actividades.
+7. Los problemas, desperdicios o restricciones solo pueden anotarse si son obvios desde el flujo; si no, dejarlos en blanco.
+8. No mezcles información de contexto del LMP ni propongas mejoras.
 
 FUENTE A CONVERTIR:
-Adjunto o pego a continuación el PDF, texto extraído del PDF o JSON documental parcial.
+Adjunto o pego a continuación el PDF, imagen o texto extraído del SIPOC/flujo.
 `;
 }
 
@@ -3584,15 +3548,24 @@ function promptFromSheet(keys, fallback){
   return fallback;
 }
 
+function buildSipocDocPromptResolved(){
+  const requiredPrompt = buildDocPrompt('pdf_sipoc');
+  const sheetPrompt = promptFromSheet(['prompt_doc_sipoc','prompt_documentacion_sipoc','prompt_visio_sipoc'], '');
+  if(!String(sheetPrompt || '').trim()) return requiredPrompt;
+  return `${sheetPrompt}
+
+REQUISITOS OBLIGATORIOS DEL LMP PARA ESTA VERSIÓN:
+Si el prompt del Sheet contiene instrucciones distintas, prevalece la siguiente estructura y lógica:
+
+${requiredPrompt}`;
+}
+
 function fillFixedDocPrompts(force=false){
   const sipoc = qs('docPromptSipoc');
-  const pr = qs('docPromptPr');
 
-  const sipocPrompt = promptFromSheet(['prompt_doc_sipoc','prompt_documentacion_sipoc','prompt_visio_sipoc'], buildDocPrompt('pdf_sipoc'));
-  const prPrompt = promptFromSheet(['prompt_doc_pr','prompt_documentacion_pr','prompt_pr_procedimiento'], buildDocPrompt('pdf_documento'));
+  const sipocPrompt = buildSipocDocPromptResolved();
 
   if(sipoc && (force || !sipoc.value.trim())) sipoc.value = sipocPrompt;
-  if(pr && (force || !pr.value.trim())) pr.value = prPrompt;
 }
 
 function renderDocPromptPreview(previewId, prompt){
@@ -3607,10 +3580,9 @@ function generateDocPrompt(targetId, type, previewId, msgId){
   const el = qs(targetId);
   if(!el) return;
   const keyMap = {
-    pdf_sipoc: ['prompt_doc_sipoc','prompt_documentacion_sipoc','prompt_visio_sipoc'],
-    pdf_documento: ['prompt_doc_pr','prompt_documentacion_pr','prompt_pr_procedimiento']
+    pdf_sipoc: ['prompt_doc_sipoc','prompt_documentacion_sipoc','prompt_visio_sipoc']
   };
-  const prompt = promptFromSheet(keyMap[type] || [], buildDocPrompt(type));
+  const prompt = type === 'pdf_sipoc' ? buildSipocDocPromptResolved() : promptFromSheet(keyMap[type] || [], buildDocPrompt(type));
   el.value = prompt;
   renderDocPromptPreview(previewId, prompt);
   showMsg(msgId,'ok','Prompt generado correctamente.');
@@ -3915,35 +3887,33 @@ function asisActivityTemplate(data = {}){
         <div class="field w-3"><label>Actor</label><input class="a_actor" value="${escapeHtml(data.actor || '')}" /></div>
         <div class="field w-3"><label>Tipo</label>
           <select class="a_type">
-            <option value="operation" ${data.type==='operation'?'selected':''}>Operación</option>
+            <option value="operation" ${data.type==='operation'?'selected':''}>Actividad</option>
             <option value="decision" ${data.type==='decision'?'selected':''}>Decisión</option>
-            <option value="control" ${data.type==='control'?'selected':''}>Control</option>
-            <option value="document" ${data.type==='document'?'selected':''}>Documento</option>
           </select>
         </div>
-        <div class="field w-3"><label>Tiempo estimado</label><input class="a_time" value="${escapeHtml(data.time || '')}" /></div>
-        <div class="field w-3"><label>AVA</label>
+        <div class="field w-4"><label>AVA</label>
           <select class="a_ava">
             <option value="VA" ${data.ava==='VA'?'selected':''}>VA</option>
             <option value="NNVA" ${data.ava==='NNVA'?'selected':''}>NNVA</option>
             <option value="NVA" ${data.ava==='NVA'?'selected':''}>NVA</option>
           </select>
         </div>
-        <div class="field w-3"><label>Quick win</label>
+        <div class="field w-4"><label>Quick win</label>
           <select class="a_qw">
-            <option value="No" ${data.quickWin==='No'?'selected':''}>No</option>
+            <option value="No" ${data.quickWin!=='Sí'?'selected':''}>No</option>
             <option value="Sí" ${data.quickWin==='Sí'?'selected':''}>Sí</option>
           </select>
         </div>
-        <div class="field w-3"><label>Restricción</label>
+        <div class="field w-4"><label>Restricción</label>
           <select class="a_res">
-            <option value="No" ${data.constraint==='No'?'selected':''}>No</option>
+            <option value="No" ${data.constraint!=='Sí'?'selected':''}>No</option>
             <option value="Sí" ${data.constraint==='Sí'?'selected':''}>Sí</option>
           </select>
         </div>
         <div class="field w-6"><label>Problemas</label><textarea class="a_problems">${escapeHtml(data.problems || '')}</textarea></div>
         <div class="field w-6"><label>Desperdicios</label><textarea class="a_wastes">${escapeHtml(data.wastes || '')}</textarea></div>
-        <div class="field w-12"><label>Nota</label><textarea class="a_note">${escapeHtml(data.note || '')}</textarea></div>
+        <div class="field w-6"><label>Nota</label><textarea class="a_note">${escapeHtml(data.note || '')}</textarea></div>
+        <div class="field w-6"><label>Observaciones</label><textarea class="a_observations">${escapeHtml(data.observations || '')}</textarea></div>
       </div>
     </div>
   `;
@@ -3963,13 +3933,14 @@ function collectAsisActivities(){
     name:item.querySelector('.a_name').value.trim(),
     actor:item.querySelector('.a_actor').value.trim(),
     type:item.querySelector('.a_type').value,
-    time:item.querySelector('.a_time').value.trim(),
     ava:item.querySelector('.a_ava').value,
-    problems:item.querySelector('.a_problems').value.trim(),
-    wastes:item.querySelector('.a_wastes').value.trim(),
     quickWin:item.querySelector('.a_qw').value,
     constraint:item.querySelector('.a_res').value,
-    note:item.querySelector('.a_note').value.trim()
+    problems:item.querySelector('.a_problems').value.trim(),
+    wastes:item.querySelector('.a_wastes').value.trim(),
+    note:item.querySelector('.a_note').value.trim(),
+    observations:item.querySelector('.a_observations').value.trim(),
+    flowSource:'validated_as_is'
   })).filter(x => x.name);
   updateTopStatus();
 }
@@ -4403,7 +4374,7 @@ function canonicalActivityType(value){
 }
 
 function buildSipocActivities(){
-  const source = safeArray(state.asis?.activities || []).map(normalizeActivity).filter(a => a.name);
+  const source = safeArray(state.asis?.activities || state.master?.flowActivities || state.master?.activities || []).map(normalizeActivity).filter(a => a.name);
   return source.map((a, idx, arr) => ({
     name: normalizeContractString(a.name || a.title || ''),
     type: canonicalActivityType(a.type),
@@ -4417,7 +4388,7 @@ function buildSipocActivities(){
     ext_customers: dedupeCatalog(a.ext_customers || []),
     is_start: a.is_start || idx === 0,
     is_end: a.is_end || idx === arr.length - 1,
-    note: normalizeContractString(a.note || a.problems || '')
+    note: normalizeContractString([a.note, a.observations, a.problems, a.wastes].filter(Boolean).join(' | '))
   }));
 }
 
@@ -5629,17 +5600,6 @@ function renderAnalysisValidation(){
   return issues;
 }
 
-function useLatestExternalBrief(){
-  const list = state.loads.brief || [];
-  if(!list.length){ showMsg('briefExternalMsg','warn','No hay briefs externos cargados.'); return; }
-  const latest = list[list.length - 1];
-  const normalized = normalizeBriefPayload(latest);
-  state.briefReview = { raw: normalized, approved:false };
-  renderBriefDraft();
-  renderBriefValidation();
-  showMsg('briefExternalMsg','ok','Se cargó el último brief externo al editor. Revísalo y apruébalo si corresponde.');
-}
-
 function renderBriefDraft(){
   const brief = getBriefPayload();
   if(!brief){ if(qs('briefEditor')) qs('briefEditor').value=''; if(qs('briefDetectedPreview')) qs('briefDetectedPreview').textContent='Sin brief generado.'; if(qs('briefApprovedKpi')) qs('briefApprovedKpi').textContent='No'; return; }
@@ -5657,17 +5617,21 @@ function buildBriefPrompt(master){
   const docs = safeArray(master.notes?.additionalDocuments).map(d => `DOCUMENTO: ${d.name}\n${d.content || d.preview || ''}`).join('\n\n----------------\n\n') || '[Sin documentos adicionales]';
   const prePack = JSON.stringify(safeArray(master.preInterview || master.pre || []), null, 2);
   const interviewPack = JSON.stringify(safeArray(master.interview || []), null, 2);
+  const flowPack = JSON.stringify(safeArray(master.flowActivities || master.activities || []), null, 2);
 
   const dynamicSection = `ENTRADA CONSOLIDADA COMPLETA (NO RESUMIR PREMATURAMENTE):
 ${JSON.stringify(master, null, 2)}
 
-EVIDENCIA DE PREENTREVISTAS (PRESERVAR MATICES, DIFERENCIAS Y CONTRADICCIONES):
+ACTIVIDADES OFICIALES DE FLUJO/SIPOC (ÚNICA FUENTE PARA CONSTRUIR EL FLUJO):
+${flowPack}
+
+EVIDENCIA DE CUESTIONARIOS / PREENTREVISTAS (USAR PARA CONTEXTO, PROBLEMAS, RESTRICCIONES, VISIÓN, VACÍOS Y EVIDENCIA; NO CREAR ACTIVIDADES DE FLUJO):
 ${prePack}
 
-EVIDENCIA DE ENTREVISTAS (PRESERVAR EXCEPCIONES, REGLAS IMPLÍCITAS, CONTROLES NO DOCUMENTADOS Y DECISIONES REALES):
+EVIDENCIA DE ENTREVISTA O SIPOC CONVERTIDO (PRESERVAR EXCEPCIONES, REGLAS IMPLÍCITAS, CONTROLES NO DOCUMENTADOS Y DECISIONES REALES):
 ${interviewPack}
 
-DOCUMENTOS ADICIONALES:
+DOCUMENTOS ADICIONALES (USAR COMO EVIDENCIA PARA ANÁLISIS, PROBLEMAS, NO CONFORMIDADES, RIESGOS, DESPERDICIOS, QUICK WINS Y MEJORAS; NO CREAR ACTIVIDADES DE FLUJO SALVO QUE YA EXISTAN EN LA SECCIÓN OFICIAL DE FLUJO/SIPOC):
 ${docs}`;
 
   const hardening = `
@@ -5683,6 +5647,10 @@ REGLAS CRÍTICAS DE PRESERVACIÓN DE EVIDENCIA:
 - NO confundas áreas o departamentos con procesos reales.
 - NO aceptes definiciones vagas del tipo “gestionar”, “coordinar”, “dar seguimiento” sin concretar qué ocurre realmente.
 - INCLUYE lo que todavía debe validarse antes del análisis profundo.
+- El flujo de actividades del SIPOC debe salir SOLO de "ACTIVIDADES OFICIALES DE FLUJO/SIPOC".
+- No agregues actividades al flujo desde cuestionarios, transcripciones, informes, anexos o archivos adicionales.
+- Si un cuestionario o archivo adicional menciona tareas o eventos, úsalo como evidencia para problemas, vacíos, desperdicios, restricciones, riesgos o mejoras, no como nueva actividad del flujo.
+- Si el insumo viene de SIPOC existente y faltan campos de entrevista, déjalos vacíos; no inventes.
 
 DEBES ENTREGAR ADEMÁS:
 - flowSummary
@@ -5798,6 +5766,7 @@ function generateAnalysisPromptFromApprovedBrief(){
   const master = state.master || mergeMaster();
   const c = master.context || state.context || {};
   const evidencePack = {
+    officialFlowActivities: safeArray(master.flowActivities || master.activities || []),
     preInterview: safeArray(master.preInterview || master.pre || []),
     interview: safeArray(master.interview || []),
     additionalDocuments: safeArray(master.notes?.additionalDocuments).map(d => ({name:d.name, preview:d.preview || d.content || ''})),
@@ -5824,6 +5793,9 @@ REGLAS CRÍTICAS DE ANÁLISIS CONSULTIVO:
 - DEFINE indicadores de control además de indicadores resultado.
 - El TO BE debe ser implementable, conectado al AS IS y defendible operativamente.
 - La salida debe servir simultáneamente para LMP, Evaluador documental, Integrador y SIPOC Builder.
+- Para AS IS y SIPOC Builder usa únicamente officialFlowActivities como fuente de actividades del flujo.
+- Usa cuestionarios, transcripciones, informes y documentos adicionales para enriquecer problemas, desperdicios, riesgos, no conformidades, quick wins, restricciones, indicadores y mejoras; no los conviertas en nuevas actividades del flujo.
+- Si una evidencia adicional contradice el flujo, repórtalo como contradicción o vacío, no como actividad nueva.
 
 OBLIGATORIO PRESERVAR Y REPORTAR:
 - evidence_highlights
@@ -5933,6 +5905,21 @@ ${JSON.stringify(tobe, null, 2)}`;
 function normalizeSipocJsonAsInterview(parsed){
   const source = parsed || {};
   const draft = source.lmpSipocDraft || source.sipocDraft || source.sipoc_input || source.sipoc || source.documented_as_is || source.lmp_load_input?.brief_seed || source;
+  const toCatalogArray = (value) => Array.isArray(value) ? value : splitItems(value);
+  const toStructuredSuppliers = (suppliersValue, inputsValue) => {
+    const inputs = toCatalogArray(inputsValue);
+    return toCatalogArray(suppliersValue).map((item, index) => {
+      if(item && typeof item === 'object') return { name:item.name || '', input:item.input || item.value || inputs[index] || '' };
+      return { name:String(item || '').trim(), input:inputs[index] || '' };
+    }).filter(item => item.name || item.input);
+  };
+  const toStructuredCustomers = (customersValue, outputsValue) => {
+    const outputs = toCatalogArray(outputsValue);
+    return toCatalogArray(customersValue).map((item, index) => {
+      if(item && typeof item === 'object') return { name:item.name || '', output:item.output || item.value || outputs[index] || '' };
+      return { name:String(item || '').trim(), output:outputs[index] || '' };
+    }).filter(item => item.name || item.output);
+  };
   const activities = safeArray(
     source.activities ||
     source.documented_as_is?.activities ||
@@ -5941,13 +5928,26 @@ function normalizeSipocJsonAsInterview(parsed){
     source.lmp_load_input?.brief_seed?.activities ||
     draft.activities ||
     []
-  );
-  const suppliers = safeArray(source.sipocStructured?.suppliers || draft.suppliers).map(item => typeof item === 'string' ? {name:item,input:''} : item);
-  const customers = safeArray(source.sipocStructured?.customers || draft.customers).map(item => typeof item === 'string' ? {name:item,output:''} : item);
-  const internalActors = safeArray(source.sipocStructured?.internalActors || draft.actors || draft.internalActors);
+  ).map((activity, index, list) => {
+    const normalized = normalizeActivity(activity);
+    const previous = safeArray(normalized.previous).length ? safeArray(normalized.previous) : (index === 0 ? [] : [normalizeActivity(list[index - 1]).name].filter(Boolean));
+    const next = safeArray(normalized.next).length ? safeArray(normalized.next) : (index === list.length - 1 ? [] : [normalizeActivity(list[index + 1]).name].filter(Boolean));
+    return Object.assign({}, normalized, {
+      type: ['operation','decision'].includes(normalized.type) ? normalized.type : 'operation',
+      previous,
+      next,
+      flowSource: 'sipoc',
+      is_start: normalized.is_start || index === 0,
+      is_end: normalized.is_end || index === list.length - 1
+    });
+  });
+  const suppliers = toStructuredSuppliers(source.sipocStructured?.suppliers || draft.suppliers || source.sipoc?.suppliers, draft.inputs || source.sipoc?.inputs);
+  const customers = toStructuredCustomers(source.sipocStructured?.customers || draft.customers || source.sipoc?.customers, draft.outputs || source.sipoc?.outputs);
+  const internalActors = toCatalogArray(source.sipocStructured?.internalActors || draft.actors || draft.internalActors || source.sipoc?.actors);
   return Object.assign({}, source, {
     instrument: source.instrument || 'interview',
     source_type: source.source_type || 'existing_sipoc_conversion',
+    flowSource: 'sipoc',
     context: source.context || state.context || {},
     sipocStructured: { internalActors, suppliers, customers },
     activities,
@@ -6114,9 +6114,16 @@ function mergeMaster(){
     context: mergeContextSources(),
     sipoc: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documentsSystems:[] },
     activities: [],
+    flowActivities: [],
     issues: { keyIssues:[], delays:[], rework:[], constraints:[], frictions:[], quickWins:[], futureVision:[], wastes:[] },
     indicators: [],
-    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: '' }
+    notes: {
+      analystNotes:[],
+      preInterviewNotes:[],
+      additionalDocuments: state.loads.docs || [],
+      docNotes: '',
+      rule: 'Las actividades de flujo/SIPOC provienen solo de JSON de entrevista o JSON de SIPOC convertido. Cuestionarios y adicionales alimentan contexto, problemas, evidencias y análisis, no el flujo.'
+    }
   };
 
   const seenAct = new Set();
@@ -6155,11 +6162,30 @@ function mergeMaster(){
     splitItems(item.sipoc?.outputs).forEach(v => uniquePush(master.sipoc.outputs, v));
     splitItems(item.sipoc?.customers).forEach(v => uniquePush(master.sipoc.customers, v));
     splitItems(item.sipoc?.actors).forEach(v => uniquePush(master.sipoc.actors, v));
+    const sourceKind = item.flowSource === 'sipoc' || item.source_type === 'existing_sipoc_conversion' ? 'sipoc' : 'interview';
     (item.activities || []).forEach(a => {
-      const key = [a.name, a.actor, a.type, a.previous, a.next].join('|').toLowerCase();
+      const key = [a.name, a.actor, a.type, a.previous, a.next, sourceKind].join('|').toLowerCase();
       if(!seenAct.has(key) && a.name){
         seenAct.add(key);
-        master.activities.push({ name:a.name||'', actor:a.actor||'', type:a.type||'operation', document:a.document||'', previous:a.previous||'', next:a.next||'', ext_suppliers:a.ext_suppliers||[], ext_inputs:a.ext_inputs||[], ext_outputs:a.ext_outputs||[], ext_customers:a.ext_customers||[], time:'', ava:'NNVA', problems:'', wastes:'', quickWin:'No', constraint:'No', note:[a.note, a.observations].filter(Boolean).join(' | ') });
+        const activity = {
+          name:a.name||'',
+          actor:a.actor||'',
+          type:['operation','decision'].includes(a.type) ? a.type : 'operation',
+          document:a.document||'',
+          previous:safeArray(a.previous),
+          next:safeArray(a.next),
+          ext_suppliers:a.ext_suppliers||[],
+          ext_inputs:a.ext_inputs||[],
+          ext_outputs:a.ext_outputs||[],
+          ext_customers:a.ext_customers||[],
+          problems:a.problems || '',
+          wastes:a.wastes || '',
+          note:a.note || '',
+          observations:a.observations || '',
+          flowSource:sourceKind
+        };
+        master.activities.push(activity);
+        master.flowActivities.push(activity);
       }
     });
     splitItems(item.painPoints?.problems).forEach(v => uniquePush(master.issues.keyIssues, v));
@@ -6181,6 +6207,9 @@ function mergeMaster(){
     splitItems(item.futureState?.futureVision).forEach(v => uniquePush(master.issues.futureVision, v));
     splitItems(item.indicators).forEach(v => uniquePush(master.indicators, v));
   });
+  master.preInterview = allPre;
+  master.interview = allInterview;
+  master.briefInputs = allBrief;
   state.master = master;
   if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(master, null, 2);
   if(qs('masterPreview')) qs('masterPreview').textContent = JSON.stringify(master, null, 2);
@@ -6312,6 +6341,7 @@ function normalizeActivity(item){
   const description = item.note || item.notes || item.description || item.descripcion || item.detail || item.detalle || '';
   const problems = item.problems || item.problemas || item.issue || item.issues || '';
   const wastes = item.wastes || item.desperdicios || item.waste || '';
+  const observations = item.observations || item.observaciones || item.analystObservations || item.observation || '';
   const quickRaw = item.quickWin || item.quick_win || item.quickwin || item.quick_win_candidate || item.quickWinCandidate || 'No';
   const resRaw = item.constraint || item.restriction || item.restriccion || item.is_constraint || 'No';
   return {
@@ -6330,6 +6360,7 @@ function normalizeActivity(item){
     controls: normalizeContractString(controls),
     handoff: normalizeContractString(handoff),
     exceptions: normalizeContractString(exceptions),
+    observations: normalizeContractString(observations),
     ext_suppliers: dedupeCatalog(item.ext_suppliers || item.external_suppliers || item.suppliers || []),
     ext_inputs: dedupeCatalog(item.ext_inputs || item.external_inputs || item.inputs || []),
     ext_outputs: dedupeCatalog(item.ext_outputs || item.external_outputs || item.outputs || []),
@@ -6340,26 +6371,32 @@ function normalizeActivity(item){
   };
 }
 
+function mergeFlowActivitiesWithAnalysis(flowActivities, analyzedActivities){
+  const analyzed = safeArray(analyzedActivities).map(normalizeActivity).filter(a => a.name);
+  const byName = new Map(analyzed.map(a => [a.name.toLowerCase(), a]));
+  return safeArray(flowActivities).map((item, idx) => {
+    const base = normalizeActivity(item);
+    const match = byName.get(base.name.toLowerCase()) || analyzed[idx] || {};
+    return Object.assign({}, base, {
+      ava: match.ava || base.ava || 'NNVA',
+      problems: match.problems || base.problems || '',
+      wastes: match.wastes || base.wastes || '',
+      quickWin: match.quickWin || base.quickWin || 'No',
+      constraint: match.constraint || base.constraint || 'No',
+      note: match.note || base.note || '',
+      observations: match.observations || base.observations || ''
+    });
+  }).filter(a => a.name);
+}
+
 function extractAsIsActivitiesFromPayload(payload){
   const p = payload || {};
   const candidates = [
-    p.sb_contract?.sipoc_input?.activities,
-    p.sipoc_builder_ready?.sipoc_input?.activities,
-    p.sbContract?.sipoc_input?.activities,
-    p.sipocBuilderReady?.sipoc_input?.activities,
-    p.as_is?.activities,
-    p.asIs?.activities,
-    p.as_is?.stage_details,
-    p.asIs?.stage_details,
-    p.as_is?.stages,
-    p.asIs?.stages,
+    p.flowActivities,
     p.activities,
-    p.process?.activities,
-    p.sipoc?.activities,
-    p.sipoc?.process,
-    p.sipoc_input?.activities,
-    p.structured_process?.activities,
-    p.integration_input?.activities
+    p.lmpSipocDraft?.activities,
+    p.sipocDraft?.activities,
+    p.sipoc_input?.activities
   ];
   for(const candidate of candidates){
     const arr = safeArray(candidate).map(normalizeActivity).filter(a => a.name);
@@ -6534,6 +6571,10 @@ function processIAResponse(){
   try{
     const parsed = extractJsonFromText(raw);
     const data = normalizeAnalysisPayload(parsed);
+    const officialFlowBase = safeArray(state.asis?.activities).length
+      ? state.asis.activities.map(a => Object.assign({}, a))
+      : safeArray(state.master?.flowActivities || state.master?.activities || []).map(a => Object.assign({}, a));
+    const officialFlowActs = mergeFlowActivitiesWithAnalysis(officialFlowBase, data.as_is.activities);
 
     if(!data.improvements.length && data.findings.quickWins.length){
       data.improvements = data.findings.quickWins.map((q, i) => normalizeImprovement({
@@ -6554,7 +6595,7 @@ function processIAResponse(){
         purpose: data.context.purpose || state.context?.purpose || ''
       },
       summary: {
-        totalActivities: data.as_is.activities.length,
+        totalActivities: officialFlowActs.length,
         ava: {
           VA_pct: data.ava.distribution?.VA_pct || data.ava.distribution?.VA || 0,
           NNVA_pct: data.ava.distribution?.NNVA_pct || data.ava.distribution?.NNVA || 0,
@@ -6571,7 +6612,7 @@ function processIAResponse(){
       quickWins: data.findings.quickWins,
       constraints: data.findings.restrictions,
       risks: data.findings.risks,
-      activities: data.as_is.activities,
+      activities: officialFlowActs,
       avaRaw: data.ava,
       improvements: data.improvements,
       onePage: data.one_page,
@@ -6615,8 +6656,8 @@ function processIAResponse(){
 
     state.context = Object.assign({}, state.context || {}, data.context || {});
 
-    if(data.as_is.activities.length){
-      state.asis.activities = data.as_is.activities.map(a => Object.assign({}, a));
+    if(officialFlowActs.length){
+      state.asis.activities = officialFlowActs.map(a => Object.assign({}, a));
     }
 
     state.tobe.improvements = data.improvements.map(item => Object.assign({}, item, {
@@ -6626,7 +6667,7 @@ function processIAResponse(){
     }));
 
     if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = JSON.stringify(data, null, 2);
-    if(qs('iaActsKpi')) qs('iaActsKpi').textContent = data.as_is.activities.length;
+    if(qs('iaActsKpi')) qs('iaActsKpi').textContent = officialFlowActs.length;
     if(qs('iaImpKpi')) qs('iaImpKpi').textContent = data.improvements.length;
     if(qs('iaQwKpi')) qs('iaQwKpi').textContent = data.findings.quickWins.length;
     if(qs('iaResKpi')) qs('iaResKpi').textContent = data.findings.restrictions.length;
@@ -6736,14 +6777,16 @@ function renderAnalysisFromState(){
 }
 
 function hydrateAsIsFromMaster(){
+  if(safeArray(state.asis?.activities).length){
+    renderAsIsActivities();
+    updateTopStatus();
+    return true;
+  }
   const sources = [
-    state.analysis?.raw,
-    state.analysisRun?.raw,
-    state.analysis,
-    state.master,
-    state.master?.raw,
+    { flowActivities: state.master?.flowActivities || [] },
     { activities: state.master?.activities || [] },
-    { sipoc: state.master?.sipoc || {} }
+    ...safeArray(state.loads?.interview || []),
+    state.interview
   ];
   for(const source of sources){
     const acts = extractAsIsActivitiesFromPayload(source);
@@ -6967,12 +7010,11 @@ Esta etapa tiene dos subfases.
 SUBFASE A - CONSTRUCCIÓN DEL BRIEF
 Entradas:
 - JSON de preentrevista (pueden ser varios).
-- JSON de entrevista (pueden ser varios).
-- Brief externo opcional.
-- Archivos adicionales.
+- JSON de entrevista o JSON de SIPOC convertido (fuente oficial del flujo).
+- Archivos adicionales para contexto, evidencias, problemas, riesgos y análisis.
 
 Pasos:
-1. Cargar los JSON de preentrevista y entrevista.
+1. Cargar los JSON de preentrevista y entrevista o SIPOC convertido.
 2. Verificar que las cargas sean acumulativas y no reemplacen archivos anteriores.
 3. Generar el objeto consolidado.
 4. Copiar el Prompt MASTER A.
@@ -7002,15 +7044,14 @@ La respuesta debe alimentar:
 8. AS IS
 --------
 Objetivo:
-Revisar la estructura actual del proceso propuesta por IA. El usuario no debe construirla desde cero.
+Revisar la estructura actual del proceso desde el flujo oficial cargado en entrevista o SIPOC convertido.
 
-Debe aparecer automáticamente si el análisis contiene:
-- as_is.activities
-- activities
-- sipoc.activities
-- sipoc.process
-- sipoc_input.activities
-- integration_input.activities
+Debe aparecer automáticamente desde:
+- flowActivities del objeto maestro.
+- activities de entrevista.
+- activities del JSON de SIPOC convertido.
+
+No debe crear actividades desde cuestionarios, transcripciones, informes, anexos o archivos adicionales.
 
 Validar:
 - Secuencia de actividades.
