@@ -973,7 +973,8 @@ body{font-size:14px !important}
 .hdr.sb-hero-lmp-structure{grid-area:hero !important}
 .nav.sb-stagebar{grid-area:side !important}
 #gmsg{grid-area:msg !important;margin-bottom:0 !important}
-.tab-content{grid-area:main !important;align-self:start !important}
+.tab-content{grid-area:main !important;align-self:start !important;margin-top:0 !important}
+#tab_capture > .panel{margin-top:0 !important}
 
 .choice-list{
   display:flex;
@@ -1142,10 +1143,8 @@ body{font-size:14px !important}
         <div class="field"><label>Documento / sistema</label><select id="a_doc"><option value="">&#8212; Ninguno &#8212;</option></select></div>
         <div class="field"><label>Actividad previa</label><input id="a_prev_text" placeholder="Escribe la actividad previa si aplica"/></div>
         <div class="field"><label>Actividad siguiente</label><input id="a_next_text" placeholder="Escribe la actividad siguiente si aplica"/></div>
-        <div class="field"><label>Proveedores asociados</label><select id="a_sup" multiple></select></div>
-        <div class="field"><label>Entradas asociadas</label><div id="a_inp_checks" class="choice-list"></div><select id="a_inp" multiple class="hidden"></select></div>
-        <div class="field"><label>Salidas asociadas</label><div id="a_outp_checks" class="choice-list"></div><select id="a_outp" multiple class="hidden"></select></div>
-        <div class="field"><label>Clientes asociados</label><select id="a_cus" multiple></select></div>
+        <div class="field"><label>Entradas/proveedores asociados</label><div id="a_entry_checks" class="choice-list"></div></div>
+        <div class="field"><label>Salidas/clientes asociados</label><div id="a_exit_checks" class="choice-list"></div></div>
         <div class="field full"><label>Nota de la actividad</label><textarea id="a_note" placeholder="Ej: Si No -> Corregir | Si S&iacute; -> Continuar"></textarea></div>
         <div class="field full"><label>Observaciones</label><textarea id="a_observations" placeholder="Observaciones adicionales de la actividad"></textarea></div>
       </div>
@@ -1523,6 +1522,7 @@ const S = {
   tplXml: '', idRef: '',
   xmlF1: '', xmlF2: '', xmlF3: '', xmlF4: '', xmlFinal: '',
   manualLocked: false,
+  editActIndex: null,
   loadTrace: { source:'', loadedAt:'', processName:'', activityCount:0, warningsCount:0, blockingCount:0 },
   cats: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documents:[] },
   acts: [],
@@ -1691,6 +1691,7 @@ function renderCatTable(type) {
 }
 
 function syncSelects() {
+  const selectedValues = id => Array.from($(id)?.querySelectorAll('input:checked') || []).map(o => o.value);
   const setOpts = (id, items, multi) => {
     const el = $(id); if (!el) return;
     const prev = Array.from(el.selectedOptions).map(o => o.value);
@@ -1711,16 +1712,105 @@ function syncSelects() {
       return `<label><input type="checkbox" value="${i}"${checked}/> ${ex(name)}</label>`;
     }).join('');
   };
+  const entryPairs = buildEntryPairs();
+  const exitPairs = buildExitPairs();
+  const setPairChecks = (wrapId, pairs) => {
+    const wrap = $(wrapId); if (!wrap) return;
+    const prev = selectedValues(wrapId);
+    if (!pairs.length) {
+      wrap.innerHTML = '<span class="choice-empty">Sin elementos disponibles.</span>';
+      return;
+    }
+    wrap.innerHTML = pairs.map((pair, i) => {
+      const checked = prev.includes(String(i)) ? ' checked' : '';
+      return `<label><input type="checkbox" value="${i}"${checked}/> ${ex(pair.label)}</label>`;
+    }).join('');
+  };
   setOpts('a_actor', S.cats.actors, false);
   setOpts('a_doc',   S.cats.documents, false);
   setOpts('a_prev',  S.acts, true);
   setOpts('a_next',  S.acts, true);
-  setOpts('a_sup',   S.cats.suppliers, true);
-  setOpts('a_inp',   S.cats.inputs, true);
-  setOpts('a_outp',  S.cats.outputs, true);
-  setOpts('a_cus',   S.cats.customers, true);
-  setChecks('a_inp_checks', S.cats.inputs);
-  setChecks('a_outp_checks', S.cats.outputs);
+  setPairChecks('a_entry_checks', entryPairs);
+  setPairChecks('a_exit_checks', exitPairs);
+}
+
+function uniqueStrings(items){
+  const out = [];
+  const seen = new Set();
+  (items || []).forEach(item => {
+    const clean = String(item || '').trim();
+    const key = clean.toLowerCase();
+    if(!clean || seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  });
+  return out;
+}
+
+function buildEntryPairs(){
+  const pairs = [];
+  S.cats.suppliers.forEach(s => {
+    const supplier = s.name || '';
+    const input = s.input || '';
+    pairs.push({ supplier, input, label: input ? `${supplier} \u2192 ${input}` : supplier });
+  });
+  S.cats.inputs.forEach(inputItem => {
+    const input = inputItem.name || '';
+    const exists = pairs.some(p => p.input && p.input.toLowerCase() === input.toLowerCase());
+    if(!exists) pairs.push({ supplier: inputItem.sourceSupplier || '', input, label: inputItem.sourceSupplier ? `${inputItem.sourceSupplier} \u2192 ${input}` : input });
+  });
+  return pairs.filter(p => p.supplier || p.input);
+}
+
+function buildExitPairs(){
+  const pairs = [];
+  S.cats.customers.forEach(c => {
+    const customer = c.name || '';
+    const output = c.output || '';
+    pairs.push({ customer, output, label: output ? `${output} \u2192 ${customer}` : customer });
+  });
+  S.cats.outputs.forEach(outputItem => {
+    const output = outputItem.name || '';
+    const exists = pairs.some(p => p.output && p.output.toLowerCase() === output.toLowerCase());
+    if(!exists) pairs.push({ customer: outputItem.targetCustomer || '', output, label: outputItem.targetCustomer ? `${output} \u2192 ${outputItem.targetCustomer}` : output });
+  });
+  return pairs.filter(p => p.customer || p.output);
+}
+
+function checkedPairValues(wrapId, pairs){
+  return Array.from($(wrapId)?.querySelectorAll('input:checked') || [])
+    .map(o => pairs[parseInt(o.value)])
+    .filter(Boolean);
+}
+
+function setPairSelection(wrapId, pairs, activity, mode){
+  const wrap = $(wrapId); if(!wrap) return;
+  const leftValues = mode === 'entry' ? (activity.ext_suppliers || []) : (activity.ext_outputs || []);
+  const rightValues = mode === 'entry' ? (activity.ext_inputs || []) : (activity.ext_customers || []);
+  const left = new Set(leftValues.map(x => String(x || '').toLowerCase()));
+  const right = new Set(rightValues.map(x => String(x || '').toLowerCase()));
+  Array.from(wrap.querySelectorAll('input')).forEach(input => {
+    const pair = pairs[parseInt(input.value)] || {};
+    if(mode === 'entry'){
+      input.checked = (pair.supplier && left.has(String(pair.supplier).toLowerCase())) ||
+        (pair.input && right.has(String(pair.input).toLowerCase()));
+    }else{
+      input.checked = (pair.output && left.has(String(pair.output).toLowerCase())) ||
+        (pair.customer && right.has(String(pair.customer).toLowerCase()));
+    }
+  });
+}
+
+function resetActivityForm(){
+  ['a_name','a_note','a_prev_text','a_next_text','a_observations'].forEach(id => { if($(id)) $(id).value = ''; });
+  if($('a_type')) $('a_type').value = 'operation';
+  if($('a_actor')) $('a_actor').value = '';
+  if($('a_doc')) $('a_doc').value = '';
+  ['a_entry_checks','a_exit_checks'].forEach(id => {
+    if($(id)) Array.from($(id).querySelectorAll('input')).forEach(o => o.checked = false);
+  });
+  S.editActIndex = null;
+  if($('btn_add_act_row')) $('btn_add_act_row').textContent = '+ Agregar actividad';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1731,13 +1821,17 @@ function addActivity() {
   const actorIdx = $('a_actor').value;
   if (!name) { gMsg('warn', 'La actividad debe tener nombre.'); return; }
   if (actorIdx === '') { gMsg('warn', 'Selecciona un actor.'); return; }
-  const sv = id => Array.from($(id).selectedOptions).map(o => parseInt(o.value));
-  const checked = id => Array.from($(id)?.querySelectorAll('input:checked') || []).map(o => parseInt(o.value));
   const splitTyped = value => String(value || '').split(/\n|;|\|/).map(x => x.trim()).filter(Boolean);
   const previous = splitTyped($('a_prev_text')?.value || '');
   const next = splitTyped($('a_next_text')?.value || '');
+  const entryPairs = buildEntryPairs();
+  const exitPairs = buildExitPairs();
+  const entries = checkedPairValues('a_entry_checks', entryPairs);
+  const exits = checkedPairValues('a_exit_checks', exitPairs);
+  const editIdx = Number.isInteger(S.editActIndex) ? S.editActIndex : null;
+  const previousOrder = editIdx !== null ? (S.acts[editIdx]?.order || editIdx + 1) : S.acts.length + 1;
   const act = {
-    order: S.acts.length + 1,
+    order: previousOrder,
     name,
     type: $('a_type').value,
     actor: S.cats.actors[parseInt(actorIdx)]?.name || '',
@@ -1745,32 +1839,53 @@ function addActivity() {
     document: $('a_doc').value !== '' ? (S.cats.documents[parseInt($('a_doc').value)]?.name || '') : '',
     previous,
     next,
-    ext_suppliers: sv('a_sup').map(i => S.cats.suppliers[i]?.name).filter(Boolean),
-    ext_inputs:    checked('a_inp_checks').map(i => S.cats.inputs[i]?.name).filter(Boolean),
-    ext_outputs:   checked('a_outp_checks').map(i => S.cats.outputs[i]?.name).filter(Boolean),
-    ext_customers: sv('a_cus').map(i => S.cats.customers[i]?.name).filter(Boolean),
+    ext_suppliers: uniqueStrings(entries.map(x => x.supplier)),
+    ext_inputs: uniqueStrings(entries.map(x => x.input)),
+    ext_outputs: uniqueStrings(exits.map(x => x.output)),
+    ext_customers: uniqueStrings(exits.map(x => x.customer)),
+    entry_links: entries,
+    exit_links: exits,
     is_start: false,
     is_end: false,
     note: $('a_note').value.trim(),
     observations: $('a_observations') ? $('a_observations').value.trim() : ''
   };
-  S.acts.push(act);
-  $('a_name').value = ''; $('a_note').value = '';
-  if ($('a_prev_text')) $('a_prev_text').value = '';
-  if ($('a_next_text')) $('a_next_text').value = '';
-  if ($('a_observations')) $('a_observations').value = '';
-  ['a_prev','a_next','a_sup','a_inp','a_outp','a_cus'].forEach(id => {
-    if ($(id)) Array.from($(id).options).forEach(o => o.selected = false);
-  });
-  ['a_inp_checks','a_outp_checks'].forEach(id => {
-    if ($(id)) Array.from($(id).querySelectorAll('input')).forEach(o => o.checked = false);
-  });
+  if(editIdx !== null) S.acts[editIdx] = act;
+  else S.acts.push(act);
+  resetActivityForm();
   renderActsTable();
   syncSelects();
-  gMsg('ok', 'Actividad agregada.');
+  gMsg('ok', editIdx !== null ? 'Actividad actualizada.' : 'Actividad agregada.');
 }
 
-function removeAct(idx) { S.acts.splice(idx, 1); renderActsTable(); syncSelects(); }
+function loadActForEdit(idx){
+  const a = S.acts[idx];
+  if(!a) return;
+  S.editActIndex = idx;
+  $('a_name').value = a.name || '';
+  $('a_type').value = a.type || 'operation';
+  $('a_prev_text').value = (a.previous || []).join('\n');
+  $('a_next_text').value = (a.next || []).join('\n');
+  $('a_note').value = a.note || '';
+  if($('a_observations')) $('a_observations').value = a.observations || '';
+  syncSelects();
+  const actorIdx = S.cats.actors.findIndex(x => String(x.name || '').toLowerCase() === String(a.actor || '').toLowerCase());
+  if(actorIdx >= 0) $('a_actor').value = String(actorIdx);
+  const docIdx = S.cats.documents.findIndex(x => String(x.name || '').toLowerCase() === String(a.document || '').toLowerCase());
+  if(docIdx >= 0) $('a_doc').value = String(docIdx);
+  setPairSelection('a_entry_checks', buildEntryPairs(), a, 'entry');
+  setPairSelection('a_exit_checks', buildExitPairs(), a, 'exit');
+  if($('btn_add_act_row')) $('btn_add_act_row').textContent = 'Guardar actividad';
+  $('a_name').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function removeAct(idx) {
+  S.acts.splice(idx, 1);
+  S.acts.forEach((a, i) => a.order = i + 1);
+  if(S.editActIndex === idx) resetActivityForm();
+  renderActsTable();
+  syncSelects();
+}
 
 function renderActsTable() {
   $('act_count').textContent = S.acts.length + ' actividades';
@@ -1782,7 +1897,7 @@ function renderActsTable() {
     <td>${i+1}</td><td>${ex(a.name)}</td><td>${ex(a.actor)}</td><td>${ex(a.type)}</td>
     <td>${ex((a.previous||[]).join(', '))}</td><td>${ex((a.next||[]).join(', '))}</td>
     <td>${ex((a.ext_inputs||[]).join(', '))}</td><td>${ex((a.ext_outputs||[]).join(', '))}</td>
-    <td><button class="sm" onclick="removeAct(${i})">\u2715</button></td>
+    <td><button class="sm" onclick="loadActForEdit(${i})">Editar</button> <button class="sm" onclick="removeAct(${i})">\u2715</button></td>
   </tr>`).join('');
 }
 
@@ -1850,6 +1965,9 @@ function buildSP() {
       edge_style: 'orthogonal_elbow',
       avoid_crossing: true,
       minimize_routing_nodes: true,
+      route_strategy: 'orthogonal_with_waypoints',
+      waypoint_policy: 'use_waypoints_before_route_nodes',
+      allow_route_anchors: true,
       peripheral_connection_policy: 'connect_only_declared_ext_refs'
     },
     activities: S.acts.map((a, idx) => Object.assign({}, a, {
@@ -1881,7 +1999,42 @@ function normalizeText(v) {
 }
 
 function normalizeNoteText(v) {
-  return String(v == null ? '' : v).trim();
+  if(v == null) return '';
+  if(Array.isArray(v)) return v.map(normalizeNoteText).filter(Boolean).join(' ');
+  if(typeof v === 'object'){
+    return Object.entries(v)
+      .map(([key, val]) => {
+        const text = normalizeNoteText(val);
+        return text ? `${key}: ${text}` : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+  }
+  return String(v).replace(/\s+/g, ' ').replace(/\[object Object\]/gi, '').trim();
+}
+
+function buildActivityNotePack(activities){
+  let counter = 0;
+  const refs = new Map();
+  const notes = [];
+  (activities || []).forEach((activity, idx) => {
+    const text = normalizeNoteText(activity?.note || activity?.notes || '');
+    if(!text) return;
+    counter += 1;
+    refs.set(idx, counter);
+    notes.push({
+      number: counter,
+      activity: normalizeText(activity?.name || `Actividad ${idx + 1}`),
+      text
+    });
+  });
+  return { refs, notes };
+}
+
+function buildFooterNotesFromActivities(activities){
+  return buildActivityNotePack(activities).notes
+    .map(item => `${item.number}. ${item.activity}: ${item.text}`)
+    .join('\n');
 }
 
 function normalizeCatalogItems(items) {
@@ -1993,13 +2146,6 @@ function validateSipocContract(sp) {
   if (!sp.customers.length) warnings.push('No se detectaron customers.');
   if (!sp.actors.length) warnings.push('No se detectaron actores en catálogo.');
   if (!sp.layout_hints && !sp.layoutHints) warnings.push('No se detectó layout_hints; se usará el layout horizontal base del Builder.');
-  const hasPeripheralLinks = (sp.activities || []).some(a =>
-    (a.ext_suppliers || []).length ||
-    (a.ext_inputs || []).length ||
-    (a.ext_outputs || []).length ||
-    (a.ext_customers || []).length
-  );
-  if (sp.activities?.length && !hasPeripheralLinks) warnings.push('Las actividades no tienen conexiones ext_suppliers/ext_inputs/ext_outputs/ext_customers; la capa SIPOC puede quedar incompleta.');
   return {
     valid: blockingErrors.length === 0,
     blockingErrors,
@@ -2210,6 +2356,8 @@ function genTemplate() {
   const orderedActs = acts
     .map((a, idx) => Object.assign({}, a, { __idx: idx, order: Number(a.order || a.sequence || idx + 1) || idx + 1 }))
     .sort((a, b) => (a.order - b.order) || (a.__idx - b.__idx));
+  const activityNotePack = buildActivityNotePack(orderedActs);
+  S.activityNotes = activityNotePack.notes;
 
   // Layout constants
   const COL_S=190, COL_G=10, LANE_W=290, LANE_HDR=38;
@@ -2295,7 +2443,9 @@ function genTemplate() {
       ? `rhombus;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`
       : `rounded=1;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`;
 
-    cells.push(`<mxCell id="${nidV}" value="${ex(a.name)}" style="${style}" vertex="1" parent="1"><mxGeometry x="${Math.round(nx)}" y="${Math.round(absY)}" width="${Math.round(nw)}" height="${Math.round(nh)}" as="geometry"/></mxCell>`);
+    const noteRef = activityNotePack.refs.get(idx);
+    const activityLabel = noteRef ? `${a.name} (${noteRef})` : a.name;
+    cells.push(`<mxCell id="${nidV}" value="${ex(activityLabel)}" style="${style}" vertex="1" parent="1"><mxGeometry x="${Math.round(nx)}" y="${Math.round(absY)}" width="${Math.round(nw)}" height="${Math.round(nh)}" as="geometry"/></mxCell>`);
   });
 
   // SIPOC item nodes
@@ -2393,7 +2543,7 @@ function injectHeader(xmlStr, sp) {
   const code    = sp.process_code || '';
   const name    = sp.process_name || '';
   const purpose = sp.purpose || '';
-  const notes   = (sp.notes || '').trim();
+  const notes   = buildFooterNotesFromActivities(sp.activities || []);
 
   // Header layout:
   // Line 1: [código 90px] [nombre — immediately after, left-aligned]
@@ -2475,6 +2625,8 @@ REGLAS:
 - previous y next usan nombres de actividades, no IDs.
 - Si una decisión tiene rutas Sí/No u otra rama, registra branch_label o route_label en note.
 - Conecta elementos SIPOC solo cuando estén explícitos o sean obvios en el documento.
+- note debe ser siempre texto plano. Nunca devuelvas objetos, arrays de objetos ni "[object Object]" dentro de notes o activity.note.
+- Si hay notas aclaratorias del diagrama, ubícalas en la actividad correspondiente; no las acumules como objetos en notes.
 
 CONTRATO JSON:
 {
@@ -2498,6 +2650,9 @@ CONTRATO JSON:
       "edge_style": "orthogonal_elbow",
       "avoid_crossing": true,
       "minimize_routing_nodes": true,
+      "route_strategy": "orthogonal_with_waypoints",
+      "waypoint_policy": "use_waypoints_before_route_nodes",
+      "allow_route_anchors": true,
       "peripheral_connection_policy": "connect_only_declared_ext_refs"
     },
     "activities": []
@@ -2541,7 +2696,8 @@ REGLAS DE CONEXIÓN:
 - Usa edge="1" parent="1".
 - Usa conectores ortogonales/elbow.
 - Evita cruces de líneas; aprovecha que las actividades están en filas por secuencia y columnas por actor.
-- No agregues nodos de ruteo salvo que sea imprescindible.
+- Primero usa waypoints en mxGeometry de los edges para evitar cruces; no agregues nodos de ruteo en F2 salvo que sea imprescindible.
+- Para waypoints usa <Array as="points"><mxPoint x="..." y="..."/></Array> dentro de mxGeometry del edge.
 - Para decisiones, usa las rutas o etiquetas disponibles en note, branch_label o route_label.
 - Si previous/next contradicen el orden visual, respeta previous/next y evita cruzar líneas con puntos intermedios simples.
 
@@ -2564,9 +2720,10 @@ Agregar la capa SIPOC periférica sin modificar el flujo interno: Suppliers -> I
 REGLAS:
 - Responde SOLO con XML draw.io completo.
 - No elimines nodos ni edges existentes.
-- Conecta únicamente referencias declaradas en ext_suppliers, ext_inputs, ext_outputs y ext_customers.
-- Si una actividad no declara referencia externa, no inventes conexión.
-- Usa conectores ortogonales/elbow, evita cruces y evita líneas sobre nodos.
+- Conecta primero las referencias declaradas en ext_suppliers, ext_inputs, ext_outputs y ext_customers.
+- Si ninguna actividad trae referencias externas pero existen catálogos SIPOC, infiere conexiones mínimas por cercanía semántica y orden: inputs hacia primeras actividades lógicas y outputs desde actividades finales o claramente relacionadas. No conectes todo con todo.
+- Si solo algunas actividades declaran referencias externas, no inventes conexiones para las demás.
+- Usa conectores ortogonales/elbow con waypoints; evita cruces y evita líneas sobre nodos.
 - Mantén Suppliers e Inputs a la izquierda; Outputs y Customers a la derecha.
 - Minimiza nodos de ruteo y no conviertas el diagrama en una caja hacia abajo.
 
@@ -2592,9 +2749,12 @@ REGLAS:
 - No elimines actividades, carriles, entradas, salidas, proveedores ni clientes.
 - No renombres nodos de negocio.
 - Puedes mover nodos si mejora la lectura y no rompe la secuencia.
-- Puedes agregar nodos de ruteo/conectores invisibles o pequeños solo si reducen cruces de líneas.
+- Prioriza waypoints en edges antes que nodos de ruteo. Los waypoints deben ir en mxGeometry con <Array as="points"><mxPoint x="..." y="..."/></Array>.
+- Puedes agregar nodos de ruteo/conectores invisibles solo si los waypoints no bastan para reducir cruces.
+- Si agregas nodos de ruteo, deben ser invisibles, no representar actividades y usar IDs route_*. Estilo sugerido: ellipse;fillColor=none;strokeColor=none;opacity=0;movable=0;resizable=0.
 - Usa conectores ortogonales/elbow.
 - Evita líneas pasando encima de nodos.
+- Rutea conexiones largas por los bordes de carriles o pasillos laterales; no atravieses cajas de actividad.
 - Mantén actividades ordenadas por secuencia de arriba hacia abajo.
 - Mantén carriles por actor interno.
 - Mantén Suppliers e Inputs a la izquierda y Outputs/Customers a la derecha.
