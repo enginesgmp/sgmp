@@ -182,6 +182,17 @@
   .btn-warn{background:linear-gradient(135deg,#c58b1e,#d8a136);color:#fff}
   .btn-ghost{background:rgba(255,255,255,.05);color:#d9e6ff;border:1px solid rgba(255,255,255,.12)}
   .btn-danger{background:linear-gradient(135deg,#bf4d4d,#d85d5d);color:#fff}
+  .btn-xl{font-size:1rem;padding:15px 22px;border-radius:16px}
+
+  .progress-box{
+    margin-top:14px;
+    padding:14px 16px;
+    border-radius:14px;
+    background:rgba(61,120,255,.10);
+    border:1px solid rgba(61,120,255,.24);
+    color:#0B2E59;
+    font-weight:800;
+  }
 
   .route-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:8px}
   .route-card{
@@ -1248,7 +1259,8 @@
   width:100%;
 }
 
-.repeat-item.locked{
+.repeat-item.locked,
+.field.locked{
   opacity:.45;
   pointer-events:none;
   filter:grayscale(.25);
@@ -1480,6 +1492,7 @@
 <button class="step-btn" data-target="decision">Decisión<small>Cerrar con AS IS o pasar a TO BE.</small></button>
 <button class="step-btn" data-target="tobe">TO BE<small>Evaluación de mejoras.</small></button>
 <button class="step-btn" data-target="resultados">Resultados<small>SB, informes y plan.</small></button>
+<button class="step-btn" data-target="outputs">Outputs<small>JSON para otros módulos.</small></button>
 </div>
 <div class="sidebar-title" style="margin-top:18px">Resumen</div>
 <div class="summary-list">
@@ -2641,35 +2654,19 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <div class="cards carga-clean">
 <article class="card">
-<h3>Carga de archivos</h3>
-<div class="split2">
-  <div class="repeat-item" id="newProcessLoadPanel">
-    <div class="repeat-head"><strong>Proceso nuevo</strong><span class="status-badge">Cuestionarios + entrevista</span></div>
-    <div class="field-grid">
-      <div class="field w-12"><label>JSON de cuestionarios / preentrevistas</label><div class="drop-zone" data-input="filePre">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="filePre" multiple type="file"/></div></div>
-      <div class="field w-12"><label>JSON de entrevista</label><div class="drop-zone" data-input="fileInterview">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="fileInterview" multiple type="file"/></div></div>
-    </div>
-  </div>
-  <div class="repeat-item" id="existingProcessLoadPanel">
-    <div class="repeat-head"><strong>Proceso existente documentado</strong><span class="status-badge">SIPOC existente</span></div>
-    <div class="field-grid">
-      <div class="field w-12"><label>JSON de SIPOC / flujo estructurado</label><div class="drop-zone" data-input="fileSipoc">Arrastra archivos JSON aquí o elige archivos<input accept=".json" id="fileSipoc" multiple type="file"/></div></div>
-    </div>
-  </div>
-</div>
-<div class="field-grid" style="margin-top:14px">
+<h3>1. Cargar insumos</h3>
+<p>Sube cuestionarios, entrevista o SIPOC estructurado y archivos adicionales. Cada ruta bloquea lo que no aplica.</p>
+<div class="field-grid">
+  <div class="field w-4" id="newProcessLoadPanel"><label>Cuestionarios / preentrevistas</label><div class="drop-zone" data-input="filePre">Arrastra JSON o elige archivos<input accept=".json" id="filePre" multiple type="file"/></div></div>
+  <div class="field w-4" id="interviewLoadPanel"><label>Entrevista</label><div class="drop-zone" data-input="fileInterview">Arrastra JSON o elige archivos<input accept=".json" id="fileInterview" multiple type="file"/></div></div>
+  <div class="field w-4" id="existingProcessLoadPanel"><label>SIPOC / flujo existente</label><div class="drop-zone" data-input="fileSipoc">Arrastra JSON o elige archivos<input accept=".json" id="fileSipoc" multiple type="file"/></div></div>
   <div class="field w-12"><label>Archivos adicionales</label><div class="drop-zone" data-input="docFiles">Arrastra archivos aquí o elige archivos<input id="docFiles" multiple type="file"/></div></div>
 </div>
-<div class="actions">
+<div class="actions" style="border-top:none;padding-top:0">
 <div class="actions-left">
 <button class="btn-ok" id="btnLoadInputs" onclick="loadAllInputs()" type="button">Cargar insumos</button>
 <button class="btn-ghost" onclick="clearAllLoads()" type="button">Limpiar todo</button>
 </div>
-</div>
-<div class="kpi-wrap">
-<div class="kpi-card"><h4>Cuestionarios</h4><div class="big" id="kpiPreLoads">0</div><small>archivos</small></div>
-<div class="kpi-card"><h4>Entrevistas / SIPOC</h4><div class="big" id="kpiInterviewLoads">0</div><small>archivos</small></div>
-<div class="kpi-card"><h4>Adicionales</h4><div class="big" id="kpiDocLoads">0</div><small>archivos</small></div>
 </div>
 <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:14px">
 <div><h3 style="margin-bottom:8px">Cuestionarios cargados</h3><div class="box" id="preLoadList">Sin archivos cargados.</div></div>
@@ -2679,89 +2676,73 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="msg" id="cargaMsg"></div>
 </article>
 
-<article class="card half">
-<h3>Consolidar archivos</h3>
-<p>Unifica los JSON cargados en una estructura base para generar el Brief.</p>
+<article class="card">
+<h3>2. Consolidar archivos</h3>
+<p>Consume todos los archivos cargados y muestra el JSON completo consolidado. Esta sección no analiza, solo reúne y normaliza la entrada.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-<div class="actions-left">
-<button class="btn" id="btnBuildMaster" onclick="buildMaster()" type="button">Consolidar archivos</button>
-<button class="btn-ghost" id="btnCopyMaster" onclick="copyMasterJson()" type="button">Copiar consolidado</button>
+<div class="actions-left"><button class="btn" id="btnBuildMaster" onclick="buildMaster()" type="button">Consolidar archivos</button></div>
 </div>
-</div>
-<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de archivos." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de todos los archivos cargados." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
-<article class="card half">
-<h3>Prompt A · Estructura de Brief</h3>
-<p>Genera el prompt para construir el Brief oficial a partir de la consolidación.</p>
+<article class="card">
+<h3>3. Prompt A · Estructurar Brief</h3>
+<p>Estructura la información cargada en un Brief estándar. Por defecto usa el prompt interno; cuando la API esté disponible tomará el prompt robusto desde Google Sheets.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
 <button class="btn" id="btnGenerateBriefPrompt" onclick="generateBriefPromptFromMaster()" type="button">Generar Prompt A</button>
 <button class="btn-ghost" id="btnCopyBriefPrompt" onclick="copyTextFromId('briefPromptEditor','cargaMsg','Prompt A copiado correctamente.')" type="button">Copiar prompt</button>
 </div>
 </div>
-<textarea id="briefPromptEditor" placeholder="Aquí aparecerá el Prompt A." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="briefPromptEditor" placeholder="Aquí aparecerá el Prompt A." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
-<article class="card two-third">
-<h3>JSON de Brief generado por IA</h3>
-<p>Pega aquí la respuesta IA del Prompt A. El sistema construirá el brief editable y no habilitará el análisis hasta aprobarlo.</p>
-<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<article class="card">
+<h3>4. Pegar Brief estructurado</h3>
+<p>Pega aquí el JSON generado con Prompt A. Al procesarlo se valida si ya tiene la estructura necesaria para construir el análisis AS IS profundo.</p>
+<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief estructurado..." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
 <div class="actions-left"><button class="btn-ok" id="btnProcessBrief" onclick="processBriefResponse()" type="button">Procesar Brief</button></div>
-<div class="actions-right"><button class="btn" id="btnApproveBrief" onclick="approveBriefAndUnlockAnalysis()" type="button">Aprobar Brief</button></div>
 </div>
 <div class="msg" id="briefIaMsg"></div>
 </article>
 
-<article class="card third brief-status-card">
+<article class="card brief-status-card">
 <h3>Estado del Brief</h3>
+<p>Valida los campos necesarios para que Prompt B pueda hacer el diagnóstico AS IS sin perder estructura.</p>
 <div class="kpi-wrap">
-<div class="kpi-card"><h4>Estado</h4><div class="big" id="briefApprovedKpi">No</div><small>aprobado</small></div>
+<div class="kpi-card"><h4>Estado</h4><div class="big" id="briefApprovedKpi">No</div><small>procesado válido</small></div>
 <div class="kpi-card"><h4>Vacíos</h4><div class="big" id="briefGapsKpi">0</div><small>detectados</small></div>
 </div>
 <div class="box" id="briefGapsList" style="margin-top:14px">Sin vacíos detectados.</div>
 <div class="msg" id="briefValidationMsg"></div>
+<textarea class="hidden" id="briefEditor"></textarea>
 </article>
 
 <article class="card">
-<h3>Brief oficial editable</h3>
-<p>Revisa, ajusta y valida el brief oficial. Este brief aprobado es el único insumo permitido para el análisis.</p>
-<textarea id="briefEditor" placeholder="Aquí aparecerá el Brief estructurado y editable." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-</article>
-
-<article class="card half">
-<h3>Prompt B · Análisis del Brief</h3>
-<p>Se habilita cuando el Brief fue aprobado. Usa el brief oficial y los complementos cargados para generar el diagnóstico AS IS.</p>
+<h3>5. Prompt B · Diagnóstico AS IS</h3>
+<p>Genera el prompt robusto para análisis profundo del estado actual. Por defecto queda embebido; luego puede mantenerse desde Google Sheets vía API.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
 <button class="btn" id="btnGenerateAnalysisPrompt" onclick="generateAnalysisPromptFromApprovedBrief()" type="button">Generar Prompt B</button>
 <button class="btn-ghost" id="btnCopyAnalysisPrompt" onclick="copyTextFromId('analysisPromptEditor','cargaMsg','Prompt B copiado correctamente.')" type="button">Copiar prompt</button>
 </div>
 </div>
-<textarea id="analysisPromptEditor" placeholder="Aquí aparecerá el Prompt B una vez aprobado el Brief." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-</article>
-
-<article class="card half">
-<h3>JSON diagnóstico AS IS generado por IA</h3>
-<p>Pega aquí la respuesta del Prompt B. El sistema debe poder procesar estructuras parciales sin romper el flujo.</p>
-<textarea id="iaResponseEditor" placeholder="Pega aquí la respuesta completa de la IA..." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-<div class="actions">
-<div class="actions-left"><button class="btn-ok" id="btnProcessAnalysis" onclick="processIAResponse()" type="button">Procesar análisis</button></div>
-<div class="actions-right"><button class="btn" id="btnApplyAnalysis" onclick="applyIAResponseAndContinue()" type="button">Aplicar al LMP y continuar</button></div>
-</div>
-<div class="msg" id="iaMsg"></div><div class="msg" id="analysisValidationMsg"></div>
+<textarea id="analysisPromptEditor" placeholder="Aquí aparecerá el Prompt B." style="width:100%;min-height:340px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card">
-<h3>Resumen detectado</h3>
-<div class="kpi-wrap">
-<div class="kpi-card"><h4>AS IS</h4><div class="big" id="iaActsKpi">0</div><small>actividades</small></div>
-<div class="kpi-card"><h4>Desperdicios</h4><div class="big" id="iaImpKpi">0</div><small>detectados</small></div>
-<div class="kpi-card"><h4>Quick wins</h4><div class="big" id="iaQwKpi">0</div><small>hallazgos</small></div>
-<div class="kpi-card"><h4>Restricciones</h4><div class="big" id="iaResKpi">0</div><small>detectadas</small></div>
+<h3>6. Pegar análisis AS IS estructurado</h3>
+<p>Pega el JSON robusto generado por Prompt B. El procesamiento aplica contratos internos y prepara el panel AS IS.</p>
+<textarea id="iaResponseEditor" placeholder="Pega aquí la respuesta completa de la IA..." style="width:100%;min-height:360px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<div class="actions">
+<div class="actions-left"><button class="btn-ok btn-xl" id="btnProcessApplyAnalysis" onclick="processAndApplyAnalysis()" type="button">Procesar análisis y aplicar al LMP</button></div>
 </div>
-<div class="pre" id="iaDetectedPreview" style="margin-top:14px;min-height:240px"></div>
+<div class="progress-box" id="analysisProgress" style="display:none">Procesando análisis y contratos JSON...</div>
+<div class="actions" id="continueAnalysisActions" style="display:none">
+<div class="actions-right"><button class="btn" id="btnContinueAnalysis" onclick="showSection('analisis')" type="button">Continuar al análisis</button></div>
+</div>
+<div class="msg" id="iaMsg"></div><div class="msg" id="analysisValidationMsg"></div>
 </article>
 </div>
 <div class="actions">
@@ -2807,8 +2788,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <h3>Hallazgos del estado actual</h3>
 <div class="analysis-grid">
 <div class="finding-box good"><h4>Quick wins</h4><div id="quickWinBox">Sin quick wins detectados.</div></div>
-<div class="finding-box warn"><h4>8 desperdicios Lean</h4><div id="leanWasteBox">Sin clasificación registrada.</div></div>
-<div class="finding-box warn"><h4>Desperdicios observados</h4><div id="wasteBox">Sin desperdicios detectados.</div></div>
+<div class="finding-box warn"><h4>Desperdicios Lean</h4><div id="leanWasteBox">Sin desperdicios detectados.</div></div>
 <div class="finding-box bad"><h4>Problemas</h4><div id="problemBox">Sin problemas detectados.</div></div>
 <div class="finding-box bad full"><h4>Restricciones</h4><div id="restrictionBox">Sin restricciones detectadas.</div></div>
 </div>
@@ -2817,11 +2797,9 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <article class="card">
 <h3>Observaciones y validaciones</h3>
 <div class="analysis-grid">
-<div class="finding-box neutral"><h4>Observaciones</h4><div id="observationBox">Sin observaciones registradas.</div></div>
-<div class="finding-box neutral"><h4>Comentarios</h4><div id="commentBox">Sin comentarios registrados.</div></div>
 <div class="finding-box warn"><h4>Contradicciones</h4><div id="contradictionBox">Sin contradicciones detectadas.</div></div>
-<div class="finding-box warn"><h4>Supuestos</h4><div id="assumptionBox">Sin supuestos registrados.</div></div>
-<div class="finding-box bad full"><h4>Validaciones por hacer</h4><div id="validationBox">Sin validaciones pendientes.</div></div>
+<div class="finding-box warn"><h4>Supuestos / temas por validar</h4><div id="assumptionBox">Sin supuestos registrados.</div></div>
+<div class="finding-box neutral full"><h4>Observaciones y/o recomendaciones</h4><div id="observationBox">Sin observaciones registradas.</div></div>
 </div>
 </article>
 
@@ -2829,11 +2807,8 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <h3>JSON diagnóstico AS IS</h3>
 <p>Salida estructurada del diagnóstico actual. Sirve para trazabilidad y para alimentar la decisión.</p>
 <textarea id="analysisEditor" placeholder="Aquí aparecerá el análisis estructurado." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;margin-top:16px"></textarea>
+<div class="actions"><div class="actions-right"><button class="btn" onclick="saveAnalysisAndContinue()" type="button">Ir a decisión</button></div></div>
 </article>
-</div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('analisis')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="saveAnalysisAndContinue()" type="button">Guardar y continuar</button></div>
 </div>
 </section>
 <!-- DECISION -->
@@ -2847,16 +2822,16 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <div class="route-grid">
 <article class="route-card" id="decision_asis">
-<h3>Cerrar con AS IS</h3>
-<p>Usa esta opción si el proceso debe terminar formalizado en su estado actual sin construir estado futuro.</p>
-<div class="mini-note">El módulo pasará directo a resultados.</div>
-<button class="btn-danger" onclick="setDecisionRoute('asis')" type="button">Elegir AS IS</button>
+<h3>Quedarse con AS IS y guardar estado actual</h3>
+<p>Conserva el diagnóstico del proceso actual como respaldo para retomarlo después sin diseñar mejoras ahora.</p>
+<div class="mini-note"><strong id="decisionAsIsCount">0</strong> actividades AS IS quedarán respaldadas.</div>
+<button class="btn-danger btn-xl" onclick="setDecisionRoute('asis')" type="button">Elegir AS IS actual</button>
 </article>
 <article class="route-card" id="decision_tobe">
-<h3>Continuar a TO BE</h3>
-<p>Usa esta opción si el proceso avanzará a evaluación de mejoras y definición del estado futuro.</p>
-<div class="mini-note">Se habilitará la gestión de mejoras en la siguiente etapa.</div>
-<button class="btn-ok" onclick="setDecisionRoute('tobe')" type="button">Elegir TO BE</button>
+<h3>Elegir TO BE y mejoras</h3>
+<p>Avanza a revisar, ejecutar, personalizar o rechazar propuestas de mejora y construir la versión futura.</p>
+<div class="mini-note"><strong id="decisionImprovementCount">0</strong> propuesta(s) detectadas para evaluar.</div>
+<button class="btn-ok btn-xl" onclick="setDecisionRoute('tobe')" type="button">Elegir TO BE y mejoras</button>
 </article>
 </div>
 <div class="msg" id="decisionMsg"></div>
@@ -2878,7 +2853,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <h3>Mejoras</h3>
 <div class="actions">
 <div class="actions-left">
-<button class="btn" onclick="seedImprovementsFromAnalysis()" type="button">Generar propuestas desde análisis</button>
+<button class="btn" onclick="seedImprovementsFromAnalysis()" type="button">Generar propuestas y mejoras</button>
 <button class="btn-ghost" onclick="addImprovement()" type="button">Agregar mejora manual</button>
 </div>
 </div>
@@ -2924,6 +2899,22 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <div class="cards">
 <article class="card">
+<h3>Prompt final de resultados</h3>
+<p>Construye el último prompt con la decisión tomada, el AS IS validado y, si aplica, las mejoras TO BE seleccionadas. La API podrá reemplazar este prompt por la versión robusta de Google Sheets.</p>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+<div class="actions-left">
+<button class="btn" onclick="generateFinalResultsPrompt()" type="button">Generar prompt final</button>
+<button class="btn-ghost" onclick="copyTextFromId('finalPromptEditor','finalPromptMsg','Prompt final copiado correctamente.')" type="button">Copiar prompt</button>
+</div>
+</div>
+<textarea id="finalPromptEditor" placeholder="Aquí aparecerá el prompt final para generar resultados AS IS o TO BE." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="finalResponseEditor" placeholder="Pega aquí el JSON final generado por IA. Si no lo pegas, el LMP usará el análisis ya procesado y los datos locales." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;margin-top:14px"></textarea>
+<div class="actions">
+<div class="actions-left"><button class="btn-ok" onclick="processFinalResultsResponse()" type="button">Procesar resultado final</button></div>
+</div>
+<div class="msg" id="finalPromptMsg"></div>
+</article>
+<article class="card">
 <h3>Generación de salidas</h3>
 <div class="actions">
 <div class="actions-left">
@@ -2935,6 +2926,26 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 </div>
 <div class="msg" id="resultsMsg"></div>
+</article>
+<article class="card">
+<h3>Resumen final</h3>
+<div class="doc-box" id="resultSummaryView"></div>
+</article>
+<article class="card half">
+<h3>Flujo futuro propuesto</h3>
+<div class="doc-box" id="resultFutureFlowView"></div>
+</article>
+<article class="card half">
+<h3>Diferencia vs AS IS</h3>
+<div class="doc-box" id="resultDiffView"></div>
+</article>
+<article class="card half">
+<h3>Beneficios esperados</h3>
+<div class="doc-box" id="resultBenefitsView"></div>
+</article>
+<article class="card half">
+<h3>Quick wins y validaciones</h3>
+<div class="doc-box" id="resultQuickWinsView"></div>
 </article>
 <article class="card half">
 <h3>JSON SB compatible</h3>
@@ -2989,6 +3000,49 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <div class="actions">
 <div class="actions-left"><button class="btn-ghost" onclick="goToPrev('resultados')" type="button">Volver</button></div>
+<div class="actions-right"><button class="btn" onclick="showSection('outputs')" type="button">Ir a outputs</button><button class="btn-danger" onclick="downloadBackup()" type="button">Finalizar y guardar respaldo</button></div>
+</div>
+</section>
+<!-- OUTPUTS -->
+<section class="section" id="outputs">
+<div class="section-head">
+<div>
+<h2>Outputs</h2>
+<p>Genera y descarga los JSON de salida para los módulos posteriores del SGMP.</p>
+</div>
+<div class="step-pill">Paso 8</div>
+</div>
+<div class="cards">
+<article class="card">
+<h3>Generar salidas modulares</h3>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+<div class="actions-left"><button class="btn-ok" onclick="generateResults()" type="button">Generar outputs</button></div>
+</div>
+<div class="msg" id="outputsMsg"></div>
+</article>
+<article class="card half">
+<h3>SIPOC Builder</h3>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0"><div class="actions-left"><button class="btn-ghost" onclick="copySBJson()" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadSBJson()" type="button">Descargar JSON</button></div></div>
+<div class="pre" id="outputsSbView"></div>
+</article>
+<article class="card half">
+<h3>Evaluador documental</h3>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0"><div class="actions-left"><button class="btn-ghost" onclick="copyDocumentProposalJson()" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadDocumentProposalJson()" type="button">Descargar JSON</button></div></div>
+<div class="pre" id="outputsDocumentView"></div>
+</article>
+<article class="card half">
+<h3>Integrador</h3>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0"><div class="actions-left"><button class="btn-ghost" onclick="copyIntegrationJson()" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadIntegrationJson()" type="button">Descargar JSON</button></div></div>
+<div class="pre" id="outputsIntegrationView"></div>
+</article>
+<article class="card half">
+<h3>Simulador de capacidad</h3>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0"><div class="actions-left"><button class="btn-ghost" onclick="copyCapacityJson()" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadCapacityJson()" type="button">Descargar JSON</button></div></div>
+<div class="pre" id="outputsCapacityView"></div>
+</article>
+</div>
+<div class="actions">
+<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('outputs')" type="button">Volver</button></div>
 <div class="actions-right"><button class="btn-danger" onclick="downloadBackup()" type="button">Finalizar y guardar respaldo</button></div>
 </div>
 </section>
@@ -3098,7 +3152,8 @@ const state = {
     executiveHtml: '',
     technicalHtml: '',
     implementationHtml: ''
-  }
+  },
+  finalReview: { raw:null, processed:false }
 };
 
 /* =========================
@@ -3109,7 +3164,7 @@ sgmpLoadPrompts('LMP', function() {
   if(typeof fillFixedDocPrompts === 'function') fillFixedDocPrompts(true);
 });
 
-const stageOrder = ['inicio','preparacion','documentacion_existente','carga','analisis','decision','tobe','resultados'];
+const stageOrder = ['inicio','preparacion','documentacion_existente','carga','analisis','decision','tobe','resultados','outputs'];
 
 const preQuestionMap = {
   'Operativo': [
@@ -3171,20 +3226,30 @@ function qs(id){ return document.getElementById(id); }
 function qsa(sel){ return Array.from(document.querySelectorAll(sel)); }
 
 function canAccessStage(id){
-  return !(id === 'documentacion_existente' && state.metadata.route === 'new');
+  if(id === 'documentacion_existente' && state.metadata.route === 'new') return false;
+  if(id === 'tobe' && state.decision.route !== 'tobe') return false;
+  if(id === 'resultados' && !state.decision.route) return false;
+  if(id === 'outputs' && !state.results?.sbJson) return false;
+  return true;
 }
 
 function refreshStageAccess(){
   qsa('.step-btn').forEach(btn => {
-    btn.classList.toggle('disabled', btn.dataset.target === 'documentacion_existente' && state.metadata.route === 'new');
+    const target = btn.dataset.target;
+    btn.classList.toggle('disabled',
+      (target === 'documentacion_existente' && state.metadata.route === 'new') ||
+      (target === 'tobe' && state.decision.route !== 'tobe') ||
+      (target === 'resultados' && !state.decision.route) ||
+      (target === 'outputs' && !state.results?.sbJson)
+    );
   });
 }
 
 function showSection(id){
   if(id === 'asis') id = 'analisis';
   if(!canAccessStage(id)){
-    showMsg('inicioMsg','warn','Documentacion existente no aplica para levantamiento de proceso nuevo.');
-    id = 'preparacion';
+    showMsg('inicioMsg','warn','La etapa seleccionada no aplica con la ruta actual.');
+    id = id === 'tobe' ? 'decision' : 'preparacion';
   }
   qsa('.section').forEach(s => s.classList.toggle('active', s.id === id));
   qsa('.step-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === id));
@@ -3205,6 +3270,7 @@ function showSection(id){
     initDropZones();
     refreshCargaFlowState();
   }
+  if(id === 'decision') updateDecisionCards();
   updateTopStatus();
   refreshStageAccess();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3246,7 +3312,8 @@ function labelStage(id){
     analisis:'Análisis AS IS',
     decision:'Decisión',
     tobe:'TO BE',
-    resultados:'Resultados'
+    resultados:'Resultados',
+    outputs:'Outputs'
   }[id] || id;
 }
 
@@ -3297,7 +3364,9 @@ function downloadText(filename, text, type='text/plain;charset=utf-8'){
 }
 
 function previewJson(targetId, obj){
-  qs(targetId).textContent = obj ? JSON.stringify(obj, null, 2) : 'Sin contenido.';
+  const el = qs(targetId);
+  if(!el) return;
+  el.textContent = obj ? JSON.stringify(obj, null, 2) : 'Sin contenido.';
 }
 
 function copyText(text){
@@ -3914,7 +3983,7 @@ function saveMasterAndContinue(){
       mergeMaster();
     }
     if(!(state.briefReview && state.briefReview.approved)){
-      showMsg('cargaMsg','warn','Debes aprobar primero el Brief antes de continuar.');
+      showMsg('cargaMsg','warn','Debes procesar primero un Brief válido antes de continuar.');
       return;
     }
     if(!(state.analysis && state.analysis.raw)){
@@ -3942,9 +4011,11 @@ function asisActivityTemplate(data = {}){
   return `
     <div class="activity-item">
       <div class="activity-top">
-        <strong>Actividad</strong>
+        <strong>${escapeHtml(data.name || 'Actividad sin nombre')} ${data.actor ? '· ' + escapeHtml(data.actor) : ''}</strong>
         <button class="btn-danger" type="button" onclick="this.closest('.activity-item').remove()">Eliminar</button>
       </div>
+      <details>
+        <summary class="btn-ghost" style="display:inline-block;margin-bottom:10px">Abrir / editar actividad</summary>
       <div class="field-grid">
         <div class="field w-6"><label>Nombre</label><input class="a_name" value="${escapeHtml(data.name || '')}" /></div>
         <div class="field w-3"><label>Actor</label><input class="a_actor" value="${escapeHtml(data.actor || '')}" /></div>
@@ -3978,6 +4049,7 @@ function asisActivityTemplate(data = {}){
         <div class="field w-6"><label>Nota</label><textarea class="a_note">${escapeHtml(data.note || '')}</textarea></div>
         <div class="field w-6"><label>Observaciones</label><textarea class="a_observations">${escapeHtml(data.observations || '')}</textarea></div>
       </div>
+      </details>
     </div>
   `;
 }
@@ -4071,10 +4143,16 @@ function setDecisionRoute(route){
   state.decision.route = route;
   qs('decision_asis').classList.toggle('active', route === 'asis');
   qs('decision_tobe').classList.toggle('active', route === 'tobe');
+  updateDecisionCards();
   showMsg('decisionMsg','ok', route === 'asis'
     ? 'Se eligió cerrar con AS IS. El flujo puede pasar directo a resultados.'
     : 'Se eligió continuar a TO BE. La siguiente etapa habilita las mejoras.'
   );
+}
+
+function updateDecisionCards(){
+  setTextSafe('decisionAsIsCount', safeArray(state.asis?.activities).length);
+  setTextSafe('decisionImprovementCount', safeArray(state.analysis?.improvements || state.analysis?.raw?.improvements || state.tobe?.improvements).length);
 }
 
 
@@ -4122,6 +4200,10 @@ function improvementTemplate(data = {}){
           <h3 style="margin:0 0 8px;font-size:.95rem;">Impacto esperado</h3>
           <div class="box">${escapeHtml(data.impact || '')}</div>
         </div>
+      </div>
+      <div class="mini-note" style="margin-top:12px">
+        <strong>Tipo:</strong> ${escapeHtml(data.improvementType || data.mode || 'pendiente')} ·
+        <strong>Beneficio:</strong> ${escapeHtml(data.benefitType || data.benefit || data.impactCategory || 'pendiente')}
       </div>
 
       <div class="actions">
@@ -4208,7 +4290,10 @@ function addImprovement(data = {}){
       data.mode || '',
 
     improvementType:
-      data.improvementType || '',
+      data.improvementType || data.type || data.tipo || '',
+
+    benefitType:
+      data.benefitType || data.impactCategory || data.benefit_category || data.beneficio || '',
 
     priority:
       data.priority || '',
@@ -4280,7 +4365,6 @@ function buildToBeArtifacts(){
   const rejected = getRejectedToBeImprovements();
   const owner = state.context.owner || 'Responsable por definir';
   const processName = state.context.processName || 'Proceso sin nombre';
-  const sourceActs = state.asis.activities || [];
   const sipoc = state.master?.sipoc || {inputs:[], outputs:[], actors:[]};
 
   const aiDocumentProposal = safeArray(
@@ -4362,15 +4446,10 @@ function buildToBeArtifacts(){
   const integrationInput = {
     process_name: processName,
     mode: state.decision?.finalMode === 'tobe' || state.decision?.route === 'tobe' ? 'to_be' : 'as_is',
-    activities: sourceActs.map(a => ({
-      name: a.name || '',
-      actor: a.actor || '',
-      type: a.type || 'operation',
-      note: a.note || a.problems || ''
-    })),
+    suppliers: sipoc.suppliers || [],
     inputs: sipoc.inputs || [],
     outputs: sipoc.outputs || [],
-    actors: sipoc.actors || []
+    customers: sipoc.customers || []
   };
 
   const integrationAnalysisBase = {
@@ -4470,7 +4549,10 @@ function canonicalActivityType(value){
 }
 
 function buildSipocActivities(){
-  const source = safeArray(state.asis?.activities || state.master?.flowActivities || state.master?.activities || []).map(normalizeActivity).filter(a => a.name);
+  const sourceSeed = safeArray(state.asis?.activities).length
+    ? state.asis.activities
+    : (safeArray(state.master?.flowActivities).length ? state.master.flowActivities : safeArray(state.master?.activities));
+  const source = safeArray(sourceSeed).map(normalizeActivity).filter(a => a.name);
   return source.map((a, idx, arr) => ({
     name: normalizeContractString(a.name || a.title || ''),
     type: canonicalActivityType(a.type),
@@ -4849,7 +4931,71 @@ function validateSipocContract(sp){
 }
 
 function buildSBJson(){
-  return buildSipocContract();
+  const finalSb = state.analysis?.finalOutputs?.sipoc_builder || state.analysis?.raw?.final_outputs?.sipoc_builder;
+  const localContract = buildSipocContract();
+  if(finalSb?.sipoc_input){
+    return Object.assign({}, finalSb, {
+      contract_version: finalSb.contract_version || localContract.contract_version,
+      source_module: finalSb.source_module || 'lmp',
+      target_module: finalSb.target_module || 'sipoc_builder',
+      generated_at: new Date().toISOString(),
+      sipoc_input: Object.assign({}, finalSb.sipoc_input, {
+        process_code: localContract.sipoc_input.process_code || finalSb.sipoc_input.process_code || '',
+        process_name: localContract.sipoc_input.process_name || finalSb.sipoc_input.process_name || '',
+        purpose: localContract.sipoc_input.purpose || finalSb.sipoc_input.purpose || '',
+        start_event: localContract.sipoc_input.start_event || finalSb.sipoc_input.start_event || '',
+        end_event: localContract.sipoc_input.end_event || finalSb.sipoc_input.end_event || '',
+        suppliers: localContract.sipoc_input.suppliers.length ? localContract.sipoc_input.suppliers : safeArray(finalSb.sipoc_input.suppliers),
+        inputs: localContract.sipoc_input.inputs.length ? localContract.sipoc_input.inputs : safeArray(finalSb.sipoc_input.inputs),
+        outputs: localContract.sipoc_input.outputs.length ? localContract.sipoc_input.outputs : safeArray(finalSb.sipoc_input.outputs),
+        customers: localContract.sipoc_input.customers.length ? localContract.sipoc_input.customers : safeArray(finalSb.sipoc_input.customers),
+        actors: localContract.sipoc_input.actors.length ? localContract.sipoc_input.actors : safeArray(finalSb.sipoc_input.actors),
+        documents: localContract.sipoc_input.documents.length ? localContract.sipoc_input.documents : safeArray(finalSb.sipoc_input.documents),
+        activities: localContract.sipoc_input.activities.length ? localContract.sipoc_input.activities : safeArray(finalSb.sipoc_input.activities)
+      }),
+      analysis_metrics: localContract.analysis_metrics
+    });
+  }
+  return localContract;
+}
+
+function buildIntegratorOutput(){
+  const sp = buildSipocContract().sipoc_input;
+  return {
+    contract_version:'1.0',
+    source_module:'lmp',
+    target_module:'integrador',
+    process_code:sp.process_code || '',
+    process_name:sp.process_name || '',
+    inputs:safeArray(sp.inputs),
+    outputs:safeArray(sp.outputs),
+    suppliers:safeArray(sp.suppliers),
+    customers:safeArray(sp.customers)
+  };
+}
+
+function buildCapacitySimulatorOutput(){
+  const ctx = getResolvedContext();
+  return {
+    contract_version:'1.0',
+    source_module:'lmp',
+    target_module:'capacity_simulator',
+    process_code:ctx.processCode || '',
+    process_name:ctx.processName || '',
+    ava_summary:state.analysis?.summary?.ava || state.analysis?.avaRaw?.distribution || {},
+    activities:safeArray(state.asis?.activities).map((a, idx) => ({
+      order:idx + 1,
+      name:a.name || '',
+      actor:a.actor || '',
+      type:a.type || 'operation',
+      ava:a.ava || '',
+      estimated_time:a.time || a.estimatedTime || '',
+      problems:a.problems || '',
+      wastes:a.wastes || '',
+      quick_win:a.quickWin || 'No',
+      restriction:a.constraint || 'No'
+    }))
+  };
 }
 
 
@@ -5021,6 +5167,131 @@ function buildImplementationHtml(){
   `;
 }
 
+function buildFinalResultsPrompt(){
+  collectAsisActivities();
+  if(state.decision.route === 'tobe') collectImprovements();
+  const artifacts = buildToBeArtifacts();
+  const mode = state.decision.route === 'tobe' ? 'to_be' : 'as_is';
+  const c = getResolvedContext();
+  const pack = {
+    context:c,
+    decision:{ route:state.decision.route || 'asis', finalMode:state.decision.finalMode || state.decision.route || 'asis' },
+    as_is:{
+      activities:state.asis.activities,
+      analysis:state.analysis?.raw || state.analysis || {},
+      ava:state.analysis?.summary?.ava || state.analysis?.avaRaw?.distribution || {},
+      findings:{
+        quickWins:state.analysis?.quickWins || [],
+        wastes:state.analysis?.wastes || [],
+        leanWastes:state.analysis?.leanWastes || [],
+        problems:state.analysis?.problems || [],
+        restrictions:state.analysis?.constraints || [],
+        observations:state.analysis?.observations || [],
+        contradictions:state.analysis?.contradictions || [],
+        assumptions:state.analysis?.assumptions || [],
+        validationsToDo:state.analysis?.validationsToDo || []
+      }
+    },
+    to_be:{
+      selectedImprovements:artifacts.selected,
+      rejectedImprovements:artifacts.rejected,
+      modeA:artifacts.modeA,
+      modeB:artifacts.modeB,
+      futureFlow:stripHtml(artifacts.futureFlow),
+      differences:stripHtml(artifacts.differences),
+      benefits:stripHtml(artifacts.benefits)
+    },
+    currentOutputs:{
+      sipoc_builder:buildSBJson(),
+      document_evaluator:state.analysis?.finalOutputs?.document_evaluator || state.analysis?.raw?.final_outputs?.document_evaluator || artifacts.documentProposal,
+      integrator:state.analysis?.finalOutputs?.integrator || buildIntegratorOutput(),
+      capacity_simulator:state.analysis?.finalOutputs?.capacity_simulator || buildCapacitySimulatorOutput()
+    }
+  };
+
+  const staticBase = sgmpPrompt('prompt_final_results', '');
+  const fallback = `ACTÚA COMO consultor senior de procesos, Lean, mejora continua y documentación operativa.
+
+OBJETIVO:
+Generar el resultado final del LMP para la ruta ${mode}. Debes usar el diagnóstico AS IS ya procesado y, si aplica, las mejoras TO BE seleccionadas. No inventes actividades nuevas del flujo; si detectas dudas, repórtalas como validaciones.
+
+REGLAS:
+- Devuelve SOLO JSON válido.
+- Si la ruta es AS IS, no diseñes TO BE; entrega resumen del estado actual, quick wins, validaciones, informes y outputs modulares.
+- Si la ruta es TO BE, entrega flujo futuro, diferencia contra AS IS, beneficios, quick wins, validaciones, plan Modo A/B, informes y outputs modulares.
+- El output SIPOC Builder debe respetar el contrato sipoc_input.
+- El output Integrador debe incluir solo entradas, salidas, proveedores y clientes relevantes; no incluir carriles internos ni actividades.
+- El output Simulador de capacidad debe incluir actividades con AVA y tiempo si existe.
+
+CONTRATO JSON:
+{
+  "mode": "as_is | to_be",
+  "results": {
+    "summary": "",
+    "as_is_summary": "",
+    "future_flow": [],
+    "differences_vs_as_is": [],
+    "expected_benefits": [],
+    "quick_wins": [],
+    "validations_to_do": [],
+    "implementation_plan": {"mode_a": [], "mode_b": []},
+    "reports": {"executive": "", "technical": ""}
+  },
+  "final_outputs": {
+    "sipoc_builder": {"sipoc_input": {}},
+    "document_evaluator": {},
+    "integrator": {},
+    "capacity_simulator": {}
+  }
+}`;
+
+  return (staticBase || fallback) + '\n\nINSUMOS DEL LMP:\n' + JSON.stringify(pack, null, 2);
+}
+
+function generateFinalResultsPrompt(){
+  if(!state.decision.route){
+    showMsg('finalPromptMsg','warn','Selecciona primero la decisión AS IS o TO BE.');
+    return;
+  }
+  const prompt = buildFinalResultsPrompt();
+  if(qs('finalPromptEditor')) qs('finalPromptEditor').value = prompt;
+  showMsg('finalPromptMsg','ok','Prompt final generado correctamente.');
+}
+
+function processFinalResultsResponse(){
+  const raw = qs('finalResponseEditor')?.value.trim() || '';
+  if(!raw){
+    showMsg('finalPromptMsg','warn','Pega primero el JSON final generado por IA.');
+    return;
+  }
+  try{
+    const parsed = extractJsonFromText(raw);
+    state.finalReview = { raw:parsed, processed:true };
+    const finalOutputs = parsed.final_outputs || parsed.finalOutputs || {};
+    const reports = parsed.results?.reports || parsed.reports || parsed.informes || {};
+    state.analysis = state.analysis || {};
+    state.analysis.finalOutputs = Object.assign({}, state.analysis.finalOutputs || {}, finalOutputs);
+    state.analysis.reports = Object.assign({}, state.analysis.reports || {}, reports);
+    showMsg('finalPromptMsg','ok','Resultado final procesado. Ya puedes generar resultados.');
+  }catch(error){
+    showMsg('finalPromptMsg','err',`No fue posible procesar el resultado final. Detalle: ${error.message}`);
+  }
+}
+
+function htmlListFromValue(value, emptyText = 'Sin información registrada.'){
+  const arr = safeArray(value);
+  if(!arr.length) return `<p>${escapeHtml(emptyText)}</p>`;
+  return `<ul>${arr.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : (item.title || item.name || item.summary || item.description || JSON.stringify(item)))}</li>`).join('')}</ul>`;
+}
+
+function htmlBlockFromValue(value, emptyText = 'Sin información registrada.'){
+  if(Array.isArray(value)) return htmlListFromValue(value, emptyText);
+  if(value && typeof value === 'object') return `<pre>${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+  const text = normalizeContractString(value || '');
+  if(/^<\w+[\s>]/.test(String(value || '').trim())) return String(value);
+  return text ? `<p>${escapeHtml(text).replace(/\n/g,'<br>')}</p>` : `<p>${escapeHtml(emptyText)}</p>`;
+}
+
 function generateResults(){
   syncVisibleStage();
 
@@ -5056,22 +5327,46 @@ function generateResults(){
   const sbContract = buildSBJson();
   const sbValidation = validateSipocContract(sbContract.sipoc_input);
   if(sbValidation.errors.length){
-    showMsg('resultsMsg','err','No se puede generar el JSON para SIPOC Builder:\n- ' + sbValidation.errors.join('\n- '));
+    showMsg(activeOutputMsgId(),'err','No se puede generar el JSON para SIPOC Builder:\n- ' + sbValidation.errors.join('\n- '));
     state.results.sbJson = null;
     if(qs('sbJsonView')) qs('sbJsonView').textContent = '';
     return;
   }
   state.results.sbJson = sbContract;
   state.results.sbValidation = sbValidation;
-  state.results.executiveHtml = buildExecutiveHtml();
-  state.results.technicalHtml = buildTechnicalHtml();
+  const finalRaw = state.finalReview?.processed ? (state.finalReview.raw || {}) : {};
+  const finalResults = finalRaw.results || finalRaw.resultados || {};
+  const reports = finalResults.reports || finalRaw.reports || finalRaw.informes || state.analysis?.reports || state.analysis?.raw?.reports || {};
+  const executiveReport = reports.executive || reports.executive_report || reports.informe_ejecutivo || '';
+  const technicalReport = reports.technical || reports.technical_report || reports.informe_tecnico || '';
+  state.results.executiveHtml = executiveReport ? `<h1>Informe Ejecutivo</h1><p>${escapeHtml(String(executiveReport)).replace(/\n/g,'<br>')}</p>` : buildExecutiveHtml();
+  state.results.technicalHtml = technicalReport ? `<h1>Informe Técnico</h1><p>${escapeHtml(String(technicalReport)).replace(/\n/g,'<br>')}</p>` : buildTechnicalHtml();
   state.results.implementationHtml = buildImplementationHtml();
   const artifacts = buildToBeArtifacts();
-  state.results.documentProposal = artifacts.documentProposal || [];
-  state.results.integrationPayload = {
-    integration_input: artifacts.integrationInput || {},
-    integration_analysis_base: artifacts.integrationAnalysisBase || {}
-  };
+  const finalOutputs = finalRaw.final_outputs || finalRaw.finalOutputs || state.analysis?.finalOutputs || state.analysis?.raw?.final_outputs || {};
+  state.results.documentProposal = finalOutputs.document_evaluator || finalOutputs.documentEvaluator || artifacts.documentProposal || [];
+  state.results.integrationPayload = finalOutputs.integrator || buildIntegratorOutput();
+  state.results.capacityPayload = finalOutputs.capacity_simulator || finalOutputs.capacitySimulator || buildCapacitySimulatorOutput();
+
+  const isToBe = state.decision.route === 'tobe';
+  const summaryText = finalResults.summary || finalResults.as_is_summary || (isToBe ? 'Resultados TO BE generados desde mejoras seleccionadas.' : buildExecutiveSummary());
+  if(qs('resultSummaryView')) qs('resultSummaryView').innerHTML = htmlBlockFromValue(summaryText);
+  if(qs('resultFutureFlowView')) qs('resultFutureFlowView').innerHTML = isToBe
+    ? htmlBlockFromValue(finalResults.future_flow || finalResults.futureFlow || artifacts.futureFlow)
+    : '<p>No aplica. La decisión fue conservar el AS IS actual.</p>';
+  if(qs('resultDiffView')) qs('resultDiffView').innerHTML = isToBe
+    ? htmlBlockFromValue(finalResults.differences_vs_as_is || finalResults.differencesVsAsIs || artifacts.differences)
+    : '<p>No aplica. No se diseñó escenario TO BE.</p>';
+  if(qs('resultBenefitsView')) qs('resultBenefitsView').innerHTML = isToBe
+    ? htmlBlockFromValue(finalResults.expected_benefits || finalResults.expectedBenefits || artifacts.benefits)
+    : htmlBlockFromValue('Beneficio principal: respaldo trazable del estado actual y base para retomar el proceso más adelante.');
+  const qv = [
+    '<h4>Quick wins</h4>',
+    htmlListFromValue(finalResults.quick_wins || finalResults.quickWins || state.analysis?.quickWins || []),
+    '<h4 style="margin-top:14px">Validaciones por hacer</h4>',
+    htmlListFromValue(finalResults.validations_to_do || finalResults.validationsToDo || state.analysis?.validationsToDo || [])
+  ].join('');
+  if(qs('resultQuickWinsView')) qs('resultQuickWinsView').innerHTML = qv;
 
   qs('sbJsonView').textContent = JSON.stringify(state.results.sbJson, null, 2);
   qs('executiveDoc').innerHTML = state.results.executiveHtml;
@@ -5079,14 +5374,20 @@ function generateResults(){
   qs('implementationView').innerHTML = state.results.implementationHtml;
   qs('documentProposalView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
   qs('integrationInputView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
+  if(qs('outputsSbView')) qs('outputsSbView').textContent = JSON.stringify(state.results.sbJson, null, 2);
+  if(qs('outputsDocumentView')) qs('outputsDocumentView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
+  if(qs('outputsIntegrationView')) qs('outputsIntegrationView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
+  if(qs('outputsCapacityView')) qs('outputsCapacityView').textContent = JSON.stringify(state.results.capacityPayload, null, 2);
 
   qs('executiveText').value = stripHtml(state.results.executiveHtml);
   qs('technicalText').value = stripHtml(state.results.technicalHtml);
 
   if(sbValidation.warnings.length){
     showMsg('resultsMsg','warn','Resultados generados con advertencias para SIPOC Builder:\n- ' + sbValidation.warnings.join('\n- '));
+    showMsg('outputsMsg','warn','Outputs generados con advertencias para SIPOC Builder.');
   } else {
     showMsg('resultsMsg','ok','Resultados generados correctamente.');
+    showMsg('outputsMsg','ok','Outputs generados correctamente.');
   }
 }
 
@@ -5095,19 +5396,21 @@ function copySBJson(){
   try{
     const data = buildSBJson();
     const text = JSON.stringify(data, null, 2);
+    const msgId = activeOutputMsgId();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text)
-        .then(()=>showMsg('resultsMsg','ok','JSON SB copiado al portapapeles.'))
+        .then(()=>showMsg(msgId,'ok','JSON SB copiado al portapapeles.'))
         .catch(()=>fallbackCopySBJson(text));
     } else {
       fallbackCopySBJson(text);
     }
   }catch(error){
-    showMsg('resultsMsg','err',`No fue posible copiar el JSON SB: ${error.message}`);
+    showMsg(activeOutputMsgId(),'err',`No fue posible copiar el JSON SB: ${error.message}`);
   }
 }
 
 function fallbackCopySBJson(text){
+  const msgId = activeOutputMsgId();
   const ta = document.createElement('textarea');
   ta.value = text;
   ta.setAttribute('readonly','readonly');
@@ -5118,55 +5421,83 @@ function fallbackCopySBJson(text){
   ta.select();
   try{
     document.execCommand('copy');
-    showMsg('resultsMsg','ok','JSON SB copiado al portapapeles.');
+    showMsg(msgId,'ok','JSON SB copiado al portapapeles.');
   }catch(_){
-    showMsg('resultsMsg','warn','No fue posible copiar automáticamente. Usa descargar JSON.');
+    showMsg(msgId,'warn','No fue posible copiar automáticamente. Usa descargar JSON.');
   }finally{
     document.body.removeChild(ta);
   }
 }
 
 function downloadSBJson(){
+  const msgId = activeOutputMsgId();
   if(!state.results.sbJson){
-    showMsg('resultsMsg','warn','Genera primero los resultados.');
+    showMsg(msgId,'warn','Genera primero los resultados.');
     return;
   }
   downloadText('lmp_json_sb.json', JSON.stringify(state.results.sbJson, null, 2), 'application/json;charset=utf-8');
-  showMsg('resultsMsg','ok','JSON SB descargado correctamente.');
+  showMsg(msgId,'ok','JSON SB descargado correctamente.');
 }
 
 function copyDocumentProposalJson(){
+  const msgId = activeOutputMsgId();
   if(!state.results.documentProposal){
-    showMsg('resultsMsg','warn','Genera primero los resultados.');
+    showMsg(msgId,'warn','Genera primero los resultados.');
     return;
   }
-  copyText(JSON.stringify(state.results.documentProposal, null, 2)).then(() => showMsg('resultsMsg','ok','Propuesta documental copiada correctamente.'));
+  copyText(JSON.stringify(state.results.documentProposal, null, 2)).then(() => showMsg(msgId,'ok','Propuesta documental copiada correctamente.'));
 }
 
 function downloadDocumentProposalJson(){
+  const msgId = activeOutputMsgId();
   if(!state.results.documentProposal){
-    showMsg('resultsMsg','warn','Genera primero los resultados.');
+    showMsg(msgId,'warn','Genera primero los resultados.');
     return;
   }
   downloadText('lmp_document_proposal.json', JSON.stringify(state.results.documentProposal, null, 2), 'application/json;charset=utf-8');
-  showMsg('resultsMsg','ok','Propuesta documental descargada correctamente.');
+  showMsg(msgId,'ok','Propuesta documental descargada correctamente.');
 }
 
 function copyIntegrationJson(){
+  const msgId = activeOutputMsgId();
   if(!state.results.integrationPayload){
-    showMsg('resultsMsg','warn','Genera primero los resultados.');
+    showMsg(msgId,'warn','Genera primero los resultados.');
     return;
   }
-  copyText(JSON.stringify(state.results.integrationPayload, null, 2)).then(() => showMsg('resultsMsg','ok','Input para integrador copiado correctamente.'));
+  copyText(JSON.stringify(state.results.integrationPayload, null, 2)).then(() => showMsg(msgId,'ok','Input para integrador copiado correctamente.'));
 }
 
 function downloadIntegrationJson(){
+  const msgId = activeOutputMsgId();
   if(!state.results.integrationPayload){
-    showMsg('resultsMsg','warn','Genera primero los resultados.');
+    showMsg(msgId,'warn','Genera primero los resultados.');
     return;
   }
   downloadText('lmp_integration_input.json', JSON.stringify(state.results.integrationPayload, null, 2), 'application/json;charset=utf-8');
-  showMsg('resultsMsg','ok','Input para integrador descargado correctamente.');
+  showMsg(msgId,'ok','Input para integrador descargado correctamente.');
+}
+
+function copyCapacityJson(){
+  const msgId = activeOutputMsgId();
+  if(!state.results.capacityPayload){
+    showMsg(msgId,'warn','Genera primero los outputs.');
+    return;
+  }
+  copyText(JSON.stringify(state.results.capacityPayload, null, 2)).then(() => showMsg(msgId,'ok','JSON para simulador copiado correctamente.'));
+}
+
+function downloadCapacityJson(){
+  const msgId = activeOutputMsgId();
+  if(!state.results.capacityPayload){
+    showMsg(msgId,'warn','Genera primero los outputs.');
+    return;
+  }
+  downloadText('lmp_capacity_simulator_input.json', JSON.stringify(state.results.capacityPayload, null, 2), 'application/json;charset=utf-8');
+  showMsg(msgId,'ok','JSON para simulador descargado correctamente.');
+}
+
+function activeOutputMsgId(){
+  return document.querySelector('#outputs.section.active') ? 'outputsMsg' : 'resultsMsg';
 }
 
 function stripHtml(html){
@@ -5236,13 +5567,16 @@ function resetAll(){
     preInterview:null,
     interview:null,
     brief:null,
+    briefReview:{raw:null,approved:false},
     loads:{pre:[],interview:[],brief:[],docs:[]},
     master:null,
     asis:{activities:[]},
     analysis:null,
+    analysisRun:{raw:null,qa:false},
     decision:{route:null},
     tobe:{improvements:[]},
-    results:{sbJson:null,sbValidation:null,executiveHtml:'',technicalHtml:'',implementationHtml:''}
+    results:{sbJson:null,sbValidation:null,executiveHtml:'',technicalHtml:'',implementationHtml:''},
+    finalReview:{raw:null,processed:false}
   };
   Object.keys(state).forEach(k => delete state[k]);
   Object.assign(state, fresh);
@@ -5260,9 +5594,9 @@ function resetAll(){
   updateTopStatus();
   if(typeof window.hydratePreparationFromState === 'function'){ window.hydratePreparationFromState(); }
 
-  ['prepContextPreview','masterPreview','sbJsonView','quickWinBox','leanWasteBox','wasteBox','problemBox','restrictionBox','observationBox','commentBox','contradictionBox','assumptionBox','validationBox'].forEach(id => { const el = qs(id); if(el) el.textContent = ''; });
-  ['executiveDoc','technicalDoc','implementationView'].forEach(id => qs(id).innerHTML = '');
-  ['executiveText','technicalText','analysisEditor','masterEditor'].forEach(id => qs(id).value = '');
+  ['prepContextPreview','masterPreview','sbJsonView','quickWinBox','leanWasteBox','problemBox','restrictionBox','observationBox','contradictionBox','assumptionBox','resultSummaryView','resultFutureFlowView','resultDiffView','resultBenefitsView','resultQuickWinsView','outputsSbView','outputsDocumentView','outputsIntegrationView','outputsCapacityView'].forEach(id => { const el = qs(id); if(el) el.textContent = ''; });
+  ['executiveDoc','technicalDoc','implementationView'].forEach(id => { const el = qs(id); if(el) el.innerHTML = ''; });
+  ['executiveText','technicalText','analysisEditor','masterEditor','finalPromptEditor','finalResponseEditor'].forEach(id => { const el = qs(id); if(el) el.value = ''; });
 
   ['asisCountKpi','wasteKpi','problemKpi','qwKpi','resKpi'].forEach(id => { const el = qs(id); if(el) el.textContent = '0'; });
   ['avaKpi','nnvaKpi','nvaKpi'].forEach(id => { const el = qs(id); if(el) el.textContent = '0%'; });
@@ -5538,12 +5872,20 @@ function clearAllLoads(){
   state.master = null;
   state.briefReview = { raw:null, approved:false };
   state.brief = null;
+  state.analysis = null;
+  state.analysisRun = { raw:null, qa:false };
+  state.finalReview = { raw:null, processed:false };
+  ['filePre','fileInterview','fileSipoc','docFiles'].forEach(id => { const el = qs(id); if(el) el.value = ''; });
   if(qs('masterEditor')) qs('masterEditor').value = '';
   if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
   if(qs('briefResponseEditor')) qs('briefResponseEditor').value = '';
   if(qs('briefEditor')) qs('briefEditor').value = '';
   if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = '';
   if(qs('iaResponseEditor')) qs('iaResponseEditor').value = '';
+  if(qs('finalPromptEditor')) qs('finalPromptEditor').value = '';
+  if(qs('finalResponseEditor')) qs('finalResponseEditor').value = '';
+  if(qs('analysisProgress')) qs('analysisProgress').style.display = 'none';
+  if(qs('continueAnalysisActions')) qs('continueAnalysisActions').style.display = 'none';
   if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = '';
   if(qs('briefGapsList')) qs('briefGapsList').textContent = 'Sin vacíos detectados.';
   updateLoadKpis();
@@ -5659,8 +6001,8 @@ function renderBriefValidation(){
       : 'Sin vacíos detectados.';
   }
   if(!brief){ showMsg(msgId,'warn','Estado: brief incompleto. Aún no existe un brief utilizable.'); refreshCargaFlowState(); return issues; }
-  if(issues.length){ showMsg(msgId,'warn','Estado: brief incompleto. Revisa antes de aprobar:\n- ' + issues.join('\n- ')); }
-  else { showMsg(msgId,'ok','Estado: brief completo. Puede aprobarse para habilitar el análisis.'); }
+  if(issues.length){ showMsg(msgId,'warn','Estado: brief incompleto. Revisa antes de generar Prompt B:\n- ' + issues.join('\n- ')); }
+  else { showMsg(msgId,'ok','Estado: brief completo. Prompt B puede generarse.'); }
   refreshCargaFlowState();
   return issues;
 }
@@ -5716,6 +6058,12 @@ function buildBriefPrompt(master){
   const dynamicSection = `ENTRADA CONSOLIDADA COMPLETA (NO RESUMIR PREMATURAMENTE):
 ${JSON.stringify(master, null, 2)}
 
+FORMATOS DE ENTRADA ESPERADOS:
+- preInterview/cuestionarios: perspectiva de actores internos, problemas, restricciones, visión, insumos, entregables y rol.
+- interview: contexto del líder, SIPOC estructurado, actividades oficiales del flujo, problemas y observaciones.
+- SIPOC convertido: mismo contrato que interview para actividades oficiales de flujo.
+- additionalDocuments: evidencia complementaria no estructurada o semiestructurada; no crea actividades de flujo.
+
 ACTIVIDADES OFICIALES DE FLUJO/SIPOC (ÚNICA FUENTE PARA CONSTRUIR EL FLUJO):
 ${flowPack}
 
@@ -5730,8 +6078,13 @@ ${docs}`;
 
   const hardening = `
 
-REGLAS CRÍTICAS DE PRESERVACIÓN DE EVIDENCIA:
+REGLAS CRÍTICAS DEL PROMPT A - ESTRUCTURACIÓN, NO ANÁLISIS:
 - NO resumas demasiado pronto.
+- NO hagas diagnóstico profundo.
+- NO hagas AVA definitivo.
+- NO propongas mejoras finales.
+- NO diseñes TO BE.
+- NO construyas plan de implementación.
 - NO sustituyas diferencias entre entrevistados por una sola versión armonizada si hay contradicción relevante.
 - PRESERVA explícitamente excepciones, handoffs, controles manuales, aprobaciones informales, retrabajos, demoras, dependencias de personas y reglas implícitas.
 - DISTINGUE entre: hecho declarado, inferencia razonable, supuesto y vacío de información.
@@ -5743,7 +6096,7 @@ REGLAS CRÍTICAS DE PRESERVACIÓN DE EVIDENCIA:
 - INCLUYE lo que todavía debe validarse antes del análisis profundo.
 - El flujo de actividades del SIPOC debe salir SOLO de "ACTIVIDADES OFICIALES DE FLUJO/SIPOC".
 - No agregues actividades al flujo desde cuestionarios, transcripciones, informes, anexos o archivos adicionales.
-- Si un cuestionario o archivo adicional menciona tareas o eventos, úsalo como evidencia para problemas, vacíos, desperdicios, restricciones, riesgos o mejoras, no como nueva actividad del flujo.
+ - Si un cuestionario o archivo adicional menciona tareas o eventos, úsalo como evidencia para problemas, vacíos, desperdicios, restricciones o riesgos, no como nueva actividad del flujo.
 - Si el insumo viene de SIPOC existente y faltan campos de entrevista, déjalos vacíos; no inventes.
 
 DEBES ENTREGAR ADEMÁS:
@@ -5757,9 +6110,10 @@ DEBES ENTREGAR ADEMÁS:
 - suspectedConstraints
 - evidenceHighlights
 
-JSON OBLIGATORIO DEL BRIEF:
+CONTRATO JSON OBLIGATORIO DEL BRIEF ESTRUCTURADO:
 {
   "brief": {
+    "context": {},
     "executiveSummary": "",
     "processPurpose": "",
     "scope": "",
@@ -5779,7 +6133,17 @@ JSON OBLIGATORIO DEL BRIEF:
     "hiddenControls": [],
     "manualDependencies": [],
     "suspectedConstraints": [],
-    "evidenceHighlights": []
+    "evidenceHighlights": [],
+    "sourceMap": {
+      "flowSource": "interview_or_sipoc_only",
+      "supportingSources": []
+    },
+    "validation": {
+      "completenessLevel": "",
+      "canProceedToAnalysis": true,
+      "blockingGaps": [],
+      "warnings": []
+    }
   }
 }`;
 
@@ -5823,9 +6187,13 @@ function processBriefResponse(){
     const brief = normalizeBriefPayload(parsed);
     state.briefReview = { raw: brief, approved:false };
     renderBriefDraft();
-    renderBriefValidation();
+    const issues = renderBriefValidation();
+    state.briefReview = { raw: brief, approved: issues.length === 0 };
+    renderBriefDraft();
     refreshCargaFlowState();
-    showMsg('briefIaMsg','ok','Brief procesado correctamente. Revisa el contenido y apruébalo para habilitar el análisis.');
+    showMsg('briefIaMsg', issues.length ? 'warn' : 'ok', issues.length
+      ? 'Brief procesado con vacíos. Revisa el estado antes de generar Prompt B.'
+      : 'Brief procesado correctamente. Ya puedes generar Prompt B.');
   }catch(error){
     showMsg('briefIaMsg','err', `No fue posible procesar el Brief. Detalle: ${error.message}`);
   }
@@ -5855,7 +6223,7 @@ function approveBriefAndUnlockAnalysis(){
 }
 
 function generateAnalysisPromptFromApprovedBrief(){
-  if(!(state.briefReview && state.briefReview.approved && state.briefReview.raw)){ showMsg('cargaMsg','warn','Debes procesar y aprobar primero el Brief.'); return; }
+  if(!(state.briefReview && state.briefReview.approved && state.briefReview.raw)){ showMsg('cargaMsg','warn','Debes procesar un Brief sin vacíos bloqueantes antes de generar Prompt B.'); return; }
   const brief = state.briefReview.raw;
   const master = state.master || mergeMaster();
   const c = master.context || state.context || {};
@@ -5873,10 +6241,11 @@ EVIDENCIA OPERATIVA COMPLEMENTARIA (NO PERDERLA POR RESUMEN EXCESIVO):
 ${JSON.stringify(evidencePack, null, 2)}`;
   const hardening = `
 
-REGLAS CRÍTICAS DEL DIAGNÓSTICO AS IS:
-- El objetivo es diagnosticar el estado actual del proceso, no proponer mejoras ni diseñar TO BE.
-- NO incluyas plan de mejora, propuesta TO BE, implementación ni priorización de soluciones.
-- Quick wins debe leerse como hallazgo u oportunidad evidente, no como plan de acción.
+REGLAS CRÍTICAS DEL PROMPT B - ANÁLISIS PROFUNDO:
+- El objetivo principal es diagnosticar el estado actual del proceso y preparar decisiones posteriores.
+- Debes separar estrictamente diagnóstico AS IS, propuestas TO BE, outputs para módulos y validaciones.
+- El panel AS IS solo consumirá diagnóstico; las mejoras deben ir separadas en improvements y to_be.
+- Quick wins debe leerse como hallazgo u oportunidad evidente; si implica acción, colócalo también como improvement candidate.
 - NO resumas demasiado pronto ni borres evidencia operativa valiosa.
 - PRESERVA excepciones, retrabajos, controles manuales, aprobaciones informales, handoffs, variaciones y dependencias de personas.
 - DISTINGUE hechos observados, inferencias, supuestos, contradicciones, comentarios y vacíos.
@@ -5888,6 +6257,7 @@ REGLAS CRÍTICAS DEL DIAGNÓSTICO AS IS:
 - Para AS IS y SIPOC Builder usa únicamente officialFlowActivities como fuente de actividades del flujo.
 - Usa cuestionarios, transcripciones, informes y documentos adicionales para enriquecer problemas, desperdicios, riesgos, no conformidades, quick wins, restricciones, comentarios, supuestos y validaciones; no los conviertas en nuevas actividades del flujo.
 - Si una evidencia adicional contradice el flujo, repórtalo como contradicción o validación pendiente, no como actividad nueva.
+- Puedes proponer mejoras, pero solo en bloques separados: improvements, to_be, document_proposal, implementation_plan y final_outputs. Nunca mezcles propuestas dentro de as_is.activities.
 
 OBLIGATORIO PRESERVAR Y REPORTAR:
 - findings.wastes
@@ -5944,6 +6314,20 @@ JSON DEBE INCLUIR ESTA ESTRUCTURA MÍNIMA:
   "validation": {
     "warnings": [],
     "pending": []
+  },
+  "improvements": [],
+  "to_be": {},
+  "document_proposal": [],
+  "implementation_plan": {},
+  "final_outputs": {
+    "sipoc_builder": {"sipoc_input": {}},
+    "document_evaluator": {},
+    "integrator": {},
+    "capacity_simulator": {}
+  },
+  "reports": {
+    "executive": "",
+    "technical": ""
   }
 }
 `;
@@ -5956,7 +6340,7 @@ JSON DEBE INCLUIR ESTA ESTRUCTURA MÍNIMA:
 4. Experto en el tipo de proceso: ${c.processType || '[TIPO_PROCESO]'}
 
 OBJETIVO GENERAL
-Analizar el BRIEF APROBADO del proceso y la evidencia operativa complementaria para construir un diagnóstico AS IS robusto, AVA serio, hallazgos defendibles, contradicciones, supuestos y validaciones pendientes. No propongas mejoras ni diseñes TO BE.
+Analizar el BRIEF APROBADO del proceso y la evidencia operativa complementaria para construir un diagnóstico AS IS robusto, AVA serio, hallazgos defendibles, contradicciones, supuestos, validaciones pendientes y propuestas TO BE separadas para decisión posterior.
 
 ${hardening}`;
   const prompt = (staticBase ? staticBase.replace('{{industry}}', c.industry || '[INDUSTRIA]').replace('{{activity}}', c.activity || '[ACTIVIDAD]').replace('{{processType}}', c.processType || '[TIPO_PROCESO]') + hardening : fallback) + '\n\n' + dynamic;
@@ -6161,19 +6545,18 @@ function refreshCargaFlowState(){
   const hasAnalysisResponse = !!(qs('iaResponseEditor')?.value || '').trim();
 
   qs('newProcessLoadPanel')?.classList.toggle('locked', isDocRoute);
+  qs('interviewLoadPanel')?.classList.toggle('locked', isDocRoute);
   qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewRoute);
 
   const disabledMap = {
     btnBuildMaster: !hasLoads,
-    btnCopyMaster: !hasMaster,
     btnGenerateBriefPrompt: !hasMaster,
     btnCopyBriefPrompt: !hasBriefPrompt,
     btnProcessBrief: !hasBriefResponse,
-    btnApproveBrief: !hasBrief,
     btnGenerateAnalysisPrompt: !briefApproved,
     btnCopyAnalysisPrompt: !hasAnalysisPrompt,
-    btnProcessAnalysis: !hasAnalysisResponse,
-    btnApplyAnalysis: !(state.analysisRun && state.analysisRun.qa)
+    btnProcessApplyAnalysis: !hasAnalysisResponse,
+    btnContinueAnalysis: !(state.analysis && state.analysis.raw)
   };
   Object.keys(disabledMap).forEach(id => {
     const el = qs(id);
@@ -6202,7 +6585,7 @@ function initDropZones(){
     });
     input?.addEventListener('change', refreshCargaFlowState);
   });
-  ['briefPromptEditor','briefResponseEditor','briefEditor','analysisPromptEditor','iaResponseEditor','masterEditor'].forEach(id => {
+  ['briefPromptEditor','briefResponseEditor','briefEditor','analysisPromptEditor','iaResponseEditor','masterEditor','finalPromptEditor','finalResponseEditor'].forEach(id => {
     const el = qs(id);
     if(el && el.dataset.boundCarga !== '1'){
       el.dataset.boundCarga = '1';
@@ -6526,7 +6909,7 @@ function extractAsIsActivitiesFromPayload(payload){
   return [];
 }
 function normalizeImprovement(item){
-  return { title:item.title||item.name||item.titulo||'Mejora propuesta', summary:item.problem||item.problema||'', problem:item.problem||item.problema||'', currentState:item.currentState||item.as_is||item.estado_actual||'', proposedState:item.proposedState||item.to_be||item.estado_propuesto||'', support:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||''].filter(Boolean).join(' | '), impact:item.impact||item.impacto||'', justification:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||'', item.impact||item.impacto||''].filter(Boolean).join(' | '), status:(item.status==='adjust'?'custom':item.status==='discard'?'reject':(item.status||'pending')), customText:item.customText||item.adjustedState||'' };
+  return { title:item.title||item.name||item.titulo||'Mejora propuesta', summary:item.problem||item.problema||'', problem:item.problem||item.problema||'', currentState:item.currentState||item.as_is||item.estado_actual||'', proposedState:item.proposedState||item.to_be||item.estado_propuesto||item.action||'', support:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||''].filter(Boolean).join(' | '), impact:item.impact||item.impacto||item.expectedImpact||'', benefitType:item.benefitType||item.impactCategory||item.benefit_category||item.beneficio||'', improvementType:item.improvementType||item.type||item.tipo||'', justification:[item.support||item.sustento||item.justification||'', item.source||item.reference||item.fuente||'', item.impact||item.impacto||''].filter(Boolean).join(' | '), status:(item.status==='adjust'?'custom':item.status==='discard'?'reject':(item.status||'pending')), customText:item.customText||item.adjustedState||'' };
 }
 
 function firstObject(...items){
@@ -6672,6 +7055,8 @@ function normalizeAnalysisPayload(parsed){
     documentProposal,
     integration_input: parsed.integration_input || parsed.integrationInput || {},
     integration_analysis_base: parsed.integration_analysis_base || parsed.integrationAnalysisBase || {},
+    final_outputs: parsed.final_outputs || parsed.finalOutputs || {},
+    reports: parsed.reports || parsed.informes || {},
     indicators: safeArray(parsed.indicators || parsed.control_indicators),
     validation: parsed.validation || {}
   };
@@ -6682,12 +7067,12 @@ function processIAResponse(){
 
   if(!raw){
     showMsg('iaMsg','warn','Pega primero la respuesta de la IA.');
-    return;
+    return false;
   }
 
   if(!(state.briefReview && state.briefReview.approved)){
-    showMsg('iaMsg','warn','Debes aprobar primero el Brief antes de procesar el diagnóstico AS IS.');
-    return;
+    showMsg('iaMsg','warn','Debes procesar un Brief válido antes de procesar el diagnóstico AS IS.');
+    return false;
   }
 
   try{
@@ -6696,7 +7081,10 @@ function processIAResponse(){
     const officialFlowBase = safeArray(state.asis?.activities).length
       ? state.asis.activities.map(a => Object.assign({}, a))
       : safeArray(state.master?.flowActivities || state.master?.activities || []).map(a => Object.assign({}, a));
-    const officialFlowActs = mergeFlowActivitiesWithAnalysis(officialFlowBase, data.as_is.activityAnalysis || data.as_is.activities);
+    const analysisActivitySeed = safeArray(data.as_is.activityAnalysis || data.as_is.activities).map(normalizeActivity).filter(a => a.name);
+    const officialFlowActs = officialFlowBase.length
+      ? mergeFlowActivitiesWithAnalysis(officialFlowBase, analysisActivitySeed)
+      : analysisActivitySeed;
     data.as_is.activities = officialFlowActs;
     data.sb_contract = data.sb_contract || { sipoc_input:{} };
     data.sb_contract.sipoc_input = Object.assign({}, data.sb_contract.sipoc_input || {}, { activities: officialFlowActs });
@@ -6745,6 +7133,8 @@ function processIAResponse(){
       sbContract: data.sb_contract,
       integrationInput: data.integration_input,
       integrationAnalysisBase: data.integration_analysis_base,
+      finalOutputs: data.final_outputs,
+      reports: data.reports,
       qa: false
     };
 
@@ -6779,6 +7169,8 @@ function processIAResponse(){
     state.master.documentProposal = data.documentProposal || [];
     state.master.integrationInput = data.integration_input || {};
     state.master.integrationAnalysisBase = data.integration_analysis_base || {};
+    state.master.finalOutputs = data.final_outputs || {};
+    state.master.reports = data.reports || {};
 
     state.context = Object.assign({}, state.context || {}, data.context || {});
 
@@ -6805,10 +7197,29 @@ function processIAResponse(){
     refreshCargaFlowState();
     showMsg('iaMsg','ok','Diagnóstico AS IS procesado correctamente. Ya puedes aplicarlo al LMP y continuar.');
     updateTopStatus();
+    return true;
 
   }catch(error){
     showMsg('iaMsg','err',`No fue posible procesar la respuesta IA. Detalle: ${error.message}`);
+    return false;
   }
+}
+
+function processAndApplyAnalysis(){
+  const progress = qs('analysisProgress');
+  const actions = qs('continueAnalysisActions');
+  if(progress) progress.style.display = 'block';
+  if(actions) actions.style.display = 'none';
+  setTimeout(() => {
+    const ok = processIAResponse();
+    if(progress) progress.style.display = 'none';
+    if(ok){
+      renderAnalysisFromState();
+      renderAsIsActivities();
+      if(actions) actions.style.display = 'flex';
+      showMsg('iaMsg','ok','Análisis aplicado. Puedes continuar al panel AS IS.');
+    }
+  }, 180);
 }
 
 function applyIAResponseAndContinue(){
@@ -6893,8 +7304,7 @@ function renderAnalysisFromState(){
   const problems = toArray(findings.problems || data.problems || []);
   const quickWins = toArray(findings.quickWins || data.quickWins || []);
   const restrictions = toArray(findings.restrictions || findings.constraints || data.restrictions || data.constraints || []);
-  const observations = toArray(findings.observations || data.observations || []);
-  const comments = toArray(findings.comments || data.comments || []);
+  const observations = [...toArray(findings.observations || data.observations || []), ...toArray(findings.comments || data.comments || [])];
   const contradictions = toArray(findings.contradictions || findings.contradictions_detected || data.contradictions || []);
   const assumptions = toArray(findings.assumptions || data.assumptions || []);
   const validations = toArray(findings.validations_to_do || findings.validationsToDo || data.validationsToDo || data.validation?.pending || []);
@@ -6911,15 +7321,12 @@ function renderAnalysisFromState(){
   if(qs('resKpi')) qs('resKpi').textContent = restrictions.length;
 
   fillBox('quickWinBox', quickWins, 'Sin quick wins detectados.');
-  fillBox('leanWasteBox', leanWastes, 'Sin clasificación registrada.');
-  fillBox('wasteBox', wastes, 'Sin desperdicios detectados.');
+  fillBox('leanWasteBox', [...leanWastes, ...wastes], 'Sin desperdicios detectados.');
   fillBox('problemBox', problems, 'Sin problemas detectados.');
   fillBox('restrictionBox', restrictions, 'Sin restricciones detectadas.');
   fillBox('observationBox', observations, 'Sin observaciones registradas.');
-  fillBox('commentBox', comments, 'Sin comentarios registrados.');
   fillBox('contradictionBox', contradictions, 'Sin contradicciones detectadas.');
-  fillBox('assumptionBox', assumptions, 'Sin supuestos registrados.');
-  fillBox('validationBox', validations, 'Sin validaciones pendientes.');
+  fillBox('assumptionBox', [...assumptions, ...validations], 'Sin supuestos registrados.');
 }
 
 function hydrateAsIsFromMaster(){
@@ -7076,7 +7483,10 @@ function renderAllFromState(){
   if(typeof hydrateContextFromState === 'function') hydrateContextFromState();
   if(typeof window.hydratePreparationFromState === 'function') window.hydratePreparationFromState();
   updateLoadKpis();
-  if(state.master){ qs('masterEditor').value = JSON.stringify(state.master, null, 2); qs('masterPreview').textContent = JSON.stringify(state.master, null, 2); }
+  if(state.master){
+    if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
+    if(qs('masterPreview')) qs('masterPreview').textContent = JSON.stringify(state.master, null, 2);
+  }
   renderAsIsActivities();
   renderAnalysisFromState();
   if(state.decision.route) setDecisionRoute(state.decision.route);
@@ -7088,6 +7498,10 @@ function renderAllFromState(){
     qs('implementationView').innerHTML = state.results.implementationHtml || '';
     qs('executiveText').value = stripHtml(state.results.executiveHtml || '');
     qs('technicalText').value = stripHtml(state.results.technicalHtml || '');
+    if(qs('outputsSbView')) qs('outputsSbView').textContent = JSON.stringify(state.results.sbJson, null, 2);
+    if(qs('outputsDocumentView') && state.results.documentProposal) qs('outputsDocumentView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
+    if(qs('outputsIntegrationView') && state.results.integrationPayload) qs('outputsIntegrationView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
+    if(qs('outputsCapacityView') && state.results.capacityPayload) qs('outputsCapacityView').textContent = JSON.stringify(state.results.capacityPayload, null, 2);
   }
 }
 
