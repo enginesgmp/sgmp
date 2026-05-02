@@ -890,7 +890,7 @@ body{font-size:14px !important}
 }
 
 .nav.sb-stagebar::before{
-  content:"Etapas del m\00f3dulo";
+  content:"Etapas del módulo";
   display:block;
   color:#075985;
   font-size:.95rem;
@@ -961,6 +961,48 @@ body{font-size:14px !important}
 }
 
 #doc_area{display:none !important}
+
+.app{
+  grid-template-areas:
+    "hero hero"
+    "side msg"
+    "side main" !important;
+  grid-template-rows:auto auto auto !important;
+}
+
+.hdr.sb-hero-lmp-structure{grid-area:hero !important}
+.nav.sb-stagebar{grid-area:side !important}
+#gmsg{grid-area:msg !important;margin-bottom:0 !important}
+.tab-content{grid-area:main !important;align-self:start !important}
+
+.choice-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  min-height:44px;
+  padding:8px;
+  border:1px solid rgba(14,165,233,.22);
+  border-radius:10px;
+  background:#FAFCFF;
+}
+
+.choice-list label{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 9px;
+  border:1px solid rgba(14,165,233,.24);
+  border-radius:999px;
+  background:#F2FBFF;
+  color:#075985;
+  font-size:12px;
+  font-weight:700;
+  text-transform:none;
+  letter-spacing:0;
+}
+
+.choice-list input{width:auto}
+.choice-empty{color:var(--muted);font-size:12px;align-self:center}
 
 </style>
   <script>
@@ -1098,14 +1140,12 @@ body{font-size:14px !important}
         </div>
         <div class="field"><label>Actor interno *</label><select id="a_actor"><option value="">&#8212; Seleccione &#8212;</option></select></div>
         <div class="field"><label>Documento / sistema</label><select id="a_doc"><option value="">&#8212; Ninguno &#8212;</option></select></div>
-        <div class="field"><label>Actividad previa</label><select id="a_prev" multiple></select></div>
-        <div class="field"><label>Actividad siguiente</label><select id="a_next" multiple></select></div>
+        <div class="field"><label>Actividad previa</label><input id="a_prev_text" placeholder="Escribe la actividad previa si aplica"/></div>
+        <div class="field"><label>Actividad siguiente</label><input id="a_next_text" placeholder="Escribe la actividad siguiente si aplica"/></div>
         <div class="field"><label>Proveedores asociados</label><select id="a_sup" multiple></select></div>
-        <div class="field"><label>Entradas asociadas</label><select id="a_inp" multiple></select></div>
-        <div class="field"><label>Salidas asociadas</label><select id="a_outp" multiple></select></div>
+        <div class="field"><label>Entradas asociadas</label><div id="a_inp_checks" class="choice-list"></div><select id="a_inp" multiple class="hidden"></select></div>
+        <div class="field"><label>Salidas asociadas</label><div id="a_outp_checks" class="choice-list"></div><select id="a_outp" multiple class="hidden"></select></div>
         <div class="field"><label>Clientes asociados</label><select id="a_cus" multiple></select></div>
-        <div class="field"><label style="text-transform:none;font-size:12px"><input type="checkbox" id="a_is_start"/>&nbsp; Es la actividad de entrada conceptual al proceso</label></div>
-        <div class="field"><label style="text-transform:none;font-size:12px"><input type="checkbox" id="a_is_end"/>&nbsp; Es la actividad de cierre conceptual del proceso</label></div>
         <div class="field full"><label>Nota de la actividad</label><textarea id="a_note" placeholder="Ej: Si No -> Corregir | Si S&iacute; -> Continuar"></textarea></div>
         <div class="field full"><label>Observaciones</label><textarea id="a_observations" placeholder="Observaciones adicionales de la actividad"></textarea></div>
       </div>
@@ -1114,7 +1154,7 @@ body{font-size:14px !important}
         <span class="pill" id="act_count">0 actividades</span>
       </div>
       <div class="tbl-wrap" style="margin-top:10px">
-        <table><thead><tr><th>#</th><th>Actividad</th><th>Actor</th><th>Tipo</th><th>Previas</th><th>Siguientes</th><th>Entrada</th><th>Cierre</th><th></th></tr></thead>
+        <table><thead><tr><th>#</th><th>Actividad</th><th>Actor</th><th>Tipo</th><th>Previa</th><th>Siguiente</th><th>Entradas</th><th>Salidas</th><th></th></tr></thead>
         <tbody id="tb_acts"></tbody></table>
       </div>
     </div>
@@ -1362,9 +1402,10 @@ body{font-size:14px !important}
       "document": "RE-30211A",
       "previous": [],
       "next": ["Analizar solicitud"],
-      "is_start": true,
-      "is_end": false,
-      "note": ""
+      "ext_inputs": ["Solicitud de Donación RE-30211A"],
+      "ext_outputs": [],
+      "note": "",
+      "observations": ""
     }]
   }
 }</pre>
@@ -1657,6 +1698,19 @@ function syncSelects() {
       items.map((it, i) => `<option value="${i}">${ex(it.name || it)}</option>`).join('');
     if (multi) Array.from(el.options).forEach(o => { if (prev.includes(o.value)) o.selected = true; });
   };
+  const setChecks = (wrapId, items) => {
+    const wrap = $(wrapId); if (!wrap) return;
+    const prev = Array.from(wrap.querySelectorAll('input:checked')).map(o => o.value);
+    if (!items.length) {
+      wrap.innerHTML = '<span class="choice-empty">Sin elementos disponibles.</span>';
+      return;
+    }
+    wrap.innerHTML = items.map((it, i) => {
+      const name = it.name || it;
+      const checked = prev.includes(String(i)) ? ' checked' : '';
+      return `<label><input type="checkbox" value="${i}"${checked}/> ${ex(name)}</label>`;
+    }).join('');
+  };
   setOpts('a_actor', S.cats.actors, false);
   setOpts('a_doc',   S.cats.documents, false);
   setOpts('a_prev',  S.acts, true);
@@ -1665,6 +1719,8 @@ function syncSelects() {
   setOpts('a_inp',   S.cats.inputs, true);
   setOpts('a_outp',  S.cats.outputs, true);
   setOpts('a_cus',   S.cats.customers, true);
+  setChecks('a_inp_checks', S.cats.inputs);
+  setChecks('a_outp_checks', S.cats.outputs);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1676,6 +1732,10 @@ function addActivity() {
   if (!name) { gMsg('warn', 'La actividad debe tener nombre.'); return; }
   if (actorIdx === '') { gMsg('warn', 'Selecciona un actor.'); return; }
   const sv = id => Array.from($(id).selectedOptions).map(o => parseInt(o.value));
+  const checked = id => Array.from($(id)?.querySelectorAll('input:checked') || []).map(o => parseInt(o.value));
+  const splitTyped = value => String(value || '').split(/\n|;|\|/).map(x => x.trim()).filter(Boolean);
+  const previous = splitTyped($('a_prev_text')?.value || '');
+  const next = splitTyped($('a_next_text')?.value || '');
   const act = {
     order: S.acts.length + 1,
     name,
@@ -1683,23 +1743,27 @@ function addActivity() {
     actor: S.cats.actors[parseInt(actorIdx)]?.name || '',
     lane: S.cats.actors[parseInt(actorIdx)]?.name || '',
     document: $('a_doc').value !== '' ? (S.cats.documents[parseInt($('a_doc').value)]?.name || '') : '',
-    previous: sv('a_prev').map(i => S.acts[i]?.name).filter(Boolean),
-    next:     sv('a_next').map(i => S.acts[i]?.name).filter(Boolean),
+    previous,
+    next,
     ext_suppliers: sv('a_sup').map(i => S.cats.suppliers[i]?.name).filter(Boolean),
-    ext_inputs:    sv('a_inp').map(i => S.cats.inputs[i]?.name).filter(Boolean),
-    ext_outputs:   sv('a_outp').map(i => S.cats.outputs[i]?.name).filter(Boolean),
+    ext_inputs:    checked('a_inp_checks').map(i => S.cats.inputs[i]?.name).filter(Boolean),
+    ext_outputs:   checked('a_outp_checks').map(i => S.cats.outputs[i]?.name).filter(Boolean),
     ext_customers: sv('a_cus').map(i => S.cats.customers[i]?.name).filter(Boolean),
-    is_start: $('a_is_start').checked,
-    is_end:   $('a_is_end').checked,
+    is_start: false,
+    is_end: false,
     note: $('a_note').value.trim(),
     observations: $('a_observations') ? $('a_observations').value.trim() : ''
   };
   S.acts.push(act);
   $('a_name').value = ''; $('a_note').value = '';
+  if ($('a_prev_text')) $('a_prev_text').value = '';
+  if ($('a_next_text')) $('a_next_text').value = '';
   if ($('a_observations')) $('a_observations').value = '';
-  $('a_is_start').checked = false; $('a_is_end').checked = false;
   ['a_prev','a_next','a_sup','a_inp','a_outp','a_cus'].forEach(id => {
-    Array.from($(id).options).forEach(o => o.selected = false);
+    if ($(id)) Array.from($(id).options).forEach(o => o.selected = false);
+  });
+  ['a_inp_checks','a_outp_checks'].forEach(id => {
+    if ($(id)) Array.from($(id).querySelectorAll('input')).forEach(o => o.checked = false);
   });
   renderActsTable();
   syncSelects();
@@ -1717,7 +1781,7 @@ function renderActsTable() {
   tb.innerHTML = S.acts.map((a, i) => `<tr>
     <td>${i+1}</td><td>${ex(a.name)}</td><td>${ex(a.actor)}</td><td>${ex(a.type)}</td>
     <td>${ex((a.previous||[]).join(', '))}</td><td>${ex((a.next||[]).join(', '))}</td>
-    <td>${a.is_start ? '\u2713' : ''}</td><td>${a.is_end ? '\u2713' : ''}</td>
+    <td>${ex((a.ext_inputs||[]).join(', '))}</td><td>${ex((a.ext_outputs||[]).join(', '))}</td>
     <td><button class="sm" onclick="removeAct(${i})">\u2715</button></td>
   </tr>`).join('');
 }
@@ -1756,8 +1820,8 @@ function buildPreview() {
           <strong>${ex(a.name)}</strong>
           ${a.previous?.length ? '<small>\u2190 ' + ex(a.previous.join(', ')) + '</small>' : ''}
           ${a.next?.length ? '<small>\u2192 ' + ex(a.next.join(', ')) + '</small>' : ''}
-          ${a.is_start ? '<small style="color:var(--green)">\u25b6 Entrada</small>' : ''}
-          ${a.is_end ? '<small style="color:#16a34a">\u25a0 Cierre</small>' : ''}
+          ${a.ext_inputs?.length ? '<small>Entradas: ' + ex(a.ext_inputs.join(', ')) + '</small>' : ''}
+          ${a.ext_outputs?.length ? '<small>Salidas: ' + ex(a.ext_outputs.join(', ')) + '</small>' : ''}
         </div>`).join('')}
       </div>
     </div>`).join('');
@@ -1790,7 +1854,9 @@ function buildSP() {
     },
     activities: S.acts.map((a, idx) => Object.assign({}, a, {
       order: idx + 1,
-      lane: a.lane || a.actor || ''
+      lane: a.lane || a.actor || '',
+      is_start: idx === 0,
+      is_end: idx === S.acts.length - 1
     }))
   };
 }
@@ -1861,7 +1927,8 @@ function normActs(acts) {
     ext_customers: normalizeCatalogItems(a.ext_customers || a.customers || []),
     is_start: !!a.is_start,
     is_end: !!a.is_end,
-    note: normalizeNoteText(a.note || a.notes || '')
+    note: normalizeNoteText(a.note || a.notes || ''),
+    observations: normalizeNoteText(a.observations || a.observaciones || '')
   }));
 }
 
@@ -1967,8 +2034,6 @@ function validateActivitiesSemantic(activities) {
     }
   });
   if (dupes.size) warnings.push('Existen actividades con nombres duplicados: ' + Array.from(dupes).join(', '));
-  if (startCount === 0) warnings.push('No hay actividad marcada como inicio (is_start).');
-  if (endCount === 0) warnings.push('No hay actividad marcada como cierre (is_end).');
   if (startCount > 1) warnings.push('Hay más de una actividad marcada como inicio.');
   if (endCount > 1) warnings.push('Hay más de una actividad marcada como cierre.');
   if (activities.length && activities.every(a => a.type === 'operation')) warnings.push('Todas las actividades vienen como operation; revisar si faltan decisiones o cierres.');
@@ -2405,7 +2470,7 @@ REGLAS:
 - No hagas análisis profundo.
 - Diferencia proveedores externos, entradas, actores internos, salidas y clientes.
 - Las actividades deben seguir el orden real del flujo; no generes una lista vertical simple si el documento tiene carriles.
-- Cada actividad debe tener order, name, type, actor, lane, previous, next, ext_suppliers, ext_inputs, ext_outputs, ext_customers, is_start, is_end y note.
+- Cada actividad debe tener order, name, type, actor, lane, document, previous, next, ext_suppliers, ext_inputs, ext_outputs, ext_customers, note y observations.
 - type solo puede ser operation o decision salvo que el documento fuerce control/document/end.
 - previous y next usan nombres de actividades, no IDs.
 - Si una decisión tiene rutas Sí/No u otra rama, registra branch_label o route_label en note.
