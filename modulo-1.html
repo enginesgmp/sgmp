@@ -751,6 +751,11 @@
     grid-column:1 / -1;
   }
 
+  .analysis-grid.findings-compact .finding-box{
+    grid-column:auto;
+    min-height:120px;
+  }
+
   .finding-box{
     border-radius:16px;
     padding:14px;
@@ -795,6 +800,80 @@
 
   .finding-list li{
     margin:0 0 6px;
+  }
+
+  .center-actions{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:12px;
+    border-top:none !important;
+    padding-top:6px !important;
+  }
+
+  .analysis-run-card{
+    text-align:center;
+    border:1px solid rgba(31,176,107,.18) !important;
+  }
+
+  .progress-box.visual{
+    position:relative;
+    overflow:hidden;
+    min-height:54px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:800;
+  }
+
+  .progress-box.visual::after{
+    content:"";
+    position:absolute;
+    left:0;
+    bottom:0;
+    height:6px;
+    width:0%;
+    background:linear-gradient(90deg,#1FB06B,#00C2FF);
+    animation:sgmpProgress 1.8s ease-in-out forwards;
+  }
+
+  @keyframes sgmpProgress{
+    0%{width:0%}
+    35%{width:45%}
+    70%{width:78%}
+    100%{width:100%}
+  }
+
+  .editable-doc{
+    width:100%;
+    min-height:250px;
+    background:#FFFFFF;
+    color:#17315c;
+    border:1px solid #d8e2f2;
+    border-radius:16px;
+    padding:18px;
+    line-height:1.55;
+    font:14px/1.55 inherit;
+    resize:vertical;
+  }
+
+  .tobe-construction-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:14px;
+    margin-top:16px;
+  }
+
+  .result-route-card.hidden-route{
+    display:none;
+  }
+
+  .floating-backup{
+    position:fixed;
+    right:22px;
+    bottom:22px;
+    z-index:80;
+    box-shadow:0 14px 30px rgba(11,46,89,.22);
   }
 
   textarea[id*="Prompt"],
@@ -1300,6 +1379,9 @@
   .analysis-grid{
     grid-template-columns:1fr;
   }
+  .tobe-construction-grid{
+    grid-template-columns:1fr;
+  }
 }
 
 .doc-prompt-grid{
@@ -1479,6 +1561,7 @@
     <strong>Etapa actual:</strong> <span id="statusStage">Inicio</span> ·
     <strong>Respaldo:</strong> puedes exportar el JSON completo en cualquier momento.
   </div>
+<button class="btn-ok floating-backup" onclick="downloadBackup()" type="button">Guardar respaldo</button>
 <div class="layout">
 <aside class="sidebar">
 <div class="sidebar-title">Etapas del módulo</div>
@@ -1490,17 +1573,9 @@
 <button class="step-btn" data-target="carga">Carga y consolidación<small>Insumos y objeto maestro.</small></button>
 <button class="step-btn" data-target="analisis">Análisis AS IS<small>Diagnóstico del estado actual.</small></button>
 <button class="step-btn" data-target="decision">Decisión<small>Cerrar con AS IS o pasar a TO BE.</small></button>
-<button class="step-btn" data-target="tobe">TO BE<small>Evaluación de mejoras.</small></button>
-<button class="step-btn" data-target="resultados">Resultados<small>SB, informes y plan.</small></button>
+<button class="step-btn" data-target="tobe">Construcción TO BE<small>Mejoras, modo A y modo B.</small></button>
+<button class="step-btn" data-target="resultados">Resultados<small>Informes según ruta.</small></button>
 <button class="step-btn" data-target="outputs">Outputs<small>JSON para otros módulos.</small></button>
-</div>
-<div class="sidebar-title" style="margin-top:18px">Resumen</div>
-<div class="summary-list">
-<div class="summary-card"><strong>Proceso</strong><small id="sumProcess">No definido</small></div>
-<div class="summary-card"><strong>Actividades</strong><small id="sumActivities">0 actividades</small></div>
-<div class="summary-card"><strong>Indicadores globales</strong><small id="sumIndicators">0 definidos</small></div>
-<div class="summary-card"><strong>Mejoras</strong><small id="sumImprovements">0 registradas</small></div>
-<div class="summary-card"><strong>JSON maestro</strong><small id="sumMaster">No generado</small></div>
 </div>
 </aside>
 <main class="workspace">
@@ -2733,21 +2808,13 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 
 <article class="card">
 <h3>6. Pegar análisis AS IS estructurado</h3>
-<p>Pega el JSON robusto generado por Prompt B. El procesamiento aplica contratos internos y prepara el panel AS IS.</p>
+<p>Pega el JSON robusto generado por Prompt B. El procesamiento visual se hará en el panel de Análisis AS IS.</p>
 <textarea id="iaResponseEditor" placeholder="Pega aquí la respuesta completa de la IA..." style="width:100%;min-height:360px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-<div class="actions">
-<div class="actions-left"><button class="btn-ok btn-xl" id="btnProcessApplyAnalysis" onclick="processAndApplyAnalysis()" type="button">Procesar análisis y aplicar al LMP</button></div>
-</div>
-<div class="progress-box" id="analysisProgress" style="display:none">Procesando análisis y contratos JSON...</div>
-<div class="actions" id="continueAnalysisActions" style="display:none">
-<div class="actions-right"><button class="btn" id="btnContinueAnalysis" onclick="showSection('analisis')" type="button">Continuar al análisis</button></div>
-</div>
 <div class="msg" id="iaMsg"></div><div class="msg" id="analysisValidationMsg"></div>
 </article>
 </div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('carga')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="saveMasterAndContinue()" type="button">Guardar y continuar</button></div>
+<div class="actions center-actions">
+<button class="btn-ok btn-xl" id="btnContinueFromCarga" onclick="continueCargaToAnalysis()" type="button">Continuar a análisis</button>
 </div>
 </section>
 <!-- ANALISIS -->
@@ -2760,6 +2827,15 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="step-pill">Paso 4</div>
 </div>
 <div class="cards">
+<article class="card analysis-run-card">
+<h3>Procesar diagnóstico AS IS</h3>
+<p>Procesa el JSON pegado en Carga y consolidación para alimentar el panel, las actividades y los hallazgos.</p>
+<div class="actions center-actions">
+<button class="btn-ok btn-xl" id="btnProcessApplyAnalysis" onclick="processAndApplyAnalysis()" type="button">Procesar análisis AS IS</button>
+</div>
+<div class="progress-box visual" id="analysisProgress" style="display:none">Procesando análisis y aplicando información al panel...</div>
+<div class="msg" id="analysisProcessMsg"></div>
+</article>
 <article class="card">
 <h3>Panel general del estado actual</h3>
 <div class="msg" id="analysisMsg"></div>
@@ -2786,11 +2862,11 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 
 <article class="card">
 <h3>Hallazgos del estado actual</h3>
-<div class="analysis-grid">
+<div class="analysis-grid findings-compact">
 <div class="finding-box good"><h4>Quick wins</h4><div id="quickWinBox">Sin quick wins detectados.</div></div>
 <div class="finding-box warn"><h4>Desperdicios Lean</h4><div id="leanWasteBox">Sin desperdicios detectados.</div></div>
 <div class="finding-box bad"><h4>Problemas</h4><div id="problemBox">Sin problemas detectados.</div></div>
-<div class="finding-box bad full"><h4>Restricciones</h4><div id="restrictionBox">Sin restricciones detectadas.</div></div>
+<div class="finding-box bad"><h4>Restricciones</h4><div id="restrictionBox">Sin restricciones detectadas.</div></div>
 </div>
 </article>
 
@@ -2804,10 +2880,8 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </article>
 
 <article class="card">
-<h3>JSON diagnóstico AS IS</h3>
-<p>Salida estructurada del diagnóstico actual. Sirve para trazabilidad y para alimentar la decisión.</p>
-<textarea id="analysisEditor" placeholder="Aquí aparecerá el análisis estructurado." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;margin-top:16px"></textarea>
-<div class="actions"><div class="actions-right"><button class="btn" onclick="saveAnalysisAndContinue()" type="button">Ir a decisión</button></div></div>
+<textarea class="hidden" id="analysisEditor"></textarea>
+<div class="actions center-actions"><button class="btn-ok btn-xl" onclick="saveAnalysisAndContinue()" type="button">Ir a decisión</button></div>
 </article>
 </div>
 </section>
@@ -2825,27 +2899,23 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <h3>Quedarse con AS IS y guardar estado actual</h3>
 <p>Conserva el diagnóstico del proceso actual como respaldo para retomarlo después sin diseñar mejoras ahora.</p>
 <div class="mini-note"><strong id="decisionAsIsCount">0</strong> actividades AS IS quedarán respaldadas.</div>
-<button class="btn-danger btn-xl" onclick="setDecisionRoute('asis')" type="button">Elegir AS IS actual</button>
+<button class="btn-danger btn-xl" onclick="chooseDecisionRoute('asis')" type="button">Elegir AS IS actual</button>
 </article>
 <article class="route-card" id="decision_tobe">
 <h3>Elegir TO BE y mejoras</h3>
 <p>Avanza a revisar, ejecutar, personalizar o rechazar propuestas de mejora y construir la versión futura.</p>
 <div class="mini-note"><strong id="decisionImprovementCount">0</strong> propuesta(s) detectadas para evaluar.</div>
-<button class="btn-ok btn-xl" onclick="setDecisionRoute('tobe')" type="button">Elegir TO BE y mejoras</button>
+<button class="btn-ok btn-xl" onclick="chooseDecisionRoute('tobe')" type="button">Elegir TO BE y mejoras</button>
 </article>
 </div>
 <div class="msg" id="decisionMsg"></div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('decision')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="continueFromDecision()" type="button">Continuar</button></div>
-</div>
 </section>
 <!-- TO BE -->
 <section class="section" id="tobe">
 <div class="section-head">
 <div>
-<h2>One page de mejoras / TO BE</h2>
-<p>Evalúa cada mejora propuesta. El usuario decide si la ejecuta, la ajusta o la descarta. Solo las aceptadas o ajustadas alimentarán los resultados.</p>
+<h2>Construcción TO BE</h2>
+<p>Evalúa propuestas, ajusta el flujo futuro y genera el prompt final para modo A, modo B, informes y outputs TO BE.</p>
 </div>
 <div class="step-pill">Paso 6</div>
 </div>
@@ -2860,99 +2930,79 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="msg" id="tobeMsg"></div>
 <div class="list" id="improvementList"></div>
 
-<div class="cards" style="margin-top:16px;">
-  <article class="card half">
+<div class="tobe-construction-grid">
+  <article class="card">
     <h3>Flujo futuro propuesto</h3>
-    <div class="doc-box" id="tobeFutureFlowView"></div>
-  </article>
-  <article class="card half">
-    <h3>Diferencias vs AS IS</h3>
-    <div class="doc-box" id="tobeDiffView"></div>
-  </article>
-  <article class="card half">
-    <h3>Beneficios esperados</h3>
-    <div class="doc-box" id="tobeBenefitsView"></div>
-  </article>
-  <article class="card half">
-    <h3>Propuesta documental inicial</h3>
-    <div class="doc-box" id="tobeDocsView"></div>
+    <textarea class="editable-doc" id="tobeFutureFlowEditor" placeholder="Cambios de actividades: qué se elimina, qué se agrega y qué se ajusta."></textarea>
   </article>
   <article class="card">
-    <h3>Plan de implementación TO BE</h3>
-    <div class="doc-box" id="tobePlanView"></div>
+    <h3>Diferencias vs AS IS</h3>
+    <textarea class="editable-doc" id="tobeDiffEditor" placeholder="Diferencias principales frente al estado actual."></textarea>
+  </article>
+  <article class="card">
+    <h3>Beneficios esperados</h3>
+    <textarea class="editable-doc" id="tobeBenefitsEditor" placeholder="Beneficios esperados: económicos, tiempo, control, calidad, servicio, cumplimiento."></textarea>
   </article>
 </div>
+
+<div class="cards" style="margin-top:16px;">
+<article class="card">
+<h3>Consolidado de mejoras TO BE</h3>
+<p>Reúne propuestas seleccionadas, flujo futuro, diferencias, beneficios, análisis AS IS y contexto para construir el último prompt.</p>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+<div class="actions-left">
+<button class="btn" onclick="buildToBeConstructionPackage()" type="button">Generar consolidado TO BE</button>
+<button class="btn-ghost" onclick="copyTextFromId('tobeConsolidatedEditor','tobeMsg','Consolidado TO BE copiado correctamente.')" type="button">Copiar consolidado</button>
 </div>
+</div>
+<textarea id="tobeConsolidatedEditor" placeholder="Aquí aparecerá el consolidado TO BE." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+</article>
+<article class="card">
+<h3>Prompt de construcción TO BE</h3>
+<p>Prompt robusto para que la IA estructure modo A, modo B, informes, propuesta documental y outputs TO BE.</p>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+<div class="actions-left">
+<button class="btn" onclick="generateToBeConstructionPrompt()" type="button">Generar prompt TO BE</button>
+<button class="btn-ghost" onclick="copyTextFromId('tobePromptEditor','tobeMsg','Prompt TO BE copiado correctamente.')" type="button">Copiar prompt</button>
+</div>
+</div>
+<textarea id="tobePromptEditor" placeholder="Aquí aparecerá el prompt de construcción TO BE." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+</article>
+<article class="card">
+<h3>JSON resultado TO BE</h3>
+<p>Pega el JSON devuelto por la IA. Este resultado alimenta informes, modo A/B y outputs.</p>
+<textarea id="tobeResponseEditor" placeholder="Pega aquí el JSON de construcción TO BE..." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('tobe')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="saveToBeAndContinue()" type="button">Guardar y continuar</button></div>
+<div class="actions-left"><button class="btn-ok" onclick="processToBeConstructionResponse()" type="button">Procesar TO BE</button></div>
+</div>
+</article>
+</div>
+</div>
+<div class="actions center-actions">
+<button class="btn-ok btn-xl" onclick="saveToBeAndContinue()" type="button">Ir a resultados TO BE</button>
 </div>
 </section>
 <!-- RESULTADOS -->
 <section class="section" id="resultados">
 <div class="section-head">
 <div>
-<h2>Resultados finales</h2>
-<p>Genera JSON SB compatible, informe ejecutivo, informe técnico, plan de implementación y los entregables listos para el Evaluador Documental y el Integrador.</p>
+<h2 id="resultsTitle">Resultados</h2>
+<p id="resultsSubtitle">Genera el informe final según la ruta seleccionada.</p>
 </div>
 <div class="step-pill">Paso 7</div>
 </div>
 <div class="cards">
 <article class="card">
-<h3>Prompt final de resultados</h3>
-<p>Construye el último prompt con la decisión tomada, el AS IS validado y, si aplica, las mejoras TO BE seleccionadas. La API podrá reemplazar este prompt por la versión robusta de Google Sheets.</p>
-<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-<div class="actions-left">
-<button class="btn" onclick="generateFinalResultsPrompt()" type="button">Generar prompt final</button>
-<button class="btn-ghost" onclick="copyTextFromId('finalPromptEditor','finalPromptMsg','Prompt final copiado correctamente.')" type="button">Copiar prompt</button>
-</div>
-</div>
-<textarea id="finalPromptEditor" placeholder="Aquí aparecerá el prompt final para generar resultados AS IS o TO BE." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-<textarea id="finalResponseEditor" placeholder="Pega aquí el JSON final generado por IA. Si no lo pegas, el LMP usará el análisis ya procesado y los datos locales." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;margin-top:14px"></textarea>
-<div class="actions">
-<div class="actions-left"><button class="btn-ok" onclick="processFinalResultsResponse()" type="button">Procesar resultado final</button></div>
-</div>
-<div class="msg" id="finalPromptMsg"></div>
-</article>
-<article class="card">
-<h3>Generación de salidas</h3>
+<h3 id="resultsActionTitle">Generación de informe final</h3>
 <div class="actions">
 <div class="actions-left">
-<button class="btn-ok" onclick="generateResults()" type="button">Generar resultados</button>
-<button class="btn-ghost" onclick="copySBJson()" type="button">Copiar JSON SB</button>
-</div>
-<div class="actions-right">
-<button class="btn-ok" onclick="downloadSBJson()" type="button">Descargar JSON SB</button>
+<button class="btn-ok btn-xl" onclick="generateResults()" type="button">Generar informe final</button>
 </div>
 </div>
 <div class="msg" id="resultsMsg"></div>
 </article>
-<article class="card">
-<h3>Resumen final</h3>
-<div class="doc-box" id="resultSummaryView"></div>
-</article>
-<article class="card half">
-<h3>Flujo futuro propuesto</h3>
-<div class="doc-box" id="resultFutureFlowView"></div>
-</article>
-<article class="card half">
-<h3>Diferencia vs AS IS</h3>
-<div class="doc-box" id="resultDiffView"></div>
-</article>
-<article class="card half">
-<h3>Beneficios esperados</h3>
-<div class="doc-box" id="resultBenefitsView"></div>
-</article>
-<article class="card half">
-<h3>Quick wins y validaciones</h3>
-<div class="doc-box" id="resultQuickWinsView"></div>
-</article>
-<article class="card half">
-<h3>JSON SB compatible</h3>
-<div class="pre" id="sbJsonView"></div>
-</article>
-<article class="card half">
-<h3>Plan de implementación</h3>
+<article class="card result-route-card" id="resultModePlanCard">
+<h3>Modo A y Modo B</h3>
 <div class="doc-box" id="implementationView"></div>
 </article>
 <article class="card half">
@@ -2977,30 +3027,17 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="doc-box" id="technicalDoc"></div>
 <textarea class="hidden" id="technicalText"></textarea>
 </article>
-<article class="card half">
-<h3>Propuesta documental para Evaluador documental</h3>
-<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-<div class="actions-left">
-<button class="btn-ghost" onclick="copyDocumentProposalJson()" type="button">Copiar JSON</button>
-<button class="btn-ok" onclick="downloadDocumentProposalJson()" type="button">Descargar JSON</button>
+<div class="hidden" id="resultSummaryView"></div>
+<div class="hidden" id="resultFutureFlowView"></div>
+<div class="hidden" id="resultDiffView"></div>
+<div class="hidden" id="resultBenefitsView"></div>
+<div class="hidden" id="resultQuickWinsView"></div>
+<div class="hidden" id="sbJsonView"></div>
+<div class="hidden" id="documentProposalView"></div>
+<div class="hidden" id="integrationInputView"></div>
 </div>
-</div>
-<div class="pre" id="documentProposalView"></div>
-</article>
-<article class="card half">
-<h3>Input para Integrador</h3>
-<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-<div class="actions-left">
-<button class="btn-ghost" onclick="copyIntegrationJson()" type="button">Copiar JSON</button>
-<button class="btn-ok" onclick="downloadIntegrationJson()" type="button">Descargar JSON</button>
-</div>
-</div>
-<div class="pre" id="integrationInputView"></div>
-</article>
-</div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('resultados')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="showSection('outputs')" type="button">Ir a outputs</button><button class="btn-danger" onclick="downloadBackup()" type="button">Finalizar y guardar respaldo</button></div>
+<div class="actions center-actions">
+<button class="btn-ok btn-xl" onclick="showSection('outputs')" type="button">Ir a outputs</button>
 </div>
 </section>
 <!-- OUTPUTS -->
@@ -3145,7 +3182,16 @@ const state = {
     route: null
   },
   tobe: {
-    improvements: []
+    improvements: [],
+    construction: {
+      futureFlow:'',
+      differences:'',
+      benefits:'',
+      modeA:[],
+      modeB:[],
+      reports:{},
+      finalOutputs:{}
+    }
   },
   results: {
     sbJson: null,
@@ -3271,9 +3317,20 @@ function showSection(id){
     refreshCargaFlowState();
   }
   if(id === 'decision') updateDecisionCards();
+  if(id === 'tobe') renderImprovements();
+  if(id === 'resultados') renderResultsRouteShell();
   updateTopStatus();
   refreshStageAccess();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderResultsRouteShell(){
+  const isToBe = state.decision.route === 'tobe';
+  if(qs('resultsTitle')) qs('resultsTitle').textContent = isToBe ? 'Resultados TO BE' : 'Resultados AS IS';
+  if(qs('resultsSubtitle')) qs('resultsSubtitle').textContent = isToBe
+    ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
+    : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
+  qs('resultModePlanCard')?.classList.toggle('hidden-route', !isToBe);
 }
 
 function setTextSafe(id, value){
@@ -3311,7 +3368,7 @@ function labelStage(id){
     asis:'AS IS',
     analisis:'Análisis AS IS',
     decision:'Decisión',
-    tobe:'TO BE',
+    tobe:'Construcción TO BE',
     resultados:'Resultados',
     outputs:'Outputs'
   }[id] || id;
@@ -4002,6 +4059,27 @@ function saveMasterAndContinue(){
   }
 }
 
+function continueCargaToAnalysis(){
+  try{
+    if(qs('masterEditor') && qs('masterEditor').value.trim()){
+      state.master = JSON.parse(qs('masterEditor').value);
+    } else if(!state.master) {
+      mergeMaster();
+    }
+    if(!(state.briefReview && state.briefReview.approved)){
+      showMsg('cargaMsg','warn','Procesa primero el Brief estructurado antes de continuar.');
+      return;
+    }
+    if(!(qs('iaResponseEditor')?.value || '').trim()){
+      showMsg('cargaMsg','warn','Pega primero el JSON del análisis AS IS generado con Prompt B.');
+      return;
+    }
+    showSection('analisis');
+  }catch(error){
+    showMsg('cargaMsg','err',`No fue posible continuar. Detalle: ${error.message}`);
+  }
+}
+
 
 
 /* =========================
@@ -4150,6 +4228,11 @@ function setDecisionRoute(route){
   );
 }
 
+function chooseDecisionRoute(route){
+  setDecisionRoute(route);
+  setTimeout(() => continueFromDecision(), 120);
+}
+
 function updateDecisionCards(){
   setTextSafe('decisionAsIsCount', safeArray(state.asis?.activities).length);
   setTextSafe('decisionImprovementCount', safeArray(state.analysis?.improvements || state.analysis?.raw?.improvements || state.tobe?.improvements).length);
@@ -4171,35 +4254,21 @@ function improvementTemplate(data = {}){
       <div class="improvement-head">
         <div>
           <h4>${escapeHtml(data.title || 'Mejora propuesta')}</h4>
-          <p>${escapeHtml(data.summary || data.problem || 'Revisa la propuesta y registra una decisión.')}</p>
+          <p>Propuesta editable antes de construir el resultado TO BE.</p>
         </div>
         <div class="status-badge ${badgeClass}" data-role="badge">${badgeText}</div>
       </div>
 
-      <div class="split3">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Problema</h3>
-          <div class="box">${escapeHtml(data.problem || data.summary || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado actual</h3>
-          <div class="box">${escapeHtml(data.currentState || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado propuesto</h3>
-          <div class="box">${escapeHtml(data.proposedState || '')}</div>
-        </div>
-      </div>
-
-      <div class="split2" style="margin-top:14px;">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Sustento</h3>
-          <div class="box">${escapeHtml(data.support || data.justification || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Impacto esperado</h3>
-          <div class="box">${escapeHtml(data.impact || '')}</div>
-        </div>
+      <div class="field-grid">
+        <div class="field w-6"><label>Título</label><input data-role="title" value="${escapeHtml(data.title || 'Mejora propuesta')}" /></div>
+        <div class="field w-3"><label>Tipo</label><input data-role="improvement-type" value="${escapeHtml(data.improvementType || data.mode || '')}" /></div>
+        <div class="field w-3"><label>Beneficio</label><input data-role="benefit-type" value="${escapeHtml(data.benefitType || data.benefit || data.impactCategory || '')}" /></div>
+        <div class="field w-12"><label>Resumen</label><textarea data-role="summary">${escapeHtml(data.summary || data.problem || '')}</textarea></div>
+        <div class="field w-4"><label>Problema</label><textarea data-role="problem">${escapeHtml(data.problem || data.summary || '')}</textarea></div>
+        <div class="field w-4"><label>Estado actual</label><textarea data-role="current-state">${escapeHtml(data.currentState || '')}</textarea></div>
+        <div class="field w-4"><label>Estado propuesto</label><textarea data-role="proposed-state">${escapeHtml(data.proposedState || '')}</textarea></div>
+        <div class="field w-6"><label>Sustento</label><textarea data-role="support">${escapeHtml(data.support || data.justification || '')}</textarea></div>
+        <div class="field w-6"><label>Impacto esperado</label><textarea data-role="impact">${escapeHtml(data.impact || '')}</textarea></div>
       </div>
       <div class="mini-note" style="margin-top:12px">
         <strong>Tipo:</strong> ${escapeHtml(data.improvementType || data.mode || 'pendiente')} ·
@@ -4344,6 +4413,17 @@ function collectImprovements(){
   state.tobe.improvements.forEach(item => {
     const card = document.querySelector(`.improvement-card[data-id="${item.id}"]`);
     if(card){
+      const valueOf = role => card.querySelector(`[data-role="${role}"]`)?.value?.trim() || '';
+      item.title = valueOf('title') || item.title;
+      item.summary = valueOf('summary');
+      item.problem = valueOf('problem');
+      item.currentState = valueOf('current-state');
+      item.proposedState = valueOf('proposed-state');
+      item.support = valueOf('support');
+      item.justification = item.support;
+      item.impact = valueOf('impact');
+      item.improvementType = valueOf('improvement-type');
+      item.benefitType = valueOf('benefit-type');
       const custom = card.querySelector('[data-role="custom-text"]');
       item.customText = custom ? custom.value.trim() : '';
     }
@@ -4403,15 +4483,22 @@ function buildToBeArtifacts(){
     else modeA.push(item);
   });
 
-  const futureFlow = selected.length
+  const construction = state.tobe?.construction || {};
+  const futureFlow = construction.futureFlow
+    ? htmlBlockFromValue(construction.futureFlow)
+    : selected.length
     ? `<ol>${selected.map(x => `<li><strong>${escapeHtml(x.title)}</strong>: ${escapeHtml(x.status === 'custom' ? (x.customText || x.proposedState || x.summary || x.problem || '') : (x.proposedState || x.summary || x.problem || ''))}</li>`).join('')}</ol>`
     : '<p>No hay mejoras seleccionadas para construir el TO BE.</p>';
 
-  const differences = selected.length
+  const differences = construction.differences
+    ? htmlBlockFromValue(construction.differences)
+    : selected.length
     ? `<ul>${selected.map(x => `<li><strong>${escapeHtml(x.title)}</strong><br><strong>AS IS:</strong> ${escapeHtml(x.currentState || x.problem || '-')}` + `<br><strong>TO BE:</strong> ${escapeHtml(x.status === 'custom' ? (x.customText || x.proposedState || x.summary || x.problem || '') : (x.proposedState || x.summary || x.problem || ''))}</li>`).join('')}</ul>`
     : '<p>No hay diferencias definidas porque no hay mejoras aprobadas.</p>';
 
-  const benefits = selected.length
+  const benefits = construction.benefits
+    ? htmlBlockFromValue(construction.benefits)
+    : selected.length
     ? `<ul>${selected.map(x => `<li><strong>${escapeHtml(x.title)}</strong>: ${escapeHtml(x.impact || 'Mejora operativa esperada en tiempo, calidad, costo o servicio.')}</li>`).join('')}</ul>`
     : '<p>No hay beneficios esperados porque no hay mejoras aprobadas.</p>';
 
@@ -4477,15 +4564,157 @@ function buildToBeArtifacts(){
 }
 
 function renderToBeSummary(){
-  const refs = [
-    ['tobeFutureFlowView','futureFlow'],
-    ['tobeDiffView','differences'],
-    ['tobeBenefitsView','benefits'],
-    ['tobeDocsView','docs'],
-    ['tobePlanView','plan']
-  ];
   const artifacts = buildToBeArtifacts();
-  refs.forEach(([id,key]) => { const el = qs(id); if(el) el.innerHTML = artifacts[key]; });
+  const setEditor = (id, key, value) => {
+    const el = qs(id);
+    if(!el) return;
+    if(!el.value.trim()) el.value = state.tobe?.construction?.[key] || stripHtml(value || '');
+  };
+  setEditor('tobeFutureFlowEditor','futureFlow',artifacts.futureFlow);
+  setEditor('tobeDiffEditor','differences',artifacts.differences);
+  setEditor('tobeBenefitsEditor','benefits',artifacts.benefits);
+}
+
+function collectToBeConstructionEditors(){
+  state.tobe = state.tobe || { improvements:[], construction:{} };
+  state.tobe.construction = Object.assign({}, state.tobe.construction || {}, {
+    futureFlow: qs('tobeFutureFlowEditor')?.value.trim() || '',
+    differences: qs('tobeDiffEditor')?.value.trim() || '',
+    benefits: qs('tobeBenefitsEditor')?.value.trim() || ''
+  });
+  return state.tobe.construction;
+}
+
+function buildToBeConstructionPackage(){
+  collectImprovements();
+  const construction = collectToBeConstructionEditors();
+  const artifacts = buildToBeArtifacts();
+  const pack = {
+    contract_version:'1.0',
+    source_module:'lmp',
+    package_type:'tobe_construction_seed',
+    context:getResolvedContext(),
+    as_is:{
+      activities:state.asis.activities || [],
+      analysis:state.analysis?.raw || state.analysis || {},
+      ava:state.analysis?.summary?.ava || state.analysis?.avaRaw?.distribution || {}
+    },
+    selected_improvements:artifacts.selected,
+    rejected_improvements:artifacts.rejected,
+    editable_tobe:{
+      future_flow:construction.futureFlow,
+      differences_vs_as_is:construction.differences,
+      expected_benefits:construction.benefits
+    },
+    current_outputs:{
+      as_is_sipoc_builder:buildSipocContract(),
+      as_is_document_evaluator:state.analysis?.finalOutputs?.document_evaluator || state.analysis?.documentProposal || state.master?.documentProposal || [],
+      as_is_integrator:buildIntegratorOutput(),
+      as_is_capacity_simulator:buildCapacitySimulatorOutput()
+    }
+  };
+  state.tobe.construction.package = pack;
+  if(qs('tobeConsolidatedEditor')) qs('tobeConsolidatedEditor').value = JSON.stringify(pack, null, 2);
+  showMsg('tobeMsg','ok','Consolidado TO BE generado correctamente.');
+  return pack;
+}
+
+function buildToBeConstructionPrompt(pack){
+  const c = pack.context || {};
+  const fallback = `ACTÚA COMO consultor senior de procesos, Lean, rediseño TO BE, gestión documental y arquitectura de módulos SGMP.
+
+OBJETIVO:
+Analizar las mejoras seleccionadas, el AS IS validado y el flujo futuro editable para construir un resultado TO BE profundo y utilizable. Debes devolver SOLO JSON válido.
+
+REGLAS CRÍTICAS:
+- No inventes actividades sin sustento. Si agregas, eliminas o ajustas actividades, explícalo y déjalo en el flujo TO BE.
+- El SIPOC Builder de la ruta TO BE debe usar el flujo TO BE, no el flujo AS IS, cuando exista.
+- Clasifica implementación en Modo A y Modo B:
+  - Modo A: acciones directas, rápidas, bajo esfuerzo, sin rediseño mayor.
+  - Modo B: cambios estructurales, sistemas, documentación, roles, controles, aprobaciones o rediseño de flujo.
+- La propuesta documental inicial debe salir de las mejoras y controles necesarios.
+- El Integrador debe recibir solo entradas, salidas, proveedores y clientes relevantes, sin carriles internos ni actividades.
+- El Simulador de capacidad debe recibir actividades con clasificación AVA y tiempo si existe.
+- El informe ejecutivo debe ser breve, orientado a decisión.
+- El informe técnico debe explicar cambios, criterios, riesgos, dependencias y validaciones.
+- Si algo no está claro, incluirlo como validación pendiente, no inventarlo.
+
+CONTRATO JSON OBLIGATORIO:
+{
+  "mode": "to_be",
+  "to_be": {
+    "future_flow": [],
+    "differences_vs_as_is": [],
+    "expected_benefits": [],
+    "mode_a": [],
+    "mode_b": [],
+    "validations_to_do": []
+  },
+  "reports": {
+    "executive": "",
+    "technical": ""
+  },
+  "final_outputs": {
+    "sipoc_builder": {"sipoc_input": {}},
+    "document_evaluator": {},
+    "integrator": {},
+    "capacity_simulator": {}
+  }
+}`;
+  const staticBase = sgmpPrompt('prompt_tobe_construction', '');
+  return (staticBase || fallback)
+    .replace('{{industry}}', c.industry || '[INDUSTRIA]')
+    .replace('{{activity}}', c.activity || '[ACTIVIDAD]')
+    .replace('{{processType}}', c.processType || '[TIPO_PROCESO]')
+    + '\n\nCONSOLIDADO TO BE:\n' + JSON.stringify(pack, null, 2);
+}
+
+function generateToBeConstructionPrompt(){
+  const pack = state.tobe?.construction?.package || buildToBeConstructionPackage();
+  const prompt = buildToBeConstructionPrompt(pack);
+  if(qs('tobePromptEditor')) qs('tobePromptEditor').value = prompt;
+  showMsg('tobeMsg','ok','Prompt TO BE generado correctamente.');
+}
+
+function processToBeConstructionResponse(){
+  const raw = qs('tobeResponseEditor')?.value.trim() || '';
+  if(!raw){
+    showMsg('tobeMsg','warn','Pega primero el JSON de construcción TO BE.');
+    return;
+  }
+  try{
+    const parsed = extractJsonFromText(raw);
+    const tobeBlock = parsed.to_be || parsed.toBe || {};
+    const reports = parsed.reports || parsed.informes || {};
+    const finalOutputs = parsed.final_outputs || parsed.finalOutputs || {};
+    state.tobe.construction = Object.assign({}, state.tobe.construction || {}, {
+      raw:parsed,
+      processed:true,
+      futureFlow:htmlTextFromValue(tobeBlock.future_flow || tobeBlock.futureFlow || state.tobe.construction.futureFlow),
+      differences:htmlTextFromValue(tobeBlock.differences_vs_as_is || tobeBlock.differencesVsAsIs || state.tobe.construction.differences),
+      benefits:htmlTextFromValue(tobeBlock.expected_benefits || tobeBlock.expectedBenefits || state.tobe.construction.benefits),
+      modeA:safeArray(tobeBlock.mode_a || tobeBlock.modeA),
+      modeB:safeArray(tobeBlock.mode_b || tobeBlock.modeB),
+      reports,
+      finalOutputs
+    });
+    if(qs('tobeFutureFlowEditor')) qs('tobeFutureFlowEditor').value = state.tobe.construction.futureFlow;
+    if(qs('tobeDiffEditor')) qs('tobeDiffEditor').value = state.tobe.construction.differences;
+    if(qs('tobeBenefitsEditor')) qs('tobeBenefitsEditor').value = state.tobe.construction.benefits;
+    state.finalReview = { raw:parsed, processed:true };
+    state.analysis = state.analysis || {};
+    state.analysis.finalOutputs = Object.assign({}, state.analysis.finalOutputs || {}, finalOutputs);
+    state.analysis.reports = Object.assign({}, state.analysis.reports || {}, reports);
+    showMsg('tobeMsg','ok','Construcción TO BE procesada correctamente. Ya puedes ir a resultados TO BE.');
+  }catch(error){
+    showMsg('tobeMsg','err',`No fue posible procesar el TO BE. Detalle: ${error.message}`);
+  }
+}
+
+function htmlTextFromValue(value){
+  if(Array.isArray(value)) return value.map(item => typeof item === 'string' ? item : (item.title || item.name || item.summary || JSON.stringify(item))).join('\n');
+  if(value && typeof value === 'object') return JSON.stringify(value, null, 2);
+  return String(value || '').trim();
 }
 
 
@@ -4934,6 +5163,7 @@ function buildSBJson(){
   const finalSb = state.analysis?.finalOutputs?.sipoc_builder || state.analysis?.raw?.final_outputs?.sipoc_builder;
   const localContract = buildSipocContract();
   if(finalSb?.sipoc_input){
+    const useFinalToBeFlow = state.decision?.route === 'tobe' && safeArray(finalSb.sipoc_input.activities).length;
     return Object.assign({}, finalSb, {
       contract_version: finalSb.contract_version || localContract.contract_version,
       source_module: finalSb.source_module || 'lmp',
@@ -4945,13 +5175,13 @@ function buildSBJson(){
         purpose: localContract.sipoc_input.purpose || finalSb.sipoc_input.purpose || '',
         start_event: localContract.sipoc_input.start_event || finalSb.sipoc_input.start_event || '',
         end_event: localContract.sipoc_input.end_event || finalSb.sipoc_input.end_event || '',
-        suppliers: localContract.sipoc_input.suppliers.length ? localContract.sipoc_input.suppliers : safeArray(finalSb.sipoc_input.suppliers),
-        inputs: localContract.sipoc_input.inputs.length ? localContract.sipoc_input.inputs : safeArray(finalSb.sipoc_input.inputs),
-        outputs: localContract.sipoc_input.outputs.length ? localContract.sipoc_input.outputs : safeArray(finalSb.sipoc_input.outputs),
-        customers: localContract.sipoc_input.customers.length ? localContract.sipoc_input.customers : safeArray(finalSb.sipoc_input.customers),
-        actors: localContract.sipoc_input.actors.length ? localContract.sipoc_input.actors : safeArray(finalSb.sipoc_input.actors),
-        documents: localContract.sipoc_input.documents.length ? localContract.sipoc_input.documents : safeArray(finalSb.sipoc_input.documents),
-        activities: localContract.sipoc_input.activities.length ? localContract.sipoc_input.activities : safeArray(finalSb.sipoc_input.activities)
+        suppliers: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.suppliers) : (localContract.sipoc_input.suppliers.length ? localContract.sipoc_input.suppliers : safeArray(finalSb.sipoc_input.suppliers)),
+        inputs: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.inputs) : (localContract.sipoc_input.inputs.length ? localContract.sipoc_input.inputs : safeArray(finalSb.sipoc_input.inputs)),
+        outputs: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.outputs) : (localContract.sipoc_input.outputs.length ? localContract.sipoc_input.outputs : safeArray(finalSb.sipoc_input.outputs)),
+        customers: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.customers) : (localContract.sipoc_input.customers.length ? localContract.sipoc_input.customers : safeArray(finalSb.sipoc_input.customers)),
+        actors: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.actors) : (localContract.sipoc_input.actors.length ? localContract.sipoc_input.actors : safeArray(finalSb.sipoc_input.actors)),
+        documents: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.documents) : (localContract.sipoc_input.documents.length ? localContract.sipoc_input.documents : safeArray(finalSb.sipoc_input.documents)),
+        activities: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.activities) : (localContract.sipoc_input.activities.length ? localContract.sipoc_input.activities : safeArray(finalSb.sipoc_input.activities))
       }),
       analysis_metrics: localContract.analysis_metrics
     });
@@ -5167,6 +5397,24 @@ function buildImplementationHtml(){
   `;
 }
 
+function buildToBeModePlanHtml(finalToBe = {}){
+  const construction = state.tobe?.construction || {};
+  const modeA = safeArray(finalToBe.mode_a || finalToBe.modeA || construction.modeA);
+  const modeB = safeArray(finalToBe.mode_b || finalToBe.modeB || construction.modeB);
+  if(!modeA.length && !modeB.length){
+    return buildToBeArtifacts().plan;
+  }
+  const row = (x, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(x.title || x.name || x.mejoria || 'Acción')}</td><td>${escapeHtml(x.action || x.description || x.descripcion || x.summary || '')}</td><td>${escapeHtml(x.owner || x.responsable || '')}</td><td>${escapeHtml(x.impact || x.benefit || x.beneficio || '')}</td></tr>`;
+  const rowsA = modeA.length ? modeA.map(row).join('') : '<tr><td colspan="5">Sin acciones en Modo A.</td></tr>';
+  const rowsB = modeB.length ? modeB.map(row).join('') : '<tr><td colspan="5">Sin acciones en Modo B.</td></tr>';
+  return `
+    <h2>Modo A · Implementación directa</h2>
+    <table><thead><tr><th>#</th><th>Acción</th><th>Detalle</th><th>Responsable</th><th>Beneficio</th></tr></thead><tbody>${rowsA}</tbody></table>
+    <h2>Modo B · Implementación estructurada</h2>
+    <table><thead><tr><th>#</th><th>Acción</th><th>Detalle</th><th>Responsable</th><th>Beneficio</th></tr></thead><tbody>${rowsB}</tbody></table>
+  `;
+}
+
 function buildFinalResultsPrompt(){
   collectAsisActivities();
   if(state.decision.route === 'tobe') collectImprovements();
@@ -5334,21 +5582,22 @@ function generateResults(){
   }
   state.results.sbJson = sbContract;
   state.results.sbValidation = sbValidation;
+  const isToBe = state.decision.route === 'tobe';
   const finalRaw = state.finalReview?.processed ? (state.finalReview.raw || {}) : {};
   const finalResults = finalRaw.results || finalRaw.resultados || {};
+  const finalToBe = finalRaw.to_be || finalRaw.toBe || {};
   const reports = finalResults.reports || finalRaw.reports || finalRaw.informes || state.analysis?.reports || state.analysis?.raw?.reports || {};
   const executiveReport = reports.executive || reports.executive_report || reports.informe_ejecutivo || '';
   const technicalReport = reports.technical || reports.technical_report || reports.informe_tecnico || '';
   state.results.executiveHtml = executiveReport ? `<h1>Informe Ejecutivo</h1><p>${escapeHtml(String(executiveReport)).replace(/\n/g,'<br>')}</p>` : buildExecutiveHtml();
   state.results.technicalHtml = technicalReport ? `<h1>Informe Técnico</h1><p>${escapeHtml(String(technicalReport)).replace(/\n/g,'<br>')}</p>` : buildTechnicalHtml();
-  state.results.implementationHtml = buildImplementationHtml();
+  state.results.implementationHtml = isToBe ? buildToBeModePlanHtml(finalToBe) : '';
   const artifacts = buildToBeArtifacts();
   const finalOutputs = finalRaw.final_outputs || finalRaw.finalOutputs || state.analysis?.finalOutputs || state.analysis?.raw?.final_outputs || {};
   state.results.documentProposal = finalOutputs.document_evaluator || finalOutputs.documentEvaluator || artifacts.documentProposal || [];
   state.results.integrationPayload = finalOutputs.integrator || buildIntegratorOutput();
   state.results.capacityPayload = finalOutputs.capacity_simulator || finalOutputs.capacitySimulator || buildCapacitySimulatorOutput();
 
-  const isToBe = state.decision.route === 'tobe';
   const summaryText = finalResults.summary || finalResults.as_is_summary || (isToBe ? 'Resultados TO BE generados desde mejoras seleccionadas.' : buildExecutiveSummary());
   if(qs('resultSummaryView')) qs('resultSummaryView').innerHTML = htmlBlockFromValue(summaryText);
   if(qs('resultFutureFlowView')) qs('resultFutureFlowView').innerHTML = isToBe
@@ -5372,6 +5621,11 @@ function generateResults(){
   qs('executiveDoc').innerHTML = state.results.executiveHtml;
   qs('technicalDoc').innerHTML = state.results.technicalHtml;
   qs('implementationView').innerHTML = state.results.implementationHtml;
+  qs('resultModePlanCard')?.classList.toggle('hidden-route', !isToBe);
+  if(qs('resultsTitle')) qs('resultsTitle').textContent = isToBe ? 'Resultados TO BE' : 'Resultados AS IS';
+  if(qs('resultsSubtitle')) qs('resultsSubtitle').textContent = isToBe
+    ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
+    : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
   qs('documentProposalView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
   qs('integrationInputView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
   if(qs('outputsSbView')) qs('outputsSbView').textContent = JSON.stringify(state.results.sbJson, null, 2);
@@ -5574,7 +5828,7 @@ function resetAll(){
     analysis:null,
     analysisRun:{raw:null,qa:false},
     decision:{route:null},
-    tobe:{improvements:[]},
+    tobe:{improvements:[],construction:{futureFlow:'',differences:'',benefits:'',modeA:[],modeB:[],reports:{},finalOutputs:{}}},
     results:{sbJson:null,sbValidation:null,executiveHtml:'',technicalHtml:'',implementationHtml:''},
     finalReview:{raw:null,processed:false}
   };
@@ -5596,7 +5850,7 @@ function resetAll(){
 
   ['prepContextPreview','masterPreview','sbJsonView','quickWinBox','leanWasteBox','problemBox','restrictionBox','observationBox','contradictionBox','assumptionBox','resultSummaryView','resultFutureFlowView','resultDiffView','resultBenefitsView','resultQuickWinsView','outputsSbView','outputsDocumentView','outputsIntegrationView','outputsCapacityView'].forEach(id => { const el = qs(id); if(el) el.textContent = ''; });
   ['executiveDoc','technicalDoc','implementationView'].forEach(id => { const el = qs(id); if(el) el.innerHTML = ''; });
-  ['executiveText','technicalText','analysisEditor','masterEditor','finalPromptEditor','finalResponseEditor'].forEach(id => { const el = qs(id); if(el) el.value = ''; });
+  ['executiveText','technicalText','analysisEditor','masterEditor','finalPromptEditor','finalResponseEditor','tobeFutureFlowEditor','tobeDiffEditor','tobeBenefitsEditor','tobeConsolidatedEditor','tobePromptEditor','tobeResponseEditor'].forEach(id => { const el = qs(id); if(el) el.value = ''; });
 
   ['asisCountKpi','wasteKpi','problemKpi','qwKpi','resKpi'].forEach(id => { const el = qs(id); if(el) el.textContent = '0'; });
   ['avaKpi','nnvaKpi','nvaKpi'].forEach(id => { const el = qs(id); if(el) el.textContent = '0%'; });
@@ -5884,6 +6138,7 @@ function clearAllLoads(){
   if(qs('iaResponseEditor')) qs('iaResponseEditor').value = '';
   if(qs('finalPromptEditor')) qs('finalPromptEditor').value = '';
   if(qs('finalResponseEditor')) qs('finalResponseEditor').value = '';
+  ['tobeFutureFlowEditor','tobeDiffEditor','tobeBenefitsEditor','tobeConsolidatedEditor','tobePromptEditor','tobeResponseEditor'].forEach(id => { const el = qs(id); if(el) el.value = ''; });
   if(qs('analysisProgress')) qs('analysisProgress').style.display = 'none';
   if(qs('continueAnalysisActions')) qs('continueAnalysisActions').style.display = 'none';
   if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = '';
@@ -6556,7 +6811,7 @@ function refreshCargaFlowState(){
     btnGenerateAnalysisPrompt: !briefApproved,
     btnCopyAnalysisPrompt: !hasAnalysisPrompt,
     btnProcessApplyAnalysis: !hasAnalysisResponse,
-    btnContinueAnalysis: !(state.analysis && state.analysis.raw)
+    btnContinueFromCarga: !(briefApproved && hasAnalysisResponse)
   };
   Object.keys(disabledMap).forEach(id => {
     const el = qs(id);
@@ -7062,16 +7317,16 @@ function normalizeAnalysisPayload(parsed){
   };
 }
 
-function processIAResponse(){
+function processIAResponse(msgId = 'iaMsg'){
   const raw = qs('iaResponseEditor')?.value.trim() || '';
 
   if(!raw){
-    showMsg('iaMsg','warn','Pega primero la respuesta de la IA.');
+    showMsg(msgId,'warn','Pega primero la respuesta de la IA en Carga y consolidación.');
     return false;
   }
 
   if(!(state.briefReview && state.briefReview.approved)){
-    showMsg('iaMsg','warn','Debes procesar un Brief válido antes de procesar el diagnóstico AS IS.');
+    showMsg(msgId,'warn','Debes procesar un Brief válido antes de procesar el diagnóstico AS IS.');
     return false;
   }
 
@@ -7195,31 +7450,29 @@ function processIAResponse(){
     state.analysisRun.qa = analysisIssues.length === 0;
 
     refreshCargaFlowState();
-    showMsg('iaMsg','ok','Diagnóstico AS IS procesado correctamente. Ya puedes aplicarlo al LMP y continuar.');
+    showMsg(msgId,'ok','Diagnóstico AS IS procesado correctamente. El panel ya fue actualizado.');
     updateTopStatus();
     return true;
 
   }catch(error){
-    showMsg('iaMsg','err',`No fue posible procesar la respuesta IA. Detalle: ${error.message}`);
+    showMsg(msgId,'err',`No fue posible procesar la respuesta IA. Detalle: ${error.message}`);
     return false;
   }
 }
 
 function processAndApplyAnalysis(){
   const progress = qs('analysisProgress');
-  const actions = qs('continueAnalysisActions');
+  const msgId = qs('analysisProcessMsg') ? 'analysisProcessMsg' : 'iaMsg';
   if(progress) progress.style.display = 'block';
-  if(actions) actions.style.display = 'none';
   setTimeout(() => {
-    const ok = processIAResponse();
+    const ok = processIAResponse(msgId);
     if(progress) progress.style.display = 'none';
     if(ok){
       renderAnalysisFromState();
       renderAsIsActivities();
-      if(actions) actions.style.display = 'flex';
-      showMsg('iaMsg','ok','Análisis aplicado. Puedes continuar al panel AS IS.');
+      showMsg(msgId,'ok','Análisis aplicado al panel AS IS.');
     }
-  }, 180);
+  }, 1850);
 }
 
 function applyIAResponseAndContinue(){
@@ -7413,7 +7666,8 @@ function seedImprovementsFromAnalysis(){
   }
 
   if(state.tobe.improvements.length){
-    showMsg('tobeMsg','warn','Ya existen mejoras registradas.');
+    renderImprovements();
+    showMsg('tobeMsg','ok','Se mostraron las mejoras ya registradas.');
     return;
   }
 
@@ -7471,11 +7725,12 @@ function seedImprovementsFromAnalysis(){
 
 function saveToBeAndContinue(){
   collectImprovements();
+  collectToBeConstructionEditors();
   const selected = getSelectedToBeImprovements();
   if(state.decision.route === 'tobe' && !selected.length){ showMsg('tobeMsg','warn','Debes seleccionar al menos una mejora para continuar.'); return; }
   state.decision.finalMode = state.decision.route === 'tobe' ? 'tobe' : (state.decision.finalMode || 'asis');
   renderToBeSummary();
-  goToNext('tobe');
+  showSection('resultados');
 }
 
 function renderAllFromState(){
