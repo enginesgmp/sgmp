@@ -3634,6 +3634,8 @@ REGLAS CRÍTICAS:
 - Diferencia Suppliers, Inputs, Outputs y Customers de actores internos.
 - No confundas documentos, sistemas o registros con actividades.
 - Cada actividad debe tener nombre.
+- Cada actividad debe tener order numérico, comenzando en 1, según la secuencia real del flujo.
+- Cada actividad debe tener lane con el mismo valor del actor cuando el diagrama use carriles.
 - Cada actividad debe tener previous y next como arrays.
 - En previous y next usa nombres de actividades, no IDs.
 - Cada actividad debe incluir siempre ext_suppliers, ext_inputs, ext_outputs y ext_customers, aunque sean arrays vacíos.
@@ -3644,6 +3646,11 @@ REGLAS CRÍTICAS:
 - Clasifica type usando solo: operation o decision.
 - Usa operation para actividad normal y decision para puntos de decisión.
 - No incluyas actividades mencionadas en notas generales si no forman parte del flujo.
+- Preserva la lógica visual del diagrama: proveedores/entradas a la izquierda, carriles de actores al centro y salidas/clientes a la derecha.
+- No conviertas el flujo en una lista vertical simple si el documento muestra carriles horizontales o swimlanes.
+- Ordena las actividades de arriba hacia abajo por secuencia del flujo, y usa el actor/lane para ubicar cada actividad en su carril.
+- Cuando una decisión tenga ramas, registra branch_label o route_label en la actividad o en la nota si el rótulo aparece en el diagrama.
+- Evita inventar nodos de ruteo; si se requieren aclaraciones para no cruzar líneas, déjalas como note.
 - No inventes problemas, desperdicios, restricciones o mejoras. Si el diagrama permite una inferencia operativa obvia, regístrala como observación o validación pendiente, no como diagnóstico profundo.
 - Los campos que normalmente vendrían de entrevista, preentrevista o análisis deben quedar vacíos si el SIPOC/diagrama no los muestra.
 
@@ -3678,12 +3685,16 @@ ESTRUCTURA JSON OBLIGATORIA:
   },
   "activities": [
     {
+      "order": 1,
       "name": "",
       "type": "operation",
       "actor": "",
+      "lane": "",
       "document": "",
       "previous": [],
       "next": [],
+      "branch_label": "",
+      "route_label": "",
       "supplierRefs": [],
       "customerRefs": [],
       "ext_suppliers": [],
@@ -3707,6 +3718,16 @@ ESTRUCTURA JSON OBLIGATORIA:
     "customers": [],
     "actors": [],
     "documents": [],
+    "layout_hints": {
+      "diagram_style": "horizontal_sipoc_swimlane",
+      "reference_pattern": "visio_sipoc_with_left_inputs_center_swimlanes_right_outputs",
+      "sequence_strategy": "top_to_bottom_by_flow_order",
+      "activity_positioning": "x_by_actor_lane_y_by_sequence_order",
+      "edge_style": "orthogonal_elbow",
+      "avoid_crossing": true,
+      "minimize_routing_nodes": true,
+      "peripheral_connection_policy": "connect_only_declared_ext_refs"
+    },
     "activities": []
   },
   "painPoints": {
@@ -3737,6 +3758,7 @@ VALIDACIÓN ANTES DE RESPONDER:
 6. Los proveedores/clientes/entradas/salidas deben estar alineados con las actividades.
 7. Los problemas, desperdicios o restricciones solo pueden anotarse si son obvios desde el flujo; si no, dejarlos en blanco.
 8. No mezcles información de contexto del LMP ni propongas mejoras.
+9. El flujo debe quedar preparado para un SIPOC visual horizontal tipo Visio/draw.io, con order, lane y layout_hints.
 
 FUENTE A CONVERTIR:
 Adjunto o pego a continuación el PDF, imagen o texto extraído del SIPOC/flujo.
@@ -4815,6 +4837,10 @@ function dedupeCatalog(items){
   const explodeCatalogValue = (value) => {
     if(Array.isArray(value)) return value.flatMap(explodeCatalogValue);
     if(value === undefined || value === null || value === '') return [];
+    if(value && typeof value === 'object'){
+      const raw = value.name || value.title || value.value || value.label || value.input || value.output || value.customer || value.supplier || value.document || value.document_name || value.ref || '';
+      return raw ? explodeCatalogValue(raw) : [];
+    }
     return String(value)
       .split(/\n|;|\|/)
       .map(v => v.trim())
@@ -4854,21 +4880,28 @@ function buildSipocActivities(){
     ? state.asis.activities
     : (safeArray(state.master?.flowActivities).length ? state.master.flowActivities : safeArray(state.master?.activities));
   const source = safeArray(sourceSeed).map(normalizeActivity).filter(a => a.name);
-  return source.map((a, idx, arr) => ({
-    name: normalizeContractString(a.name || a.title || ''),
-    type: canonicalActivityType(a.type),
-    actor: normalizeCatalogValue(a.actor || a.owner || ''),
-    document: normalizeCatalogValue(a.document || ''),
-    previous: a.previous?.length ? a.previous.map(normalizeContractString).filter(Boolean) : (idx === 0 ? [] : [normalizeContractString(arr[idx - 1].name || arr[idx - 1].title || '')].filter(Boolean)),
-    next: a.next?.length ? a.next.map(normalizeContractString).filter(Boolean) : (idx === arr.length - 1 ? [] : [normalizeContractString(arr[idx + 1].name || arr[idx + 1].title || '')].filter(Boolean)),
-    ext_suppliers: dedupeCatalog(a.ext_suppliers || []),
-    ext_inputs: dedupeCatalog(a.ext_inputs || []),
-    ext_outputs: dedupeCatalog(a.ext_outputs || []),
-    ext_customers: dedupeCatalog(a.ext_customers || []),
-    is_start: a.is_start || idx === 0,
-    is_end: a.is_end || idx === arr.length - 1,
-    note: normalizeContractString([a.note, a.observations, a.problems, a.wastes].filter(Boolean).join(' | '))
-  }));
+  return source.map((a, idx, arr) => {
+    const actor = normalizeCatalogValue(a.actor || a.owner || '');
+    return {
+      order: Number(a.order) || idx + 1,
+      lane: normalizeCatalogValue(a.lane || actor),
+      name: normalizeContractString(a.name || a.title || ''),
+      type: canonicalActivityType(a.type),
+      actor,
+      document: normalizeCatalogValue(a.document || ''),
+      previous: a.previous?.length ? a.previous.map(normalizeContractString).filter(Boolean) : (idx === 0 ? [] : [normalizeContractString(arr[idx - 1].name || arr[idx - 1].title || '')].filter(Boolean)),
+      next: a.next?.length ? a.next.map(normalizeContractString).filter(Boolean) : (idx === arr.length - 1 ? [] : [normalizeContractString(arr[idx + 1].name || arr[idx + 1].title || '')].filter(Boolean)),
+      branch_label: normalizeContractString(a.branch_label || ''),
+      route_label: normalizeContractString(a.route_label || ''),
+      ext_suppliers: dedupeCatalog(a.ext_suppliers || []),
+      ext_inputs: dedupeCatalog(a.ext_inputs || []),
+      ext_outputs: dedupeCatalog(a.ext_outputs || []),
+      ext_customers: dedupeCatalog(a.ext_customers || []),
+      is_start: a.is_start || idx === 0,
+      is_end: a.is_end || idx === arr.length - 1,
+      note: normalizeContractString([a.note, a.observations, a.problems, a.wastes].filter(Boolean).join(' | '))
+    };
+  });
 }
 
 function buildSipocNotes(){
@@ -4882,6 +4915,20 @@ function buildSipocNotes(){
   if(futureVision) parts.push(futureVision);
   const notes = parts.join('\n');
   return notes || 'Sin notas adicionales del proceso.';
+}
+
+function buildSipocLayoutHints(){
+  return {
+    diagram_style: 'horizontal_sipoc_swimlane',
+    reference_pattern: 'visio_sipoc_with_left_inputs_center_swimlanes_right_outputs',
+    sequence_strategy: 'top_to_bottom_by_flow_order',
+    activity_positioning: 'x_by_actor_lane_y_by_sequence_order',
+    edge_style: 'orthogonal_elbow',
+    avoid_crossing: true,
+    minimize_routing_nodes: true,
+    peripheral_connection_policy: 'connect_only_declared_ext_refs',
+    notes: 'Ubicar Suppliers e Inputs a la izquierda, actividades al centro por carriles de actor y Outputs/Customers a la derecha. No convertir el flujo en una columna vertical simple.'
+  };
 }
 
 function buildAnalysisMetrics(){
@@ -5182,6 +5229,7 @@ function buildSipocContract(){
       customers,
       actors,
       documents,
+      layout_hints: buildSipocLayoutHints(),
       activities
     },
     analysis_metrics: buildAnalysisMetrics(),
@@ -5216,6 +5264,14 @@ function validateSipocContract(sp){
     const normalized = arr.map(v => normalizeCatalogValue(v)).filter(Boolean);
     if(normalized.length !== dedupeCatalog(arr).length) warnings.push('sipoc_input.' + key + ' contiene duplicados o variantes.');
   });
+  if(!sp.layout_hints && !sp.layoutHints) warnings.push('sipoc_input.layout_hints no viene definido; SIPOC Builder usará su layout base.');
+  const hasPeripheralLinks = safeArray(sp.activities).some(act =>
+    safeArray(act?.ext_suppliers).length ||
+    safeArray(act?.ext_inputs).length ||
+    safeArray(act?.ext_outputs).length ||
+    safeArray(act?.ext_customers).length
+  );
+  if(safeArray(sp.activities).length && !hasPeripheralLinks) warnings.push('Las actividades no traen ext_suppliers/ext_inputs/ext_outputs/ext_customers; la capa SIPOC periférica puede quedar débil.');
   const activityTypes = new Set();
   safeArray(sp.activities).forEach((act, idx) => {
     const name = normalizeContractString(act?.name || '');
@@ -5253,6 +5309,7 @@ function buildSBJson(){
         customers: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.customers) : (localContract.sipoc_input.customers.length ? localContract.sipoc_input.customers : safeArray(finalSb.sipoc_input.customers)),
         actors: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.actors) : (localContract.sipoc_input.actors.length ? localContract.sipoc_input.actors : safeArray(finalSb.sipoc_input.actors)),
         documents: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.documents) : (localContract.sipoc_input.documents.length ? localContract.sipoc_input.documents : safeArray(finalSb.sipoc_input.documents)),
+        layout_hints: finalSb.sipoc_input.layout_hints || finalSb.sipoc_input.layoutHints || localContract.sipoc_input.layout_hints,
         activities: useFinalToBeFlow ? safeArray(finalSb.sipoc_input.activities) : (localContract.sipoc_input.activities.length ? localContract.sipoc_input.activities : safeArray(finalSb.sipoc_input.activities))
       }),
       analysis_metrics: localContract.analysis_metrics
@@ -6804,10 +6861,13 @@ REGLAS CRÍTICAS:
 - notes debe contener solo notas semánticas del proceso en texto.
 - process_name y purpose no pueden quedar vacíos.
 - activities debe tener al menos una actividad.
+- Cada activity debe incluir order y lane.
 - previous y next deben ser arrays.
 - type debe ser uno de: operation, decision, control, document, end.
 - Limpia y deduplica actors, documents, suppliers, inputs, outputs y customers.
 - No mezcles actores internos con proveedores o clientes externos.
+- Incluye layout_hints para que SIPOC Builder construya un diagrama horizontal tipo SIPOC/Visio y no una columna vertical simple.
+- Las conexiones deben favorecer edge_style orthogonal_elbow, avoid_crossing true y minimize_routing_nodes true.
 - Si falta evidencia para algún campo, completa con la mejor inferencia razonable y marca la limitación en notes.
 
 SALIDA ESPERADA:
@@ -6825,6 +6885,15 @@ SALIDA ESPERADA:
     "customers": [],
     "actors": [],
     "documents": [],
+    "layout_hints": {
+      "diagram_style": "horizontal_sipoc_swimlane",
+      "sequence_strategy": "top_to_bottom_by_flow_order",
+      "activity_positioning": "x_by_actor_lane_y_by_sequence_order",
+      "edge_style": "orthogonal_elbow",
+      "avoid_crossing": true,
+      "minimize_routing_nodes": true,
+      "peripheral_connection_policy": "connect_only_declared_ext_refs"
+    },
     "activities": []
   }
 }
@@ -7281,6 +7350,10 @@ function normalizeActivity(item){
   return {
     name: normalizeContractString(name),
     actor: normalizeCatalogValue(actor),
+    order: Number(item.order || item.sequence || item.seq || 0) || 0,
+    lane: normalizeCatalogValue(item.lane || item.swimlane || actor),
+    branch_label: normalizeContractString(item.branch_label || item.branchLabel || item.route_label || item.routeLabel || ''),
+    route_label: normalizeContractString(item.route_label || item.routeLabel || item.branch_label || item.branchLabel || ''),
     type: canonicalActivityType(item.type || item.tipo || item.activity_type || ''),
     document: normalizeCatalogValue(documentName),
     previous,
