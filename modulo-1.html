@@ -3641,6 +3641,9 @@ REGLAS CRÍTICAS:
 - Cada actividad debe incluir siempre ext_suppliers, ext_inputs, ext_outputs y ext_customers, aunque sean arrays vacíos.
 - Si una actividad recibe un input externo, decláralo en ext_inputs.
 - Si una actividad genera una salida externa, declárala en ext_outputs.
+- Si el SIPOC tiene notas aclaratorias o llamadas, asigna la nota a la actividad correspondiente en note como texto plano. Nunca devuelvas note como objeto.
+- Nunca escribas "[object Object]" ni JSON serializado dentro de notes o note.
+- No todas las actividades necesitan entradas o salidas externas; conecta solo las evidentes, pero asegura las conexiones de inicio/cierre cuando el diagrama las muestre.
 - Si una actividad inicia el proceso, is_start debe ser true.
 - Si una actividad cierra el proceso, is_end debe ser true.
 - Clasifica type usando solo: operation o decision.
@@ -3650,7 +3653,7 @@ REGLAS CRÍTICAS:
 - No conviertas el flujo en una lista vertical simple si el documento muestra carriles horizontales o swimlanes.
 - Ordena las actividades de arriba hacia abajo por secuencia del flujo, y usa el actor/lane para ubicar cada actividad en su carril.
 - Cuando una decisión tenga ramas, registra branch_label o route_label en la actividad o en la nota si el rótulo aparece en el diagrama.
-- Evita inventar nodos de ruteo; si se requieren aclaraciones para no cruzar líneas, déjalas como note.
+- No inventes nodos de ruteo como actividades. Si el diagrama muestra conectores complejos, deja layout_hints para ruteo ortogonal con waypoints y anota la aclaracion como note.
 - No inventes problemas, desperdicios, restricciones o mejoras. Si el diagrama permite una inferencia operativa obvia, regístrala como observación o validación pendiente, no como diagnóstico profundo.
 - Los campos que normalmente vendrían de entrevista, preentrevista o análisis deben quedar vacíos si el SIPOC/diagrama no los muestra.
 
@@ -3726,6 +3729,9 @@ ESTRUCTURA JSON OBLIGATORIA:
       "edge_style": "orthogonal_elbow",
       "avoid_crossing": true,
       "minimize_routing_nodes": true,
+      "route_strategy": "orthogonal_with_waypoints",
+      "waypoint_policy": "use_waypoints_before_route_nodes",
+      "allow_route_anchors": true,
       "peripheral_connection_policy": "connect_only_declared_ext_refs"
     },
     "activities": []
@@ -4820,9 +4826,19 @@ function htmlTextFromValue(value){
 ========================= */
 
 function normalizeContractString(value){
-  return String(value ?? '')
+  if(value === undefined || value === null) return '';
+  if(Array.isArray(value)) return value.map(normalizeContractString).filter(Boolean).join(' ');
+  if(value && typeof value === 'object'){
+    if(typeof reportItemText === 'function') return reportItemText(value);
+    return Object.entries(value)
+      .map(([key, val]) => normalizeContractString(val) ? `${key}: ${normalizeContractString(val)}` : '')
+      .filter(Boolean)
+      .join(' ');
+  }
+  return String(value)
     .replace(/\s+/g, ' ')
     .replace(/[\u0000-\u001f]+/g, ' ')
+    .replace(/\[object Object\]/gi, '')
     .trim();
 }
 
@@ -4899,7 +4915,7 @@ function buildSipocActivities(){
       ext_customers: dedupeCatalog(a.ext_customers || []),
       is_start: a.is_start || idx === 0,
       is_end: a.is_end || idx === arr.length - 1,
-      note: normalizeContractString([a.note, a.observations, a.problems, a.wastes].filter(Boolean).join(' | '))
+      note: [a.note, a.observations].map(normalizeContractString).filter(Boolean).join(' | ')
     };
   });
 }
@@ -4913,8 +4929,12 @@ function buildSipocNotes(){
   if(executiveSummary && executiveSummary !== flowSummary) parts.push(executiveSummary);
   const futureVision = normalizeContractString(brief?.futureState?.futureVision || '');
   if(futureVision) parts.push(futureVision);
-  const notes = parts.join('\n');
-  return notes || 'Sin notas adicionales del proceso.';
+  const notes = parts
+    .map(normalizeContractString)
+    .filter(Boolean)
+    .filter(note => !/^\[object Object\]$/i.test(note))
+    .join('\n');
+  return notes;
 }
 
 function buildSipocLayoutHints(){
@@ -4926,6 +4946,9 @@ function buildSipocLayoutHints(){
     edge_style: 'orthogonal_elbow',
     avoid_crossing: true,
     minimize_routing_nodes: true,
+    route_strategy: 'orthogonal_with_waypoints',
+    waypoint_policy: 'use_waypoints_before_route_nodes',
+    allow_route_anchors: true,
     peripheral_connection_policy: 'connect_only_declared_ext_refs',
     notes: 'Ubicar Suppliers e Inputs a la izquierda, actividades al centro por carriles de actor y Outputs/Customers a la derecha. No convertir el flujo en una columna vertical simple.'
   };
@@ -5265,13 +5288,6 @@ function validateSipocContract(sp){
     if(normalized.length !== dedupeCatalog(arr).length) warnings.push('sipoc_input.' + key + ' contiene duplicados o variantes.');
   });
   if(!sp.layout_hints && !sp.layoutHints) warnings.push('sipoc_input.layout_hints no viene definido; SIPOC Builder usará su layout base.');
-  const hasPeripheralLinks = safeArray(sp.activities).some(act =>
-    safeArray(act?.ext_suppliers).length ||
-    safeArray(act?.ext_inputs).length ||
-    safeArray(act?.ext_outputs).length ||
-    safeArray(act?.ext_customers).length
-  );
-  if(safeArray(sp.activities).length && !hasPeripheralLinks) warnings.push('Las actividades no traen ext_suppliers/ext_inputs/ext_outputs/ext_customers; la capa SIPOC periférica puede quedar débil.');
   const activityTypes = new Set();
   safeArray(sp.activities).forEach((act, idx) => {
     const name = normalizeContractString(act?.name || '');
@@ -6859,6 +6875,8 @@ REGLAS CRÍTICAS:
 - Construye SOLO el bloque sipoc_input listo para el contrato LMP → SIPOC Builder.
 - NO copies métricas AVA, waste counts ni quick wins dentro de notes.
 - notes debe contener solo notas semánticas del proceso en texto.
+- activity.note debe ser texto plano y contener solo notas aclaratorias asociadas a esa actividad.
+- Nunca devuelvas objetos dentro de notes o activity.note. Nunca escribas "[object Object]".
 - process_name y purpose no pueden quedar vacíos.
 - activities debe tener al menos una actividad.
 - Cada activity debe incluir order y lane.
@@ -6867,7 +6885,8 @@ REGLAS CRÍTICAS:
 - Limpia y deduplica actors, documents, suppliers, inputs, outputs y customers.
 - No mezcles actores internos con proveedores o clientes externos.
 - Incluye layout_hints para que SIPOC Builder construya un diagrama horizontal tipo SIPOC/Visio y no una columna vertical simple.
-- Las conexiones deben favorecer edge_style orthogonal_elbow, avoid_crossing true y minimize_routing_nodes true.
+- Las conexiones deben favorecer edge_style orthogonal_elbow, avoid_crossing true, route_strategy orthogonal_with_waypoints y minimize_routing_nodes true.
+- No todas las actividades necesitan ext_suppliers/ext_inputs/ext_outputs/ext_customers; solo las actividades con contacto real con la capa SIPOC externa deben declararlos.
 - Si falta evidencia para algún campo, completa con la mejor inferencia razonable y marca la limitación en notes.
 
 SALIDA ESPERADA:
@@ -6892,6 +6911,9 @@ SALIDA ESPERADA:
       "edge_style": "orthogonal_elbow",
       "avoid_crossing": true,
       "minimize_routing_nodes": true,
+      "route_strategy": "orthogonal_with_waypoints",
+      "waypoint_policy": "use_waypoints_before_route_nodes",
+      "allow_route_anchors": true,
       "peripheral_connection_policy": "connect_only_declared_ext_refs"
     },
     "activities": []
