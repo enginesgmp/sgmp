@@ -3003,10 +3003,33 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <div class="cards">
 <article class="card">
+<h3 id="resultsPromptTitle">Prompt final de resultados</h3>
+<p id="resultsPromptHelp">Genera el prompt final segun la ruta elegida. La respuesta JSON alimenta informes, Word y outputs modulares.</p>
+<div class="actions">
+<div class="actions-left">
+<button class="btn" onclick="generateFinalResultsPrompt()" type="button">Generar prompt final</button>
+<button class="btn-ghost" onclick="copyTextFromId('finalPromptEditor','finalPromptMsg','Prompt final copiado correctamente.')" type="button">Copiar prompt</button>
+</div>
+</div>
+<textarea id="finalPromptEditor" placeholder="Aqui aparecera el prompt final AS IS o TO BE." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<div class="msg" id="finalPromptMsg"></div>
+</article>
+<article class="card">
+<h3>JSON final de IA</h3>
+<p>Pega aqui la respuesta JSON del prompt final y procesala antes de generar el Word y los outputs definitivos.</p>
+<textarea id="finalResponseEditor" placeholder="Pega aqui el JSON final generado por la IA..." style="width:100%;min-height:300px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<div class="actions">
+<div class="actions-left">
+<button class="btn-ok" onclick="processFinalResultsResponse()" type="button">Procesar JSON final</button>
+</div>
+</div>
+</article>
+<article class="card">
 <h3 id="resultsActionTitle">Generación de informe final</h3>
 <div class="actions">
 <div class="actions-left">
-<button class="btn-ok btn-xl" id="btnGenerateResultsFinal" onclick="generateResults()" type="button">Generar informe final</button>
+<button class="btn-ok btn-xl" id="btnGenerateResultsFinal" onclick="generateResults()" type="button">Aplicar resultados al LMP</button>
+<button class="btn-warn btn-xl" onclick="downloadFinalWord()" type="button">Descargar Word final</button>
 </div>
 </div>
 <div class="msg" id="resultsMsg"></div>
@@ -3281,6 +3304,8 @@ function qs(id){ return document.getElementById(id); }
 function qsa(sel){ return Array.from(document.querySelectorAll(sel)); }
 
 function canAccessStage(id){
+  const lockedAfterDecision = ['inicio','preparacion','documentacion_existente','carga','asis','analisis'];
+  if(state.decision?.route && lockedAfterDecision.includes(id)) return false;
   if(id === 'documentacion_existente' && state.metadata.route === 'new') return false;
   if(id === 'tobe' && state.decision.route !== 'tobe') return false;
   if(id === 'resultados' && !state.decision.route) return false;
@@ -3292,6 +3317,7 @@ function refreshStageAccess(){
   qsa('.step-btn').forEach(btn => {
     const target = btn.dataset.target;
     btn.classList.toggle('disabled',
+      (state.decision?.route && ['inicio','preparacion','documentacion_existente','carga','asis','analisis'].includes(target)) ||
       (target === 'documentacion_existente' && state.metadata.route === 'new') ||
       (target === 'tobe' && state.decision.route !== 'tobe') ||
       (target === 'resultados' && !state.decision.route) ||
@@ -3303,8 +3329,8 @@ function refreshStageAccess(){
 function showSection(id){
   if(id === 'asis') id = 'analisis';
   if(!canAccessStage(id)){
-    showMsg('inicioMsg','warn','La etapa seleccionada no aplica con la ruta actual.');
-    id = id === 'tobe' ? 'decision' : 'preparacion';
+    showMsg('inicioMsg','warn','La etapa seleccionada no aplica o quedó bloqueada por la decisión tomada.');
+    id = state.decision?.route ? 'decision' : (id === 'tobe' ? 'decision' : 'preparacion');
   }
   qsa('.section').forEach(s => s.classList.toggle('active', s.id === id));
   qsa('.step-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === id));
@@ -3340,7 +3366,11 @@ function renderResultsRouteShell(){
     ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
     : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
   if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Generación de mejoras e informes' : 'Generación de informe final';
-  if(qs('btnGenerateResultsFinal')) qs('btnGenerateResultsFinal').textContent = isToBe ? 'Generar mejoras e informes' : 'Generar informe final';
+  if(qs('resultsPromptTitle')) qs('resultsPromptTitle').textContent = isToBe ? 'Prompt final de resultados TO BE' : 'Prompt final de resultados AS IS';
+  if(qs('resultsPromptHelp')) qs('resultsPromptHelp').textContent = isToBe
+    ? 'Usa la construccion TO BE, mejoras aceptadas y flujo futuro para generar informes, Word y outputs modulares definitivos.'
+    : 'Usa el diagnostico AS IS aprobado para generar informes, Word y outputs modulares sin disenar mejoras.';
+  if(qs('btnGenerateResultsFinal')) qs('btnGenerateResultsFinal').textContent = isToBe ? 'Aplicar resultados TO BE al LMP' : 'Aplicar resultados AS IS al LMP';
   qs('resultModePlanCard')?.classList.toggle('hidden-route', !isToBe);
 }
 
@@ -4491,7 +4521,7 @@ function buildToBeArtifacts(){
     state.analysis?.raw?.documentProposal ||
     state.analysis?.raw?.document_proposal ||
     state.master?.documentProposal
-  );
+  ).map(normalizeDocumentProposalItem);
 
   const modeA = [];
   const modeB = [];
@@ -4683,11 +4713,20 @@ function buildToBeConstructionPackage(){
     editable_tobe:{
       future_flow:construction.futureFlow,
       differences_vs_as_is:construction.differences,
-      expected_benefits:construction.benefits
+      expected_benefits:construction.benefits,
+      activity_seed:safeArray(state.asis.activities).map((activity, idx) => ({
+        order:activity.order || idx + 1,
+        name:activity.name || '',
+        actor:activity.actor || '',
+        type:activity.type || 'operation',
+        ava:activity.ava || '',
+        current_action:'keep',
+        to_be_change:'mantener, ajustar, eliminar o usar como base para nueva actividad segun mejoras seleccionadas'
+      }))
     },
     current_outputs:{
       as_is_sipoc_builder:buildSipocContract(),
-      as_is_document_evaluator:state.analysis?.finalOutputs?.document_evaluator || state.analysis?.documentProposal || state.master?.documentProposal || [],
+      as_is_document_evaluator:buildDocumentEvaluatorOutput(state.analysis?.finalOutputs?.document_evaluator || state.analysis?.documentProposal || state.master?.documentProposal || []),
       as_is_integrator:buildIntegratorOutput(),
       as_is_capacity_simulator:buildCapacitySimulatorOutput()
     }
@@ -4707,6 +4746,7 @@ Analizar las mejoras seleccionadas, el AS IS validado y el flujo futuro editable
 
 REGLAS CRÍTICAS:
 - No inventes actividades sin sustento. Si agregas, eliminas o ajustas actividades, explícalo y déjalo en el flujo TO BE.
+- Debes devolver una lista de actividades TO BE oficial. Cada actividad debe indicar si se mantiene, ajusta, elimina o se crea.
 - El SIPOC Builder de la ruta TO BE debe usar el flujo TO BE, no el flujo AS IS, cuando exista.
 - Las mejoras deben mantenerse simples y accionables: title, improvement_type, expected_benefit y problem_to_solve.
 - Solo considera mejoras con status execute o custom. Ignora las rechazadas salvo como trazabilidad.
@@ -4714,6 +4754,7 @@ REGLAS CRÍTICAS:
   - Modo A: acciones directas, rápidas, bajo esfuerzo, sin rediseño mayor.
   - Modo B: cambios estructurales, sistemas, documentación, roles, controles, aprobaciones o rediseño de flujo.
 - La propuesta documental inicial debe salir de las mejoras y controles necesarios.
+- El output document_evaluator debe respetar el contrato del Evaluador Documental: process_context, analysis_context, approval_context y document_proposal.
 - El Integrador debe recibir solo entradas, salidas, proveedores y clientes relevantes, sin carriles internos ni actividades.
 - El Simulador de capacidad debe recibir únicamente actividades con su clasificación AVA. No incluyas tiempos, frecuencias, volúmenes ni capacidad.
 - El informe ejecutivo debe ser robusto, orientado a decisión, con resumen, justificación de ruta, beneficios y riesgos principales.
@@ -4724,6 +4765,9 @@ CONTRATO JSON OBLIGATORIO:
 {
   "mode": "to_be",
   "to_be": {
+    "activities": [
+      {"order": 1, "name": "", "actor": "", "type": "operation|decision", "ava": "VA|NNVA|NVA", "change_type": "keep|adjust|delete|create", "change_reason": "", "previous": [], "next": []}
+    ],
     "future_flow": [],
     "differences_vs_as_is": [],
     "expected_benefits": [],
@@ -4740,7 +4784,7 @@ CONTRATO JSON OBLIGATORIO:
   },
   "final_outputs": {
     "sipoc_builder": {"sipoc_input": {}},
-    "document_evaluator": {},
+    "document_evaluator": {"process_context": {}, "analysis_context": {}, "approval_context": {}, "document_proposal": []},
     "integrator": {},
     "capacity_simulator": {
       "activities": [
@@ -4758,7 +4802,7 @@ REGLAS SGMP ACTUALES QUE PREVALECEN SOBRE CUALQUIER PROMPT BASE:
 - Para capacity_simulator incluye únicamente actividades y clasificación AVA. No incluyas tiempos, frecuencias, volúmenes ni simulación.
 - Para sipoc_builder usa el flujo TO BE cuando exista.
 - Para integrator incluye solo proveedores, entradas, salidas y clientes.
-- Para document_evaluator entrega propuesta documental inicial sustentada por mejoras y controles.
+- Para document_evaluator entrega el contrato completo del Evaluador Documental: process_context, analysis_context, approval_context y document_proposal.
 - Los informes executive y technical deben ser robustos, estructurados y útiles para decisión.`;
   return (staticBase || fallback)
     .replace('{{industry}}', c.industry || '[INDUSTRIA]')
@@ -4791,6 +4835,7 @@ function processToBeConstructionResponse(){
       futureFlow:htmlTextFromValue(tobeBlock.future_flow || tobeBlock.futureFlow || state.tobe.construction.futureFlow),
       differences:htmlTextFromValue(tobeBlock.differences_vs_as_is || tobeBlock.differencesVsAsIs || state.tobe.construction.differences),
       benefits:htmlTextFromValue(tobeBlock.expected_benefits || tobeBlock.expectedBenefits || state.tobe.construction.benefits),
+      activities:safeArray(tobeBlock.activities || tobeBlock.flow_activities || tobeBlock.flowActivities).map(normalizeActivity).filter(a => a.name),
       modeA:safeArray(tobeBlock.mode_a || tobeBlock.modeA),
       modeB:safeArray(tobeBlock.mode_b || tobeBlock.modeB),
       reports,
@@ -4799,7 +4844,7 @@ function processToBeConstructionResponse(){
     if(qs('tobeFutureFlowEditor')) qs('tobeFutureFlowEditor').value = state.tobe.construction.futureFlow;
     if(qs('tobeDiffEditor')) qs('tobeDiffEditor').value = state.tobe.construction.differences;
     if(qs('tobeBenefitsEditor')) qs('tobeBenefitsEditor').value = state.tobe.construction.benefits;
-    state.finalReview = { raw:parsed, processed:true };
+    state.finalReview = { raw:null, processed:false };
     state.analysis = state.analysis || {};
     state.analysis.finalOutputs = Object.assign({}, state.analysis.finalOutputs || {}, finalOutputs);
     state.analysis.reports = Object.assign({}, state.analysis.reports || {}, reports);
@@ -5306,6 +5351,20 @@ function validateSipocContract(sp){
 function buildSBJson(){
   const finalSb = state.analysis?.finalOutputs?.sipoc_builder || state.analysis?.raw?.final_outputs?.sipoc_builder;
   const localContract = buildSipocContract();
+  const tobeActivities = state.decision?.route === 'tobe'
+    ? safeArray(state.tobe?.construction?.activities).map(normalizeActivity).filter(a => a.name)
+    : [];
+  if(tobeActivities.length){
+    localContract.sipoc_input.activities = tobeActivities;
+    localContract.sipoc_input.actors = dedupeCatalog([
+      ...safeArray(localContract.sipoc_input.actors),
+      ...tobeActivities.map(a => a.actor || a.lane)
+    ]);
+    localContract.sipoc_input.documents = dedupeCatalog([
+      ...safeArray(localContract.sipoc_input.documents),
+      ...tobeActivities.map(a => a.document)
+    ]);
+  }
   if(finalSb?.sipoc_input){
     const useFinalToBeFlow = state.decision?.route === 'tobe' && safeArray(finalSb.sipoc_input.activities).length;
     return Object.assign({}, finalSb, {
@@ -5349,8 +5408,68 @@ function buildIntegratorOutput(){
   };
 }
 
+function buildDocumentEvaluatorOutput(sourceProposal){
+  const ctx = getResolvedContext();
+  const route = state.decision?.finalMode || state.decision?.route || 'asis';
+  const artifacts = buildToBeArtifacts();
+  const rawSource = sourceProposal || state.analysis?.finalOutputs?.document_evaluator || state.analysis?.raw?.final_outputs?.document_evaluator || state.analysis?.documentProposal || state.master?.documentProposal || artifacts.documentProposal || [];
+  const proposalItems = safeArray(rawSource?.document_proposal || rawSource?.documentProposal || rawSource)
+    .map(normalizeDocumentProposalItem)
+    .filter(item => item.document_name || item.purpose || item.reason_for_existence);
+
+  return {
+    contract_version:'1.0',
+    source_module:'lmp',
+    target_module:'evaluador_documental',
+    generated_at:new Date().toISOString(),
+    process_context:{
+      company:ctx.company || '',
+      process_code:ctx.processCode || '',
+      process_name:ctx.processName || '',
+      process_owner:ctx.owner || '',
+      analyst:ctx.analyst || '',
+      industry:ctx.industry || '',
+      process_type:ctx.processType || '',
+      activity:ctx.activity || '',
+      purpose:ctx.purpose || ''
+    },
+    analysis_context:{
+      route,
+      ava_summary:state.analysis?.summary?.ava || state.analysis?.avaRaw?.distribution || {},
+      wastes:safeArray(state.analysis?.wastes || state.analysis?.raw?.findings?.wastes),
+      lean_wastes:safeArray(state.analysis?.leanWastes || state.analysis?.raw?.findings?.leanWastes),
+      problems:safeArray(state.analysis?.problems || state.analysis?.raw?.findings?.problems),
+      restrictions:safeArray(state.analysis?.constraints || state.analysis?.raw?.findings?.restrictions),
+      quick_wins:safeArray(state.analysis?.quickWins || state.analysis?.raw?.findings?.quickWins),
+      selected_improvements:route === 'tobe' ? artifacts.selected.map(x => x.title || x.problem || '') : [],
+      to_be_decision:route === 'tobe' ? 'TO BE seleccionado' : 'AS IS conservado',
+      activities:(route === 'tobe' && state.analysis?.finalOutputs?.sipoc_builder?.sipoc_input?.activities?.length
+        ? state.analysis.finalOutputs.sipoc_builder.sipoc_input.activities
+        : safeArray(state.asis?.activities)
+      ).map((a, idx) => ({
+        order:a.order || idx + 1,
+        name:a.name || '',
+        actor:a.actor || '',
+        type:a.type || 'operation',
+        ava:a.ava || ''
+      }))
+    },
+    approval_context:{
+      review_mode:'draft',
+      route,
+      leader_validation_required:true,
+      partial_approval_allowed:true,
+      return_for_adjustment:true
+    },
+    document_proposal:proposalItems
+  };
+}
+
 function buildCapacitySimulatorOutput(){
   const ctx = getResolvedContext();
+  const sourceActivities = state.decision?.route === 'tobe' && safeArray(state.tobe?.construction?.activities).length
+    ? safeArray(state.tobe.construction.activities)
+    : safeArray(state.asis?.activities);
   return {
     contract_version:'1.0',
     source_module:'lmp',
@@ -5358,7 +5477,7 @@ function buildCapacitySimulatorOutput(){
     process_code:ctx.processCode || '',
     process_name:ctx.processName || '',
     ava_summary:state.analysis?.summary?.ava || state.analysis?.avaRaw?.distribution || {},
-    activities:safeArray(state.asis?.activities).map((a, idx) => ({
+    activities:sourceActivities.map((a, idx) => ({
       order:idx + 1,
       name:a.name || '',
       actor:a.actor || '',
@@ -5372,7 +5491,7 @@ function normalizeCapacitySimulatorOutput(payload){
   const ctx = getResolvedContext();
   const sourceActivities = safeArray(payload?.activities).length
     ? safeArray(payload.activities)
-    : safeArray(state.asis?.activities);
+    : (state.decision?.route === 'tobe' && safeArray(state.tobe?.construction?.activities).length ? safeArray(state.tobe.construction.activities) : safeArray(state.asis?.activities));
   return {
     contract_version:'1.0',
     source_module:'lmp',
@@ -5655,6 +5774,7 @@ function buildFinalResultsPrompt(){
   if(state.decision.route === 'tobe') collectImprovements();
   const artifacts = buildToBeArtifacts();
   const mode = state.decision.route === 'tobe' ? 'to_be' : 'as_is';
+  const promptKey = mode === 'to_be' ? 'prompt_results_tobe' : 'prompt_results_asis';
   const c = getResolvedContext();
   const pack = {
     context:c,
@@ -5680,19 +5800,21 @@ function buildFinalResultsPrompt(){
       rejectedImprovements:artifacts.rejected,
       modeA:artifacts.modeA,
       modeB:artifacts.modeB,
+      construction:state.tobe?.construction || {},
+      activities:safeArray(state.tobe?.construction?.activities).map(normalizeActivity).filter(a => a.name),
       futureFlow:stripHtml(artifacts.futureFlow),
       differences:stripHtml(artifacts.differences),
       benefits:stripHtml(artifacts.benefits)
     },
     currentOutputs:{
       sipoc_builder:buildSBJson(),
-      document_evaluator:state.analysis?.finalOutputs?.document_evaluator || state.analysis?.raw?.final_outputs?.document_evaluator || artifacts.documentProposal,
+      document_evaluator:buildDocumentEvaluatorOutput(state.analysis?.finalOutputs?.document_evaluator || state.analysis?.raw?.final_outputs?.document_evaluator || artifacts.documentProposal),
       integrator:state.analysis?.finalOutputs?.integrator || buildIntegratorOutput(),
       capacity_simulator:normalizeCapacitySimulatorOutput(state.analysis?.finalOutputs?.capacity_simulator || buildCapacitySimulatorOutput())
     }
   };
 
-  const staticBase = sgmpPrompt('prompt_final_results', '');
+  const staticBase = sgmpPrompt(promptKey, '') || sgmpPrompt('prompt_final_results', '');
   const fallback = `ACTÚA COMO consultor senior de procesos, Lean, mejora continua y documentación operativa.
 
 OBJETIVO:
@@ -5732,8 +5854,44 @@ CONTRATO JSON:
   }
 }`;
 
-  const enforce = `\n\nREGLAS SGMP ACTUALES:\n- Para capacity_simulator entrega solo activities con order, name, actor, type y ava.\n- No incluyas tiempos, frecuencias, volumen ni simulación de capacidad.\n- Mantén informes executive y technical estructurados y robustos.`;
-  return (staticBase || fallback) + enforce + '\n\nINSUMOS DEL LMP:\n' + JSON.stringify(pack, null, 2);
+  const finalFallback = `ACTUA COMO consultor senior de procesos, Lean, mejora continua, documentacion operativa y arquitectura SGMP.
+
+OBJETIVO:
+Generar el resultado final del LMP para la ruta ${mode}. Debes devolver JSON valido para construir el Word final, el informe ejecutivo, el informe tecnico y las salidas modulares.
+
+REGLAS PRINCIPALES:
+- Si la ruta es as_is, conserva el proceso actual. No disenes TO BE ni modifiques actividades.
+- Si la ruta es to_be, usa solo mejoras ejecutadas o personalizadas y la lista oficial de actividades TO BE.
+- No inventes datos duros. Lo incierto debe quedar en validations_to_do, assumptions o contradictions.
+- El Word debe ser robusto y trazable: contexto, metodologia, actividades, diagnostico, decision, resultados, riesgos, validaciones y anexos.
+- Devuelve SOLO JSON valido, sin markdown.
+
+CONTRATO JSON OBLIGATORIO:
+{
+  "mode": "as_is|to_be",
+  "results": {
+    "summary": "",
+    "as_is_summary": "",
+    "future_flow": [],
+    "differences_vs_as_is": [],
+    "expected_benefits": [],
+    "quick_wins": [],
+    "validations_to_do": [],
+    "implementation_plan": {"mode_a": [], "mode_b": []},
+    "reports": {"executive": "", "technical": ""},
+    "word_report": {"title": "", "subtitle": "", "sections": [], "annexes": []}
+  },
+  "final_outputs": {
+    "sipoc_builder": {"sipoc_input": {}},
+    "document_evaluator": {"process_context": {}, "analysis_context": {}, "approval_context": {}, "document_proposal": []},
+    "integrator": {},
+    "capacity_simulator": {"activities": [{"order": 1, "name": "", "actor": "", "type": "operation|decision", "ava": "VA|NNVA|NVA"}]}
+  }
+}`;
+
+  const routeRules = `\n\nCONTRATO FINAL REFORZADO PARA LA RUTA ${mode}:\n- Si la ruta es as_is, no disenes TO BE, no cambies actividades y no propongas flujo futuro. El resultado debe cerrar el estado actual con informes, Word y outputs AS IS.\n- Si la ruta es to_be, usa solo mejoras ejecutadas o personalizadas, la construccion TO BE y la lista oficial de actividades TO BE. Refleja actividades mantenidas, ajustadas, eliminadas y creadas.\n- results.word_report debe traer title, subtitle, sections y annexes para construir un Word robusto del proceso completo.\n- final_outputs.sipoc_builder debe traer sipoc_input completo y compatible con SIPOC Builder.\n- final_outputs.document_evaluator debe traer contrato completo para Evaluador Documental: process_context, analysis_context, approval_context y document_proposal.\n- Cada document_proposal debe incluir document_name, document_type, purpose, required_contents, reason_for_existence, support_basis y source_reference.\n- final_outputs.integrator debe traer solo entradas, salidas, proveedores y clientes relevantes.\n- final_outputs.capacity_simulator debe traer solo activities con order, name, actor, type y ava. No incluyas tiempos, frecuencias, volumenes ni simulacion.`;
+  const enforce = `\n\nREGLAS SGMP ACTUALES:\n- Usa el prompt externo de Apps Script si esta disponible con clave ${promptKey}; este texto es fallback local.\n- Para capacity_simulator entrega solo activities con order, name, actor, type y ava.\n- No incluyas tiempos, frecuencias, volumen ni simulacion de capacidad.\n- Para document_evaluator entrega contrato completo compatible con el Evaluador Documental.\n- Manten reports.executive, reports.technical y results.word_report estructurados y robustos.`;
+  return (staticBase || finalFallback) + routeRules + enforce + '\n\nINSUMOS DEL LMP:\n' + JSON.stringify(pack, null, 2);
 }
 
 function generateFinalResultsPrompt(){
@@ -5756,10 +5914,15 @@ function processFinalResultsResponse(){
     const parsed = extractJsonFromText(raw);
     state.finalReview = { raw:parsed, processed:true };
     const finalOutputs = parsed.final_outputs || parsed.finalOutputs || {};
+    if(finalOutputs.document_evaluator || finalOutputs.documentEvaluator){
+      finalOutputs.document_evaluator = buildDocumentEvaluatorOutput(finalOutputs.document_evaluator || finalOutputs.documentEvaluator);
+      delete finalOutputs.documentEvaluator;
+    }
     const reports = parsed.results?.reports || parsed.reports || parsed.informes || {};
     state.analysis = state.analysis || {};
     state.analysis.finalOutputs = Object.assign({}, state.analysis.finalOutputs || {}, finalOutputs);
     state.analysis.reports = Object.assign({}, state.analysis.reports || {}, reports);
+    state.analysis.finalResults = parsed.results || parsed.resultados || {};
     showMsg('finalPromptMsg','ok','Resultado final procesado. Ya puedes generar resultados.');
   }catch(error){
     showMsg('finalPromptMsg','err',`No fue posible procesar el resultado final. Detalle: ${error.message}`);
@@ -5824,7 +5987,8 @@ function generateResults(){
   state.results.sbValidation = sbValidation;
   const isToBe = state.decision.route === 'tobe';
   const finalRaw = state.finalReview?.processed ? (state.finalReview.raw || {}) : {};
-  const finalResults = finalRaw.results || finalRaw.resultados || {};
+  const finalResults = finalRaw.results || finalRaw.resultados || state.analysis?.finalResults || {};
+  state.results.wordReport = finalResults.word_report || finalResults.wordReport || finalRaw.word_report || finalRaw.wordReport || {};
   const finalToBe = finalRaw.to_be || finalRaw.toBe || {};
   const reports = finalResults.reports || finalRaw.reports || finalRaw.informes || state.analysis?.reports || state.analysis?.raw?.reports || {};
   const executiveReport = reports.executive || reports.executive_report || reports.informe_ejecutivo || '';
@@ -5834,7 +5998,7 @@ function generateResults(){
   state.results.implementationHtml = isToBe ? buildToBeModePlanHtml(finalToBe) : '';
   const artifacts = buildToBeArtifacts();
   const finalOutputs = finalRaw.final_outputs || finalRaw.finalOutputs || state.analysis?.finalOutputs || state.analysis?.raw?.final_outputs || {};
-  state.results.documentProposal = finalOutputs.document_evaluator || finalOutputs.documentEvaluator || artifacts.documentProposal || [];
+  state.results.documentProposal = buildDocumentEvaluatorOutput(finalOutputs.document_evaluator || finalOutputs.documentEvaluator || artifacts.documentProposal || []);
   state.results.integrationPayload = finalOutputs.integrator || buildIntegratorOutput();
   state.results.capacityPayload = normalizeCapacitySimulatorOutput(finalOutputs.capacity_simulator || finalOutputs.capacitySimulator || buildCapacitySimulatorOutput());
 
@@ -5867,7 +6031,7 @@ function generateResults(){
     ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
     : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
   if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Generación de mejoras e informes' : 'Generación de informe final';
-  if(qs('btnGenerateResultsFinal')) qs('btnGenerateResultsFinal').textContent = isToBe ? 'Generar mejoras e informes' : 'Generar informe final';
+  if(qs('btnGenerateResultsFinal')) qs('btnGenerateResultsFinal').textContent = isToBe ? 'Aplicar resultados TO BE al LMP' : 'Aplicar resultados AS IS al LMP';
   qs('documentProposalView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
   qs('integrationInputView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
   if(qs('outputsSbView')) qs('outputsSbView').textContent = JSON.stringify(state.results.sbJson, null, 2);
@@ -5885,6 +6049,68 @@ function generateResults(){
     showMsg('resultsMsg','ok','Resultados generados correctamente.');
     showMsg('outputsMsg','ok','Outputs generados correctamente.');
   }
+}
+
+function downloadFinalWord(){
+  const msgId = activeOutputMsgId();
+  if(!state.results?.executiveHtml && !state.results?.technicalHtml){
+    showMsg(msgId,'warn','Aplica primero los resultados al LMP.');
+    return;
+  }
+  const ctx = getResolvedContext();
+  const mode = state.decision?.route === 'tobe' ? 'TO BE' : 'AS IS';
+  const word = state.results.wordReport || {};
+  const sections = safeArray(word.sections).map(section => {
+    const title = escapeHtml(section.title || section.name || 'Seccion');
+    const content = section.content || section.summary || section.description || '';
+    const items = safeArray(section.items);
+    const body = content && /^<\w+[\s>]/.test(String(content).trim())
+      ? String(content)
+      : `<p>${escapeHtml(String(content || '')).replace(/\n/g,'<br>')}</p>`;
+    const itemHtml = items.length ? `<ul>${items.map(item => `<li>${escapeHtml(reportItemText(item))}</li>`).join('')}</ul>` : '';
+    return `<h2>${title}</h2>${body}${itemHtml}`;
+  }).join('');
+  const annexes = safeArray(word.annexes).length
+    ? `<h1>Anexos</h1>${safeArray(word.annexes).map((item, idx) => `<h2>Anexo ${idx + 1}</h2>${htmlBlockFromValue(item)}`).join('')}`
+    : '';
+  const title = word.title || `Informe final LMP ${mode}`;
+  const subtitle = word.subtitle || `${ctx.processName || 'Proceso'} ${ctx.processCode ? '(' + ctx.processCode + ')' : ''}`;
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(title)}</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;color:#0b2345;line-height:1.45;margin:36px;}
+h1{color:#0b2345;border-bottom:2px solid #1f6feb;padding-bottom:8px;}
+h2{color:#123b70;margin-top:28px;}
+h3{color:#234b77;margin-top:18px;}
+table{border-collapse:collapse;width:100%;margin:12px 0;}
+th,td{border:1px solid #cfd8e3;padding:8px;text-align:left;vertical-align:top;}
+th{background:#eaf2fb;}
+pre{white-space:pre-wrap;background:#f4f7fb;border:1px solid #d7e1ef;padding:12px;}
+.meta{background:#eef6ff;border:1px solid #cfe5ff;padding:14px;margin:16px 0;}
+</style>
+</head>
+<body>
+<h1>${escapeHtml(title)}</h1>
+<div class="meta">
+<p><strong>Ruta:</strong> ${escapeHtml(mode)}</p>
+<p><strong>Proceso:</strong> ${escapeHtml(ctx.processName || '-')}</p>
+<p><strong>Codigo:</strong> ${escapeHtml(ctx.processCode || '-')}</p>
+<p><strong>Responsable:</strong> ${escapeHtml(ctx.owner || '-')}</p>
+</div>
+<p>${escapeHtml(subtitle)}</p>
+${sections || ''}
+${state.results.executiveHtml || ''}
+${state.results.technicalHtml || ''}
+${state.results.implementationHtml || ''}
+${annexes}
+</body>
+</html>`;
+  const safeName = String(ctx.processCode || ctx.processName || 'proceso').replace(/[\\/:*?"<>|]+/g,'_').replace(/\s+/g,'_');
+  downloadText(`lmp_informe_final_${mode.toLowerCase().replace(/\s+/g,'_')}_${safeName}.doc`, html, 'application/msword;charset=utf-8');
+  showMsg(msgId,'ok','Word final descargado correctamente.');
 }
 
 
@@ -7459,17 +7685,30 @@ function getSbInputFromAnalysisPayload(parsed){
 
 function normalizeDocumentProposalItem(item){
   const d = item || {};
+  const documentName = d.document_name || d.documentName || d.name || d.title || '';
+  const documentType = d.document_type || d.documentType || d.type || '';
+  const requiredContents = safeArray(d.required_contents || d.requiredContents || d.minimumContent || d.minimum_content || d.contenido_minimo);
+  const sourceReference = d.source_reference || d.sourceReference || {};
   return {
-    documentName: d.documentName || d.document_name || d.name || d.title || '',
-    documentType: d.documentType || d.document_type || d.type || '',
+    document_name: documentName,
+    document_code: d.document_code || d.documentCode || d.code || '',
+    document_type: documentType,
+    status: d.status || d.proposed_action || d.proposedAction || d.action || 'proposed',
+    proposed_action: d.proposed_action || d.proposedAction || d.status || 'review',
     purpose: d.purpose || d.objective || d.objetivo || '',
-    reasonNeeded: d.reasonNeeded || d.reason_needed || d.reason_for_existence || d.justification || d.justificacion || '',
-    relatedActivities: safeArray(d.relatedActivities || d.related_activities || d.activities),
+    required_contents: requiredContents,
+    reason_for_existence: d.reason_for_existence || d.reasonNeeded || d.reason_needed || d.justification || d.justificacion || '',
+    source_reference: {
+      process_activity: safeArray(sourceReference.process_activity || sourceReference.processActivity || d.relatedActivities || d.related_activities || d.activities),
+      control_point: safeArray(sourceReference.control_point || sourceReference.controlPoint || d.control_points || d.controlPoints),
+      indicator_relation: safeArray(sourceReference.indicator_relation || sourceReference.indicatorRelation || d.indicators || d.indicator_relation),
+      risk_relation: safeArray(sourceReference.risk_relation || sourceReference.riskRelation || d.risks || d.risk_relation)
+    },
+    related_activities: safeArray(d.relatedActivities || d.related_activities || d.activities),
     priority: d.priority || d.prioridad || '',
     owner: d.owner || d.responsable || '',
-    minimumContent: safeArray(d.minimumContent || d.minimum_content || d.required_contents || d.contenido_minimo),
-    controlSuggested: d.controlSuggested || d.control_suggested || d.control || '',
-    supportBasis: d.supportBasis || d.support_basis || {}
+    control_suggested: d.control_suggested || d.controlSuggested || d.control || '',
+    support_basis: d.support_basis || d.supportBasis || {}
   };
 }
 
