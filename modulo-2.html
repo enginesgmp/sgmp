@@ -2092,8 +2092,19 @@ function looksLikeSerializedJson(text) {
 }
 
 function normalizeIncomingPayload(parsed) {
-  const sourceBlock = parsed?.sipoc_input ? 'sipoc_input' : (parsed?.structured_process ? 'structured_process' : 'root');
-  const sp = parsed?.sipoc_input || parsed?.structured_process || parsed || {};
+  const finalSipoc = parsed?.final_outputs?.sipoc_builder || parsed?.finalOutputs?.sipoc_builder || parsed?.finalOutputs?.sipocBuilder || parsed?.outputs?.sipoc_builder;
+  const directSipoc = parsed?.sipoc_builder || parsed?.sipocBuilder;
+  const sourceBlock = parsed?.sipoc_input
+    ? 'sipoc_input'
+    : (finalSipoc ? 'final_outputs.sipoc_builder' : (directSipoc ? 'sipoc_builder' : (parsed?.structured_process ? 'structured_process' : 'root')));
+  const sp = parsed?.sipoc_input
+    || finalSipoc?.sipoc_input
+    || finalSipoc
+    || directSipoc?.sipoc_input
+    || directSipoc
+    || parsed?.structured_process
+    || parsed
+    || {};
   const normalized = {
     process_code: normalizeText(sp.process_code || sp.processCode || ''),
     process_name: normalizeText(sp.process_name || sp.processName || ''),
@@ -2117,6 +2128,8 @@ function normalizeIncomingPayload(parsed) {
 function sourceLabel(sourceKey) {
   const map = {
     sipoc_input: 'JSON con bloque sipoc_input',
+    'final_outputs.sipoc_builder': 'JSON final LMP con salida SIPOC Builder',
+    sipoc_builder: 'JSON con bloque sipoc_builder',
     structured_process: 'JSON con bloque structured_process',
     root: 'JSON raíz directa',
     lmp_json: 'Archivo JSON del LMP',
