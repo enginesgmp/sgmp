@@ -2935,7 +2935,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="section-head">
 <div>
 <h2>Construcción TO BE</h2>
-<p>Evalúa propuestas, ajusta el flujo futuro y genera el prompt final para modo A, modo B, informes y outputs TO BE.</p>
+<p>Evalúa propuestas, define el flujo futuro y consolida cambios operativos del TO BE con trazabilidad.</p>
 </div>
 <div class="step-pill">Paso 6</div>
 </div>
@@ -2954,11 +2954,11 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
     <h3>Flujo futuro propuesto</h3>
     <textarea class="editable-doc" id="tobeFutureFlowEditor" placeholder="Cambios de actividades: qué se elimina, qué se agrega y qué se ajusta."></textarea>
   </article>
-  <article class="card">
+  <article class="card" style="display:none">
     <h3>Diferencias vs AS IS</h3>
     <textarea class="editable-doc" id="tobeDiffEditor" placeholder="Diferencias principales frente al estado actual."></textarea>
   </article>
-  <article class="card">
+  <article class="card" style="display:none">
     <h3>Beneficios esperados</h3>
     <textarea class="editable-doc" id="tobeBenefitsEditor" placeholder="Beneficios esperados: económicos, tiempo, control, calidad, servicio, cumplimiento."></textarea>
   </article>
@@ -2976,7 +2976,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <textarea id="tobeConsolidatedEditor" placeholder="Aquí aparecerá el consolidado TO BE." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
-<article class="card">
+<article class="card" style="display:none">
 <h3>Prompt de construcción TO BE</h3>
 <p>Prompt robusto para que la IA estructure modo A, modo B, informes, propuesta documental y outputs TO BE.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
@@ -2987,7 +2987,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </div>
 <textarea id="tobePromptEditor" placeholder="Aquí aparecerá el prompt de construcción TO BE." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
-<article class="card">
+<article class="card" style="display:none">
 <h3>JSON resultado TO BE</h3>
 <p>Pega el JSON devuelto por la IA. Este resultado alimenta informes, modo A/B y outputs.</p>
 <textarea id="tobeResponseEditor" placeholder="Pega aquí el JSON de construcción TO BE..." style="width:100%;min-height:320px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
@@ -3371,7 +3371,7 @@ function renderResultsRouteShell(){
   if(qs('resultsSubtitle')) qs('resultsSubtitle').textContent = isToBe
     ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
     : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
-  if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Generación de mejoras e informes' : 'Generación de informe final';
+  if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Resultados TO BE aplicados al LMP' : 'Resultados AS IS aplicados al LMP';
   if(qs('resultsPromptTitle')) qs('resultsPromptTitle').textContent = isToBe ? 'Prompt final de resultados TO BE' : 'Prompt final de resultados AS IS';
   if(qs('resultsPromptHelp')) qs('resultsPromptHelp').textContent = isToBe
     ? 'Usa la construccion TO BE, mejoras aceptadas y flujo futuro para generar informes, Word y outputs modulares definitivos.'
@@ -4141,8 +4141,9 @@ function validateAnalysisJsonStructure(){
   const raw = qs('iaResponseEditor')?.value.trim() || '';
   if(!raw){ showMsg('analysisValidationMsg','warn','Pega primero el JSON del análisis AS IS para validar su estructura.'); return []; }
   try{
-    const parsed = JSON.parse(extractJson(raw));
-    const required = [
+  const parsed = extractJsonFromText(raw);
+
+  const required = [
       ['as_is','Objeto as_is'],
       ['as_is.activities','Lista as_is.activities'],
       ['ava.distribution.VA_pct','AVA VA_pct'],
@@ -4352,8 +4353,8 @@ function improvementTemplate(data = {}){
   const status = data.status || 'pending';
   const badgeClass = status === 'execute' ? 'status-execute' : status === 'custom' ? 'status-custom' : status === 'reject' ? 'status-reject' : '';
   const badgeText = status === 'execute' ? 'Ejecutar' : status === 'custom' ? 'Personalizar' : status === 'reject' ? 'Rechazar' : 'Pendiente';
-  const benefit = data.impact || data.expected_benefit || data.expectedBenefit || data.expectedImpact || data.benefit || data.benefitType || '';
-  const problem = data.problem || data.problem_to_solve || data.problemToSolve || data.problemSolved || data.relatedProblem || data.summary || '';
+  const benefit = data.impact || data.expected_benefit || data.expectedBenefit || data.expectedImpact || data.benefit || data.benefitType || 'pendiente_validacion';
+  const problem = data.problem || data.problem_to_solve || data.problemToSolve || data.problemSolved || data.relatedProblem || data.summary || 'pendiente_validacion';
 
   return `
     <div class="improvement-card" data-id="${id}" data-status="${status}">
@@ -4367,7 +4368,7 @@ function improvementTemplate(data = {}){
 
       <div class="field-grid">
         <div class="field w-6"><label>Título</label><input data-role="title" value="${escapeHtml(data.title || 'Mejora propuesta')}" /></div>
-        <div class="field w-6"><label>Tipo de mejora</label><input data-role="improvement-type" value="${escapeHtml(data.improvementType || data.type || data.mode || '')}" /></div>
+        <div class="field w-6"><label>Tipo de mejora</label><input data-role="improvement-type" value="${escapeHtml(data.improvementType || data.improvement_type || data.type || data.mode || 'pendiente_validacion')}" /></div>
         <div class="field w-6"><label>Beneficio esperado</label><textarea data-role="impact">${escapeHtml(benefit)}</textarea></div>
         <div class="field w-6"><label>Problema que resuelve o mejora</label><textarea data-role="problem">${escapeHtml(problem)}</textarea></div>
       </div>
@@ -4801,10 +4802,9 @@ CONTRATO JSON OBLIGATORIO:
       {"order": 1, "name": "", "actor": "", "type": "operation|decision", "ava": "VA|NNVA|NVA", "change_type": "keep|adjust|delete|create", "change_reason": "", "previous": [], "next": []}
     ],
     "future_flow": [],
-    "differences_vs_as_is": [],
-    "expected_benefits": [],
+    
     "improvements": [
-      {"title": "", "improvement_type": "", "expected_benefit": "", "problem_to_solve": "", "status": "execute|custom"}
+      {"title": "", "improvement_type": "", "expected_benefit": "", "problem_to_solve": "", "source_finding": "", "status": "pending|execute|custom|rejected"}
     ],
     "mode_a": [],
     "mode_b": [],
@@ -5867,8 +5867,7 @@ CONTRATO JSON:
     "summary": "",
     "as_is_summary": "",
     "future_flow": [],
-    "differences_vs_as_is": [],
-    "expected_benefits": [],
+    
     "quick_wins": [],
     "validations_to_do": [],
     "implementation_plan": {"mode_a": [], "mode_b": []},
@@ -5905,8 +5904,7 @@ CONTRATO JSON OBLIGATORIO:
     "summary": "",
     "as_is_summary": "",
     "future_flow": [],
-    "differences_vs_as_is": [],
-    "expected_benefits": [],
+    
     "quick_wins": [],
     "validations_to_do": [],
     "implementation_plan": {"mode_a": [], "mode_b": []},
@@ -6062,7 +6060,7 @@ function generateResults(){
   if(qs('resultsSubtitle')) qs('resultsSubtitle').textContent = isToBe
     ? 'Muestra informe ejecutivo, informe técnico y modo A / modo B de implementación.'
     : 'Muestra solo el informe ejecutivo y el informe técnico del estado actual.';
-  if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Generación de mejoras e informes' : 'Generación de informe final';
+  if(qs('resultsActionTitle')) qs('resultsActionTitle').textContent = isToBe ? 'Resultados TO BE aplicados al LMP' : 'Resultados AS IS aplicados al LMP';
   if(qs('btnGenerateResultsFinal')) qs('btnGenerateResultsFinal').textContent = isToBe ? 'Aplicar resultados TO BE al LMP' : 'Aplicar resultados AS IS al LMP';
   qs('documentProposalView').textContent = JSON.stringify(state.results.documentProposal, null, 2);
   qs('integrationInputView').textContent = JSON.stringify(state.results.integrationPayload, null, 2);
@@ -6785,7 +6783,7 @@ function renderAnalysisValidation(){
   const raw = state.analysisRun?.raw || state.analysis?.raw || null;
   const issues = evaluateAnalysisCompleteness(raw);
   const msgId = 'analysisValidationMsg';
-  if(!raw){ showMsg(msgId,'warn','Estado: análisis incompleto. Aún no se ha procesado un JSON maestro.'); return issues; }
+  if(!raw){ return issues; }
   if(issues.length){ showMsg(msgId,'warn','Estado: análisis incompleto. Revisa o reanaliza:\n- ' + issues.join('\n- ')); }
   else { showMsg(msgId,'ok','Estado: diagnóstico AS IS completo. Ya puede aplicarse al LMP.'); }
   return issues;
@@ -7013,7 +7011,7 @@ REGLAS CRÍTICAS DEL PROMPT B - ANÁLISIS PROFUNDO:
 - Si una evidencia adicional contradice el flujo, repórtalo como contradicción o validación pendiente, no como actividad nueva.
 - Puedes proponer mejoras, pero solo en bloques separados: improvements, to_be, document_proposal, implementation_plan y final_outputs. Nunca mezcles propuestas dentro de as_is.activities.
 - Las mejoras candidatas deben venir simples y editables: title, improvement_type, expected_benefit y problem_to_solve.
-- El bloque to_be debe traer información general precargable para: future_flow, differences_vs_as_is y expected_benefits.
+- El bloque to_be debe centrarse en activities, flow_notes, change_summary y validations_to_do. No incluir diferencias o beneficios en construcción TO BE.
 - Los informes deben ser robustos: executive orientado a decisión y technical con criterios, evidencias, riesgos, validaciones y trazabilidad.
 - final_outputs.capacity_simulator debe incluir únicamente actividades y AVA; no incluyas tiempos, frecuencias, volumen ni simulación de capacidad.
 
