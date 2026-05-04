@@ -1912,9 +1912,11 @@
       }
 
       function prepSetGeneratedEnabled(enabled) {
+        const isDocRoute = (window.state && window.state.metadata && window.state.metadata.route === "doc");
         ["prep_generate_pre_btn", "prep_generate_interview_btn"].forEach(function(id){
           const el = document.getElementById(id);
-          if (el) el.disabled = !enabled;
+          if (!el) return;
+          el.disabled = isDocRoute || !enabled;
         });
       }
 
@@ -2715,6 +2717,9 @@ ${script}
       hydratePreparationFromState();
       const hydratedContext = getPreparationContext();
       const canGenerate = !!(hydratedContext.company && hydratedContext.processName && hydratedContext.analyst && hydratedContext.processType);
+      if (window.state?.metadata?.route === "doc") {
+        prepShowMessage("warn", "Ruta documentación existente: generación de cuestionario y entrevista desactivada.");
+      }
       if (canGenerate) {
         prepPreviewContext(hydratedContext);
         prepSetGeneratedEnabled(true);
@@ -2796,7 +2801,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 <div class="msg" id="briefIaMsg"></div>
 </article>
 
-<article class="card brief-status-card">
+<article class="card brief-status-card" style="display:none">
 <h3>Estado del Brief</h3>
 <p>Valida los campos necesarios para que Prompt B pueda hacer el diagnóstico AS IS sin perder estructura.</p>
 <div class="kpi-wrap">
@@ -2828,6 +2833,7 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 </article>
 </div>
 <div class="actions center-actions">
+<button class="btn" id="btnValidateAnalysisJson" onclick="validateAnalysisJsonStructure()" type="button">Validar estructura JSON</button>
 <button class="btn-ok btn-xl" id="btnContinueFromCarga" onclick="continueCargaToAnalysis()" type="button">Continuar a análisis</button>
 </div>
 </section>
@@ -4129,6 +4135,32 @@ function saveMasterAndContinue(){
   }catch(error){
     showMsg('cargaMsg','err',`El JSON maestro no es válido. Detalle: ${error.message}`);
   }
+}
+
+function validateAnalysisJsonStructure(){
+  const raw = qs('iaResponseEditor')?.value.trim() || '';
+  if(!raw){ showMsg('analysisValidationMsg','warn','Pega primero el JSON del análisis AS IS para validar su estructura.'); return []; }
+  try{
+    const parsed = JSON.parse(extractJson(raw));
+    const required = [
+      ['as_is','Objeto as_is'],
+      ['as_is.activities','Lista as_is.activities'],
+      ['ava.distribution.VA_pct','AVA VA_pct'],
+      ['ava.distribution.NNVA_pct','AVA NNVA_pct'],
+      ['ava.distribution.NVA_pct','AVA NVA_pct'],
+      ['findings.problems','findings.problems'],
+      ['findings.wastes','findings.wastes'],
+      ['findings.quickWins','findings.quickWins'],
+      ['findings.restrictions','findings.restrictions'],
+      ['findings.validations_to_do','findings.validations_to_do']
+    ];
+    const miss=[];
+    const get=(o,p)=>p.split('.').reduce((a,k)=>a&&a[k],o);
+    required.forEach(([path,label])=>{ const v=get(parsed,path); if(v===undefined || v===null || (Array.isArray(v)&&!v.length)) miss.push(label); });
+    if(miss.length){ showMsg('analysisValidationMsg','warn','Estructura incompleta. Faltan: '+miss.join(', ')); return miss; }
+    showMsg('analysisValidationMsg','ok','Estructura JSON válida para análisis AS IS.');
+    return [];
+  }catch(error){ showMsg('analysisValidationMsg','err','JSON inválido: '+error.message); return ['json_invalido']; }
 }
 
 function continueCargaToAnalysis(){
@@ -6946,8 +6978,7 @@ function approveBriefAndUnlockAnalysis(){
 }
 
 function generateAnalysisPromptFromApprovedBrief(){
-  if(!(state.briefReview && state.briefReview.approved && state.briefReview.raw)){ showMsg('cargaMsg','warn','Debes procesar un Brief sin vacíos bloqueantes antes de generar Prompt B.'); return; }
-  const brief = state.briefReview.raw;
+  const brief = (state.briefReview && state.briefReview.raw) ? state.briefReview.raw : (getBriefPayload() || {});
   const master = state.master || mergeMaster();
   const c = master.context || state.context || {};
   const evidencePack = {
@@ -7293,7 +7324,7 @@ function refreshCargaFlowState(){
   const hasBriefPrompt = !!(qs('briefPromptEditor')?.value || '').trim();
   const hasBriefResponse = !!(qs('briefResponseEditor')?.value || '').trim();
   const hasBrief = !!(qs('briefEditor')?.value || '').trim();
-  const briefApproved = !!(state.briefReview && state.briefReview.approved);
+  const briefApproved = !!((state.briefReview && state.briefReview.raw) || (qs('briefResponseEditor')?.value || '').trim());
   const hasAnalysisPrompt = !!(qs('analysisPromptEditor')?.value || '').trim();
   const hasAnalysisResponse = !!(qs('iaResponseEditor')?.value || '').trim();
 
