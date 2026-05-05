@@ -3354,81 +3354,162 @@ window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 // SGMP · Loader de prompts desde Sheet
 // Incluir este bloque al inicio del <script> de cada módulo
 // ══════════════════════════════════════════════════════
-var SGMP_OFFLINE_MODE = true;
+var SGMP_OFFLINE_MODE = false;
 var SGMP_PROMPTS = {};
 var SGMP_PROMPT_META = {};
 var SGMP_STAGE_CONFIG = {};
 window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
-var SGMP_LOADED  = false;
+var SGMP_LOADED = false;
 
-function sgmpLoadPrompts(moduleCode, onReady) { SGMP_LOADED = true; if (typeof onReady === 'function') onReady(); }
+const SGMP_API_URL = 'https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxx/exec';
 
 function sgmpRegisterPrompt(p) {
-  if(!p || !p.prompt_key) return;
+  if (!p || !p.prompt_key) return;
+
   SGMP_PROMPTS[p.prompt_key] = p.prompt_text || '';
   SGMP_PROMPT_META[p.prompt_key] = p;
-  var stageMap = { prompt_brief:'lmp_brief', prompt_analysis:'lmp_analysis', prompt_sb_contract_builder:'lmp_sb_contract' };
-  var stage = p.stage_code || p.stageCode || p.stage || p.prompt_stage || stageMap[p.prompt_key] || '';
-  if(stage) SGMP_STAGE_CONFIG[stage] = p;
+
+  var stageMap = {
+    prompt_brief: 'lmp_brief',
+    prompt_analysis: 'lmp_analysis',
+    prompt_analysis_b1: 'lmp_b1',
+    prompt_analysis_b2: 'lmp_b2',
+    prompt_analysis_b3: 'lmp_b3',
+    prompt_analysis_b4: 'lmp_b4',
+    prompt_analysis_b5: 'lmp_b5',
+    prompt_analysis_b6: 'lmp_b6',
+    prompt_doc_sipoc: 'lmp_doc_sipoc',
+    prompt_doc_pr: 'lmp_doc_pr',
+    prompt_sb_contract_builder: 'lmp_sb_contract'
+  };
+
+  var stage =
+    p.stage_code ||
+    p.stageCode ||
+    p.stage ||
+    p.prompt_stage ||
+    stageMap[p.prompt_key] ||
+    '';
+
+  if (stage) SGMP_STAGE_CONFIG[stage] = p;
 }
 
-// Obtener prompt — nunca falla, devuelve fallback si no hay nada
 function sgmpPrompt(key, fallback) {
-  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
+  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim())
+    ? SGMP_PROMPTS[key]
+    : (fallback || '');
 }
 
-function sgmpYes(value){
-  return ['YES','SI','SÍ','TRUE','1','ON'].includes(String(value ?? '').trim().toUpperCase());
+function sgmpYes(value) {
+  return ['YES', 'SI', 'SÍ', 'TRUE', '1', 'ON'].includes(String(value ?? '').trim().toUpperCase());
 }
 
-function sgmpSessionValue(key){
-  try { return sessionStorage.getItem(key) || ''; } catch(e) { return ''; }
+function sgmpSessionValue(key) {
+  try { return sessionStorage.getItem(key) || ''; } catch (e) { return ''; }
 }
 
-function sgmpCurrentSession(){
+function sgmpCurrentSession() {
   var raw = sgmpSessionValue('sgmp_session_v1') || sgmpSessionValue('SGMP_SESSION') || sgmpSessionValue('session');
-  if(raw){
-    try { return JSON.parse(raw); } catch(e) { return { session_id: raw }; }
+  if (raw) {
+    try { return JSON.parse(raw); } catch (e) { return { session_id: raw }; }
   }
   return {};
 }
 
-function sgmpSessionId(){
+function sgmpSessionId() {
   var session = sgmpCurrentSession();
   return session.session_id || session.sessionId || session.id || sgmpSessionValue('session_id') || '';
 }
 
-function sgmpUserId(){
+function sgmpUserId() {
   var session = sgmpCurrentSession();
   return session.user_id || session.userId || session.username || sgmpSessionValue('user_id') || 'u_admin';
 }
 
-async function sgmpFetchJson(url){ return {}; }
+async function sgmpFetchJson(url) {
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return await res.json();
+}
 
-async function sgmpLoadRuntimeConfig(){ window.SGMP_GLOBAL_CONFIG = {}; window.SGMP_STAGE_CONFIG_RUNTIME = {}; return {global:{}, stages:{}}; }
+async function sgmpLoadPrompts(moduleCode, onReady) {
+  try {
+    const url =
+      SGMP_API_URL +
+      '?action=get_prompts&module_code=' +
+      encodeURIComponent(moduleCode);
 
-function sgmpGlobalApiEnabled(){ return false; }
+    const response = await sgmpFetchJson(url);
 
-function sgmpStageUseApi(stageCode){ return false; }
+    const prompts = response.data || response.prompts || [];
 
-function sgmpStageApiEnabled(stageCode){ return false; }
+    SGMP_PROMPTS = {};
+    SGMP_PROMPT_META = {};
+    SGMP_STAGE_CONFIG = {};
 
-function sgmpAIResultText(result){
-  if(result && typeof result === 'object' && result.text !== undefined) return result.text;
+    prompts.forEach(function (p) {
+      sgmpRegisterPrompt(p);
+    });
+
+    SGMP_LOADED = true;
+
+    console.log('Prompts cargados desde Apps Script:', Object.keys(SGMP_PROMPTS));
+
+    if (typeof onReady === 'function') onReady();
+
+  } catch (err) {
+    console.error('Error cargando prompts SGMP:', err);
+    SGMP_LOADED = false;
+    alert('No se pudieron cargar los prompts desde Apps Script. Revisa URL, permisos del Web App o CORS.');
+  }
+}
+
+async function sgmpLoadRuntimeConfig() {
+  window.SGMP_GLOBAL_CONFIG = {};
+  window.SGMP_STAGE_CONFIG_RUNTIME = {};
+  return { global: {}, stages: {} };
+}
+
+function sgmpGlobalApiEnabled() {
+  return false;
+}
+
+function sgmpStageUseApi(stageCode) {
+  return false;
+}
+
+function sgmpStageApiEnabled(stageCode) {
+  return false;
+}
+
+function sgmpAIResultText(result) {
+  if (result && typeof result === 'object' && result.text !== undefined) return result.text;
   return sgmpExtractAIText(result);
 }
 
-function sgmpExtractAIText(res){
-  if(res === undefined || res === null) throw new Error('Respuesta vacía del flujo manual.');
-  if(typeof res === 'string') return res;
-  if(res.ok === false) throw new Error(res.error || res.message || 'Flujo manual respondió con error.');
+function sgmpExtractAIText(res) {
+  if (res === undefined || res === null) throw new Error('Respuesta vacía del flujo manual.');
+  if (typeof res === 'string') return res;
+  if (res.ok === false) throw new Error(res.error || res.message || 'Flujo manual respondió con error.');
+
   var data = res.data !== undefined ? res.data : res;
-  if(typeof data === 'string') return data;
-  return data.text || data.output || data.response || data.result || data.content || data.answer || data.raw || JSON.stringify(data);
+
+  if (typeof data === 'string') return data;
+
+  return data.text ||
+    data.output ||
+    data.response ||
+    data.result ||
+    data.content ||
+    data.answer ||
+    data.raw ||
+    JSON.stringify(data);
 }
 
-async function sgmpOfflineManualOnly(stageCode, prompt){ throw new Error('Modo offline: copia el prompt y pega manualmente el JSON devuelto por una IA externa.'); }
+async function sgmpOfflineManualOnly(stageCode, prompt) {
+  throw new Error('Modo manual: copia el prompt y pega manualmente el JSON devuelto por una IA externa.');
+}
 
 // Auth admin local desactivado
 function sgmpAuthAdmin(username, password, onOk, onErr) { if (typeof onOk === 'function') onOk({ok:true, offline:true}); }
