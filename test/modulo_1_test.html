@@ -3340,20 +3340,29 @@ window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
 var SGMP_LOADED  = false;
 
-function sgmpLoadPrompts(moduleCode, onReady) {
+function sgmpLoadPrompts(moduleCode, onReady, forceReload) {
   var cacheKey = 'sgmp_p_' + moduleCode;
+
+  if (forceReload) {
+    try { sessionStorage.removeItem(cacheKey); } catch(e) {}
+    SGMP_PROMPTS = {};
+    SGMP_PROMPT_META = {};
+    SGMP_STAGE_CONFIG = {};
+    SGMP_LOADED = false;
+  }
+
   try {
-    var cached = sessionStorage.getItem(cacheKey);
+    var cached = !forceReload ? sessionStorage.getItem(cacheKey) : null;
     if (cached) {
       var arr = JSON.parse(cached);
       arr.forEach(function(p) { sgmpRegisterPrompt(p); });
       SGMP_LOADED = true;
-      onReady();
+      if (typeof onReady === 'function') onReady();
       return;
     }
   } catch(e) {}
 
-  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
+  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode) + '&_ts=' + Date.now())
     .then(function(r) { return r.json(); })
     .then(function(res) {
       if (res.ok && res.data && res.data.length) {
@@ -3361,11 +3370,12 @@ function sgmpLoadPrompts(moduleCode, onReady) {
         try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
       }
       SGMP_LOADED = true;
-      onReady();
+      if (typeof onReady === 'function') onReady();
     })
-    .catch(function() {
+    .catch(function(error) {
+      console.error('[SGMP] No fue posible cargar prompts desde Sheet:', error);
       SGMP_LOADED = true;
-      onReady(); // continúa con prompts vacíos — módulo funciona igual
+      if (typeof onReady === 'function') onReady();
     });
 }
 
@@ -4375,18 +4385,36 @@ function generateDocPrompt(targetId, type, previewId, msgId){
     pdf_documento: ['prompt_doc_pr','prompt_documentacion_pr','prompt_pr_procedimiento']
   };
 
-  const prompt = getPromptOnlyFromSheet(keyMap[type] || []);
+  const keys = keyMap[type] || [];
 
-  if(!prompt){
-    el.value = '';
-    renderDocPromptPreview(previewId, '');
-    showMsg(msgId,'err','No se encontró el prompt en Google Sheets. Configura prompt_doc_sipoc en la pestaña PROMPTS.');
-    return;
+  const loadAndRenderPrompt = function(){
+    const prompt = getPromptOnlyFromSheet(keys);
+
+    if(!prompt){
+      el.value = '';
+      renderDocPromptPreview(previewId, '');
+      showMsg(
+        msgId,
+        'err',
+        'No se encontró el prompt en Google Sheets. Verifica module_code=LMP, prompt_key=prompt_doc_sipoc, enabled=SI y que el endpoint corresponda al Sheet correcto.'
+      );
+      console.warn('[LMP DocPrompt] Prompt no encontrado. Keys buscadas:', keys);
+      console.warn('[LMP DocPrompt] Prompts cargados:', Object.keys(SGMP_PROMPTS || {}));
+      return;
+    }
+
+    el.value = prompt;
+    renderDocPromptPreview(previewId, prompt);
+    showMsg(msgId,'ok','Prompt cargado desde Google Sheets correctamente.');
+  };
+
+  showMsg(msgId, 'warn', 'Cargando prompt desde Google Sheets...');
+
+  if(typeof sgmpLoadPrompts === 'function'){
+    sgmpLoadPrompts('LMP', loadAndRenderPrompt, true);
+  } else {
+    loadAndRenderPrompt();
   }
-
-  el.value = prompt;
-  renderDocPromptPreview(previewId, prompt);
-  showMsg(msgId,'ok','Prompt cargado desde Google Sheets correctamente.');
 }
 
 function copyFixedDocPrompt(targetId, msgId){
