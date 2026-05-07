@@ -4462,9 +4462,34 @@ function downloadDocJson(textareaId, filename, msgId){
 function mergeLoadedState(loaded){
   const defaults = JSON.parse(JSON.stringify(state));
   const merged = deepMerge(defaults, loaded);
+
   Object.keys(state).forEach(k => delete state[k]);
   Object.assign(state, merged);
-  if(!state.metadata.currentStage) state.metadata.currentStage = 'inicio';
+
+  // Recuperar contexto de Preparación desde respaldo cargado
+  if (loaded && loaded.context) {
+    state.context = Object.assign({}, state.context || {}, loaded.context);
+  }
+
+  if (loaded && loaded.master && loaded.master.context) {
+    state.context = Object.assign(
+      {},
+      state.context || {},
+      loaded.master.context,
+      loaded.context || {}
+    );
+  }
+
+  if (state.master && state.master.context) {
+    state.context = Object.assign(
+      {},
+      state.context || {},
+      state.master.context,
+      state.context || {}
+    );
+  }
+
+  if(!state.metadata.currentStage) state.metadata.currentStage = 'prep';
 }
 
 /* =========================
@@ -10009,6 +10034,9 @@ function saveToBeAndContinue(){
 }
 
 function renderAllFromState(){
+  if (typeof hydratePreparationFromState === 'function') {
+  hydratePreparationFromState();
+}
   updateTopStatus();
   if(typeof hydrateContextFromState === 'function') hydrateContextFromState();
   if(typeof window.hydratePreparationFromState === 'function') window.hydratePreparationFromState();
