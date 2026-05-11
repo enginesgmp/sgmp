@@ -1547,7 +1547,7 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   <div class="route-section start-flow">
     <div class="route-section-head">
       <h3>Selecciona una ruta de trabajo</h3>
-      <p>Inicia un levantamiento nuevo, descarga el extractor para SIPOC/PDF existentes o carga un respaldo JSON para continuar o actualizar el proceso.</p>
+      <p>Inicia un levantamiento nuevo, descarga el Extractor SIPOC para procesos existentes o carga un respaldo JSON para continuar o actualizar el proceso.</p>
     </div>
 
     <div class="route-grid-three">
@@ -1561,7 +1561,7 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
      <article class="route-card compact" id="routeCard_doc">
   <h3>Estructurar proceso existente o documentado</h3>
   <p>Usa esta ruta cuando ya existen SIPOC, PDF, capturas, Visio u otra evidencia visual/documental del proceso.</p>
-  <div class="mini-note">Ruta esperada: Preparación y contexto → Descargar Extractor SIPOC/PDF → Carga y consolidación.</div>
+  <div class="mini-note">Ruta esperada: Preparación y contexto → Descargar Extractor SIPOC → Carga y consolidación.</div>
   <button class="btn" onclick="selectRoute('doc')" type="button">Seleccionar ruta</button>
 </article>
 
@@ -1577,44 +1577,6 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
 
   <div class="msg" id="inicioMsg"></div>
   
-</section>
-
-<!-- DOCUMENTACION EXISTENTE -->
-<section class="section" id="documentacion_existente">
-  <div class="section-head">
-    <div>
-      <h2>Documentación existente del proceso</h2>
-      <p>Convierte el diagrama SIPOC/flujo existente en JSON estructurado para cargarlo luego como entrevista/documentación base en Carga y consolidación.</p>
-    </div>
-    <div class="step-pill">SIPOC existente</div>
-  </div>
-
-  <div class="doc-prompt-grid single">
-    <div class="card">
-      <h3>Prompt para Visio / SIPOC / flujo</h3>
-      <p>Genera el prompt, úsalo con el PDF del diagrama y pega abajo el JSON estructurado que entregue la IA.</p>
-      <div class="actions"><div class="actions-left"><button class="btn" onclick="generateDocPrompt('docPromptSipoc','pdf_sipoc','docPromptSipocPreview','docPromptSipocMsg')" type="button">Generar prompt</button><button class="btn-ghost" onclick="copyFixedDocPrompt('docPromptSipoc','docPromptSipocMsg')" type="button">Copiar prompt</button></div></div>
-      <textarea class="doc-prompt-box" id="docPromptSipoc" placeholder="Aquí aparecerá el prompt para Visio, SIPOC o flujo del proceso."></textarea>
-      <div class="doc-prompt-preview" id="docPromptSipocPreview"><strong>Prompt generado</strong><pre></pre></div>
-      <div class="msg" id="docPromptSipocMsg"></div>
-      <div class="field-grid">
-        <div class="field w-12"><label>JSON generado desde Visio / SIPOC / flujo</label><textarea id="docSipocJson" placeholder="Pega aquí el JSON generado por la IA."></textarea></div>
-      </div>
-      <div class="actions"><div class="actions-left"><button class="btn-ghost" onclick="copyDocJson('docSipocJson','docSipocMsg')" type="button">Copiar JSON</button><button class="btn-ok" onclick="downloadDocJson('docSipocJson','lmp_documentacion_sipoc_flujo.json','docSipocMsg')" type="button">Descargar JSON</button></div></div>
-      <div class="msg" id="docSipocMsg"></div>
-    </div>
-  </div>
-
-  <div class="msg" id="docExistingMsg"></div>
-
-  <div class="actions">
-    <div class="actions-left">
-      <button class="btn-ghost" onclick="goToPrev('documentacion_existente')" type="button">Volver a Preparación</button>
-    </div>
-    <div class="actions-right">
-      <button class="btn" onclick="goToNext('documentacion_existente')" type="button">Continuar a Carga y consolidación</button>
-    </div>
-  </div>
 </section>
 
 <!-- PREPARACION -->
@@ -1788,8 +1750,9 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
 <div class="actions" style="margin-top:16px;"><div class="actions-left">
 <button class="btn-ok" id="prep_generate_pre_btn" type="button" disabled>Generar cuestionario actores internos</button>
 <button class="btn-ok" id="prep_generate_interview_btn" type="button" disabled>Generar entrevista</button>
+<button class="btn-ok" id="prep_download_extractor_btn" type="button" disabled>Descargar Extractor SIPOC</button>
 </div></div>
-<div class="note">Después de usar los instrumentos, vuelve al LMP y carga los JSON en la etapa <strong>Carga y consolidación</strong>.</div>
+<div class="note" id="prep_instrument_route_note">Después de usar los instrumentos, vuelve al LMP y carga los JSON en la etapa <strong>Carga y consolidación</strong>.</div>
 </article>
 <article class="card" id="prep_summary_card" style="display:none">
 <h3>Resumen del contexto preparado</h3>
@@ -1852,11 +1815,47 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
         el.textContent = JSON.stringify(obj, null, 2);
       }
 
+      function prepActiveRoute(){
+        return (window.state && window.state.metadata && window.state.metadata.route) || "";
+      }
+
+      function prepRenderInstrumentOptions(enabled) {
+        const route = prepActiveRoute();
+        const preBtn = document.getElementById("prep_generate_pre_btn");
+        const intBtn = document.getElementById("prep_generate_interview_btn");
+        const extractorBtn = document.getElementById("prep_download_extractor_btn");
+        const note = document.getElementById("prep_instrument_route_note");
+        const isNew = route === "new";
+        const isDoc = route === "doc";
+        const isResume = ["backup", "resume", "update"].includes(route);
+
+        if (preBtn) {
+          preBtn.style.display = isNew ? "" : "none";
+          preBtn.disabled = !(enabled && isNew);
+        }
+        if (intBtn) {
+          intBtn.style.display = isNew ? "" : "none";
+          intBtn.disabled = !(enabled && isNew);
+        }
+        if (extractorBtn) {
+          extractorBtn.style.display = isDoc ? "" : "none";
+          extractorBtn.disabled = !(enabled && isDoc);
+        }
+        if (note) {
+          if (isNew) {
+            note.innerHTML = "Ruta proceso nuevo: genera el cuestionario y la entrevista, luego carga sus JSON en <strong>Carga y consolidación</strong>.";
+          } else if (isDoc) {
+            note.innerHTML = "Ruta proceso existente/documentado: descarga el Extractor SIPOC, úsalo fuera del LMP y carga el JSON resultante en <strong>Carga y consolidación</strong>.";
+          } else if (isResume) {
+            note.innerHTML = "Ruta de continuación o actualización: no se generan instrumentos nuevos. Carga el JSON correspondiente en <strong>Carga y consolidación</strong>.";
+          } else {
+            note.textContent = "Selecciona una ruta en Inicio para habilitar los instrumentos correspondientes.";
+          }
+        }
+      }
+
       function prepSetGeneratedEnabled(enabled) {
-        ["prep_generate_pre_btn", "prep_generate_interview_btn"].forEach(function(id){
-          const el = document.getElementById(id);
-          if (el) el.disabled = !enabled;
-        });
+        prepRenderInstrumentOptions(enabled);
       }
 
       function getPreparationContext(){
@@ -2624,17 +2623,28 @@ ${script}
         set("ctx_observation", c.observation);
         if (typeof window.renderIndicatorsChips === "function") window.renderIndicatorsChips();
         prepPreviewContext(getPreparationContext());
+        prepRenderInstrumentOptions(!!(c.company && c.processName && c.analyst && c.processType));
       }
 
       const saveBtn = document.getElementById("prep_save_btn");
       const preBtn = document.getElementById("prep_generate_pre_btn");
       const intBtn = document.getElementById("prep_generate_interview_btn");
+      const extractorBtn = document.getElementById("prep_download_extractor_btn");
       const backBtn = document.getElementById("prep_back_btn");
       const nextBtn = document.getElementById("prep_next_btn");
 
       if (saveBtn) saveBtn.addEventListener("click", savePreparationContext);
       if (preBtn) preBtn.addEventListener("click", generatePreInterviewFromPreparation);
       if (intBtn) intBtn.addEventListener("click", generateInterviewFromPreparation);
+      if (extractorBtn) {
+        extractorBtn.addEventListener("click", function(){
+          if (typeof window.downloadSipocExtractor === "function") {
+            window.downloadSipocExtractor();
+          } else {
+            prepShowMessage("warn", "El Extractor SIPOC aún no está disponible para descarga en esta versión.");
+          }
+        });
+      }
 
       if (backBtn) {
         backBtn.addEventListener("click", function(){
@@ -2667,6 +2677,7 @@ window.getPreparationContext = getPreparationContext;
 window.savePreparationContext = savePreparationContext;
 window.generatePreInterviewFromPreparation = generatePreInterviewFromPreparation;
 window.generateInterviewFromPreparation = generateInterviewFromPreparation;
+window.renderPreparationInstrumentOptions = prepRenderInstrumentOptions;
 window.buildPreInterviewHTML = buildPreInterviewHTML;
 window.buildInterviewHTML = buildInterviewHTML;
 window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
@@ -2854,14 +2865,14 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="section-head">
 <div>
 <h2>AS IS · Constructor editable</h2>
-<p>Revisa y ajusta la secuencia AS IS interpretada por la IA. Puedes mover actividades hacia arriba o abajo, editar actores, tipos, tiempos, AVA, problemas, desperdicios y notas antes del análisis.</p>
+<p>Revisa y ajusta el estado actual del proceso: actividades, decisiones, actores, secuencia, entradas, salidas, documentos, sistemas, notas aclaratorias y observaciones.</p>
 </div>
 <div class="step-pill">Paso 4</div>
 </div>
 <div class="cards">
 <article class="card">
 <h3>Constructor visual de actividades</h3>
-<p>La IA propone una estructura inicial desde el Brief, entrevista o análisis. El usuario valida, corrige y ordena antes de continuar.</p>
+<p>El LMP precarga la estructura desde entrevista, cuestionarios, Brief o JSON del Extractor SIPOC. El usuario valida, corrige y ordena antes de continuar.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:12px">
 <div class="actions-left">
 <button class="btn" onclick="seedAsIsBuilderFromBrief(true)" type="button">Cargar desde Brief</button>
@@ -3609,6 +3620,7 @@ const state = {
     docs: []
   },
   master: null,
+  asIsModel: null,
   asis: {
     activities: []
   },
@@ -3637,7 +3649,6 @@ const state = {
 // Cargar prompts y configuracion runtime del backend v3 al iniciar
 sgmpLoadPrompts('LMP', async function() {
   await sgmpLoadRuntimeConfig();
-  if(typeof fillFixedDocPrompts === 'function') fillFixedDocPrompts(true);
 });
 
 const stageOrder = ['inicio','preparacion','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
@@ -3702,18 +3713,18 @@ function qs(id){ return document.getElementById(id); }
 function qsa(sel){ return Array.from(document.querySelectorAll(sel)); }
 
 function canAccessStage(id){
-  return !(id === 'documentacion_existente' && state.metadata.route === 'new');
+  return !!id && !!qs(id);
 }
 
 function refreshStageAccess(){
   qsa('.step-btn').forEach(btn => {
-    btn.classList.toggle('disabled', btn.dataset.target === 'documentacion_existente' && state.metadata.route === 'new');
+    btn.classList.toggle('disabled', !qs(btn.dataset.target));
   });
 }
 
 function showSection(id){
   if(!canAccessStage(id)){
-    showMsg('inicioMsg','warn','Documentacion existente no aplica para levantamiento de proceso nuevo.');
+    showMsg('inicioMsg','warn','La ruta de documentacion anterior fue reemplazada por Preparacion y contexto.');
     id = 'preparacion';
   }
   qsa('.section').forEach(s => s.classList.toggle('active', s.id === id));
@@ -3724,6 +3735,7 @@ function showSection(id){
   }
   if(id === 'preparacion' && typeof window.hydratePreparationFromState === 'function'){
     window.hydratePreparationFromState();
+    if(typeof window.renderPreparationInstrumentOptions === 'function') window.renderPreparationInstrumentOptions(true);
   }
   if(id === 'asis'){
     if((!state.asis.activities || !state.asis.activities.length) && typeof hydrateAsIsFromMaster === 'function'){
@@ -3772,7 +3784,6 @@ function updateTopStatus(){
 function labelStage(id){
   return {
     inicio:'Inicio',
-    documentacion_existente:'Documentación existente',
     preparacion:'Preparación y contexto',
     
     carga:'Carga y consolidación',
@@ -3980,6 +3991,8 @@ function selectRoute(route){
 function detectLmpImportType(parsed){
   if(!parsed || typeof parsed !== 'object') return 'UNKNOWN';
 
+  if(isExtractorSipocJson(parsed)) return 'EXTRACTOR_SIPOC_JSON';
+
   const hasLmpState = !!(parsed.metadata && (parsed.master || parsed.asis || parsed.loads || parsed.results));
   if(hasLmpState) return 'LMP_BACKUP';
 
@@ -4096,6 +4109,347 @@ function applySingleInstrumentJson(parsed, type){
   return state.asis.activities?.length || state.master?.activities?.length || 0;
 }
 
+function isExtractorSipocJson(parsed){
+  if(!parsed || typeof parsed !== 'object') return false;
+  const hasExtractorSignature = parsed.instrument === 'sgmp_sipoc_image_segmented_extractor';
+  const hasSegmentedShape = Array.isArray(parsed.extractions_by_segment) && !!parsed.process_header;
+  const hasVersionShape = String(parsed.version || '') === '0.7' && hasSegmentedShape;
+  return !!(hasExtractorSignature || hasVersionShape || hasSegmentedShape);
+}
+
+function createEmptyAsIsModel(sourceType){
+  return {
+    processHeader: {},
+    sourceType: sourceType || 'new_process_interview',
+    suppliers: [],
+    inputs: [],
+    activities: [],
+    decisions: [],
+    outputs: [],
+    customers: [],
+    relations: [],
+    notes: [],
+    observations: [],
+    findings: [],
+    problems: [],
+    wastes: [],
+    restrictions: [],
+    opportunities: [],
+    actors: [],
+    documents: []
+  };
+}
+
+function extractorText(value){
+  if(value === undefined || value === null) return '';
+  if(Array.isArray(value)) return value.map(extractorText).filter(Boolean).join('; ');
+  if(typeof value === 'object'){
+    return value.text || value.name || value.nombre || value.label || value.title || value.description || value.descripcion || value.id || value.code || JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function extractorNamedText(value, keys){
+  if(!value || typeof value !== 'object') return extractorText(value);
+  for(const key of keys){
+    if(value[key]) return extractorText(value[key]);
+  }
+  return extractorText(value);
+}
+
+function pushExtractorText(arr, value){
+  const clean = normalizeCatalogValue(extractorText(value));
+  if(!clean) return;
+  const key = clean.toLowerCase();
+  if(!arr.some(item => normalizeCatalogValue(extractorText(item)).toLowerCase() === key)) arr.push(clean);
+}
+
+function pushExtractorNote(arr, note){
+  if(!note) return;
+  const text = normalizeContractString(note.text || note.note || note.description || extractorText(note));
+  if(!text) return;
+  const key = text.toLowerCase();
+  if(arr.some(item => normalizeContractString(item.text || item).toLowerCase() === key)) return;
+  arr.push({
+    id: normalizeContractString(note.note_id || note.id || ''),
+    reference: normalizeContractString(note.reference || note.visible_reference || ''),
+    text,
+    relatedActivity: normalizeContractString(note.related_activity || note.activity || ''),
+    noteType: normalizeContractString(note.note_type || note.type || ''),
+    confidence: normalizeContractString(note.confidence || '')
+  });
+}
+
+function pushExtractorTraceabilityNotes(model, traceability, sourceLabel){
+  if(!traceability || typeof traceability !== 'object') return;
+  Object.keys(traceability).forEach(key => {
+    safeArray(traceability[key]).forEach(item => {
+      const text = extractorText(item);
+      if(text) pushExtractorNote(model.notes, {
+        text,
+        note_type: 'traceability_' + key,
+        reference: sourceLabel || '',
+        confidence: ''
+      });
+    });
+  });
+}
+
+function pushExtractorRelation(arr, relation){
+  if(!relation || typeof relation !== 'object') return;
+  const clean = {
+    relationType: normalizeContractString(relation.relationType || relation.logic_type || relation.type || ''),
+    from: normalizeContractString(relation.from || relation.supplier || relation.output || relation.connector_label || ''),
+    to: normalizeContractString(relation.to || relation.input || relation.customer || relation.linked_element || ''),
+    flowText: normalizeContractString(relation.flow_text || relation.flow || relation.description || ''),
+    condition: normalizeContractString(relation.condition || ''),
+    connectorLabel: normalizeContractString(relation.connector_label || relation.connectorLabel || ''),
+    evidence: normalizeContractString(relation.evidence || ''),
+    confidence: normalizeContractString(relation.confidence || ''),
+    sourceSegment: normalizeContractString(relation.sourceSegment || relation.segment_id || '')
+  };
+  if(!clean.from && !clean.to && !clean.flowText && !clean.connectorLabel) return;
+  const key = [clean.relationType, clean.from, clean.to, clean.flowText, clean.condition, clean.connectorLabel].join('|').toLowerCase();
+  if(arr.some(item => [item.relationType, item.from, item.to, item.flowText, item.condition, item.connectorLabel].join('|').toLowerCase() === key)) return;
+  arr.push(clean);
+}
+
+function asIsSimpleTypeFromGpp(value){
+  const raw = normalizeContractString(value).toLowerCase();
+  return /decisi[oó]n|decision/.test(raw) ? 'decisión' : 'actividad';
+}
+
+function isPrincipalExtractorActivity(raw){
+  const gpp = normalizeContractString(raw?.gpp_type || raw?.type || raw?.activity_type || '').toLowerCase();
+  if(!gpp) return true;
+  return /activity|actividad|operation|task|step|decision|decisi[oó]n/.test(gpp);
+}
+
+function normalizeExtractorActivity(raw, sourceSegment){
+  if(!raw || typeof raw !== 'object' || !isPrincipalExtractorActivity(raw)) return null;
+  const name = normalizeContractString(raw.name || raw.activity || raw.activity_name || raw.nombre || raw.title || '');
+  if(!name) return null;
+  const actor = normalizeCatalogValue(raw.actor || raw.lane || raw.role || raw.responsable || '');
+  const type = asIsSimpleTypeFromGpp(raw.gpp_type || raw.type || raw.activity_type);
+  const documentSystem = dedupeCatalog([raw.document, raw.system, raw.documents, raw.systems, raw.documento, raw.sistema]).join('; ');
+  const previous = normalizeRelationList(raw.previous || raw.prev || raw.predecessors || raw.before);
+  const next = normalizeRelationList(raw.next || raw.successors || raw.after);
+  const received = dedupeCatalog([raw.received_flow, raw.inputs, raw.ext_inputs, raw.entradas]);
+  const delivered = dedupeCatalog([raw.delivered_flow, raw.outputs, raw.ext_outputs, raw.salidas]);
+  const incomingLogic = dedupeCatalog(raw.incoming_logic || raw.incomingLogic || []);
+  const outgoingLogic = dedupeCatalog(raw.outgoing_logic || raw.outgoingLogic || []);
+  const traceability = dedupeCatalog([raw.evidence, raw.traceability, raw.source_status, raw.visible_reference, sourceSegment?.id, sourceSegment?.title]);
+  const pendingValidation = [previous, next, received, delivered, incomingLogic, outgoingLogic, raw.source_status]
+    .flat()
+    .some(v => /pendiente_validacion|pending/i.test(String(v || '')));
+
+  return {
+    id: normalizeContractString(raw.id || raw.codigo || raw.code || ''),
+    sourceId: normalizeContractString(raw.id || raw.codigo || raw.code || ''),
+    order: Number(raw.order || raw.sequence || raw.secuencia || 0) || 0,
+    name,
+    actor,
+    lane: normalizeCatalogValue(raw.lane || actor),
+    gpp_type: normalizeContractString(raw.gpp_type || raw.type || ''),
+    type,
+    previous,
+    next,
+    ext_inputs: received,
+    ext_outputs: delivered,
+    received_flow: received,
+    delivered_flow: delivered,
+    incoming_logic: incomingLogic,
+    outgoing_logic: outgoingLogic,
+    document: documentSystem,
+    system: normalizeCatalogValue(raw.system || ''),
+    note: normalizeContractString(raw.note || raw.notes || ''),
+    observations: normalizeContractString(raw.observations || raw.observaciones || ''),
+    visible_reference: normalizeContractString(raw.visible_reference || raw.reference || ''),
+    source_status: normalizeContractString(raw.source_status || ''),
+    pending_validation: pendingValidation,
+    evidence: traceability,
+    traceability,
+    source_segments: sourceSegment ? [sourceSegment.id || sourceSegment.segment_id || sourceSegment.title || 'segmento'] : []
+  };
+}
+
+function mergeExtractorActivity(target, incoming){
+  if(!target || !incoming) return target || incoming;
+  ['previous','next','ext_inputs','ext_outputs','received_flow','delivered_flow','incoming_logic','outgoing_logic','evidence','traceability','source_segments'].forEach(key => {
+    target[key] = dedupeCatalog([target[key], incoming[key]]);
+  });
+  target.document = dedupeCatalog([target.document, incoming.document, incoming.system]).join('; ');
+  target.system = dedupeCatalog([target.system, incoming.system]).join('; ');
+  target.note = dedupeCatalog([target.note, incoming.note]).join('; ');
+  target.observations = dedupeCatalog([target.observations, incoming.observations]).join('; ');
+  target.visible_reference = target.visible_reference || incoming.visible_reference || '';
+  target.source_status = target.source_status || incoming.source_status || '';
+  target.pending_validation = !!(target.pending_validation || incoming.pending_validation);
+  if(!target.actor) target.actor = incoming.actor || '';
+  if(!target.lane) target.lane = incoming.lane || '';
+  if(!target.order || (incoming.order && incoming.order < target.order)) target.order = incoming.order;
+  return target;
+}
+
+function dedupeExtractorActivities(rawActivities){
+  const byKey = new Map();
+  safeArray(rawActivities).forEach(item => {
+    const act = normalizeExtractorActivity(item.raw || item, item.sourceSegment || item.raw?.source_segment || item.source_segment);
+    if(!act) return;
+    const key = [act.name, act.actor || act.lane, act.type].map(v => normalizeContractString(v).toLowerCase()).join('|');
+    if(byKey.has(key)){
+      mergeExtractorActivity(byKey.get(key), act);
+    }else{
+      byKey.set(key, act);
+    }
+  });
+  const out = Array.from(byKey.values()).sort((a,b) => (a.order || 999999) - (b.order || 999999));
+  const used = new Set();
+  out.forEach((act, idx) => {
+    let base = normalizeContractString(act.id || (act.type === 'decisión' ? 'D' : 'A') + (idx + 1));
+    if(!base || used.has(base.toLowerCase())) base = (act.type === 'decisión' ? 'D' : 'A') + (idx + 1);
+    let finalId = base;
+    let n = 2;
+    while(used.has(finalId.toLowerCase())){
+      finalId = base + '_' + n;
+      n += 1;
+    }
+    used.add(finalId.toLowerCase());
+    act.id = finalId;
+    act.is_start = idx === 0;
+    act.is_end = idx === out.length - 1;
+  });
+  return out;
+}
+
+function buildMasterFromAsIsModel(model, raw){
+  const header = model.processHeader || {};
+  return {
+    context: {
+      company: state.context.company || '',
+      processName: header.process_name || header.processName || header.name || state.context.processName || '',
+      processCode: header.process_code || header.processCode || header.code || state.context.processCode || '',
+      owner: header.owner || state.context.owner || '',
+      analyst: state.context.analyst || '',
+      industry: state.context.industry || '',
+      processType: state.context.processType || '',
+      activity: state.context.activity || '',
+      purpose: header.purpose || state.context.purpose || ''
+    },
+    sipoc: {
+      suppliers: model.suppliers || [],
+      inputs: model.inputs || [],
+      outputs: model.outputs || [],
+      customers: model.customers || [],
+      actors: model.actors || [],
+      documentsSystems: model.documents || []
+    },
+    activities: (model.activities || []).map(a => ({...a})),
+    decisions: (model.decisions || []).map(a => ({...a})),
+    relations: model.relations || [],
+    issues: { keyIssues:[], delays:[], rework:[], constraints:[], frictions:[], quickWins:[], futureVision:[], wastes:[] },
+    indicators: [],
+    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: (model.notes || []).map(n => n.text || n).join('\n') },
+    raw,
+    asIsModel: model
+  };
+}
+
+function applyAsIsModelToState(model, raw){
+  state.asIsModel = model;
+  state.master = buildMasterFromAsIsModel(model, raw);
+  state.asis.activities = (model.activities || []).map(a => ({...a}));
+  state.metadata.route = 'doc';
+  state.metadata.currentStage = 'asis';
+
+  const h = model.processHeader || {};
+  state.context.processName = h.process_name || h.processName || h.name || state.context.processName || '';
+  state.context.processCode = h.process_code || h.processCode || h.code || state.context.processCode || '';
+  state.context.purpose = h.purpose || state.context.purpose || '';
+
+  if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
+  if(qs('masterPreview')) qs('masterPreview').textContent = JSON.stringify(state.master, null, 2);
+  if(typeof renderAsIsActivities === 'function') renderAsIsActivities();
+  if(typeof updateLoadKpis === 'function') updateLoadKpis();
+  if(typeof updateTopStatus === 'function') updateTopStatus();
+  return state.master;
+}
+
+function formatExtractorImportSummary(model){
+  const decisions = (model.decisions || []).length;
+  const activities = Math.max(0, (model.activities || []).length - decisions);
+  const pending = (model.activities || []).filter(a => a.pending_validation).length;
+  const base = `JSON del Extractor SIPOC importado: ${model.suppliers.length} proveedores, ${model.inputs.length} entradas, ${activities} actividades, ${decisions} decisiones, ${model.outputs.length} salidas, ${model.customers.length} clientes, ${model.relations.length} relaciones y ${model.notes.length} notas.`;
+  return pending ? base + ` Advertencia: ${pending} actividad(es) tienen pendiente_validacion.` : base;
+}
+
+function importFromExtractorJson(json){
+  if(!isExtractorSipocJson(json)) throw new Error('El JSON no corresponde al Extractor SIPOC segmentado.');
+  const model = createEmptyAsIsModel('existing_process_extractor');
+  model.processHeader = Object.assign({}, json.process_header || {});
+  model.segmentationQuality = json.segmentation_quality || {};
+  model.coverageAudit = json.coverage_audit || {};
+  model.segmentationPlan = json.segmentation_plan || {};
+  pushExtractorTraceabilityNotes(model, json.traceability, 'traceability_global');
+
+  safeArray(json.lane_registry).forEach(lane => pushExtractorText(model.actors, extractorNamedText(lane, ['lane_name','lane','name','label','actor','role'])));
+  safeArray(json.column_registry).forEach(col => pushExtractorRelation(model.relations, { relationType:'column_registry', from:col.id || col.column_id || col.name, to:col.title || col.label || col.description, sourceSegment:'column_registry' }));
+
+  const rawActivities = [];
+  const addCatalogs = (catalogs) => {
+    if(!catalogs) return;
+    safeArray(catalogs.suppliers).forEach(v => pushExtractorText(model.suppliers, v));
+    safeArray(catalogs.inputs).forEach(v => pushExtractorText(model.inputs, v));
+    safeArray(catalogs.outputs).forEach(v => pushExtractorText(model.outputs, v));
+    safeArray(catalogs.customers).forEach(v => pushExtractorText(model.customers, v));
+    safeArray(catalogs.actors).forEach(v => pushExtractorText(model.actors, v));
+    safeArray(catalogs.documents_systems || catalogs.documentsSystems || catalogs.documents || catalogs.systems).forEach(v => pushExtractorText(model.documents, v));
+  };
+
+  addCatalogs(json.catalogs);
+  safeArray(json.activities).forEach(raw => rawActivities.push({ raw, sourceSegment: raw.source_segment || null }));
+  safeArray(json.flow_logic).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType: rel.logic_type || 'flow_logic' })));
+  safeArray(json.supplier_input_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'supplier_input' })));
+  safeArray(json.output_customer_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'output_customer' })));
+  safeArray(json.connector_registry).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'connector' })));
+  safeArray(json.boundary_flow_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'boundary_flow' })));
+  safeArray(json.long_cross_lane_flows).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'long_cross_lane_flow' })));
+  safeArray(json.notes_catalog).forEach(note => pushExtractorNote(model.notes, note));
+
+  safeArray(json.extractions_by_segment).forEach(segment => {
+    const extraction = segment.extraction || {};
+    const sourceSegment = {
+      id: segment.segment_id || segment.id || extraction.segment_id || '',
+      title: segment.title || segment.segment_title || '',
+      type: segment.type || segment.segment_type || ''
+    };
+    addCatalogs(extraction.catalogs_partial);
+    safeArray(extraction.activities_partial).forEach(raw => rawActivities.push({ raw, sourceSegment }));
+    safeArray(extraction.flow_logic_partial).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType: rel.logic_type || 'flow_logic', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.supplier_input_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'supplier_input', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.output_customer_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'output_customer', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.connector_registry_partial).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'connector', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.boundary_flow_links).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'boundary_flow', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.long_cross_lane_flows).forEach(rel => pushExtractorRelation(model.relations, Object.assign({}, rel, { relationType:'long_cross_lane_flow', sourceSegment: sourceSegment.id })));
+    safeArray(extraction.notes_catalog).forEach(note => pushExtractorNote(model.notes, note));
+    pushExtractorTraceabilityNotes(model, extraction.traceability, sourceSegment.id);
+  });
+
+  model.activities = dedupeExtractorActivities(rawActivities);
+  model.activities.forEach(activity => {
+    if(activity.document) splitItems(activity.document).forEach(v => pushExtractorText(model.documents, v));
+    if(activity.note) pushExtractorNote(model.notes, { text:activity.note, related_activity:activity.name, reference:activity.visible_reference, note_type:'nota_aclaratoria' });
+  });
+  model.decisions = model.activities.filter(a => asIsSimpleTypeFromGpp(a.type) === 'decisión').map(a => ({...a}));
+
+  if(!model.activities.length){
+    throw new Error('No se encontraron actividades principales en el JSON del Extractor SIPOC.');
+  }
+
+  applyAsIsModelToState(model, json);
+  return { model, master: state.master };
+}
+
 async function loadRouteJson(mode){
   const input = qs('resumeFile');
   const file = input.files[0];
@@ -4113,6 +4467,11 @@ async function loadRouteJson(mode){
       mergeLoadedState(parsed);
       state.metadata.route = parsed?.metadata?.route || 'backup';
       detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
+    }
+    else if(importType === 'EXTRACTOR_SIPOC_JSON'){
+      const result = importFromExtractorJson(parsed);
+      detectedActivities = result?.model?.activities?.length || state.asis?.activities?.length || 0;
+      state.metadata.currentStage = 'asis';
     }
     else if(importType === 'JSON_MAESTRO_PROCESO'){
       detectedActivities = applyJsonMaestroProceso(parsed);
@@ -4137,7 +4496,9 @@ updateTopStatus();
     showMsg(
       'inicioMsg',
       'ok',
-      `JSON cargado correctamente. Tipo detectado: ${importType}. Actividades detectadas: ${detectedActivities}. Etapa: ${labelStage(state.metadata.currentStage)}.`
+      importType === 'EXTRACTOR_SIPOC_JSON' && state.asIsModel
+        ? formatExtractorImportSummary(state.asIsModel)
+        : `JSON cargado correctamente. Tipo detectado: ${importType}. Actividades detectadas: ${detectedActivities}. Etapa: ${labelStage(state.metadata.currentStage)}.`
     );
 
     showSection(state.metadata.currentStage || (detectedActivities ? 'asis' : 'inicio'));
@@ -4419,9 +4780,6 @@ function copyFixedDocPrompt(targetId, msgId){
   copyText(el.value).then(() => showMsg(msgId,'ok','Prompt copiado correctamente.'));
 }
 
-document.addEventListener('DOMContentLoaded', fillFixedDocPrompts);
-window.addEventListener('load', fillFixedDocPrompts);
-  
 function copyDocJson(textareaId, msgId){
   const text = qs(textareaId)?.value?.trim() || '';
   if(!text){
@@ -4693,7 +5051,8 @@ function saveMasterAndContinue(){
       mergeMaster();
     }
 
-    if(!(state.briefReview && state.briefReview.approved)){
+    const extractorReady = state.asIsModel?.sourceType === 'existing_process_extractor' && state.asis?.activities?.length;
+    if(!(state.briefReview && state.briefReview.approved) && !extractorReady){
       showMsg('cargaMsg','warn','Debes aprobar primero el Brief antes de continuar.');
       return;
     }
@@ -4720,6 +5079,10 @@ function saveMasterAndContinue(){
 function asisActivityTemplate(data = {}, index = 0){
   const safe = normalizeActivity(data || {});
   const id = safe.id || data.id || ('A' + (index + 1));
+  const simpleType = asIsSimpleTypeFromGpp(safe.type || data.type || data.gpp_type);
+  const inputsText = dedupeCatalog([safe.ext_inputs, safe.received_flow, data.received_flow]).join(', ');
+  const outputsText = dedupeCatalog([safe.ext_outputs, safe.delivered_flow, data.delivered_flow]).join(', ');
+  const observationsText = safe.observations || data.observations || '';
   return `
     <div class="activity-item asis-row" data-index="${index}">
       <div class="activity-top">
@@ -4736,39 +5099,17 @@ function asisActivityTemplate(data = {}, index = 0){
         <div class="field w-4"><label>Actor / rol</label><input class="a_actor" value="${escapeHtml(safe.actor || '')}" oninput="syncAsisRow(${index})" /></div>
         <div class="field w-3"><label>Tipo</label>
           <select class="a_type" onchange="syncAsisRow(${index})">
-            <option value="operation" ${safe.type==='operation'?'selected':''}>Operación</option>
-            <option value="decision" ${safe.type==='decision'?'selected':''}>Decisión</option>
-            <option value="control" ${safe.type==='control'?'selected':''}>Control</option>
-            <option value="document" ${safe.type==='document'?'selected':''}>Documento</option>
-            <option value="end" ${safe.type==='end'?'selected':''}>Fin</option>
+            <option value="actividad" ${simpleType==='actividad'?'selected':''}>Actividad</option>
+            <option value="decisión" ${simpleType==='decisión'?'selected':''}>Decisión</option>
           </select>
         </div>
-        <div class="field w-3"><label>Tiempo estimado</label><input class="a_time" value="${escapeHtml(safe.time || '')}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-3"><label>AVA</label>
-          <select class="a_ava" onchange="syncAsisRow(${index})">
-            <option value="VA" ${safe.ava==='VA'?'selected':''}>VA</option>
-            <option value="NNVA" ${safe.ava==='NNVA'?'selected':''}>NNVA</option>
-            <option value="NVA" ${safe.ava==='NVA'?'selected':''}>NVA</option>
-          </select>
-        </div>
-        <div class="field w-3"><label>Quick win</label>
-          <select class="a_qw" onchange="syncAsisRow(${index})">
-            <option value="No" ${safe.quickWin==='No'?'selected':''}>No</option>
-            <option value="Sí" ${safe.quickWin==='Sí'?'selected':''}>Sí</option>
-          </select>
-        </div>
-        <div class="field w-3"><label>Restricción</label>
-          <select class="a_res" onchange="syncAsisRow(${index})">
-            <option value="No" ${safe.constraint==='No'?'selected':''}>No</option>
-            <option value="Sí" ${safe.constraint==='Sí'?'selected':''}>Sí</option>
-          </select>
-        </div>
-        <div class="field w-6"><label>Documento / sistema</label><input class="a_document" value="${escapeHtml(safe.document || '')}" oninput="syncAsisRow(${index})" /></div>
         <div class="field w-3"><label>Anterior</label><input class="a_previous" value="${escapeHtml((safe.previous || []).join(', '))}" oninput="syncAsisRow(${index})" /></div>
         <div class="field w-3"><label>Siguiente</label><input class="a_next" value="${escapeHtml((safe.next || []).join(', '))}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-6"><label>Problemas</label><textarea class="a_problems" oninput="syncAsisRow(${index})">${escapeHtml(safe.problems || '')}</textarea></div>
-        <div class="field w-6"><label>Desperdicios</label><textarea class="a_wastes" oninput="syncAsisRow(${index})">${escapeHtml(safe.wastes || '')}</textarea></div>
-        <div class="field w-12"><label>Nota / evidencia / regla operativa</label><textarea class="a_note" oninput="syncAsisRow(${index})">${escapeHtml(safe.note || '')}</textarea></div>
+        <div class="field w-6"><label>Entradas recibidas</label><textarea class="a_inputs" oninput="syncAsisRow(${index})">${escapeHtml(inputsText)}</textarea></div>
+        <div class="field w-6"><label>Salidas entregadas</label><textarea class="a_outputs" oninput="syncAsisRow(${index})">${escapeHtml(outputsText)}</textarea></div>
+        <div class="field w-6"><label>Documento / sistema</label><input class="a_document" value="${escapeHtml(safe.document || '')}" oninput="syncAsisRow(${index})" /></div>
+        <div class="field w-6"><label>Nota aclaratoria</label><textarea class="a_note" oninput="syncAsisRow(${index})">${escapeHtml(safe.note || '')}</textarea></div>
+        <div class="field w-12"><label>Observaciones</label><textarea class="a_observations" oninput="syncAsisRow(${index})">${escapeHtml(observationsText)}</textarea></div>
       </div>
     </div>
   `;
@@ -4781,17 +5122,16 @@ function readAsisRow(item){
     id: get('.a_id'),
     name: get('.a_name'),
     actor: get('.a_actor'),
-    type: get('.a_type') || 'operation',
+    type: get('.a_type') || 'actividad',
     document: get('.a_document'),
     previous: splitItems(get('.a_previous')),
     next: splitItems(get('.a_next')),
-    time: get('.a_time'),
-    ava: get('.a_ava') || 'NNVA',
-    problems: get('.a_problems'),
-    wastes: get('.a_wastes'),
-    quickWin: get('.a_qw') || 'No',
-    constraint: get('.a_res') || 'No',
-    note: get('.a_note')
+    ext_inputs: splitItems(get('.a_inputs')),
+    ext_outputs: splitItems(get('.a_outputs')),
+    received_flow: splitItems(get('.a_inputs')),
+    delivered_flow: splitItems(get('.a_outputs')),
+    note: get('.a_note'),
+    observations: get('.a_observations')
   };
   return activity.name ? activity : null;
 }
@@ -4824,10 +5164,13 @@ function addAsisActivity(data = {}){
     id: 'A' + (state.asis.activities.length + 1),
     name: '',
     actor: '',
-    type: 'operation',
-    ava: 'NNVA',
-    quickWin: 'No',
-    constraint: 'No'
+    type: 'actividad',
+    previous: [],
+    next: [],
+    ext_inputs: [],
+    ext_outputs: [],
+    note: '',
+    observations: ''
   }, data || {}));
   renumberAsIsSequence(false);
   renderAsIsActivities();
@@ -4864,9 +5207,9 @@ function syncAsisRow(index){
 function renumberAsIsSequence(showMessage = true){
   const acts = state.asis.activities || [];
   acts.forEach((a, idx) => {
-    a.id = 'A' + (idx + 1);
-    a.previous = idx === 0 ? [] : [acts[idx - 1].name || ('A' + idx)];
-    a.next = idx === acts.length - 1 ? [] : [acts[idx + 1].name || ('A' + (idx + 2))];
+    if(showMessage || !a.id) a.id = 'A' + (idx + 1);
+    if(showMessage || !safeArray(a.previous).length) a.previous = idx === 0 ? [] : [acts[idx - 1].name || ('A' + idx)];
+    if(showMessage || !safeArray(a.next).length) a.next = idx === acts.length - 1 ? [] : [acts[idx + 1].name || ('A' + (idx + 2))];
     a.is_start = idx === 0;
     a.is_end = idx === acts.length - 1;
   });
@@ -5340,8 +5683,9 @@ function asArray(value){
 
 function canonicalActivityType(value){
   const raw = normalizeContractString(value).toLowerCase();
+  if(raw === 'actividad') return 'operation';
   if(['operation','decision','control','document','end'].includes(raw)) return raw;
-  if(raw.includes('decis')) return 'decision';
+  if(raw.includes('decis') || raw.includes('decisión')) return 'decision';
   if(raw.includes('control') || raw.includes('valid')) return 'control';
   if(raw.includes('document')) return 'document';
   if(raw.includes('end') || raw.includes('fin')) return 'end';
@@ -7820,8 +8164,22 @@ async function loadInstrumentFiles(type){
   if(!files.length) return [];
   try{
     const loaded = [];
+    let extractorSummary = '';
     for(const file of files){
       let parsed = JSON.parse(await file.text());
+      if(isExtractorSipocJson(parsed)){
+        const result = importFromExtractorJson(parsed);
+        extractorSummary = formatExtractorImportSummary(result.model);
+        loaded.push({
+          instrument: 'sgmp_sipoc_image_segmented_extractor',
+          source_type: 'existing_process_extractor',
+          asIsModel: result.model,
+          __isExtractorImport: true,
+          __fileName: file.name,
+          __loadedAt: new Date().toISOString()
+        });
+        continue;
+      }
       if(type === 'sipoc') parsed = normalizeSipocJsonAsInterview(parsed);
       if(parsed && typeof parsed === 'object'){
         parsed.__fileName = file.name;
@@ -7833,7 +8191,7 @@ async function loadInstrumentFiles(type){
     state.loads[targetType] = [...(state.loads[targetType] || []), ...loaded];
     updateLoadKpis();
     refreshLoadViews();
-    showMsg('cargaMsg','ok',`Se agregaron ${loaded.length} archivo(s).`);
+    showMsg('cargaMsg','ok', extractorSummary || `Se agregaron ${loaded.length} archivo(s).`);
     return loaded;
   }catch(error){
     showMsg('cargaMsg','err',`No fue posible cargar archivo(s) en ${type}. Detalle: ${error.message}`);
@@ -8169,6 +8527,14 @@ function sgmpPushMasterActivity(master, seenAct, rawActivity){
 }
 
 function mergeMaster(){
+  if(state.asIsModel && state.asIsModel.sourceType === 'existing_process_extractor'){
+    state.master = buildMasterFromAsIsModel(state.asIsModel, state.master?.raw || state.asIsModel.raw || null);
+    if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
+    if(qs('masterPreview')) qs('masterPreview').textContent = JSON.stringify(state.master, null, 2);
+    updateTopStatus();
+    return state.master;
+  }
+
   const allPre = [...state.loads.pre]; if(state.preInterview) allPre.push(state.preInterview);
   const allInterview = [...state.loads.interview]; if(state.interview) allInterview.push(state.interview);
   const allBrief = [...state.loads.brief]; const briefPayload = getBriefPayload(); if(briefPayload) allBrief.push(briefPayload);
@@ -8396,11 +8762,14 @@ function normalizeActivity(item){
     handoff: normalizeContractString(handoff),
     exceptions: normalizeContractString(exceptions),
     ext_suppliers: dedupeCatalog(item.ext_suppliers || item.external_suppliers || item.proveedores || item.suppliers || []),
-    ext_inputs: dedupeCatalog(item.ext_inputs || item.external_inputs || item.entradas || item.inputs || []),
-    ext_outputs: dedupeCatalog(item.ext_outputs || item.external_outputs || item.salidas || item.outputs || []),
+    ext_inputs: dedupeCatalog([item.ext_inputs, item.external_inputs, item.entradas, item.inputs, item.received_flow]),
+    ext_outputs: dedupeCatalog([item.ext_outputs, item.external_outputs, item.salidas, item.outputs, item.delivered_flow]),
     ext_customers: dedupeCatalog(item.ext_customers || item.external_customers || item.clientes || item.customers || []),
     is_start: !!(item.is_start || item.start || item.isStart),
     is_end: !!(item.is_end || item.end || item.isEnd),
+    received_flow: dedupeCatalog([item.received_flow, item.ext_inputs, item.inputs, item.entradas]),
+    delivered_flow: dedupeCatalog([item.delivered_flow, item.ext_outputs, item.outputs, item.salidas]),
+    observations: normalizeContractString(item.observations || item.observaciones || ''),
     note: normalizeContractString([description, controls ? 'Controles: ' + controls : '', handoff ? 'Handoff: ' + handoff : '', exceptions ? 'Criterios/excepciones: ' + exceptions : ''].filter(Boolean).join(' | '))
   };
 }
@@ -10299,7 +10668,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   if(window.SGMP_LMP3_TIMER_LOADED) return;
   window.SGMP_LMP3_TIMER_LOADED = true;
 
-  var STAGE_ORDER = ['inicio','preparacion','documentacion_existente','carga','asis','analisis','decision','tobe','resultados'];
+  var STAGE_ORDER = ['inicio','preparacion','carga','asis','analisis','decision','tobe','resultados'];
   window.SGMP_LMP3 = window.SGMP_LMP3 || {
     moduleCode:'LMP', moduleLabel:'modulo_1', isProcessing:false,
     timers:{
@@ -10307,7 +10676,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
       stageStarts:{}, stageElapsed:{}, stageStatus:{}, stageLastError:{},
       stageLabels:{
         lmp_inicio:'Inicio', lmp_preparacion:'Preparación y contexto',
-        lmp_documentacion_existente:'Documentación existente', lmp_carga:'Carga y consolidación',
+        lmp_carga:'Carga y consolidación',
         lmp_asis:'AS IS', lmp_analisis:'Análisis', lmp_decision:'Decisión',
         lmp_tobe:'TO BE', lmp_resultados:'Resultados'
       }
@@ -10516,8 +10885,13 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
 </script>
 
 <script>
-  function downloadSipocExtractor(){
-  alert('Aquí se integrará la descarga del Extractor SIPOC/PDF cuando el HTML externo esté definido.');
+const EXTRACTOR_SIPOC_HTML = "";
+function downloadSipocExtractor(){
+  if(!EXTRACTOR_SIPOC_HTML.trim()){
+    alert('El Extractor SIPOC aún no está embebido en esta versión del LMP. En la siguiente iteración se podrá pegar el HTML del extractor en EXTRACTOR_SIPOC_HTML sin reestructurar el módulo.');
+    return;
+  }
+  downloadText('extractor_sipoc_segmentado.html', EXTRACTOR_SIPOC_HTML, 'text/html;charset=utf-8');
 }
 (function(){
   var C="LMP",API="https://script.google.com/macros/s/AKfycbyQZi1flaILc4e3I7MFp8gLctkzC6VccjfFz5aHluMrGZLwOUeS3uQaHPsMZ3l5yfDw-Q/exec";
@@ -10554,7 +10928,6 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   <div id="sgmp_v3_stage_grid" class="sgmp-time-grid">
     <div class="sgmp-time-row"><span>Inicio</span><span id="sgmp_v3_time_lmp_inicio">00:00:00</span></div>
     <div class="sgmp-time-row"><span>Preparación</span><span id="sgmp_v3_time_lmp_preparacion">00:00:00</span></div>
-    <div class="sgmp-time-row"><span>Documentación</span><span id="sgmp_v3_time_lmp_documentacion_existente">00:00:00</span></div>
     <div class="sgmp-time-row"><span>Carga</span><span id="sgmp_v3_time_lmp_carga">00:00:00</span></div>
     <div class="sgmp-time-row"><span>AS IS</span><span id="sgmp_v3_time_lmp_asis">00:00:00</span></div>
     <div class="sgmp-time-row"><span>Análisis</span><span id="sgmp_v3_time_lmp_analisis">00:00:00</span></div>
@@ -10580,7 +10953,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
 </style>
 <script id="sgmp-analysis-screen-flow-override">
 (function(){
-  const ANALYSIS_SCREEN_ORDER = ['inicio','preparacion','documentacion_existente','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
+  const ANALYSIS_SCREEN_ORDER = ['inicio','preparacion','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
   const ANALYSIS_KEY_BY_SECTION = { analisis_b1:'B1', analisis_b2:'B2', analisis_b3:'B3', analisis_b4:'B4', analisis_b5:'B5', analisis_b6:'B6' };
   function el(id){ return document.getElementById(id); }
   function arr(v){ return Array.isArray(v) ? v : (v ? [v] : []); }
@@ -10706,11 +11079,10 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     const key = ANALYSIS_KEY_BY_SECTION[id];
     if(key){ state.analysisStages = state.analysisStages || { current:key, results:{} }; state.analysisStages.current = key; if(!el('analysisPrompt_' + key)?.value) window.generateAnalysisScreenPrompt(key); window.renderAnalysisScreenAccumulated(key); }
   };
-  window.labelStage = function(id){ return { inicio:'Inicio', documentacion_existente:'Documentación existente', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b1:'B1 · Validación AS IS', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
+  window.labelStage = function(id){ return { inicio:'Inicio', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b1:'B1 · Validación AS IS', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
   window.goToNext = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
-    if(current === 'preparacion'){ if(state.metadata.route === 'doc'){ showSection('documentacion_existente'); return; } showSection('carga'); return; }
-    if(current === 'documentacion_existente'){ showSection('carga'); return; }
+    if(current === 'preparacion'){ showSection('carga'); return; }
     if(current === 'asis'){ showSection('analisis_b1'); return; }
     if(current === 'analisis_b6'){ showSection('decision'); return; }
     if(current === 'decision'){ if(typeof continueFromDecision === 'function') continueFromDecision(); return; }
@@ -10719,8 +11091,6 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   window.goToPrev = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
-    if(current === 'documentacion_existente'){ showSection('preparacion'); return; }
-    if(current === 'carga' && state.metadata.route === 'doc'){ showSection('documentacion_existente'); return; }
     if(current === 'carga'){ showSection('preparacion'); return; }
     if(current === 'analisis_b1'){ showSection('asis'); return; }
     const idx = ANALYSIS_SCREEN_ORDER.indexOf(current); if(idx > 0) showSection(ANALYSIS_SCREEN_ORDER[idx-1]);
