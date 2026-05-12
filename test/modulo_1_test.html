@@ -4461,6 +4461,71 @@ function importFromExtractorJson(json){
   return { model, master: state.master };
 }
 
+function normalizeLoadedLegacyStage(){
+  const validStages = [
+    'inicio',
+    'preparacion',
+    'carga',
+    'asis',
+    'analisis_b1',
+    'analisis_b2',
+    'analisis_b3',
+    'analisis_b4',
+    'analisis_b5',
+    'analisis_b6',
+    'decision',
+    'tobe',
+    'resultados'
+  ];
+
+  const legacyStageMap = {
+    documentacion_existente: 'preparacion',
+    documentacion: 'preparacion',
+    contexto: 'preparacion',
+    prep: 'preparacion',
+    analisis: 'analisis_b1'
+  };
+
+  const current = state?.metadata?.currentStage || 'inicio';
+  const normalized = legacyStageMap[current] || current;
+
+  if (!validStages.includes(normalized)) {
+    state.metadata.currentStage = 'inicio';
+  } else {
+    state.metadata.currentStage = normalized;
+  }
+
+  if (!state.metadata.route && state.context?.processName) {
+    state.metadata.route = 'backup';
+  }
+
+  if (state.metadata.route === 'doc' && current === 'documentacion_existente') {
+    state.metadata.currentStage = 'preparacion';
+  }
+
+  if (
+    (!state.asis?.activities || !state.asis.activities.length || !state.asis.activities[0]?.name) &&
+    Array.isArray(state.master?.activities) &&
+    state.master.activities.length
+  ) {
+    state.asis = state.asis || {};
+    state.asis.activities = state.master.activities.map((a, index) => ({
+      id: a.id || `A${index + 1}`,
+      name: a.name || '',
+      actor: a.actor || '',
+      type: a.type || 'operation',
+      description: a.description || '',
+      previous: Array.isArray(a.previous) ? a.previous : [],
+      next: Array.isArray(a.next) ? a.next : [],
+      inputs_used: a.inputs_used || a.ext_inputs || [],
+      outputs_generated: a.outputs_generated || a.ext_outputs || [],
+      clarifying_notes: a.clarifying_notes || (a.note ? [a.note] : []),
+      source: a.source || 'respaldo_lmp',
+      editable: true
+    }));
+  }
+}
+  
 async function loadRouteJson(mode){
   const input = qs('resumeFile');
   const file = input.files[0];
@@ -4496,7 +4561,9 @@ async function loadRouteJson(mode){
       detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
     }
 
-    renderAllFromState();
+    normalizeLoadedLegacyStage();
+
+renderAllFromState();
 
 if (typeof window.hydratePreparationFromState === 'function') {
   window.hydratePreparationFromState();
