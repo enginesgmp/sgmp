@@ -11342,20 +11342,72 @@ function downloadSipocExtractor(){
   }
 
   window.buildAsIsProcessFromCurrentState = function(){
-    if(typeof collectAsisActivities === 'function') collectAsisActivities();
-    if(typeof collectSupplierInputRows === 'function') collectSupplierInputRows();
-    if(typeof collectOutputCustomerRows === 'function') collectOutputCustomerRows();
-    if(typeof collectAdditionalInfoRows === 'function') collectAdditionalInfoRows();
-    return {
-      as_is_process: {
-        source_route: sourceRouteLabel(),
-        activities: arr(state.asis?.activities).map((a,idx) => normalizeActivityForAsIs(a, idx)).filter(a => a.name),
-        suppliers_inputs: mergeSupplierInputRows(state.asis?.suppliers_inputs || []),
-        outputs_customers: mergeOutputCustomerRows(state.asis?.outputs_customers || []),
-        additional_information: arr(state.asis?.additional_information || []).map(r => ({ category: clean(r.category), content: clean(r.content), source: clean(r.source || sourceRouteLabel()), editable: r.editable !== false })).filter(r => r.category || r.content)
-      }
-    };
+  const readActivitiesSilent = function(){
+    const rows = Array.from(document.querySelectorAll('#asisActivities .activity-item'));
+    if(rows.length && typeof readAsisRow === 'function'){
+      return rows.map(readAsisRow).filter(Boolean);
+    }
+    return arr(state.asis?.activities || []);
   };
+
+  const readSupplierInputsSilent = function(){
+    const rows = Array.from(document.querySelectorAll('#asisSuppliersInputs .supplier-input-row'));
+    if(rows.length){
+      return rows.map(row => ({
+        supplier: clean(row.querySelector('.si_supplier')?.value || ''),
+        inputs: splitText(row.querySelector('.si_inputs')?.value || ''),
+        source: clean(row.querySelector('.si_source')?.value || sourceRouteLabel()),
+        editable: true
+      })).filter(r => r.supplier || r.inputs.length);
+    }
+    return arr(state.asis?.suppliers_inputs || []);
+  };
+
+  const readOutputsCustomersSilent = function(){
+    const rows = Array.from(document.querySelectorAll('#asisOutputsCustomers .output-customer-row'));
+    if(rows.length){
+      return rows.map(row => ({
+        output: clean(row.querySelector('.oc_output')?.value || ''),
+        customers: splitText(row.querySelector('.oc_customers')?.value || ''),
+        source: clean(row.querySelector('.oc_source')?.value || sourceRouteLabel()),
+        editable: true
+      })).filter(r => r.output || r.customers.length);
+    }
+    return arr(state.asis?.outputs_customers || []);
+  };
+
+  const readAdditionalInfoSilent = function(){
+    const rows = Array.from(document.querySelectorAll('#asisAdditionalInfo .additional-info-row'));
+    if(rows.length){
+      return rows.map(row => ({
+        category: clean(row.querySelector('.ai_category')?.value || ''),
+        content: clean(row.querySelector('.ai_content')?.value || ''),
+        source: clean(row.querySelector('.ai_source')?.value || sourceRouteLabel()),
+        editable: true
+      })).filter(r => r.category || r.content);
+    }
+    return arr(state.asis?.additional_information || []);
+  };
+
+  return {
+    as_is_process: {
+      source_route: sourceRouteLabel(),
+      activities: readActivitiesSilent()
+        .map((a,idx) => normalizeActivityForAsIs(a, idx))
+        .filter(a => a.name),
+      suppliers_inputs: mergeSupplierInputRows(readSupplierInputsSilent()),
+      outputs_customers: mergeOutputCustomerRows(readOutputsCustomersSilent()),
+      additional_information: readAdditionalInfoSilent()
+        .map(r => ({
+          category: clean(r.category),
+          content: clean(r.content),
+          source: clean(r.source || sourceRouteLabel()),
+          editable: r.editable !== false
+        }))
+        .filter(r => r.category || r.content)
+    }
+  };
+};
 
   window.asisActivityTemplate = function(data = {}, index = 0){
     const safe = normalizeActivityForAsIs(data, index);
