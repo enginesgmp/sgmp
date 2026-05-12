@@ -4372,7 +4372,18 @@ function buildMasterFromAsIsModel(model, raw){
 
 function applyAsIsModelToState(model, raw){
   state.asIsModel = model;
+
+  if(raw && typeof raw === 'object'){
+    state.extractorJson = raw;
+    state.asIsModel.raw = raw;
+  }
+
   state.master = buildMasterFromAsIsModel(model, raw);
+
+  if(raw && typeof raw === 'object'){
+    state.master.raw = raw;
+  }
+
   state.asis.activities = (model.activities || []).map(a => ({...a}));
   state.metadata.route = 'doc';
   state.metadata.currentStage = 'asis';
@@ -11562,7 +11573,7 @@ function downloadSipocExtractor(){
 
   function asIsProcessFromModel(model){
     const base = {
-      source_route: model?.sourceType === 'existing_process_extractor' ? 'proceso_documentado' : sourceRouteLabel(),
+      source_route: model?.sourceType === 'existing_process_extractor' ? 'existing_documented_process' : sourceRouteLabel(),
       activities: arr(model?.activities).map((a,idx) => normalizeActivityForAsIs(a,idx)).filter(a => a.name),
       suppliers_inputs: supplierInputRowsFrom(model),
       outputs_customers: outputCustomerRowsFrom(model),
@@ -11623,27 +11634,34 @@ function downloadSipocExtractor(){
   };
 
   const originalBuildMaster = window.buildMaster;
-  window.buildMaster = function(){
-    if(typeof originalBuildMaster === 'function') originalBuildMaster();
-    if(state.asIsModel){
-      state.master = state.master || {};
-      state.master.as_is_process = asIsProcessFromModel(state.asIsModel).as_is_process;
-    }
-    if(state.asIsProcess){
-      state.master = state.master || {};
-      state.master.as_is_process = state.asIsProcess.as_is_process;
-    }
-    if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
-    if(typeof refreshCargaFlowState === 'function') refreshCargaFlowState();
-    return state.master;
-  };
+window.buildMaster = function(){
+  if(typeof originalBuildMaster === 'function') originalBuildMaster();
+
+  if(state.asIsModel && state.asIsModel.raw){
+    state.master = state.master || {};
+    state.master.raw = state.asIsModel.raw;
+  }
+
+  if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
+  if(typeof refreshCargaFlowState === 'function') refreshCargaFlowState();
+
+  return state.master;
+};
 
   window.buildPromptAInputPayload = function(master){
   master = master || state.master || {};
 
+  const extractorJson =
+    state.extractorJson ||
+    state.asIsModel?.raw ||
+    state.master?.raw ||
+    master.raw ||
+    null;
+
   const isDocumentedProcess =
     state.metadata?.route === 'doc' ||
     state.asIsModel?.sourceType === 'existing_process_extractor' ||
+    extractorJson?.source_type === 'existing_process_extractor' ||
     master.raw?.source_type === 'existing_process_extractor';
 
   const sourceRoute = isDocumentedProcess
@@ -11660,19 +11678,7 @@ function downloadSipocExtractor(){
   };
 
   if(isDocumentedProcess){
-    payload.input_data.extractor_json =
-      master.raw ||
-      state.master?.raw ||
-      null;
-
-    payload.input_data.as_is_model =
-      state.asIsModel || master.asIsModel || null;
-
-    payload.input_data.as_is_process =
-      state.asIsProcess?.as_is_process ||
-      master.as_is_process ||
-      master.asIsProcess ||
-      null;
+    payload.input_data.extractor_json = extractorJson;
   }else{
     payload.input_data.pre_interviews = state.loads?.pre || [];
     payload.input_data.interviews = state.loads?.interview || [];
