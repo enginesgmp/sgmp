@@ -11638,26 +11638,73 @@ function downloadSipocExtractor(){
     return state.master;
   };
 
-  window.buildBriefPrompt = function(master){
-    master = master || state.master || {};
-    const route = state.metadata?.route === 'doc' || state.asIsModel?.sourceType === 'existing_process_extractor' ? 'proceso_documentado' : 'proceso_nuevo';
-    const asIsBase = state.asIsProcess || (state.asIsModel ? asIsProcessFromModel(state.asIsModel) : { as_is_process: { source_route: route, activities: arr(master.activities), suppliers_inputs: supplierInputRowsFrom(master), outputs_customers: outputCustomerRowsFrom(master), additional_information: additionalInfoFrom(master) }});
-    const sheetPrompt = (typeof sgmpPrompt === 'function') ? sgmpPrompt('prompt_brief', '') : '';
-    const fallback = `ACTÚA COMO arquitecto técnico senior del SGMP. Estructura la información recibida en un JSON único para la sección Proceso AS-IS del LMP. No analices, no diagnostiques, no propongas mejoras y no inventes datos.`;
-    const inputPack = {
-      context: state.context || master.context || {},
-      source_route: route,
-      route_rules: {
-        proceso_nuevo: 'Las actividades provienen de entrevista con líder, cuestionarios y archivos adicionales. No usar JSON del Extractor.',
-        proceso_documentado: 'Las actividades provienen del JSON del Extractor SIPOC/PDF. Archivos adicionales solo complementan; no reemplazan ni inventan el flujo principal.',
-        never_mix_routes: true
-      },
-      as_is_base: asIsBase.as_is_process,
-      consolidated_master: master,
-      additional_context: arr(master.notes?.additionalDocuments || state.loads?.docs || [])
-    };
-    return `${sheetPrompt || fallback}\n\nREGLAS OBLIGATORIAS PARA ESTA EJECUCIÓN:\n- Responde SOLO JSON válido, sin markdown.\n- Devuelve un único objeto con la clave raíz as_is_process.\n- Conserva estos bloques funcionales: source_route, activities, suppliers_inputs, outputs_customers, additional_information.\n- Si source_route = proceso_nuevo, las actividades salen de entrevista/cuestionarios; no mezcles con Extractor.\n- Si source_route = proceso_documentado, las actividades salen del JSON del Extractor; no mezcles con entrevista.\n- Archivos adicionales solo complementan; no reemplazan ni inventan actividades.\n- Las notas aclaratorias vinculadas al flujo van en clarifying_notes de la actividad correspondiente.\n- additional_information no debe contener análisis, diagnóstico, conclusiones, causas, problemas ni mejoras.\n\nESTRUCTURA ESPERADA:\n{\n  "as_is_process": {\n    "source_route": "${route}",\n    "activities": [{"id":"","name":"","actor":"","type":"","description":"","inputs_used":[],"outputs_generated":[],"previous":[],"next":[],"clarifying_notes":[],"source":"","editable":true}],\n    "suppliers_inputs": [{"supplier":"","inputs":[],"source":"","editable":true}],\n    "outputs_customers": [{"output":"","customers":[],"source":"","editable":true}],\n    "additional_information": [{"category":"","content":"","source":"","editable":true}]\n  }\n}\n\nINSUMOS:\n${JSON.stringify(inputPack, null, 2)}`;
+  window.buildPromptAInputPayload = function(master){
+  master = master || state.master || {};
+
+  const isDocumentedProcess =
+    state.metadata?.route === 'doc' ||
+    state.asIsModel?.sourceType === 'existing_process_extractor' ||
+    master.raw?.source_type === 'existing_process_extractor';
+
+  const sourceRoute = isDocumentedProcess
+    ? 'existing_documented_process'
+    : 'new_process';
+
+  const payload = {
+    context: state.context || master.context || {},
+    source_route: sourceRoute,
+    primary_source_type: isDocumentedProcess
+      ? 'existing_process_extractor'
+      : 'new_process_instruments',
+    input_data: {}
   };
+
+  if(isDocumentedProcess){
+    payload.input_data.extractor_json =
+      master.raw ||
+      state.master?.raw ||
+      null;
+
+    payload.input_data.as_is_model =
+      state.asIsModel || master.asIsModel || null;
+
+    payload.input_data.as_is_process =
+      state.asIsProcess?.as_is_process ||
+      master.as_is_process ||
+      master.asIsProcess ||
+      null;
+  }else{
+    payload.input_data.pre_interviews = state.loads?.pre || [];
+    payload.input_data.interviews = state.loads?.interview || [];
+    payload.input_data.additional_documents = state.loads?.docs || [];
+    payload.input_data.current_master = master || {};
+  }
+
+  payload.additional_documents = state.loads?.docs || [];
+
+  return payload;
+};
+
+window.buildBriefPrompt = function(master){
+  const sheetPrompt = (typeof sgmpPrompt === 'function')
+    ? sgmpPrompt('prompt_brief', '')
+    : '';
+
+  if(!String(sheetPrompt || '').trim()){
+    throw new Error('No se encontró prompt_brief en Google Sheets. Verifica module_code=LMP, prompt_key=prompt_brief y enabled=SI.');
+  }
+
+  const inputPayload = window.buildPromptAInputPayload(master);
+
+  if(sheetPrompt.includes('{{MASTER_JSON}}')){
+    return sheetPrompt.replace(
+      '{{MASTER_JSON}}',
+      JSON.stringify(inputPayload, null, 2)
+    );
+  }
+
+  throw new Error('El prompt_brief de Google Sheets no contiene el placeholder obligatorio {{MASTER_JSON}}.');
+};
 
   window.generateBriefPromptFromMaster = async function(){
     const btn = qs('btnGenerateBriefPrompt');
