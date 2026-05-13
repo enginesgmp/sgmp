@@ -8053,7 +8053,7 @@ function evaluateBriefCompleteness(normalizedBrief){
       });
     }
 
-   validArrayItems(activity?.previous).forEach((prev, prevIndex) => {
+validArrayItems(activity?.previous).forEach((prev, prevIndex) => {
   const prevKey = normalizeKey(prev);
 
   if(!activityNames.has(prevKey)){
@@ -8064,17 +8064,25 @@ function evaluateBriefCompleteness(normalizedBrief){
       level: 'warning',
       field: `${base}.previous[${prevIndex}]`,
       message: matchesRegisteredInput
-        ? `Posible entrada ubicada en previous[]${nameLabel}: ${prev}`
+        ? `Entrada ubicada como actividad previa${nameLabel}: ${prev}`
         : `previous[] contiene un elemento que no coincide con ninguna actividad${nameLabel}: ${prev}`,
       where: `${base}.previous[${prevIndex}]`,
+      searchHint: activity?.name || prev,
+      affectedValue: prev,
+      autoFix: matchesRegisteredInput ? {
+        action: 'move_previous_to_inputs_used',
+        fromPath: `${base}.previous[${prevIndex}]`,
+        toPath: `${base}.inputs_used`,
+        value: prev
+      } : null,
       suggestion: matchesRegisteredInput
-        ? 'Este elemento coincide con una entrada registrada. Revisa si debe moverse a inputs_used[].'
-        : 'previous[] y next[] deben contener solo nombres de actividades existentes. Si es entrada, documento o insumo, muévelo a inputs_used[].'
+        ? 'Este elemento coincide con una entrada registrada. Puede moverse automáticamente a inputs_used[].'
+        : 'previous[] debe contener solo nombres de actividades existentes. Si es entrada o insumo, muévelo a inputs_used[].'
     });
   }
 });
 
-    validArrayItems(activity?.next).forEach((next, nextIndex) => {
+validArrayItems(activity?.next).forEach((next, nextIndex) => {
   const nextKey = normalizeKey(next);
 
   if(!activityNames.has(nextKey)){
@@ -8085,12 +8093,20 @@ function evaluateBriefCompleteness(normalizedBrief){
       level: 'warning',
       field: `${base}.next[${nextIndex}]`,
       message: matchesRegisteredOutput
-        ? `Posible salida ubicada en next[]${nameLabel}: ${next}`
+        ? `Salida ubicada como actividad siguiente${nameLabel}: ${next}`
         : `next[] contiene un elemento que no coincide con ninguna actividad${nameLabel}: ${next}`,
       where: `${base}.next[${nextIndex}]`,
+      searchHint: activity?.name || next,
+      affectedValue: next,
+      autoFix: matchesRegisteredOutput ? {
+        action: 'move_next_to_outputs_generated',
+        fromPath: `${base}.next[${nextIndex}]`,
+        toPath: `${base}.outputs_generated`,
+        value: next
+      } : null,
       suggestion: matchesRegisteredOutput
-        ? 'Este elemento coincide con una salida registrada. Revisa si debe moverse a outputs_generated[].'
-        : 'previous[] y next[] deben contener solo nombres de actividades existentes. Si es salida, documento, reporte, orden o notificación, muévelo a outputs_generated[].'
+        ? 'Este elemento coincide con una salida registrada. Puede moverse automáticamente a outputs_generated[].'
+        : 'next[] debe contener solo nombres de actividades existentes. Si es salida, documento, reporte, orden, notificación o resultado, muévelo a outputs_generated[].'
     });
   }
 });
@@ -8398,8 +8414,10 @@ function renderBriefValidation(){
         '<div class="brief-gap-list">' +
           issues.map((issue, index) => {
             const where = issue.where || issue.field || 'as_is_process';
-            const helper = getBriefIssueHelper(issue, brief);
-            const encodedPath = encodeURIComponent(where);
+const helper = getBriefIssueHelper(issue, brief);
+const encodedPath = encodeURIComponent(where);
+const encodedIssue = encodeURIComponent(JSON.stringify(issue));
+const searchHint = issue.searchHint || issue.affectedValue || helper.target || where;
 
             return (
               '<div class="brief-gap-row">' +
@@ -8418,13 +8436,18 @@ function renderBriefValidation(){
                   '</div>' +
 
                   '<details class="brief-gap-technical">' +
-                    '<summary>Ver ubicación técnica</summary>' +
-                    '<code>' + escapeHtml(where) + '</code>' +
-                  '</details>' +
+  '<summary>Ver ubicación técnica</summary>' +
+  '<div><strong>Ruta JSON:</strong> <code>' + escapeHtml(where) + '</code></div>' +
+  '<div><strong>Buscar en el JSON:</strong> <code>' + escapeHtml(searchHint) + '</code></div>' +
+'</details>' +
 
                   '<div class="brief-gap-actions">' +
-                    '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>' +
-                    '<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodedPath + '\'))">Copiar ruta</button>' +
+                    (issue.autoFix
+  ? '<button type="button" class="brief-mini-btn primary" onclick="applyBriefIssueAutoFix(JSON.parse(decodeURIComponent(\'' + encodedIssue + '\')))">Corregir automático</button>'
+  : '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>'
+) +
+'<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodedPath + '\'))">Copiar ruta</button>' +
+'<button type="button" class="brief-mini-btn" onclick="copyBriefPath(\'' + encodeURIComponent(searchHint) + '\')">Copiar búsqueda</button>' +
                   '</div>' +
                 '</div>' +
               '</div>'
@@ -8923,6 +8946,93 @@ function openBriefGapEditor(pathText){
   }
 }
 
+function applyBriefIssueAutoFix(issue){
+  const editor = qs('briefResponseEditor');
+
+  if(!editor || !issue?.autoFix){
+    showMsg('briefIaMsg','warn','Este vacío no tiene corrección automática disponible.');
+    return;
+  }
+
+  try{
+    const parsed = extractJsonFromText(editor.value.trim());
+    const fix = issue.autoFix;
+
+    if(fix.action === 'move_previous_to_inputs_used'){
+      const fromParts = parseBriefPath(fix.fromPath);
+      const toParts = parseBriefPath(fix.toPath);
+
+      const currentValue = getValueByPath(parsed, fromParts);
+      const targetList = getValueByPath(parsed, toParts);
+
+      if(!Array.isArray(targetList)){
+        showMsg('briefIaMsg','err','No se encontró inputs_used[] como lista.');
+        return;
+      }
+
+      const valueToMove = currentValue || fix.value;
+
+      if(valueToMove && !targetList.includes(valueToMove)){
+        targetList.push(valueToMove);
+      }
+
+      const previousListPath = fromParts.slice(0, -1);
+      const previousIndex = fromParts[fromParts.length - 1];
+      const previousList = getValueByPath(parsed, previousListPath);
+
+      if(Array.isArray(previousList)){
+        previousList.splice(previousIndex, 1);
+      }
+
+      const cleaned = stripDescriptionFromAsIsProcess(parsed);
+      editor.value = JSON.stringify(cleaned, null, 2);
+
+      showMsg('briefIaMsg','ok','Corrección automática aplicada. La entrada fue movida de previous[] a inputs_used[].');
+      analyzeBriefResponse();
+      return;
+    }
+
+    if(fix.action === 'move_next_to_outputs_generated'){
+      const fromParts = parseBriefPath(fix.fromPath);
+      const toParts = parseBriefPath(fix.toPath);
+
+      const currentValue = getValueByPath(parsed, fromParts);
+      const targetList = getValueByPath(parsed, toParts);
+
+      if(!Array.isArray(targetList)){
+        showMsg('briefIaMsg','err','No se encontró outputs_generated[] como lista.');
+        return;
+      }
+
+      const valueToMove = currentValue || fix.value;
+
+      if(valueToMove && !targetList.includes(valueToMove)){
+        targetList.push(valueToMove);
+      }
+
+      const nextListPath = fromParts.slice(0, -1);
+      const nextIndex = fromParts[fromParts.length - 1];
+      const nextList = getValueByPath(parsed, nextListPath);
+
+      if(Array.isArray(nextList)){
+        nextList.splice(nextIndex, 1);
+      }
+
+      const cleaned = stripDescriptionFromAsIsProcess(parsed);
+      editor.value = JSON.stringify(cleaned, null, 2);
+
+      showMsg('briefIaMsg','ok','Corrección automática aplicada. La salida fue movida de next[] a outputs_generated[].');
+      analyzeBriefResponse();
+      return;
+    }
+
+    showMsg('briefIaMsg','warn','Tipo de corrección automática no reconocido.');
+
+  }catch(error){
+    showMsg('briefIaMsg','err','No fue posible aplicar la corrección automática. Detalle: ' + error.message);
+  }
+}
+  
 function saveBriefGapCorrection(encodedPath){
   const editor = qs('briefResponseEditor');
   const valueBox = qs('briefGuidedValue');
