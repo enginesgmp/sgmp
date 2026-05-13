@@ -2762,11 +2762,13 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <article class="card two-third">
 <h3>JSON de Brief generado por IA</h3>
-<p>Pega aquí la respuesta IA del Prompt A. El sistema construirá el brief editable y no habilitará el análisis hasta aprobarlo.</p>
+<p>Pega aquí el JSON de Brief generado por la IA. Puedes editarlo directamente para completar vacíos antes de aplicarlo al LMP.</p>
 <textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
-<div class="actions-left"><button class="btn-ok" id="btnProcessBrief" onclick="processBriefResponse()" type="button">Procesar Brief</button></div>
-<div class="actions-right"><button class="btn" id="btnApproveBrief" onclick="approveBriefAndUnlockAnalysis()" type="button">Aprobar Brief</button></div>
+  <div class="actions-left">
+    <button class="btn-warn" id="btnAnalyzeBrief" onclick="analyzeBriefResponse()" type="button">Analizar Brief</button>
+    <button class="btn-ok" id="btnApplyBrief" onclick="applyBriefToLmp()" type="button">Procesar y aplicar al LMP</button>
+  </div>
 </div>
 <div class="msg" id="briefIaMsg"></div>
 </article>
@@ -2779,12 +2781,6 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </div>
 <div class="box" id="briefGapsList" style="margin-top:14px">Sin vacíos detectados.</div>
 <div class="msg" id="briefValidationMsg"></div>
-</article>
-
-<article class="card">
-<h3>Brief oficial editable</h3>
-<p>Revisa, ajusta y valida el brief oficial. Este brief aprobado es el único insumo permitido para el análisis.</p>
-<textarea id="briefEditor" placeholder="Aquí aparecerá el Brief estructurado y editable." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card half legacy-carga-analysis-ui" aria-hidden="true">
@@ -7769,27 +7765,113 @@ async function generateBriefPromptFromMaster(){
   }
 }
 
-function processBriefResponse(){
-  const rawText = qs('briefResponseEditor')?.value.trim() || '';
-  if(!rawText){ showMsg('briefIaMsg','warn','Pega primero el JSON de Brief generado por la IA.'); return; }
+function analyzeBriefResponse(){
+  const rawText = qs('briefResponseEditor')?.value?.trim() || '';
+
+  if(!rawText){
+    showMsg('briefIaMsg','warn','Pega primero el JSON de Brief generado por la IA.');
+    return;
+  }
+
   try{
     const parsed = extractJsonFromText(rawText);
     const normalized = normalizeBriefPayload(parsed);
     const issues = evaluateBriefCompleteness(normalized);
-    console.log('[SGMP][BRIEF] parsed', parsed);
-    console.log('[SGMP][BRIEF] normalized', normalized);
-    console.log('[SGMP][BRIEF] issues', issues);
-    state.briefReview = { raw: normalized, approved: issues.length === 0 };
+
+    state.briefReview = {
+      raw: normalized,
+      approved: false,
+      issues: issues
+    };
+
     state.brief = normalized;
-    renderBriefDraft();
+
+    if(qs('briefEditor')){
+      qs('briefEditor').value = JSON.stringify(normalized, null, 2);
+    }
+
     renderBriefValidation();
-    seedAsIsBuilderFromBrief(false);
+
+    if(issues.length){
+      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron vacíos o alertas. Revisa el Estado del Brief antes de aplicar al LMP.');
+    }else{
+      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron vacíos relevantes. Puedes aplicarlo al LMP.');
+    }
+
     refreshCargaFlowState();
-    showMsg('briefIaMsg', issues.length ? 'warn' : 'ok', issues.length
-      ? 'Brief procesado con vacíos bloqueantes. Revisa el contenido antes de aprobar.'
-      : 'Brief procesado correctamente. Revisa el contenido y apruébalo para habilitar el análisis.');
+    updateTopStatus();
+
   }catch(error){
-    showMsg('briefIaMsg','err','No fue posible procesar el Brief. Detalle: ' + error.message);
+    showMsg('briefIaMsg','err','No fue posible analizar el Brief. Detalle: ' + error.message);
+  }
+}
+
+function applyBriefToLmp(forceApply = false){
+  const rawText = qs('briefResponseEditor')?.value?.trim() || '';
+
+  if(!rawText){
+    showMsg('briefIaMsg','warn','Pega primero el JSON de Brief generado por la IA.');
+    return;
+  }
+
+  try{
+    const parsed = extractJsonFromText(rawText);
+    const normalized = normalizeBriefPayload(parsed);
+    const issues = evaluateBriefCompleteness(normalized);
+
+    if(issues.length && !forceApply){
+      showBriefApplyConfirmation(issues);
+      return;
+    }
+
+    state.briefReview = {
+      raw: normalized,
+      approved: true,
+      issues: issues,
+      approvedWithWarnings: issues.length > 0
+    };
+
+    state.brief = normalized;
+
+    if(qs('briefEditor')){
+      qs('briefEditor').value = JSON.stringify(normalized, null, 2);
+    }
+
+    renderBriefValidation();
+
+    if(typeof seedAsIsBuilderFromBrief === 'function'){
+      seedAsIsBuilderFromBrief(false);
+    }
+
+    refreshCargaFlowState();
+    updateTopStatus();
+
+    if(issues.length){
+      showMsg('briefIaMsg','warn','Brief aplicado al LMP con vacíos pendientes. Revisa Proceso AS-IS y valida posibles relaciones sueltas.');
+    }else{
+      showMsg('briefIaMsg','ok','Brief aprobado y aplicado al LMP correctamente. Revisa la sección Proceso AS-IS.');
+    }
+
+  }catch(error){
+    showMsg('briefIaMsg','err','No fue posible aplicar el Brief al LMP. Detalle: ' + error.message);
+  }
+}
+
+function showBriefApplyConfirmation(issues){
+  const total = Array.isArray(issues) ? issues.length : 0;
+
+  const message = [
+    `Se detectaron ${total} vacío(s) o alerta(s) en el Brief.`,
+    'Puedes cancelar para seguir editando el JSON o continuar y aplicar el Brief al LMP de todos modos.',
+    'Advertencia: la información faltante podría dejar actividades, relaciones o campos sueltos y afectar pasos posteriores.'
+  ].join('\n');
+
+  const confirmed = window.confirm(message);
+
+  if(confirmed){
+    applyBriefToLmp(true);
+  }else{
+    showMsg('briefIaMsg','warn','Aplicación cancelada. Puedes seguir editando el JSON del Brief antes de aplicarlo al LMP.');
   }
 }
 
