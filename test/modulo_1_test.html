@@ -1893,7 +1893,65 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
 .brief-gap-target strong{
   color:#DDF5FF;
 }
-  
+.brief-apply-confirm{
+  margin-top:14px;
+  padding:14px;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(242,153,74,.12), rgba(255,255,255,.06));
+  border:1px solid rgba(242,153,74,.34);
+  color:#0B2E59;
+}
+
+.brief-apply-confirm-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+  margin-bottom:10px;
+}
+
+.brief-apply-confirm-head strong{
+  color:#0B2E59;
+  font-size:1rem;
+  font-weight:900;
+}
+
+.brief-apply-confirm-head span{
+  border-radius:999px;
+  padding:5px 9px;
+  background:rgba(242,153,74,.16);
+  border:1px solid rgba(242,153,74,.26);
+  color:#8A570D;
+  font-size:.78rem;
+  font-weight:900;
+}
+
+.brief-apply-confirm-body{
+  font-size:.9rem;
+  line-height:1.45;
+  color:#42617F;
+}
+
+.brief-apply-confirm-body p{
+  margin:0 0 8px;
+}
+
+.brief-apply-confirm-warning{
+  padding:10px 12px;
+  border-radius:12px;
+  background:rgba(192,57,43,.08);
+  border:1px solid rgba(192,57,43,.18);
+  color:#A93226;
+  font-weight:750;
+}
+
+.brief-apply-confirm-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
 </style>
   
 </head>
@@ -3220,7 +3278,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <div class="box" id="briefGapsList" style="margin-top:14px">Sin vacíos estructurales detectados.</div>
 <div class="msg" id="briefValidationMsg"></div>
-
+<div id="briefApplyConfirmPanel" class="brief-apply-confirm hidden" aria-live="polite"></div>
 <div class="actions" style="justify-content:center;">
   <div class="actions-left" style="justify-content:center;">
     <button class="btn-ok" id="btnApplyBrief" onclick="applyBriefToLmp()" type="button">Procesar y aplicar al LMP</button>
@@ -9211,20 +9269,75 @@ function applyBriefToLmp(forceApply = false){
 
 function showBriefApplyConfirmation(issues){
   const total = Array.isArray(issues) ? issues.length : 0;
+  const panel = qs('briefApplyConfirmPanel');
 
-const message = [
-  `Se detectaron ${total} vacío(s) estructural(es) en el Brief.`,
-  'Puedes cancelar para seguir corrigiendo el Brief o continuar y aplicarlo al LMP bajo validación.',
-  'Advertencia: la información faltante podría dejar actividades, relaciones o campos sueltos y afectar pasos posteriores.'
-].join('\n');
-
-  const confirmed = window.confirm(message);
-
-  if(confirmed){
-    applyBriefToLmp(true);
-  }else{
-    showMsg('briefIaMsg','warn','Aplicación cancelada. Puedes seguir editando el JSON del Brief antes de aplicarlo al LMP.');
+  if(!panel){
+    showMsg(
+      'briefIaMsg',
+      'warn',
+      'No se encontró el panel de confirmación. Revisa el HTML de Estado del Brief.'
+    );
+    return;
   }
+
+  panel.classList.remove('hidden');
+
+  panel.innerHTML = `
+    <div class="brief-apply-confirm-head">
+      <strong>Aplicar Brief con vacíos estructurales</strong>
+      <span>${total} detectado(s)</span>
+    </div>
+
+    <div class="brief-apply-confirm-body">
+      <p>
+        Se detectaron <strong>${total}</strong> vacío(s) estructural(es) en el Brief.
+      </p>
+      <p>
+        Puedes seguir corrigiendo el Brief o aplicarlo al LMP bajo validación.
+      </p>
+      <p class="brief-apply-confirm-warning">
+        La información faltante podría dejar actividades, relaciones o campos sueltos
+        y afectar pasos posteriores del análisis.
+      </p>
+    </div>
+
+    <div class="brief-apply-confirm-actions">
+      <button class="btn-ghost" type="button" onclick="cancelBriefApplyConfirmation()">
+        Cancelar y seguir corrigiendo
+      </button>
+      <button class="btn-ok" type="button" onclick="confirmBriefApplyWithGaps()">
+        Continuar y aplicar al LMP
+      </button>
+    </div>
+  `;
+
+  panel.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function cancelBriefApplyConfirmation(){
+  const panel = qs('briefApplyConfirmPanel');
+
+  if(panel){
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+
+  showMsg(
+    'briefIaMsg',
+    'warn',
+    'Aplicación cancelada. Puedes seguir corrigiendo el JSON del Brief antes de aplicarlo al LMP.'
+  );
+}
+
+function confirmBriefApplyWithGaps(){
+  const panel = qs('briefApplyConfirmPanel');
+
+  if(panel){
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+
+  applyBriefToLmp(true);
 }
 
 function approveBriefAndUnlockAnalysis(){
