@@ -7763,31 +7763,47 @@ function evaluateBriefCompleteness(normalizedBrief){
       });
     }
 
-    validArrayItems(activity?.previous).forEach((prev, prevIndex) => {
-      if(!activityNames.has(normalizeKey(prev))){
-        issues.push({
-          type: 'previous_activity_not_found',
-          level: 'warning',
-          field: `${base}.previous[${prevIndex}]`,
-          message: `Conexión previa no encontrada${nameLabel}: ${prev}`,
-          where: `${base}.previous[${prevIndex}]`,
-          suggestion: 'Verifica que el nombre coincida con una actividad existente.'
-        });
-      }
+   validArrayItems(activity?.previous).forEach((prev, prevIndex) => {
+  const prevKey = normalizeKey(prev);
+
+  if(!activityNames.has(prevKey)){
+    const matchesRegisteredInput = registeredInputs.has(prevKey);
+
+    issues.push({
+      type: matchesRegisteredInput ? 'possible_input_in_previous' : 'previous_activity_not_found',
+      level: 'warning',
+      field: `${base}.previous[${prevIndex}]`,
+      message: matchesRegisteredInput
+        ? `Posible entrada ubicada en previous[]${nameLabel}: ${prev}`
+        : `previous[] contiene un elemento que no coincide con ninguna actividad${nameLabel}: ${prev}`,
+      where: `${base}.previous[${prevIndex}]`,
+      suggestion: matchesRegisteredInput
+        ? 'Este elemento coincide con una entrada registrada. Revisa si debe moverse a inputs_used[].'
+        : 'previous[] y next[] deben contener solo nombres de actividades existentes. Si es entrada, documento o insumo, muévelo a inputs_used[].'
     });
+  }
+});
 
     validArrayItems(activity?.next).forEach((next, nextIndex) => {
-      if(!activityNames.has(normalizeKey(next))){
-        issues.push({
-          type: 'next_activity_not_found',
-          level: 'warning',
-          field: `${base}.next[${nextIndex}]`,
-          message: `Conexión siguiente no encontrada${nameLabel}: ${next}`,
-          where: `${base}.next[${nextIndex}]`,
-          suggestion: 'Verifica que el nombre coincida con una actividad existente.'
-        });
-      }
+  const nextKey = normalizeKey(next);
+
+  if(!activityNames.has(nextKey)){
+    const matchesRegisteredOutput = registeredOutputs.has(nextKey);
+
+    issues.push({
+      type: matchesRegisteredOutput ? 'possible_output_in_next' : 'next_activity_not_found',
+      level: 'warning',
+      field: `${base}.next[${nextIndex}]`,
+      message: matchesRegisteredOutput
+        ? `Posible salida ubicada en next[]${nameLabel}: ${next}`
+        : `next[] contiene un elemento que no coincide con ninguna actividad${nameLabel}: ${next}`,
+      where: `${base}.next[${nextIndex}]`,
+      suggestion: matchesRegisteredOutput
+        ? 'Este elemento coincide con una salida registrada. Revisa si debe moverse a outputs_generated[].'
+        : 'previous[] y next[] deben contener solo nombres de actividades existentes. Si es salida, documento, reporte, orden o notificación, muévelo a outputs_generated[].'
     });
+  }
+});
 
     validArrayItems(activity?.inputs_used).forEach((input, inputIndex) => {
       if(!registeredInputs.has(normalizeKey(input))){
@@ -7928,11 +7944,14 @@ function evaluateBriefCompleteness(normalizedBrief){
   
 function renderBriefValidation(){
   const brief = stripDescriptionFromAsIsProcess(
-  state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
-);
+    state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
+  );
+
   const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
 
   const approved = !!state.briefReview?.approved;
+  const criticalIssues = issues.filter(issue => issue.level !== 'warning');
+  const warnings = issues.filter(issue => issue.level === 'warning');
 
   if(qs('briefApprovedKpi')){
     qs('briefApprovedKpi').textContent = approved ? 'Sí' : 'No';
@@ -7946,16 +7965,35 @@ function renderBriefValidation(){
 
   if(list){
     if(!issues.length){
-      list.innerHTML = 'Sin vacíos detectados.';
+      list.innerHTML = 'Sin pendientes estructurales detectados.';
     }else{
       list.innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:10px">
-          ${issues.map((issue, index) => `
-            <div style="padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10)">
-              <strong>${index + 1}. Vacío:</strong> ${escapeHtml(issue.message)}<br/>
-              <strong>Dónde buscarlo:</strong> <code>${escapeHtml(issue.where)}</code>
-            </div>
-          `).join('')}
+        <div class="brief-pending-summary">
+          <span><strong>Pendientes críticos:</strong> ${criticalIssues.length}</span>
+          <span><strong>Alertas estructurales:</strong> ${warnings.length}</span>
+        </div>
+
+        <div class="brief-pending-list">
+          ${issues.map((issue, index) => {
+            const isWarning = issue.level === 'warning';
+            return `
+              <div class="brief-pending-item ${isWarning ? 'is-warning' : 'is-critical'}">
+                <span class="brief-pending-index">${index + 1}</span>
+                <span class="brief-pending-text">
+                  <strong>${isWarning ? 'Alerta' : 'Pendiente'}:</strong>
+                  ${escapeHtml(issue.message || 'Pendiente estructural')}
+                  <br>
+                  <strong>Dónde:</strong>
+                  <code>${escapeHtml(issue.where || issue.field || 'as_is_process')}</code>
+                  ${issue.suggestion ? `
+                    <br>
+                    <strong>Sugerencia:</strong>
+                    ${escapeHtml(issue.suggestion)}
+                  ` : ''}
+                </span>
+              </div>
+            `;
+          }).join('')}
         </div>
       `;
     }
@@ -7965,11 +8003,11 @@ function renderBriefValidation(){
     if(issues.length){
       showMsg(
         'briefValidationMsg',
-        'warn',
-        `Estado: Brief con ${issues.length} vacío(s) o pendiente(s). Revisa la lista antes de aplicar al LMP.`
+        criticalIssues.length ? 'warn' : 'ok',
+        `Estado: Brief con ${criticalIssues.length} pendiente(s) crítico(s) y ${warnings.length} alerta(s) estructural(es).`
       );
     }else{
-      showMsg('briefValidationMsg','ok','Estado: Brief sin vacíos detectados. Puedes aplicarlo al LMP.');
+      showMsg('briefValidationMsg','ok','Estado: Brief sin pendientes estructurales. Puedes aplicarlo al LMP.');
     }
   }
 }
