@@ -1764,6 +1764,36 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   margin-top:10px;
 }
 
+.brief-guided-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:10px;
+}
+
+.brief-guided-grid.two{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+
+.brief-guided-input{
+  width:100%;
+  margin-top:6px;
+  border-radius:12px;
+  padding:10px;
+  font-size:.86rem;
+  color:#0A1F44;
+  background:#FFFFFF;
+  border:1px solid rgba(0,194,255,.32);
+  outline:none;
+}
+
+@media(max-width:900px){
+  .brief-guided-grid,
+  .brief-guided-grid.two{
+    grid-template-columns:1fr;
+  }
+}
+  
   .brief-empty-state{
     color:#DDF5FF;
     font-weight:800;
@@ -8511,11 +8541,7 @@ const searchHint = issue.searchHint || issue.affectedValue || helper.target || w
                   '</div>' +
 
                   '<div class="brief-gap-actions">' +
-  (issue.autoFix
-    ? '<button type="button" class="brief-mini-btn primary" onclick="applyBriefIssueAutoFix(JSON.parse(decodeURIComponent(\'' + encodedIssue + '\')))">Corregir automático</button>'
-    : '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>'
-  ) +
-  '<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodeURIComponent(searchHint) + '\'))">Copiar elemento afectado</button>' +
+  '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>' +
 '</div>' +
                 '</div>' +
               '</div>'
@@ -8957,7 +8983,117 @@ function parseBriefEditValue(text){
   return raw;
 }
 
-function openBriefGapEditor(pathText){
+function extractIndexFromBriefPath(pathText, blockName){
+  const regex = new RegExp(blockName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\[(\\d+)\\]');
+  const match = String(pathText || '').match(regex);
+  return match ? Number(match[1]) : -1;
+}
+
+function briefArrayToText(value){
+  return safeArray(value).join('\n');
+}
+
+function briefTextToArray(value){
+  return String(value || '')
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function openBriefActivityGapEditor(activityIndex){
+  const editor = qs('briefResponseEditor');
+  const panel = qs('briefGuidedEditorPanel');
+
+  if(!editor || !panel){
+    showMsg('briefIaMsg','err','No se encontró el editor guiado del Brief.');
+    return;
+  }
+
+  try{
+    const parsed = extractJsonFromText(editor.value.trim());
+    const activity = parsed?.as_is_process?.activities?.[activityIndex];
+
+    if(!activity){
+      showMsg('briefIaMsg','err','No se encontró la actividad indicada en el JSON del Brief.');
+      return;
+    }
+
+    panel.classList.remove('hidden');
+
+    panel.innerHTML = `
+      <div class="brief-guided-head">
+        <strong>Corregir actividad con vacío estructural</strong>
+        <button type="button" class="brief-mini-btn" onclick="closeBriefGapEditor()">Cerrar</button>
+      </div>
+
+      <div class="brief-guided-info">
+        <div><strong>Actividad:</strong> ${escapeHtml(activity.name || 'Actividad sin nombre')}</div>
+        <div><strong>ID:</strong> ${escapeHtml(activity.id || 'sin_id')}</div>
+        <div><strong>Actor:</strong> ${escapeHtml(activity.actor || 'pendiente_validacion')}</div>
+      </div>
+
+      <div class="brief-guided-grid">
+        <label class="brief-guided-label">
+          Actor
+          <input id="briefGapActivityActor" class="brief-guided-input" value="${escapeHtml(activity.actor || '')}">
+        </label>
+
+        <label class="brief-guided-label">
+          Tipo
+          <select id="briefGapActivityType" class="brief-guided-input">
+            <option value="activity" ${activity.type === 'activity' ? 'selected' : ''}>activity</option>
+            <option value="decision" ${activity.type === 'decision' ? 'selected' : ''}>decision</option>
+            <option value="control" ${activity.type === 'control' ? 'selected' : ''}>control</option>
+            <option value="document" ${activity.type === 'document' ? 'selected' : ''}>document</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="brief-guided-grid two">
+        <label class="brief-guided-label">
+          Actividades previas · previous[]
+          <textarea id="briefGapActivityPrevious" class="brief-guided-textarea" placeholder="Una actividad previa por línea">${escapeHtml(briefArrayToText(activity.previous))}</textarea>
+        </label>
+
+        <label class="brief-guided-label">
+          Entradas usadas · inputs_used[]
+          <textarea id="briefGapActivityInputs" class="brief-guided-textarea" placeholder="Una entrada por línea">${escapeHtml(briefArrayToText(activity.inputs_used))}</textarea>
+        </label>
+
+        <label class="brief-guided-label">
+          Actividades siguientes · next[]
+          <textarea id="briefGapActivityNext" class="brief-guided-textarea" placeholder="Una actividad siguiente por línea">${escapeHtml(briefArrayToText(activity.next))}</textarea>
+        </label>
+
+        <label class="brief-guided-label">
+          Salidas generadas · outputs_generated[]
+          <textarea id="briefGapActivityOutputs" class="brief-guided-textarea" placeholder="Una salida por línea">${escapeHtml(briefArrayToText(activity.outputs_generated))}</textarea>
+        </label>
+      </div>
+
+      <label class="brief-guided-label">
+        Observaciones
+        <textarea id="briefGapActivityObservations" class="brief-guided-textarea" placeholder="Notas o aclaraciones de la actividad">${escapeHtml(activity.observations || '')}</textarea>
+      </label>
+
+      <div class="brief-guided-help">
+        Regla: previous[] y next[] solo deben contener actividades existentes. Las entradas van en inputs_used[] y las salidas, reportes o documentos generados van en outputs_generated[].
+      </div>
+
+      <div class="brief-guided-actions">
+        <button type="button" class="btn-ok" onclick="saveBriefActivityGapCorrection(${activityIndex})">Guardar corrección</button>
+        <button type="button" class="btn-ghost" onclick="closeBriefGapEditor()">Cancelar</button>
+      </div>
+    `;
+
+    panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  }catch(error){
+    showMsg('briefIaMsg','err','No fue posible abrir la actividad. Detalle: ' + error.message);
+  }
+}
+
+function openBriefSimpleGapEditor(pathText, title){
   const editor = qs('briefResponseEditor');
   const panel = qs('briefGuidedEditorPanel');
 
@@ -8972,46 +9108,100 @@ function openBriefGapEditor(pathText){
     const currentValue = getValueByPath(parsed, parts);
 
     const isArray = Array.isArray(currentValue);
-    const currentText = isArray
-      ? currentValue.join('\n')
-      : String(currentValue ?? '');
+    const currentText = isArray ? currentValue.join('\n') : String(currentValue ?? '');
 
     panel.classList.remove('hidden');
-    panel.innerHTML =
-      '<div class="brief-guided-head">' +
-        '<strong>Corregir vacío estructural</strong>' +
-        '<button type="button" class="brief-mini-btn" onclick="closeBriefGapEditor()">Cerrar</button>' +
-      '</div>' +
 
-      '<div class="brief-guided-info">' +
-        '<div><strong>Campo técnico:</strong> <code>' + escapeHtml(getFirstBriefPath(pathText)) + '</code></div>' +
-        '<div><strong>Tipo de dato:</strong> ' + (isArray ? 'Lista' : 'Texto') + '</div>' +
-      '</div>' +
+    panel.innerHTML = `
+      <div class="brief-guided-head">
+        <strong>${escapeHtml(title || 'Corregir vacío estructural')}</strong>
+        <button type="button" class="brief-mini-btn" onclick="closeBriefGapEditor()">Cerrar</button>
+      </div>
 
-      '<label class="brief-guided-label">' +
-        (isArray
-          ? 'Nuevo valor. Escribe un elemento por línea:'
-          : 'Nuevo valor:') +
-      '</label>' +
+      <div class="brief-guided-info">
+        <div><strong>Campo:</strong> <code>${escapeHtml(getFirstBriefPath(pathText))}</code></div>
+        <div><strong>Tipo:</strong> ${isArray ? 'Lista' : 'Texto'}</div>
+      </div>
 
-      '<textarea id="briefGuidedValue" class="brief-guided-textarea">' + escapeHtml(currentText) + '</textarea>' +
+      <label class="brief-guided-label">
+        ${isArray ? 'Nuevo valor, uno por línea:' : 'Nuevo valor:'}
+        <textarea id="briefGuidedValue" class="brief-guided-textarea">${escapeHtml(currentText)}</textarea>
+      </label>
 
-      '<div class="brief-guided-help">' +
-        (isArray
-          ? 'Ejemplo: si son varias actividades, entradas o salidas, escribe una por línea. El módulo lo convertirá automáticamente en lista JSON.'
-          : 'Escribe el valor sin comillas. El módulo actualizará el JSON automáticamente.') +
-      '</div>' +
-
-      '<div class="brief-guided-actions">' +
-        '<button type="button" class="btn-ok" onclick="saveBriefGapCorrection(\'' + encodeURIComponent(pathText) + '\')">Guardar corrección</button>' +
-        '<button type="button" class="btn-ghost" onclick="closeBriefGapEditor()">Cancelar</button>' +
-      '</div>';
+      <div class="brief-guided-actions">
+        <button type="button" class="btn-ok" onclick="saveBriefGapCorrection('${encodeURIComponent(pathText)}')">Guardar corrección</button>
+        <button type="button" class="btn-ghost" onclick="closeBriefGapEditor()">Cancelar</button>
+      </div>
+    `;
 
     panel.scrollIntoView({behavior:'smooth', block:'nearest'});
 
   }catch(error){
-    showMsg('briefIaMsg','err','No fue posible abrir el editor guiado. Detalle: ' + error.message);
+    showMsg('briefIaMsg','err','No fue posible abrir el editor. Detalle: ' + error.message);
   }
+}
+
+
+function saveBriefActivityGapCorrection(activityIndex){
+  const editor = qs('briefResponseEditor');
+
+  if(!editor){
+    showMsg('briefIaMsg','err','No se encontró el JSON del Brief.');
+    return;
+  }
+
+  try{
+    const parsed = extractJsonFromText(editor.value.trim());
+    const activity = parsed?.as_is_process?.activities?.[activityIndex];
+
+    if(!activity){
+      showMsg('briefIaMsg','err','No se encontró la actividad a corregir.');
+      return;
+    }
+
+    activity.actor = qs('briefGapActivityActor')?.value?.trim() || 'pendiente_validacion';
+    activity.type = qs('briefGapActivityType')?.value || 'activity';
+
+    activity.previous = briefTextToArray(qs('briefGapActivityPrevious')?.value);
+    activity.inputs_used = briefTextToArray(qs('briefGapActivityInputs')?.value);
+    activity.next = briefTextToArray(qs('briefGapActivityNext')?.value);
+    activity.outputs_generated = briefTextToArray(qs('briefGapActivityOutputs')?.value);
+    activity.observations = qs('briefGapActivityObservations')?.value?.trim() || '';
+
+    const cleaned = stripDescriptionFromAsIsProcess(parsed);
+    editor.value = JSON.stringify(cleaned, null, 2);
+
+    closeBriefGapEditor();
+
+    showMsg('briefIaMsg','ok','Actividad corregida. El Brief fue actualizado y será analizado nuevamente.');
+    analyzeBriefResponse();
+
+  }catch(error){
+    showMsg('briefIaMsg','err','No fue posible guardar la actividad. Detalle: ' + error.message);
+  }
+}
+  
+function openBriefGapEditor(pathText){
+  const activityIndex = extractIndexFromBriefPath(pathText, 'activities');
+  const supplierIndex = extractIndexFromBriefPath(pathText, 'suppliers_inputs');
+  const outputIndex = extractIndexFromBriefPath(pathText, 'outputs_customers');
+
+  if(activityIndex >= 0){
+    openBriefActivityGapEditor(activityIndex);
+    return;
+  }
+
+  if(supplierIndex >= 0){
+    openBriefSimpleGapEditor(pathText, 'Relación proveedor / entrada');
+    return;
+  }
+
+  if(outputIndex >= 0){
+    openBriefSimpleGapEditor(pathText, 'Relación salida / cliente');
+    return;
+  }
+
+  openBriefSimpleGapEditor(pathText, 'Campo del Brief');
 }
 
 function applyBriefIssueAutoFix(issue){
