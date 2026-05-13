@@ -340,6 +340,44 @@
   0%{transform:translateX(-120%);background-position:0% 50%;}
   100%{transform:translateX(260%);background-position:100% 50%;}
 }
+
+.brief-apply-loader{
+  margin-top:14px;
+  padding:14px 16px;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(0,194,255,.08), rgba(26,86,219,.06));
+  border:1px solid rgba(0,194,255,.22);
+}
+
+.brief-apply-loader-text{
+  color:#0B2E59;
+  font-size:.9rem;
+  font-weight:800;
+  margin-bottom:10px;
+}
+
+.brief-apply-loader-track{
+  width:100%;
+  height:13px;
+  border-radius:999px;
+  overflow:hidden;
+  background:rgba(11,46,89,.10);
+  border:1px solid rgba(11,46,89,.08);
+}
+
+.brief-apply-loader-bar{
+  width:42%;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#FFFFFF,#00C2FF,#1A56DB,#FFFFFF);
+  background-size:220% 100%;
+  animation:briefApplyLoading 1.15s linear infinite;
+}
+
+@keyframes briefApplyLoading{
+  0%{transform:translateX(-120%);background-position:0% 50%;}
+  100%{transform:translateX(260%);background-position:100% 50%;}
+}
   
 </style>
 
@@ -2932,6 +2970,12 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <article class="card">
 <h3>Actividades del proceso</h3>
 <p>Las actividades se cargan desde la entrevista del líder cuando la ruta es proceso nuevo o desde el JSON del Extractor cuando la ruta es proceso documentado. Cada bloque se puede desplegar y editar.</p>
+  <div id="asisBriefLoader" class="brief-apply-loader hidden" aria-live="polite">
+  <div class="brief-apply-loader-text">Cargando Brief al Proceso AS-IS...</div>
+  <div class="brief-apply-loader-track">
+    <div class="brief-apply-loader-bar"></div>
+  </div>
+</div>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:12px"><div class="actions-left">
 <button class="btn" onclick="seedAsIsBuilderFromBrief(true)" type="button">Cargar desde Brief</button>
 <button class="btn" onclick="hydrateAsIsFromMaster()" type="button">Cargar desde consolidado</button>
@@ -8076,7 +8120,7 @@ function analyzeBriefResponse(){
 
   try{
     const parsed = extractJsonFromText(rawText);
-    const normalized = normalizeBriefPayload(parsed);
+    const normalized = parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed);
     const issues = evaluateBriefCompleteness(normalized);
 
     state.briefReview = {
@@ -8094,9 +8138,9 @@ function analyzeBriefResponse(){
     renderBriefValidation();
 
     if(issues.length){
-      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron vacíos o alertas. Revisa el Estado del Brief antes de aplicar al LMP.');
+      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron pendientes. Revisa el Estado del Brief antes de aplicar al LMP.');
     }else{
-      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron vacíos relevantes. Puedes aplicarlo al LMP.');
+      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron pendientes estructurales. Puedes aplicarlo al LMP.');
     }
 
     refreshCargaFlowState();
@@ -8117,7 +8161,7 @@ function applyBriefToLmp(forceApply = false){
 
   try{
     const parsed = extractJsonFromText(rawText);
-    const normalized = normalizeBriefPayload(parsed);
+    const normalized = parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed);
     const issues = evaluateBriefCompleteness(normalized);
 
     if(issues.length && !forceApply){
@@ -8140,17 +8184,16 @@ function applyBriefToLmp(forceApply = false){
 
     renderBriefValidation();
 
-    const loader = qs('briefApplyLoader');
-    const applyBtn = qs('btnApplyBrief');
+    showSection('asis');
 
+    const loader = qs('asisBriefLoader');
     if(loader) loader.classList.remove('hidden');
-    if(applyBtn) applyBtn.disabled = true;
-
-    showMsg('briefIaMsg','ok','Brief validado. Cargando información al Proceso AS-IS...');
 
     setTimeout(function(){
       try{
-        if(typeof seedAsIsBuilderFromBrief === 'function'){
+        if(normalized?.as_is_process && typeof applyAsIsProcess === 'function'){
+          applyAsIsProcess(normalized);
+        }else if(typeof seedAsIsBuilderFromBrief === 'function'){
           seedAsIsBuilderFromBrief(false);
         }
 
@@ -8158,28 +8201,24 @@ function applyBriefToLmp(forceApply = false){
           renderAsIsActivities();
         }
 
-        if(typeof renderAsIsPreview === 'function'){
-          renderAsIsPreview();
+        if(typeof updateAsIsPreview === 'function'){
+          updateAsIsPreview();
+        }
+
+        if(loader) loader.classList.add('hidden');
+
+        if(issues.length){
+          showMsg('asisBuilderMsg','warn','Brief aplicado al Proceso AS-IS con pendientes estructurales. Revisa las conexiones antes de continuar.');
+        }else{
+          showMsg('asisBuilderMsg','ok','Brief aplicado correctamente al Proceso AS-IS.');
         }
 
         refreshCargaFlowState();
         updateTopStatus();
 
-        if(loader) loader.classList.add('hidden');
-        if(applyBtn) applyBtn.disabled = false;
-
-        if(issues.length){
-          showMsg('briefIaMsg','warn','Brief aplicado al LMP con vacíos pendientes. Revisa Proceso AS-IS.');
-        }else{
-          showMsg('briefIaMsg','ok','Brief aprobado y aplicado al LMP correctamente.');
-        }
-
-        showSection('asis');
-
       }catch(innerError){
         if(loader) loader.classList.add('hidden');
-        if(applyBtn) applyBtn.disabled = false;
-        showMsg('briefIaMsg','err','No fue posible cargar el Brief en Proceso AS-IS. Detalle: ' + innerError.message);
+        showMsg('asisBuilderMsg','err','No fue posible cargar el Brief en Proceso AS-IS. Detalle: ' + innerError.message);
       }
     }, 900);
 
