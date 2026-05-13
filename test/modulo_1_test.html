@@ -1689,6 +1689,81 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
     background-clip: padding-box;
   }
 
+  .brief-guided-editor{
+  margin-top:10px;
+  padding:12px;
+  border-radius:14px;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(0,194,255,.25);
+  color:#DDF5FF;
+}
+
+.brief-guided-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+  margin-bottom:10px;
+}
+
+.brief-guided-head strong{
+  color:#FFFFFF;
+  font-size:.94rem;
+}
+
+.brief-guided-info{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  margin-bottom:10px;
+  font-size:.82rem;
+  color:rgba(221,245,255,.88);
+}
+
+.brief-guided-info code{
+  background:rgba(255,255,255,.10);
+  padding:1px 5px;
+  border-radius:6px;
+  color:#FFFFFF;
+}
+
+.brief-guided-label{
+  display:block;
+  font-weight:850;
+  margin-bottom:6px;
+  font-size:.84rem;
+  color:#FFFFFF;
+}
+
+.brief-guided-textarea{
+  width:100%;
+  min-height:92px;
+  resize:vertical;
+  border-radius:12px;
+  padding:10px;
+  font-family:Consolas, monospace;
+  font-size:.86rem;
+  line-height:1.35;
+  color:#0A1F44;
+  background:#FFFFFF;
+  border:1px solid rgba(0,194,255,.32);
+  outline:none;
+}
+
+.brief-guided-help{
+  margin-top:7px;
+  font-size:.78rem;
+  line-height:1.35;
+  color:rgba(221,245,255,.78);
+}
+
+.brief-guided-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+
   .brief-empty-state{
     color:#DDF5FF;
     font-weight:800;
@@ -8136,6 +8211,75 @@ function evaluateBriefCompleteness(normalizedBrief){
 
   return issues;
 }
+
+function getBriefIssueHelper(issue){
+  const type = issue?.type || '';
+  const message = issue?.message || 'Vacío estructural detectado';
+
+  const helpers = {
+    activity_without_input_connection: {
+      title: 'Actividad sin conexión de entrada',
+      what: 'Esta actividad no tiene una actividad previa ni una entrada que la alimente.',
+      how: 'Agrega una actividad previa en previous[] o una entrada usada en inputs_used[].'
+    },
+    activity_without_output_connection: {
+      title: 'Actividad sin conexión de salida',
+      what: 'Esta actividad no tiene continuidad hacia otra actividad ni genera una salida.',
+      how: 'Agrega una actividad siguiente en next[] o una salida generada en outputs_generated[].'
+    },
+    supplier_without_name: {
+      title: 'Entrada sin proveedor',
+      what: 'Existe una entrada registrada, pero no se sabe quién la entrega.',
+      how: 'Escribe el nombre del proveedor, área o proceso que entrega esa entrada.'
+    },
+    supplier_without_input: {
+      title: 'Proveedor sin entrada',
+      what: 'Existe un proveedor registrado, pero no tiene ninguna entrada asociada.',
+      how: 'Agrega la entrada que entrega ese proveedor.'
+    },
+    input_without_activity_connection: {
+      title: 'Entrada sin conexión con actividad',
+      what: 'La entrada existe en proveedores/entradas, pero ninguna actividad la usa.',
+      how: 'Agrega esa entrada en inputs_used[] de la actividad correspondiente.'
+    },
+    output_without_activity_connection: {
+      title: 'Salida sin actividad generadora',
+      what: 'La salida existe en salidas/clientes, pero ninguna actividad la genera.',
+      how: 'Agrega esa salida en outputs_generated[] de la actividad que la produce.'
+    },
+    output_without_customer: {
+      title: 'Salida sin cliente',
+      what: 'La salida existe, pero no tiene cliente o receptor asociado.',
+      how: 'Agrega el cliente, área o proceso que recibe esa salida.'
+    },
+    possible_output_in_next: {
+      title: 'Salida ubicada como actividad siguiente',
+      what: 'El campo next[] tiene algo que parece una salida, reporte, notificación o documento.',
+      how: 'Muévelo a outputs_generated[] si corresponde a un resultado generado por la actividad.'
+    },
+    possible_input_in_previous: {
+      title: 'Entrada ubicada como actividad previa',
+      what: 'El campo previous[] tiene algo que parece una entrada o insumo.',
+      how: 'Muévelo a inputs_used[] si corresponde a una entrada usada por la actividad.'
+    },
+    previous_activity_not_found: {
+      title: 'Actividad previa no encontrada',
+      what: 'El nombre en previous[] no coincide con ninguna actividad registrada.',
+      how: 'Corrige el nombre para que coincida exactamente con una actividad existente.'
+    },
+    next_activity_not_found: {
+      title: 'Actividad siguiente no encontrada',
+      what: 'El nombre en next[] no coincide con ninguna actividad registrada.',
+      how: 'Corrige el nombre para que coincida exactamente con una actividad existente.'
+    }
+  };
+
+  return helpers[type] || {
+    title: message,
+    what: message,
+    how: issue?.suggestion || 'Revisa este campo en el JSON del Brief y complétalo si corresponde.'
+  };
+}
   
 function renderBriefValidation(){
   const brief = stripDescriptionFromAsIsProcess(
@@ -8164,26 +8308,44 @@ function renderBriefValidation(){
           '<span><strong>Vacíos estructurales:</strong> ' + issues.length + '</span>' +
           '<button type="button" class="brief-mini-btn" onclick="formatBriefJson()">Formatear JSON</button>' +
         '</div>' +
+
         '<div class="brief-gap-list">' +
           issues.map((issue, index) => {
             const where = issue.where || issue.field || 'as_is_process';
-            const suggestion = issue.suggestion || 'Revisa y completa este dato en el JSON del Brief.';
+            const helper = getBriefIssueHelper(issue);
+            const encodedPath = encodeURIComponent(where);
+
             return (
               '<div class="brief-gap-row">' +
                 '<div class="brief-gap-num">' + (index + 1) + '</div>' +
+
                 '<div class="brief-gap-body">' +
-                  '<div class="brief-gap-title">' + escapeHtml(issue.message || 'Vacío estructural') + '</div>' +
-                  '<div class="brief-gap-path"><strong>Dónde:</strong> <code>' + escapeHtml(where) + '</code></div>' +
-                  '<div class="brief-gap-suggestion"><strong>Sugerencia:</strong> ' + escapeHtml(suggestion) + '</div>' +
+                  '<div class="brief-gap-title">' + escapeHtml(helper.title) + '</div>' +
+
+                  '<div class="brief-gap-human">' +
+                    '<strong>Qué falta:</strong> ' + escapeHtml(helper.what) +
+                  '</div>' +
+
+                  '<div class="brief-gap-human">' +
+                    '<strong>Cómo corregir:</strong> ' + escapeHtml(helper.how) +
+                  '</div>' +
+
+                  '<details class="brief-gap-technical">' +
+                    '<summary>Ver ubicación técnica</summary>' +
+                    '<code>' + escapeHtml(where) + '</code>' +
+                  '</details>' +
+
                   '<div class="brief-gap-actions">' +
-                    '<button type="button" class="brief-mini-btn" onclick="copyBriefPath(`' + escapeHtml(where).replace(/`/g, '\\`') + '`)">Copiar ruta</button>' +
-                    '<button type="button" class="brief-mini-btn" onclick="editBriefFieldByPath(`' + escapeHtml(where).replace(/`/g, '\\`') + '`)">Editar campo</button>' +
+                    '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>' +
+                    '<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodedPath + '\'))">Copiar ruta</button>' +
                   '</div>' +
                 '</div>' +
               '</div>'
             );
           }).join('') +
-        '</div>';
+        '</div>' +
+
+        '<div id="briefGuidedEditorPanel" class="brief-guided-editor hidden"></div>';
     }
   }
 
@@ -8640,36 +8802,90 @@ function parseBriefEditValue(text){
   return raw;
 }
 
-function editBriefFieldByPath(pathText){
+function openBriefGapEditor(pathText){
   const editor = qs('briefResponseEditor');
+  const panel = qs('briefGuidedEditorPanel');
 
-  if(!editor){
-    showMsg('briefIaMsg','err','No se encontró el editor del JSON del Brief.');
+  if(!editor || !panel){
+    showMsg('briefIaMsg','err','No se encontró el editor guiado del Brief.');
     return;
   }
 
   try{
     const parsed = extractJsonFromText(editor.value.trim());
     const parts = parseBriefPath(pathText);
+    const currentValue = getValueByPath(parsed, parts);
 
-    if(!parts.length){
-      showMsg('briefIaMsg','warn','Ruta no válida para edición.');
-      return;
+    const isArray = Array.isArray(currentValue);
+    const currentText = isArray
+      ? currentValue.join('\n')
+      : String(currentValue ?? '');
+
+    panel.classList.remove('hidden');
+    panel.innerHTML =
+      '<div class="brief-guided-head">' +
+        '<strong>Corregir vacío estructural</strong>' +
+        '<button type="button" class="brief-mini-btn" onclick="closeBriefGapEditor()">Cerrar</button>' +
+      '</div>' +
+
+      '<div class="brief-guided-info">' +
+        '<div><strong>Campo técnico:</strong> <code>' + escapeHtml(getFirstBriefPath(pathText)) + '</code></div>' +
+        '<div><strong>Tipo de dato:</strong> ' + (isArray ? 'Lista' : 'Texto') + '</div>' +
+      '</div>' +
+
+      '<label class="brief-guided-label">' +
+        (isArray
+          ? 'Nuevo valor. Escribe un elemento por línea:'
+          : 'Nuevo valor:') +
+      '</label>' +
+
+      '<textarea id="briefGuidedValue" class="brief-guided-textarea">' + escapeHtml(currentText) + '</textarea>' +
+
+      '<div class="brief-guided-help">' +
+        (isArray
+          ? 'Ejemplo: si son varias actividades, entradas o salidas, escribe una por línea. El módulo lo convertirá automáticamente en lista JSON.'
+          : 'Escribe el valor sin comillas. El módulo actualizará el JSON automáticamente.') +
+      '</div>' +
+
+      '<div class="brief-guided-actions">' +
+        '<button type="button" class="btn-ok" onclick="saveBriefGapCorrection(\'' + encodeURIComponent(pathText) + '\')">Guardar corrección</button>' +
+        '<button type="button" class="btn-ghost" onclick="closeBriefGapEditor()">Cancelar</button>' +
+      '</div>';
+
+    panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+
+  }catch(error){
+    showMsg('briefIaMsg','err','No fue posible abrir el editor guiado. Detalle: ' + error.message);
+  }
+}
+
+function saveBriefGapCorrection(encodedPath){
+  const editor = qs('briefResponseEditor');
+  const valueBox = qs('briefGuidedValue');
+
+  if(!editor || !valueBox){
+    showMsg('briefIaMsg','err','No se encontró el campo de edición.');
+    return;
+  }
+
+  try{
+    const pathText = decodeURIComponent(encodedPath);
+    const parsed = extractJsonFromText(editor.value.trim());
+    const parts = parseBriefPath(pathText);
+    const currentValue = getValueByPath(parsed, parts);
+
+    const rawValue = valueBox.value.trim();
+
+    let nextValue;
+
+    if(Array.isArray(currentValue)){
+      nextValue = rawValue
+        ? rawValue.split('\n').map(v => v.trim()).filter(Boolean)
+        : [];
+    }else{
+      nextValue = rawValue;
     }
 
-    const currentValue = getValueByPath(parsed, parts);
-    const currentText = typeof currentValue === 'string'
-      ? currentValue
-      : JSON.stringify(currentValue, null, 2);
-
-    const nextText = window.prompt(
-      'Editar campo del Brief:\n' + getFirstBriefPath(pathText) + '\n\nValor actual:',
-      currentText ?? ''
-    );
-
-    if(nextText === null) return;
-
-    const nextValue = parseBriefEditValue(nextText);
     const ok = setValueByPath(parsed, parts, nextValue);
 
     if(!ok){
@@ -8680,13 +8896,23 @@ function editBriefFieldByPath(pathText){
     const cleaned = stripDescriptionFromAsIsProcess(parsed);
     editor.value = JSON.stringify(cleaned, null, 2);
 
-    showMsg('briefIaMsg','ok','Campo actualizado. Vuelve a analizar el Brief.');
+    closeBriefGapEditor();
+
+    showMsg('briefIaMsg','ok','Corrección guardada. El Brief fue actualizado y será analizado nuevamente.');
     analyzeBriefResponse();
 
   }catch(error){
-    showMsg('briefIaMsg','err','No fue posible editar el campo. Detalle: ' + error.message);
+    showMsg('briefIaMsg','err','No fue posible guardar la corrección. Detalle: ' + error.message);
   }
-}  
+}
+
+function closeBriefGapEditor(){
+  const panel = qs('briefGuidedEditorPanel');
+  if(panel){
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+}
   
 function analyzeBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value?.trim() || '';
