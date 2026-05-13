@@ -1894,11 +1894,28 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   color:#DDF5FF;
 }
 .brief-apply-confirm{
-  margin-top:14px;
-  padding:14px;
-  border-radius:16px;
-  background:linear-gradient(180deg, rgba(242,153,74,.12), rgba(255,255,255,.06));
+  position:fixed !important;
+  inset:0 !important;
+  z-index:99999 !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  padding:24px !important;
+  background:rgba(7,28,54,.62) !important;
+  backdrop-filter:blur(5px) !important;
+}
+
+.brief-apply-confirm.hidden{
+  display:none !important;
+}
+
+.brief-apply-confirm-card{
+  width:min(720px, 100%);
+  border-radius:22px;
+  background:#FFFFFF;
   border:1px solid rgba(242,153,74,.34);
+  box-shadow:0 24px 70px rgba(7,28,54,.32);
+  padding:20px;
   color:#0B2E59;
 }
 
@@ -1907,38 +1924,38 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   justify-content:space-between;
   gap:10px;
   align-items:center;
-  margin-bottom:10px;
+  margin-bottom:12px;
 }
 
 .brief-apply-confirm-head strong{
   color:#0B2E59;
-  font-size:1rem;
+  font-size:1.05rem;
   font-weight:900;
 }
 
 .brief-apply-confirm-head span{
   border-radius:999px;
-  padding:5px 9px;
+  padding:6px 10px;
   background:rgba(242,153,74,.16);
   border:1px solid rgba(242,153,74,.26);
   color:#8A570D;
-  font-size:.78rem;
+  font-size:.8rem;
   font-weight:900;
 }
 
 .brief-apply-confirm-body{
-  font-size:.9rem;
-  line-height:1.45;
+  font-size:.94rem;
+  line-height:1.5;
   color:#42617F;
 }
 
 .brief-apply-confirm-body p{
-  margin:0 0 8px;
+  margin:0 0 9px;
 }
 
 .brief-apply-confirm-warning{
-  padding:10px 12px;
-  border-radius:12px;
+  padding:11px 13px;
+  border-radius:13px;
   background:rgba(192,57,43,.08);
   border:1px solid rgba(192,57,43,.18);
   color:#A93226;
@@ -1950,7 +1967,7 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   justify-content:flex-end;
   gap:10px;
   flex-wrap:wrap;
-  margin-top:12px;
+  margin-top:16px;
 }
 </style>
   
@@ -8493,20 +8510,13 @@ const searchHint = issue.searchHint || issue.affectedValue || helper.target || w
                     '<strong>Cómo corregir:</strong> ' + escapeHtml(helper.how) +
                   '</div>' +
 
-                  '<details class="brief-gap-technical">' +
-  '<summary>Ver ubicación técnica</summary>' +
-  '<div><strong>Ruta JSON:</strong> <code>' + escapeHtml(where) + '</code></div>' +
-  '<div><strong>Buscar en el JSON:</strong> <code>' + escapeHtml(searchHint) + '</code></div>' +
-'</details>' +
-
                   '<div class="brief-gap-actions">' +
-                    (issue.autoFix
-  ? '<button type="button" class="brief-mini-btn primary" onclick="applyBriefIssueAutoFix(JSON.parse(decodeURIComponent(\'' + encodedIssue + '\')))">Corregir automático</button>'
-  : '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>'
-) +
-'<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodedPath + '\'))">Copiar ruta</button>' +
-'<button type="button" class="brief-mini-btn" onclick="copyBriefPath(\'' + encodeURIComponent(searchHint) + '\')">Copiar búsqueda</button>' +
-                  '</div>' +
+  (issue.autoFix
+    ? '<button type="button" class="brief-mini-btn primary" onclick="applyBriefIssueAutoFix(JSON.parse(decodeURIComponent(\'' + encodedIssue + '\')))">Corregir automático</button>'
+    : '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>'
+  ) +
+  '<button type="button" class="brief-mini-btn" onclick="copyBriefPath(decodeURIComponent(\'' + encodeURIComponent(searchHint) + '\'))">Copiar elemento afectado</button>' +
+'</div>' +
                 '</div>' +
               '</div>'
             );
@@ -8875,7 +8885,7 @@ function copyBriefPath(path){
   }
 
   navigator.clipboard?.writeText(cleanPath).then(() => {
-    showMsg('briefIaMsg','ok','Ruta copiada: ' + cleanPath);
+    showMsg('briefIaMsg','ok','Texto copiado: ' + cleanPath);
   }).catch(() => {
     showMsg('briefIaMsg','warn','No se pudo copiar automáticamente. Ruta: ' + cleanPath);
   });
@@ -9282,7 +9292,8 @@ function showBriefApplyConfirmation(issues){
 
   panel.classList.remove('hidden');
 
-  panel.innerHTML = `
+ panel.innerHTML = `
+  <div class="brief-apply-confirm-card">
     <div class="brief-apply-confirm-head">
       <strong>Aplicar Brief con vacíos estructurales</strong>
       <span>${total} detectado(s)</span>
@@ -9293,7 +9304,7 @@ function showBriefApplyConfirmation(issues){
         Se detectaron <strong>${total}</strong> vacío(s) estructural(es) en el Brief.
       </p>
       <p>
-        Puedes seguir corrigiendo el Brief o aplicarlo al LMP bajo validación.
+        Puedes cancelar para seguir corrigiendo el Brief o continuar y aplicarlo al LMP bajo validación.
       </p>
       <p class="brief-apply-confirm-warning">
         La información faltante podría dejar actividades, relaciones o campos sueltos
@@ -9309,7 +9320,8 @@ function showBriefApplyConfirmation(issues){
         Continuar y aplicar al LMP
       </button>
     </div>
-  `;
+  </div>
+`;
 
   panel.scrollIntoView({ behavior:'smooth', block:'center' });
 }
