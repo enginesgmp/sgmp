@@ -7590,7 +7590,7 @@ function evaluateBriefCompleteness(normalizedBrief){
   activities.forEach((activity, index) => {
     const base = `as_is_process.activities[${index}]`;
 
-    ['id','name','actor','type','description'].forEach(field => {
+   ['id','name','actor','type'].forEach(field => {
       const value = activity?.[field];
       if(isBriefPendingValue(value)){
         issues.push({
@@ -7712,7 +7712,9 @@ function evaluateBriefCompleteness(normalizedBrief){
 }
   
 function renderBriefValidation(){
-  const brief = state.brief || state.briefReview?.raw || {};
+  const brief = stripDescriptionFromAsIsProcess(
+  state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
+);
   const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
 
   const approved = !!state.briefReview?.approved;
@@ -8110,6 +8112,36 @@ function normalizeBriefIssuesList(issues){
     };
   });
 }  
+
+function stripDescriptionFromAsIsProcess(payload){
+  if(!payload || typeof payload !== 'object') return payload;
+
+  if(payload.as_is_process && Array.isArray(payload.as_is_process.activities)){
+    payload.as_is_process.activities = payload.as_is_process.activities.map(activity => {
+      const clean = {...activity};
+      delete clean.description;
+      return clean;
+    });
+  }
+
+  if(payload.as_is && Array.isArray(payload.as_is.activities)){
+    payload.as_is.activities = payload.as_is.activities.map(activity => {
+      const clean = {...activity};
+      delete clean.description;
+      return clean;
+    });
+  }
+
+  if(Array.isArray(payload.activities)){
+    payload.activities = payload.activities.map(activity => {
+      const clean = {...activity};
+      delete clean.description;
+      return clean;
+    });
+  }
+
+  return payload;
+}
   
 function analyzeBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value?.trim() || '';
@@ -8121,7 +8153,9 @@ function analyzeBriefResponse(){
 
   try{
     const parsed = extractJsonFromText(rawText);
-    const normalized = parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed);
+    const normalized = stripDescriptionFromAsIsProcess(
+  parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
+);
     const issues = evaluateBriefCompleteness(normalized);
 
     state.briefReview = {
@@ -8162,7 +8196,9 @@ function applyBriefToLmp(forceApply = false){
 
   try{
     const parsed = extractJsonFromText(rawText);
-    const normalized = parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed);
+    const normalized = stripDescriptionFromAsIsProcess(
+  parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
+);
     const issues = evaluateBriefCompleteness(normalized);
 
     if(issues.length && !forceApply){
