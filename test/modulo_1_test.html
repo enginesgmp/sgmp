@@ -302,6 +302,45 @@
     .field.w-12,.field.w-8,.field.w-6,.field.w-4,.field.w-3{grid-column:span 12}
     .kpi-wrap{grid-template-columns:1fr}
   }
+
+  .brief-apply-loader{
+  margin-top:18px;
+  padding:14px 16px;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(0,194,255,.08), rgba(26,86,219,.06));
+  border:1px solid rgba(0,194,255,.22);
+}
+
+.brief-apply-loader-text{
+  color:#0B2E59;
+  font-size:.9rem;
+  font-weight:800;
+  margin-bottom:10px;
+}
+
+.brief-apply-loader-track{
+  width:100%;
+  height:13px;
+  border-radius:999px;
+  overflow:hidden;
+  background:rgba(11,46,89,.10);
+  border:1px solid rgba(11,46,89,.08);
+}
+
+.brief-apply-loader-bar{
+  width:42%;
+  height:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#FFFFFF,#00C2FF,#1A56DB,#FFFFFF);
+  background-size:220% 100%;
+  animation:briefApplyLoading 1.15s linear infinite;
+}
+
+@keyframes briefApplyLoading{
+  0%{transform:translateX(-120%);background-position:0% 50%;}
+  100%{transform:translateX(260%);background-position:100% 50%;}
+}
+  
 </style>
 
 <style id="synapse-premium-visual-layer">
@@ -2798,6 +2837,13 @@ window.hydratePreparationFromState = hydratePreparationFromState;
     <button class="btn-ok" id="btnApplyBrief" onclick="applyBriefToLmp()" type="button">Procesar y aplicar al LMP</button>
   </div>
 </div>
+
+<div id="briefApplyLoader" class="brief-apply-loader hidden" aria-live="polite">
+  <div class="brief-apply-loader-text">Cargando actividades al Proceso AS-IS...</div>
+  <div class="brief-apply-loader-track">
+    <div class="brief-apply-loader-bar"></div>
+  </div>
+</div>
 </article>
 
 <article class="card half legacy-carga-analysis-ui" aria-hidden="true">
@@ -2868,7 +2914,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="pre" id="iaDetectedPreview" style="margin-top:14px;min-height:240px"></div>
 </article>
 </div>
-<div class="actions">
+<div class="actions hidden" aria-hidden="true">
 <div class="actions-left"><button class="btn-ghost" onclick="goToPrev('carga')" type="button">Volver</button></div>
 <div class="actions-right"><button class="btn" onclick="saveMasterAndContinue()" type="button">Guardar y continuar</button></div>
 </div>
@@ -7446,97 +7492,224 @@ function normalizeBriefPayload(parsed){
 }
 
 function evaluateBriefCompleteness(normalizedBrief){
+  const brief = normalizedBrief || {};
   const issues = [];
-  if(!normalizedBrief) return ['No existe brief cargado.'];
-
-  normalizedBrief = sgmpAutoRepairBriefContract(normalizedBrief);
-  const brief = normalizedBrief;
-  const summary = brief.summary || {};
-  const sipoc = brief.sipoc || {};
-const asIsProcess = brief.as_is_process || {};
-const asIsProcessActivities = sgmpCanonicalizeActivityList(brief.as_is_process?.activities);
-const asIsActivities = sgmpCanonicalizeActivityList(brief.as_is?.activities);
-const preliminaryActivities = sgmpCanonicalizeActivityList(brief.activities_preliminary);
-const sourceActivities = sgmpGetStructuralSourceActivities();
-
-const activities = sgmpCanonicalizeActivityList([
-  ...asIsProcessActivities,
-  ...asIsActivities,
-  ...preliminaryActivities
-]);
-  const activityHasActors = activities.some(item => String((item && typeof item === 'object') ? (item.actor || item.role || item.responsable || item.owner || '') : '').trim());
-
-  const hasExecutiveSummary = !!String(summary.executiveSummary || '').trim();
-  const hasPurposeSummary = !!String(summary.purposeSummary || '').trim();
- const hasSuppliers =
-  !!String(sipoc.suppliers || '').trim() ||
-  safeArray(asIsProcess.suppliers_inputs).some(r => String(r.supplier || '').trim());
-
-const hasInputs =
-  !!String(sipoc.inputs || '').trim() ||
-  safeArray(asIsProcess.suppliers_inputs).some(r => safeArray(r.inputs).length || String(r.input || '').trim());
-
-const hasProcess =
-  !!String(sipoc.process || '').trim() ||
-  activities.length > 0;
-
-const hasOutputs =
-  !!String(sipoc.outputs || '').trim() ||
-  safeArray(asIsProcess.outputs_customers).some(r => String(r.output || '').trim());
-
-const hasCustomers =
-  !!String(sipoc.customers || '').trim() ||
-  safeArray(asIsProcess.outputs_customers).some(r => safeArray(r.customers).length || String(r.customer || '').trim());
-  const hasActors = !!String(sipoc.actors || '').trim() || activityHasActors;
-  const hasActivities = activities.length > 0 || hasProcess;
-  const hasSipocAny = hasSuppliers || hasInputs || hasProcess || hasOutputs || hasCustomers || hasActors;
-
   const warnings = [];
-  if(!hasSuppliers) warnings.push('Faltan suppliers preliminares en el brief.');
-  if(!hasInputs) warnings.push('Faltan inputs preliminares en el brief.');
-  if(!hasOutputs) warnings.push('Faltan outputs preliminares en el brief.');
-  if(!hasCustomers) warnings.push('Faltan customers preliminares en el brief.');
-  if(!hasActors) warnings.push('Faltan actores clave en el brief.');
 
-  if(!hasExecutiveSummary) issues.push('Falta resumen ejecutivo del brief.');
-  if(!hasPurposeSummary) issues.push('Falta finalidad del proceso en el brief.');
-  if(!hasActivities && !hasSipocAny) issues.push('Faltan actividades preliminares o información SIPOC mínima del brief.');
-  if(sourceActivities.length >= 10 && activities.length < sourceActivities.length){
-  warnings.push(
-    `Alerta de granularidad: el consolidado tiene ${sourceActivities.length} actividades estructurales y el Brief conserva ${activities.length}. Revisa as_is_process.activities.`
-  );
-}
+  const asIsProcess = brief.as_is_process || {};
+  const activities = safeArray(asIsProcess.activities);
+  const suppliersInputs = safeArray(asIsProcess.suppliers_inputs);
+  const outputsCustomers = safeArray(asIsProcess.outputs_customers);
+  const additionalInformation = safeArray(asIsProcess.additional_information);
+
+  if(!brief.as_is_process){
+    issues.push({
+      type: 'missing_block',
+      field: 'as_is_process',
+      message: 'Falta el bloque as_is_process.',
+      where: 'as_is_process',
+      suggestion: 'Verifica que la respuesta IA tenga la raíz as_is_process.'
+    });
+  }
+
+  if(!activities.length){
+    issues.push({
+      type: 'missing_list',
+      field: 'as_is_process.activities',
+      message: 'No hay actividades cargadas.',
+      where: 'as_is_process.activities',
+      suggestion: 'Revisa si la IA omitió las actividades del extractor o del consolidado.'
+    });
+  }
+
+  if(!suppliersInputs.length){
+    warnings.push({
+      type: 'missing_list',
+      field: 'as_is_process.suppliers_inputs',
+      message: 'No hay relaciones proveedor/entrada.',
+      where: 'as_is_process.suppliers_inputs',
+      suggestion: 'Completa proveedor y entradas si el proceso las requiere.'
+    });
+  }
+
+  if(!outputsCustomers.length){
+    warnings.push({
+      type: 'missing_list',
+      field: 'as_is_process.outputs_customers',
+      message: 'No hay relaciones salida/cliente.',
+      where: 'as_is_process.outputs_customers',
+      suggestion: 'Completa salidas y clientes si el proceso las requiere.'
+    });
+  }
+
+  activities.forEach((activity, index) => {
+    const base = `as_is_process.activities[${index}]`;
+
+    ['id','name','actor','type','description'].forEach(field => {
+      const value = activity?.[field];
+      if(isBriefPendingValue(value)){
+        issues.push({
+          type: 'field_empty_or_pending',
+          field: `${base}.${field}`,
+          message: String(value ?? '').trim() || 'Campo vacío',
+          where: `${base}.${field}`,
+          suggestion: 'Completa este campo dentro de la actividad correspondiente.'
+        });
+      }
+    });
+
+    ['inputs_used','outputs_generated','previous','next','clarifying_notes'].forEach(field => {
+      const value = activity?.[field];
+
+      if(Array.isArray(value)){
+        value.forEach((item, itemIndex) => {
+          if(isBriefPendingValue(item)){
+            issues.push({
+              type: 'field_empty_or_pending',
+              field: `${base}.${field}[${itemIndex}]`,
+              message: String(item ?? '').trim() || 'Campo vacío',
+              where: `${base}.${field}[${itemIndex}]`,
+              suggestion: 'Corrige o completa el elemento pendiente dentro de la lista.'
+            });
+          }
+        });
+      }else if(isBriefPendingValue(value)){
+        issues.push({
+          type: 'field_empty_or_pending',
+          field: `${base}.${field}`,
+          message: String(value ?? '').trim() || 'Campo vacío',
+          where: `${base}.${field}`,
+          suggestion: 'Corrige o completa este campo.'
+        });
+      }
+    });
+  });
+
+  suppliersInputs.forEach((row, index) => {
+    const base = `as_is_process.suppliers_inputs[${index}]`;
+
+    if(isBriefPendingValue(row?.supplier)){
+      warnings.push({
+        type: 'field_empty_or_pending',
+        field: `${base}.supplier`,
+        message: String(row?.supplier ?? '').trim() || 'Proveedor vacío',
+        where: `${base}.supplier`,
+        suggestion: 'Completa el proveedor asociado a esta entrada.'
+      });
+    }
+
+    safeArray(row?.inputs).forEach((input, inputIndex) => {
+      if(isBriefPendingValue(input)){
+        warnings.push({
+          type: 'field_empty_or_pending',
+          field: `${base}.inputs[${inputIndex}]`,
+          message: String(input ?? '').trim() || 'Entrada vacía',
+          where: `${base}.inputs[${inputIndex}]`,
+          suggestion: 'Completa o corrige la entrada asociada al proveedor.'
+        });
+      }
+    });
+  });
+
+  outputsCustomers.forEach((row, index) => {
+    const base = `as_is_process.outputs_customers[${index}]`;
+
+    if(isBriefPendingValue(row?.output)){
+      warnings.push({
+        type: 'field_empty_or_pending',
+        field: `${base}.output`,
+        message: String(row?.output ?? '').trim() || 'Salida vacía',
+        where: `${base}.output`,
+        suggestion: 'Completa la salida asociada.'
+      });
+    }
+
+    safeArray(row?.customers).forEach((customer, customerIndex) => {
+      if(isBriefPendingValue(customer)){
+        warnings.push({
+          type: 'field_empty_or_pending',
+          field: `${base}.customers[${customerIndex}]`,
+          message: String(customer ?? '').trim() || 'Cliente vacío',
+          where: `${base}.customers[${customerIndex}]`,
+          suggestion: 'Completa o corrige el cliente asociado a la salida.'
+        });
+      }
+    });
+  });
+
+  additionalInformation.forEach((row, index) => {
+    const base = `as_is_process.additional_information[${index}]`;
+
+    ['category','content','source'].forEach(field => {
+      if(isBriefPendingValue(row?.[field])){
+        warnings.push({
+          type: 'field_empty_or_pending',
+          field: `${base}.${field}`,
+          message: String(row?.[field] ?? '').trim() || 'Campo vacío',
+          where: `${base}.${field}`,
+          suggestion: 'Completa este campo si la información adicional debe conservarse.'
+        });
+      }
+    });
+  });
+
+  const allIssues = [...issues, ...warnings];
 
   brief.validation = Object.assign({}, brief.validation || {}, {
-  warnings,
-  blockingIssues: issues,
-  canProceedToAnalysis: issues.length === 0,
-  sourceActivitiesDetected: sourceActivities.length,
-  briefActivitiesDetected: activities.length
-});
+    warnings,
+    blockingIssues: issues,
+    canProceedToAnalysis: issues.length === 0,
+    sourceActivitiesDetected: sgmpGetStructuralSourceActivities().length,
+    briefActivitiesDetected: activities.length
+  });
 
-  return issues;
+  return allIssues;
 }
-
+  
 function renderBriefValidation(){
-  const brief = getBriefPayload();
-  const issues = evaluateBriefCompleteness(brief);
-  const warnings = safeArray(brief?.validation?.warnings || []);
-  const detectedGaps = safeArray(brief?.informationGaps || brief?.infoGaps || []);
-  const gapList = [...issues, ...warnings, ...detectedGaps];
-  const msgId = 'briefValidationMsg';
-  if(qs('briefGapsList')){
-    qs('briefGapsList').innerHTML = gapList.length
-      ? '<ul style="margin:0;padding-left:18px">' + gapList.map(item => '<li>' + escapeHtml(typeof item === 'string' ? item : JSON.stringify(item)) + '</li>').join('') + '</ul>'
-      : 'Sin vacíos detectados.';
+  const brief = state.brief || state.briefReview?.raw || {};
+  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
+
+  const approved = !!state.briefReview?.approved;
+
+  if(qs('briefApprovedKpi')){
+    qs('briefApprovedKpi').textContent = approved ? 'Sí' : 'No';
   }
-  if(qs('briefGapsKpi')) qs('briefGapsKpi').textContent = gapList.length;
-  if(!brief){ showMsg(msgId,'warn','Estado: brief incompleto. Aún no existe un brief utilizable.'); refreshCargaFlowState(); return issues; }
-  if(issues.length){ showMsg(msgId,'warn','Estado: brief incompleto. Revisa antes de aprobar:\n- ' + issues.join('\n- ')); }
-  else if(warnings.length){ showMsg(msgId,'warn','Estado: brief aprobable con advertencias:\n- ' + warnings.join('\n- ')); }
-  else { showMsg(msgId,'ok','Estado: brief completo. Puede aprobarse para habilitar el análisis.'); }
-  refreshCargaFlowState();
-  return issues;
+
+  if(qs('briefGapsKpi')){
+    qs('briefGapsKpi').textContent = issues.length;
+  }
+
+  const list = qs('briefGapsList');
+
+  if(list){
+    if(!issues.length){
+      list.innerHTML = 'Sin vacíos detectados.';
+    }else{
+      list.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${issues.map((issue, index) => `
+            <div style="padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10)">
+              <strong>${index + 1}. Vacío:</strong> ${escapeHtml(issue.message)}<br/>
+              <strong>Dónde buscarlo:</strong> <code>${escapeHtml(issue.where)}</code>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  if(qs('briefValidationMsg')){
+    if(issues.length){
+      showMsg(
+        'briefValidationMsg',
+        'warn',
+        `Estado: Brief con ${issues.length} vacío(s) o pendiente(s). Revisa la lista antes de aplicar al LMP.`
+      );
+    }else{
+      showMsg('briefValidationMsg','ok','Estado: Brief sin vacíos detectados. Puedes aplicarlo al LMP.');
+    }
+  }
 }
 
 function evaluateAnalysisCompleteness(data){
@@ -7805,6 +7978,94 @@ async function generateBriefPromptFromMaster(){
   }
 }
 
+function isBriefPendingValue(value){
+  const text = String(value ?? '').trim().toLowerCase();
+
+  if(!text) return true;
+
+  const pendingPatterns = [
+    'pendiente',
+    'pendiente_validacion',
+    'pendiente validacion',
+    'pendiente de validación',
+    'pendiente de validacion',
+    'no visible',
+    'no identificado',
+    'no identificada',
+    'no disponible',
+    'no existente',
+    'no aplica',
+    'n/a',
+    'sin dato',
+    'sin datos',
+    'sin información',
+    'sin informacion',
+    'no se observa',
+    'no se evidencia',
+    'no definido',
+    'no definida',
+    'por validar',
+    'requiere validación',
+    'requiere validacion'
+  ];
+
+  return pendingPatterns.some(pattern => text.includes(pattern));
+}
+
+function getBriefPathLabel(path){
+  return path.replace(/\[(\d+)\]/g, '.$1');
+}
+
+function collectBriefFieldIssues(value, path = 'brief', issues = []){
+  if(Array.isArray(value)){
+    value.forEach((item, index) => {
+      collectBriefFieldIssues(item, `${path}[${index}]`, issues);
+    });
+    return issues;
+  }
+
+  if(value && typeof value === 'object'){
+    Object.entries(value).forEach(([key, child]) => {
+      collectBriefFieldIssues(child, `${path}.${key}`, issues);
+    });
+    return issues;
+  }
+
+  if(isBriefPendingValue(value)){
+    issues.push({
+      type: 'field_empty_or_pending',
+      field: getBriefPathLabel(path),
+      message: String(value ?? '').trim() || 'Campo vacío',
+      where: getBriefPathLabel(path),
+      suggestion: 'Completa o corrige este campo directamente en el JSON pegado del Brief.'
+    });
+  }
+
+  return issues;
+}
+
+function normalizeBriefIssuesList(issues){
+  return safeArray(issues).map(issue => {
+    if(typeof issue === 'string'){
+      return {
+        type: 'general',
+        field: 'brief',
+        message: issue,
+        where: 'brief',
+        suggestion: 'Revisa el JSON del Brief.'
+      };
+    }
+
+    return {
+      type: issue.type || 'general',
+      field: issue.field || issue.where || 'brief',
+      message: issue.message || 'Vacío detectado',
+      where: issue.where || issue.field || 'brief',
+      suggestion: issue.suggestion || 'Revisa y completa este dato en el JSON del Brief.'
+    };
+  });
+}  
+  
 function analyzeBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value?.trim() || '';
 
@@ -7879,18 +8140,48 @@ function applyBriefToLmp(forceApply = false){
 
     renderBriefValidation();
 
-    if(typeof seedAsIsBuilderFromBrief === 'function'){
-      seedAsIsBuilderFromBrief(false);
-    }
+    const loader = qs('briefApplyLoader');
+    const applyBtn = qs('btnApplyBrief');
 
-    refreshCargaFlowState();
-    updateTopStatus();
+    if(loader) loader.classList.remove('hidden');
+    if(applyBtn) applyBtn.disabled = true;
 
-    if(issues.length){
-      showMsg('briefIaMsg','warn','Brief aplicado al LMP con vacíos pendientes. Revisa Proceso AS-IS y valida posibles relaciones sueltas.');
-    }else{
-      showMsg('briefIaMsg','ok','Brief aprobado y aplicado al LMP correctamente. Revisa la sección Proceso AS-IS.');
-    }
+    showMsg('briefIaMsg','ok','Brief validado. Cargando información al Proceso AS-IS...');
+
+    setTimeout(function(){
+      try{
+        if(typeof seedAsIsBuilderFromBrief === 'function'){
+          seedAsIsBuilderFromBrief(false);
+        }
+
+        if(typeof renderAsIsActivities === 'function'){
+          renderAsIsActivities();
+        }
+
+        if(typeof renderAsIsPreview === 'function'){
+          renderAsIsPreview();
+        }
+
+        refreshCargaFlowState();
+        updateTopStatus();
+
+        if(loader) loader.classList.add('hidden');
+        if(applyBtn) applyBtn.disabled = false;
+
+        if(issues.length){
+          showMsg('briefIaMsg','warn','Brief aplicado al LMP con vacíos pendientes. Revisa Proceso AS-IS.');
+        }else{
+          showMsg('briefIaMsg','ok','Brief aprobado y aplicado al LMP correctamente.');
+        }
+
+        showSection('asis');
+
+      }catch(innerError){
+        if(loader) loader.classList.add('hidden');
+        if(applyBtn) applyBtn.disabled = false;
+        showMsg('briefIaMsg','err','No fue posible cargar el Brief en Proceso AS-IS. Detalle: ' + innerError.message);
+      }
+    }, 900);
 
   }catch(error){
     showMsg('briefIaMsg','err','No fue posible aplicar el Brief al LMP. Detalle: ' + error.message);
