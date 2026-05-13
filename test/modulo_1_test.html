@@ -1878,6 +1878,22 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
     line-height:1.42 !important;
     tab-size:2 !important;
   }
+
+.brief-gap-target{
+  margin:4px 0 5px;
+  padding:5px 7px;
+  border-radius:8px;
+  background:rgba(0,194,255,.10);
+  border:1px solid rgba(0,194,255,.20);
+  color:#FFFFFF;
+  font-size:.84rem;
+  line-height:1.3;
+}
+
+.brief-gap-target strong{
+  color:#DDF5FF;
+}
+  
 </style>
   
 </head>
@@ -3807,6 +3823,7 @@ var SGMP_STAGE_CONFIG = {};
 window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
 var SGMP_LOADED  = false;
+window.SGMP_AI_MANUAL_MODE = true;
 
 function sgmpLoadPrompts(moduleCode, onReady, forceReload) {
   var cacheKey = 'sgmp_p_' + moduleCode;
@@ -3967,6 +3984,9 @@ function sgmpExtractAIText(res){
 }
 
 async function sgmpCallAI(stageCode, prompt){
+  if(window.SGMP_AI_MANUAL_MODE){
+  throw new Error('Modo manual activo: la conexión directa con IA está deshabilitada temporalmente.');
+}
   const payload = {
     session_id: sgmpSessionId(),
     user_id: sgmpUserId() || 'u_admin',
@@ -8212,9 +8232,70 @@ function evaluateBriefCompleteness(normalizedBrief){
   return issues;
 }
 
-function getBriefIssueHelper(issue){
+function getBriefIssueHelper(issue, brief){
   const type = issue?.type || '';
   const message = issue?.message || 'Vacío estructural detectado';
+  const where = issue?.where || issue?.field || '';
+
+  const asIs = brief?.as_is_process || {};
+  const activities = safeArray(asIs.activities);
+  const suppliersInputs = safeArray(asIs.suppliers_inputs);
+  const outputsCustomers = safeArray(asIs.outputs_customers);
+
+  function indexFromPath(path, blockName){
+    const regex = new RegExp(blockName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\\\[(\\\\d+)\\\\]');
+    const match = String(path || '').match(regex);
+    return match ? Number(match[1]) : -1;
+  }
+
+  function extractFromMessage(){
+    const text = String(message || '');
+
+    if(text.includes(' · ')){
+      return text.split(' · ').slice(1).join(' · ').trim();
+    }
+
+    if(text.includes(':')){
+      return text.split(':').slice(1).join(':').trim();
+    }
+
+    return '';
+  }
+
+  function targetFromPath(){
+    const activityIndex = indexFromPath(where, 'activities');
+
+    if(activityIndex >= 0 && activities[activityIndex]){
+      const activity = activities[activityIndex];
+      return activity.name || activity.id || `Actividad índice ${activityIndex}`;
+    }
+
+    const supplierIndex = indexFromPath(where, 'suppliers_inputs');
+
+    if(supplierIndex >= 0 && suppliersInputs[supplierIndex]){
+      const row = suppliersInputs[supplierIndex];
+      const inputs = safeArray(row.inputs).filter(Boolean).join(', ');
+      const supplier = row.supplier || 'proveedor pendiente';
+      return inputs
+        ? `Entrada: ${inputs} | Proveedor actual: ${supplier}`
+        : `Relación proveedor/entrada índice ${supplierIndex}`;
+    }
+
+    const outputIndex = indexFromPath(where, 'outputs_customers');
+
+    if(outputIndex >= 0 && outputsCustomers[outputIndex]){
+      const row = outputsCustomers[outputIndex];
+      const output = row.output || 'salida pendiente';
+      const customers = safeArray(row.customers).filter(Boolean).join(', ');
+      return customers
+        ? `Salida: ${output} | Cliente: ${customers}`
+        : `Salida: ${output}`;
+    }
+
+    return extractFromMessage();
+  }
+
+  const target = targetFromPath();
 
   const helpers = {
     activity_without_input_connection: {
@@ -8274,10 +8355,15 @@ function getBriefIssueHelper(issue){
     }
   };
 
-  return helpers[type] || {
+  const base = helpers[type] || {
     title: message,
     what: message,
     how: issue?.suggestion || 'Revisa este campo en el JSON del Brief y complétalo si corresponde.'
+  };
+
+  return {
+    ...base,
+    target
   };
 }
   
@@ -8312,7 +8398,7 @@ function renderBriefValidation(){
         '<div class="brief-gap-list">' +
           issues.map((issue, index) => {
             const where = issue.where || issue.field || 'as_is_process';
-            const helper = getBriefIssueHelper(issue);
+            const helper = getBriefIssueHelper(issue, brief);
             const encodedPath = encodeURIComponent(where);
 
             return (
@@ -8321,6 +8407,7 @@ function renderBriefValidation(){
 
                 '<div class="brief-gap-body">' +
                   '<div class="brief-gap-title">' + escapeHtml(helper.title) + '</div>' +
+(helper.target ? '<div class="brief-gap-target"><strong>Elemento afectado:</strong> ' + escapeHtml(helper.target) + '</div>' : '') +
 
                   '<div class="brief-gap-human">' +
                     '<strong>Qué falta:</strong> ' + escapeHtml(helper.what) +
@@ -8567,63 +8654,40 @@ ${hardening}
 ${dynamicSection}`;
 }
 
-async function generateBriefPromptFromMaster(){
+function generateBriefPromptFromMaster(){
   const btn = qs('btnGenerateBriefPrompt');
 
   try{
     if(btn) btn.disabled = true;
 
-    showLoader('Generando Brief con IA...', 'Etapa A · Conectando con el backend SGMP y procesando la respuesta.');
-
-    if(typeof sgmpLoadRuntimeConfig === 'function'){
-      await sgmpLoadRuntimeConfig();
-    }
-
     const master = state.master || mergeMaster();
+    state.master = master;
+
     const prompt = buildBriefPrompt(master);
 
-    // En flujo automático NO se muestra prompt manual
-    if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
-
-    console.log('[LMP Brief] API global:', sgmpGlobalApiEnabled());
-    console.log('[LMP Brief] Stage API:', sgmpStageUseApi('lmp_brief'));
-    console.log('[LMP Brief] Ejecutando stage:', 'lmp_brief');
-
-    showMsg('cargaMsg','ok','Ejecutando IA para Brief...');
-
-    const result = await sgmpCallAI('lmp_brief', prompt);
-    const text = sgmpAIResultText(result);
-
-    console.log('[LMP Brief] Resultado API:', result);
-    console.log('[LMP Brief] Texto recibido:', text);
-
-    if(!text || !String(text).trim()){
-      throw new Error('La API respondió vacío para lmp_brief.');
+    if(qs('briefPromptEditor')){
+      qs('briefPromptEditor').value = prompt;
     }
 
-    if(qs('briefResponseEditor')){
-      qs('briefResponseEditor').value = text;
+    if(qs('masterEditor') && !qs('masterEditor').value.trim()){
+      qs('masterEditor').value = JSON.stringify(master, null, 2);
     }
 
-    processBriefResponse();
     refreshCargaFlowState();
-
-    showMsg('cargaMsg','ok','Brief generado y procesado automáticamente.');
-
-  }catch(error){
-    console.error('[LMP Brief] Error flujo automático:', error);
-    refreshCargaFlowState();
-
-    // Cero fallback manual
-    if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
 
     showMsg(
       'cargaMsg',
+      'ok',
+      'Prompt A generado en modo manual. Cópialo, ejecútalo externamente con IA y pega el JSON resultante en “JSON de Brief generado por IA”.'
+    );
+
+  }catch(error){
+    showMsg(
+      'cargaMsg',
       'err',
-      'No se ejecutó el flujo automático del Brief. Detalle: ' + error.message
+      'No fue posible generar el Prompt A en modo manual. Detalle: ' + error.message
     );
   }finally{
-    hideLoader();
     if(btn) btn.disabled = false;
   }
 }
@@ -8944,9 +9008,9 @@ function analyzeBriefResponse(){
     renderBriefValidation();
 
     if(issues.length){
-      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron pendientes. Revisa el Estado del Brief antes de aplicar al LMP.');
+      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron vacíos estructurales. Revisa el Estado del Brief antes de aplicar al LMP.');
     }else{
-      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron pendientes estructurales. Puedes aplicarlo al LMP.');
+      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron vacíos estructurales. Puedes aplicarlo al LMP.');
     }
 
     refreshCargaFlowState();
@@ -9039,8 +9103,8 @@ function showBriefApplyConfirmation(issues){
   const total = Array.isArray(issues) ? issues.length : 0;
 
   const message = [
-    `Se detectaron ${total} vacío(s) o alerta(s) en el Brief.`,
-    'Puedes cancelar para seguir editando el JSON o continuar y aplicar el Brief al LMP de todos modos.',
+    `Se detectaron ${total} vacío(s) estructural(es) en el Brief.`
+    'Puedes cancelar para seguir corrigiendo el Brief o continuar y aplicarlo al LMP bajo validación.'
     'Advertencia: la información faltante podría dejar actividades, relaciones o campos sueltos y afectar pasos posteriores.'
   ].join('\n');
 
