@@ -7537,19 +7537,82 @@ function normalizeBriefPayload(parsed){
 }
 
 function evaluateBriefCompleteness(normalizedBrief){
-  const brief = normalizedBrief || {};
-  const issues = [];
-  const warnings = [];
-
+  const brief = stripDescriptionFromAsIsProcess(normalizedBrief || {});
   const asIsProcess = brief.as_is_process || {};
+  const issues = [];
+
   const activities = safeArray(asIsProcess.activities);
   const suppliersInputs = safeArray(asIsProcess.suppliers_inputs);
   const outputsCustomers = safeArray(asIsProcess.outputs_customers);
-  const additionalInformation = safeArray(asIsProcess.additional_information);
+
+  const normalizeKey = (value) => String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+  const isPending = (value) => {
+    const text = normalizeKey(value);
+    return (
+      !text ||
+      text === 'pendiente_validacion' ||
+      text === 'validacion_pendiente' ||
+      text === 'pendiente validacion' ||
+      text === 'pendiente de validacion'
+    );
+  };
+
+  const validText = (value) => !isPending(value);
+
+  const validArrayItems = (arr) => {
+    return safeArray(arr).filter(item => validText(item));
+  };
+
+  const hasValidConnection = (arr) => validArrayItems(arr).length > 0;
+
+  const countValidConnections = (...arrays) => {
+    return arrays.reduce((total, arr) => total + validArrayItems(arr).length, 0);
+  };
+
+  const activityNames = new Map();
+  const usedInputs = new Set();
+  const generatedOutputs = new Set();
+
+  activities.forEach((activity, index) => {
+    const nameKey = normalizeKey(activity?.name);
+
+    if(nameKey){
+      activityNames.set(nameKey, index);
+    }
+
+    validArrayItems(activity?.inputs_used).forEach(input => {
+      usedInputs.add(normalizeKey(input));
+    });
+
+    validArrayItems(activity?.outputs_generated).forEach(output => {
+      generatedOutputs.add(normalizeKey(output));
+    });
+  });
+
+  const registeredInputs = new Set();
+  suppliersInputs.forEach(row => {
+    validArrayItems(row?.inputs).forEach(input => {
+      registeredInputs.add(normalizeKey(input));
+    });
+  });
+
+  const registeredOutputs = new Set();
+  outputsCustomers.forEach(row => {
+    if(validText(row?.output)){
+      registeredOutputs.add(normalizeKey(row.output));
+    }
+  });
 
   if(!brief.as_is_process){
     issues.push({
       type: 'missing_block',
+      level: 'critical',
       field: 'as_is_process',
       message: 'Falta el bloque as_is_process.',
       where: 'as_is_process',
@@ -7559,98 +7622,186 @@ function evaluateBriefCompleteness(normalizedBrief){
 
   if(!activities.length){
     issues.push({
-      type: 'missing_list',
+      type: 'missing_activities',
+      level: 'critical',
       field: 'as_is_process.activities',
       message: 'No hay actividades cargadas.',
       where: 'as_is_process.activities',
-      suggestion: 'Revisa si la IA omitió las actividades del extractor o del consolidado.'
-    });
-  }
-
-  if(!suppliersInputs.length){
-    warnings.push({
-      type: 'missing_list',
-      field: 'as_is_process.suppliers_inputs',
-      message: 'No hay relaciones proveedor/entrada.',
-      where: 'as_is_process.suppliers_inputs',
-      suggestion: 'Completa proveedor y entradas si el proceso las requiere.'
-    });
-  }
-
-  if(!outputsCustomers.length){
-    warnings.push({
-      type: 'missing_list',
-      field: 'as_is_process.outputs_customers',
-      message: 'No hay relaciones salida/cliente.',
-      where: 'as_is_process.outputs_customers',
-      suggestion: 'Completa salidas y clientes si el proceso las requiere.'
+      suggestion: 'Revisa si el Prompt A omitió las actividades del extractor o de la entrevista.'
     });
   }
 
   activities.forEach((activity, index) => {
     const base = `as_is_process.activities[${index}]`;
+    const nameLabel = validText(activity?.name) ? ` · ${activity.name}` : '';
 
-   ['id','name','actor','type'].forEach(field => {
-      const value = activity?.[field];
-      if(isBriefPendingValue(value)){
+    if(!validText(activity?.name)){
+      issues.push({
+        type: 'activity_without_name',
+        level: 'critical',
+        field: `${base}.name`,
+        message: 'Actividad sin nombre.',
+        where: `${base}.name`,
+        suggestion: 'Completa el nombre de la actividad.'
+      });
+    }
+
+    if(!validText(activity?.actor)){
+      issues.push({
+        type: 'activity_without_actor',
+        level: 'critical',
+        field: `${base}.actor`,
+        message: `Actividad sin actor${nameLabel}`,
+        where: `${base}.actor`,
+        suggestion: 'Completa el actor responsable de la actividad.'
+      });
+    }
+
+    if(!validText(activity?.type)){
+      issues.push({
+        type: 'activity_without_type',
+        level: 'critical',
+        field: `${base}.type`,
+        message: `Actividad sin tipo${nameLabel}`,
+        where: `${base}.type`,
+        suggestion: 'Define si corresponde a activity o decision.'
+      });
+    }
+
+    const hasInputConnection =
+      hasValidConnection(activity?.previous) ||
+      hasValidConnection(activity?.inputs_used);
+
+    const hasOutputConnection =
+      hasValidConnection(activity?.next) ||
+      hasValidConnection(activity?.outputs_generated);
+
+    if(!hasInputConnection){
+      issues.push({
+        type: 'activity_without_input_connection',
+        level: 'critical',
+        field: `${base}.previous / ${base}.inputs_used`,
+        message: `Actividad sin conexión de entrada${nameLabel}`,
+        where: `${base}.previous / ${base}.inputs_used`,
+        suggestion: 'Debe tener al menos una actividad previa o una entrada usada.'
+      });
+    }
+
+    if(!hasOutputConnection){
+      issues.push({
+        type: 'activity_without_output_connection',
+        level: 'critical',
+        field: `${base}.next / ${base}.outputs_generated`,
+        message: `Actividad sin conexión de salida${nameLabel}`,
+        where: `${base}.next / ${base}.outputs_generated`,
+        suggestion: 'Debe tener al menos una actividad siguiente o una salida generada.'
+      });
+    }
+
+    validArrayItems(activity?.previous).forEach((prev, prevIndex) => {
+      if(!activityNames.has(normalizeKey(prev))){
         issues.push({
-          type: 'field_empty_or_pending',
-          field: `${base}.${field}`,
-          message: String(value ?? '').trim() || 'Campo vacío',
-          where: `${base}.${field}`,
-          suggestion: 'Completa este campo dentro de la actividad correspondiente.'
+          type: 'previous_activity_not_found',
+          level: 'warning',
+          field: `${base}.previous[${prevIndex}]`,
+          message: `Conexión previa no encontrada${nameLabel}: ${prev}`,
+          where: `${base}.previous[${prevIndex}]`,
+          suggestion: 'Verifica que el nombre coincida con una actividad existente.'
         });
       }
     });
 
-    ['inputs_used','outputs_generated','previous','next','clarifying_notes'].forEach(field => {
-      const value = activity?.[field];
-
-      if(Array.isArray(value)){
-        value.forEach((item, itemIndex) => {
-          if(isBriefPendingValue(item)){
-            issues.push({
-              type: 'field_empty_or_pending',
-              field: `${base}.${field}[${itemIndex}]`,
-              message: String(item ?? '').trim() || 'Campo vacío',
-              where: `${base}.${field}[${itemIndex}]`,
-              suggestion: 'Corrige o completa el elemento pendiente dentro de la lista.'
-            });
-          }
-        });
-      }else if(isBriefPendingValue(value)){
+    validArrayItems(activity?.next).forEach((next, nextIndex) => {
+      if(!activityNames.has(normalizeKey(next))){
         issues.push({
-          type: 'field_empty_or_pending',
-          field: `${base}.${field}`,
-          message: String(value ?? '').trim() || 'Campo vacío',
-          where: `${base}.${field}`,
-          suggestion: 'Corrige o completa este campo.'
+          type: 'next_activity_not_found',
+          level: 'warning',
+          field: `${base}.next[${nextIndex}]`,
+          message: `Conexión siguiente no encontrada${nameLabel}: ${next}`,
+          where: `${base}.next[${nextIndex}]`,
+          suggestion: 'Verifica que el nombre coincida con una actividad existente.'
         });
       }
     });
+
+    validArrayItems(activity?.inputs_used).forEach((input, inputIndex) => {
+      if(!registeredInputs.has(normalizeKey(input))){
+        issues.push({
+          type: 'activity_input_not_registered',
+          level: 'warning',
+          field: `${base}.inputs_used[${inputIndex}]`,
+          message: `Entrada usada no registrada en proveedores/entradas${nameLabel}: ${input}`,
+          where: `${base}.inputs_used[${inputIndex}] / as_is_process.suppliers_inputs[].inputs`,
+          suggestion: 'Registra esta entrada en proveedores/entradas o corrige el nombre.'
+        });
+      }
+    });
+
+    validArrayItems(activity?.outputs_generated).forEach((output, outputIndex) => {
+      if(!registeredOutputs.has(normalizeKey(output))){
+        issues.push({
+          type: 'activity_output_not_registered',
+          level: 'warning',
+          field: `${base}.outputs_generated[${outputIndex}]`,
+          message: `Salida generada no registrada en salidas/clientes${nameLabel}: ${output}`,
+          where: `${base}.outputs_generated[${outputIndex}] / as_is_process.outputs_customers[].output`,
+          suggestion: 'Registra esta salida en salidas/clientes o corrige el nombre.'
+        });
+      }
+    });
+
+    if(normalizeKey(activity?.type) === 'decision'){
+      const decisionOutputs = countValidConnections(activity?.next, activity?.outputs_generated);
+
+      if(decisionOutputs < 2){
+        issues.push({
+          type: 'decision_without_two_outputs',
+          level: 'warning',
+          field: `${base}.next / ${base}.outputs_generated`,
+          message: `Decisión con bifurcación incompleta${nameLabel}`,
+          where: `${base}.next / ${base}.outputs_generated`,
+          suggestion: 'Una decisión debería tener al menos dos rutas de salida.'
+        });
+      }
+    }
   });
 
   suppliersInputs.forEach((row, index) => {
     const base = `as_is_process.suppliers_inputs[${index}]`;
 
-    if(isBriefPendingValue(row?.supplier)){
-      warnings.push({
-        type: 'field_empty_or_pending',
+    if(!validText(row?.supplier)){
+      issues.push({
+        type: 'supplier_without_name',
+        level: 'critical',
         field: `${base}.supplier`,
-        message: String(row?.supplier ?? '').trim() || 'Proveedor vacío',
+        message: 'Entrada con proveedor pendiente o no definido.',
         where: `${base}.supplier`,
-        suggestion: 'Completa el proveedor asociado a esta entrada.'
+        suggestion: 'Completa el proveedor asociado a la entrada.'
       });
     }
 
-    safeArray(row?.inputs).forEach((input, inputIndex) => {
-      if(isBriefPendingValue(input)){
-        warnings.push({
-          type: 'field_empty_or_pending',
+    const inputs = validArrayItems(row?.inputs);
+
+    if(!inputs.length){
+      issues.push({
+        type: 'supplier_without_input',
+        level: 'critical',
+        field: `${base}.inputs`,
+        message: 'Proveedor sin entrada asociada.',
+        where: `${base}.inputs`,
+        suggestion: 'Agrega al menos una entrada para este proveedor.'
+      });
+    }
+
+    inputs.forEach((input, inputIndex) => {
+      if(!usedInputs.has(normalizeKey(input))){
+        issues.push({
+          type: 'input_without_activity_connection',
+          level: 'critical',
           field: `${base}.inputs[${inputIndex}]`,
-          message: String(input ?? '').trim() || 'Entrada vacía',
-          where: `${base}.inputs[${inputIndex}]`,
-          suggestion: 'Completa o corrige la entrada asociada al proveedor.'
+          message: `Entrada sin conexión con actividad: ${input}`,
+          where: `${base}.inputs[${inputIndex}] / as_is_process.activities[].inputs_used`,
+          suggestion: 'La entrada debe alimentar al menos una actividad.'
         });
       }
     });
@@ -7658,57 +7809,56 @@ function evaluateBriefCompleteness(normalizedBrief){
 
   outputsCustomers.forEach((row, index) => {
     const base = `as_is_process.outputs_customers[${index}]`;
+    const output = row?.output;
 
-    if(isBriefPendingValue(row?.output)){
-      warnings.push({
-        type: 'field_empty_or_pending',
+    if(!validText(output)){
+      issues.push({
+        type: 'output_without_name',
+        level: 'critical',
         field: `${base}.output`,
-        message: String(row?.output ?? '').trim() || 'Salida vacía',
+        message: 'Cliente con salida pendiente o no definida.',
         where: `${base}.output`,
-        suggestion: 'Completa la salida asociada.'
+        suggestion: 'Completa la salida asociada al cliente.'
       });
     }
 
-    safeArray(row?.customers).forEach((customer, customerIndex) => {
-      if(isBriefPendingValue(customer)){
-        warnings.push({
-          type: 'field_empty_or_pending',
-          field: `${base}.customers[${customerIndex}]`,
-          message: String(customer ?? '').trim() || 'Cliente vacío',
-          where: `${base}.customers[${customerIndex}]`,
-          suggestion: 'Completa o corrige el cliente asociado a la salida.'
-        });
-      }
-    });
+    const customers = validArrayItems(row?.customers);
+
+    if(validText(output) && !generatedOutputs.has(normalizeKey(output))){
+      issues.push({
+        type: 'output_without_activity_connection',
+        level: 'critical',
+        field: `${base}.output`,
+        message: `Salida sin conexión desde actividad: ${output}`,
+        where: `${base}.output / as_is_process.activities[].outputs_generated`,
+        suggestion: 'La salida debe ser generada por al menos una actividad.'
+      });
+    }
+
+    if(!customers.length){
+      issues.push({
+        type: 'output_without_customer',
+        level: 'critical',
+        field: `${base}.customers`,
+        message: `Salida sin cliente asociado: ${validText(output) ? output : 'pendiente_validacion'}`,
+        where: `${base}.customers`,
+        suggestion: 'Agrega al menos un cliente para esta salida.'
+      });
+    }
   });
 
-  additionalInformation.forEach((row, index) => {
-    const base = `as_is_process.additional_information[${index}]`;
-
-    ['category','content','source'].forEach(field => {
-      if(isBriefPendingValue(row?.[field])){
-        warnings.push({
-          type: 'field_empty_or_pending',
-          field: `${base}.${field}`,
-          message: String(row?.[field] ?? '').trim() || 'Campo vacío',
-          where: `${base}.${field}`,
-          suggestion: 'Completa este campo si la información adicional debe conservarse.'
-        });
-      }
-    });
-  });
-
-  const allIssues = [...issues, ...warnings];
+  const criticalIssues = issues.filter(issue => issue.level === 'critical');
+  const warnings = issues.filter(issue => issue.level === 'warning');
 
   brief.validation = Object.assign({}, brief.validation || {}, {
     warnings,
-    blockingIssues: issues,
-    canProceedToAnalysis: issues.length === 0,
-    sourceActivitiesDetected: sgmpGetStructuralSourceActivities().length,
+    blockingIssues: criticalIssues,
+    canProceedToAnalysis: criticalIssues.length === 0,
+    sourceActivitiesDetected: activities.length,
     briefActivitiesDetected: activities.length
   });
 
-  return allIssues;
+  return issues;
 }
   
 function renderBriefValidation(){
