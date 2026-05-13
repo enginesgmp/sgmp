@@ -7436,19 +7436,40 @@ function evaluateBriefCompleteness(normalizedBrief){
   const brief = normalizedBrief;
   const summary = brief.summary || {};
   const sipoc = brief.sipoc || {};
-  const asIsActivities = sgmpCanonicalizeActivityList(brief.as_is?.activities);
-  const preliminaryActivities = sgmpCanonicalizeActivityList(brief.activities_preliminary);
-  const sourceActivities = sgmpGetStructuralSourceActivities();
-  const activities = sgmpCanonicalizeActivityList([...asIsActivities, ...preliminaryActivities]);
+const asIsProcess = brief.as_is_process || {};
+const asIsProcessActivities = sgmpCanonicalizeActivityList(brief.as_is_process?.activities);
+const asIsActivities = sgmpCanonicalizeActivityList(brief.as_is?.activities);
+const preliminaryActivities = sgmpCanonicalizeActivityList(brief.activities_preliminary);
+const sourceActivities = sgmpGetStructuralSourceActivities();
+
+const activities = sgmpCanonicalizeActivityList([
+  ...asIsProcessActivities,
+  ...asIsActivities,
+  ...preliminaryActivities
+]);
   const activityHasActors = activities.some(item => String((item && typeof item === 'object') ? (item.actor || item.role || item.responsable || item.owner || '') : '').trim());
 
   const hasExecutiveSummary = !!String(summary.executiveSummary || '').trim();
   const hasPurposeSummary = !!String(summary.purposeSummary || '').trim();
-  const hasSuppliers = !!String(sipoc.suppliers || '').trim();
-  const hasInputs = !!String(sipoc.inputs || '').trim();
-  const hasProcess = !!String(sipoc.process || '').trim();
-  const hasOutputs = !!String(sipoc.outputs || '').trim();
-  const hasCustomers = !!String(sipoc.customers || '').trim();
+ const hasSuppliers =
+  !!String(sipoc.suppliers || '').trim() ||
+  safeArray(asIsProcess.suppliers_inputs).some(r => String(r.supplier || '').trim());
+
+const hasInputs =
+  !!String(sipoc.inputs || '').trim() ||
+  safeArray(asIsProcess.suppliers_inputs).some(r => safeArray(r.inputs).length || String(r.input || '').trim());
+
+const hasProcess =
+  !!String(sipoc.process || '').trim() ||
+  activities.length > 0;
+
+const hasOutputs =
+  !!String(sipoc.outputs || '').trim() ||
+  safeArray(asIsProcess.outputs_customers).some(r => String(r.output || '').trim());
+
+const hasCustomers =
+  !!String(sipoc.customers || '').trim() ||
+  safeArray(asIsProcess.outputs_customers).some(r => safeArray(r.customers).length || String(r.customer || '').trim());
   const hasActors = !!String(sipoc.actors || '').trim() || activityHasActors;
   const hasActivities = activities.length > 0 || hasProcess;
   const hasSipocAny = hasSuppliers || hasInputs || hasProcess || hasOutputs || hasCustomers || hasActors;
@@ -7464,16 +7485,18 @@ function evaluateBriefCompleteness(normalizedBrief){
   if(!hasPurposeSummary) issues.push('Falta finalidad del proceso en el brief.');
   if(!hasActivities && !hasSipocAny) issues.push('Faltan actividades preliminares o información SIPOC mínima del brief.');
   if(sourceActivities.length >= 10 && activities.length < sourceActivities.length){
-    issues.push(`Pérdida de granularidad: el JSON maestro tiene ${sourceActivities.length} actividades estructurales y el Brief conserva ${activities.length}.`);
-  }
+  warnings.push(
+    `Alerta de granularidad: el consolidado tiene ${sourceActivities.length} actividades estructurales y el Brief conserva ${activities.length}. Revisa as_is_process.activities.`
+  );
+}
 
   brief.validation = Object.assign({}, brief.validation || {}, {
-    warnings,
-    blockingIssues: issues,
-    canProceedToAnalysis: issues.length === 0,
-    sourceActivitiesDetected: sourceActivities.length,
-    briefActivitiesDetected: activities.length
-  });
+  warnings,
+  blockingIssues: issues,
+  canProceedToAnalysis: issues.length === 0,
+  sourceActivitiesDetected: sourceActivities.length,
+  briefActivitiesDetected: activities.length
+});
 
   return issues;
 }
