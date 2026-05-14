@@ -303,44 +303,6 @@
     .kpi-wrap{grid-template-columns:1fr}
   }
 
-  .brief-apply-loader{
-  margin-top:18px;
-  padding:14px 16px;
-  border-radius:16px;
-  background:linear-gradient(180deg, rgba(0,194,255,.08), rgba(26,86,219,.06));
-  border:1px solid rgba(0,194,255,.22);
-}
-
-.brief-apply-loader-text{
-  color:#0B2E59;
-  font-size:.9rem;
-  font-weight:800;
-  margin-bottom:10px;
-}
-
-.brief-apply-loader-track{
-  width:100%;
-  height:13px;
-  border-radius:999px;
-  overflow:hidden;
-  background:rgba(11,46,89,.10);
-  border:1px solid rgba(11,46,89,.08);
-}
-
-.brief-apply-loader-bar{
-  width:42%;
-  height:100%;
-  border-radius:999px;
-  background:linear-gradient(90deg,#FFFFFF,#00C2FF,#1A56DB,#FFFFFF);
-  background-size:220% 100%;
-  animation:briefApplyLoading 1.15s linear infinite;
-}
-
-@keyframes briefApplyLoading{
-  0%{transform:translateX(-120%);background-position:0% 50%;}
-  100%{transform:translateX(260%);background-position:100% 50%;}
-}
-
 .brief-apply-loader{
   margin-top:14px;
   padding:14px 16px;
@@ -408,83 +370,6 @@
 #briefGapsList::-webkit-scrollbar-thumb:hover{
   background: rgba(255,255,255,.52);
   background-clip: padding-box;
-}
-
-.brief-pending-summary{
-  display:flex;
-  gap:6px;
-  flex-wrap:wrap;
-  margin-bottom:6px;
-  font-size:.84rem;
-  line-height:1.2;
-}
-
-.brief-pending-summary span{
-  background:rgba(255,255,255,.07);
-  border:1px solid rgba(255,255,255,.10);
-  border-radius:999px;
-  padding:4px 8px;
-}
-
-.brief-pending-list{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-
-.brief-pending-item{
-  display:grid;
-  grid-template-columns:24px 1fr;
-  gap:7px;
-  align-items:start;
-  padding:6px 8px;
-  border-radius:8px;
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.10);
-  font-size:.86rem;
-  line-height:1.22;
-}
-
-.brief-pending-item.is-critical{
-  border-left:3px solid #C0392B;
-}
-
-.brief-pending-item.is-warning{
-  border-left:3px solid #F2994A;
-}
-
-.brief-pending-index{
-  width:18px;
-  height:18px;
-  border-radius:999px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:rgba(0,194,255,.16);
-  color:#DDF5FF;
-  font-weight:900;
-  font-size:.68rem;
-  line-height:1;
-  margin-top:1px;
-}
-
-.brief-pending-text{
-  min-width:0;
-  word-break:break-word;
-}
-
-.brief-pending-text strong{
-  font-size:.83rem;
-}
-
-.brief-pending-text code{
-  display:inline-block;
-  margin-top:2px;
-  font-size:.76rem;
-  background:rgba(255,255,255,.08);
-  padding:1px 5px;
-  border-radius:6px;
-  word-break:break-word;
 }
   
 </style>
@@ -8487,7 +8372,34 @@ function getBriefIssueHelper(issue, brief){
     target
   };
 }
-  
+
+function normalizeBriefIssuesList(issues){
+  return safeArray(issues).map(issue => {
+    if(typeof issue === 'string'){
+      return {
+        type: 'general',
+        level: 'critical',
+        field: 'brief',
+        message: issue,
+        where: 'brief',
+        suggestion: 'Revisa el JSON del Brief.'
+      };
+    }
+
+    return {
+      type: issue.type || 'general',
+      level: issue.level || 'critical',
+      field: issue.field || issue.where || 'brief',
+      message: issue.message || 'Vacío estructural detectado',
+      where: issue.where || issue.field || 'brief',
+      suggestion: issue.suggestion || 'Revisa y completa este dato en el JSON del Brief.',
+      searchHint: issue.searchHint || '',
+      affectedValue: issue.affectedValue || '',
+      autoFix: issue.autoFix || null
+    };
+  });
+}
+
 function renderBriefValidation(){
   const brief = stripDescriptionFromAsIsProcess(
     state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
@@ -8827,29 +8739,6 @@ function getBriefPathLabel(path){
   return String(path || '').replace(/\[(\d+)\]/g, '.$1');
 }
 
-function normalizeBriefIssuesList(issues){
-  return safeArray(issues).map(issue => {
-    if(typeof issue === 'string'){
-      return {
-        type: 'general',
-        level: 'critical',
-        field: 'brief',
-        message: issue,
-        where: 'brief',
-        suggestion: 'Revisa el JSON del Brief.'
-      };
-    }
-
-    return {
-      type: issue.type || 'general',
-      level: issue.level || 'critical',
-      field: issue.field || issue.where || 'brief',
-      message: issue.message || 'Vacío estructural detectado',
-      where: issue.where || issue.field || 'brief',
-      suggestion: issue.suggestion || 'Revisa y completa este dato en el JSON del Brief.'
-    };
-  });
-} 
 
 function stripDescriptionFromAsIsProcess(payload){
   if(!payload || typeof payload !== 'object') return payload;
@@ -8902,21 +8791,6 @@ function formatBriefJson(){
   }
 }
 
-function copyBriefPath(path){
-  const cleanPath = String(path || '').trim();
-
-  if(!cleanPath){
-    showMsg('briefIaMsg','warn','No hay ruta para copiar.');
-    return;
-  }
-
-  navigator.clipboard?.writeText(cleanPath).then(() => {
-    showMsg('briefIaMsg','ok','Texto copiado: ' + cleanPath);
-  }).catch(() => {
-    showMsg('briefIaMsg','warn','No se pudo copiar automáticamente. Ruta: ' + cleanPath);
-  });
-}
-
 function getFirstBriefPath(pathText){
   return String(pathText || '')
     .split('/')
@@ -8958,29 +8832,6 @@ function setValueByPath(root, parts, newValue){
 
   ref[parts[parts.length - 1]] = newValue;
   return true;
-}
-
-function parseBriefEditValue(text){
-  const raw = String(text ?? '').trim();
-
-  if(!raw) return '';
-
-  if(
-    raw.startsWith('[') ||
-    raw.startsWith('{') ||
-    raw === 'true' ||
-    raw === 'false' ||
-    raw === 'null' ||
-    /^-?\d+(\.\d+)?$/.test(raw)
-  ){
-    try{
-      return JSON.parse(raw);
-    }catch(_){
-      return raw;
-    }
-  }
-
-  return raw;
 }
 
 function extractIndexFromBriefPath(pathText, blockName){
@@ -9203,94 +9054,7 @@ function openBriefGapEditor(pathText){
 
   openBriefSimpleGapEditor(pathText, 'Campo del Brief');
 }
-
-function applyBriefIssueAutoFix(issue){
-  const editor = qs('briefResponseEditor');
-
-  if(!editor || !issue?.autoFix){
-    showMsg('briefIaMsg','warn','Este vacío no tiene corrección automática disponible.');
-    return;
-  }
-
-  try{
-    const parsed = extractJsonFromText(editor.value.trim());
-    const fix = issue.autoFix;
-
-    if(fix.action === 'move_previous_to_inputs_used'){
-      const fromParts = parseBriefPath(fix.fromPath);
-      const toParts = parseBriefPath(fix.toPath);
-
-      const currentValue = getValueByPath(parsed, fromParts);
-      const targetList = getValueByPath(parsed, toParts);
-
-      if(!Array.isArray(targetList)){
-        showMsg('briefIaMsg','err','No se encontró inputs_used[] como lista.');
-        return;
-      }
-
-      const valueToMove = currentValue || fix.value;
-
-      if(valueToMove && !targetList.includes(valueToMove)){
-        targetList.push(valueToMove);
-      }
-
-      const previousListPath = fromParts.slice(0, -1);
-      const previousIndex = fromParts[fromParts.length - 1];
-      const previousList = getValueByPath(parsed, previousListPath);
-
-      if(Array.isArray(previousList)){
-        previousList.splice(previousIndex, 1);
-      }
-
-      const cleaned = stripDescriptionFromAsIsProcess(parsed);
-      editor.value = JSON.stringify(cleaned, null, 2);
-
-      showMsg('briefIaMsg','ok','Corrección automática aplicada. La entrada fue movida de previous[] a inputs_used[].');
-      analyzeBriefResponse();
-      return;
-    }
-
-    if(fix.action === 'move_next_to_outputs_generated'){
-      const fromParts = parseBriefPath(fix.fromPath);
-      const toParts = parseBriefPath(fix.toPath);
-
-      const currentValue = getValueByPath(parsed, fromParts);
-      const targetList = getValueByPath(parsed, toParts);
-
-      if(!Array.isArray(targetList)){
-        showMsg('briefIaMsg','err','No se encontró outputs_generated[] como lista.');
-        return;
-      }
-
-      const valueToMove = currentValue || fix.value;
-
-      if(valueToMove && !targetList.includes(valueToMove)){
-        targetList.push(valueToMove);
-      }
-
-      const nextListPath = fromParts.slice(0, -1);
-      const nextIndex = fromParts[fromParts.length - 1];
-      const nextList = getValueByPath(parsed, nextListPath);
-
-      if(Array.isArray(nextList)){
-        nextList.splice(nextIndex, 1);
-      }
-
-      const cleaned = stripDescriptionFromAsIsProcess(parsed);
-      editor.value = JSON.stringify(cleaned, null, 2);
-
-      showMsg('briefIaMsg','ok','Corrección automática aplicada. La salida fue movida de next[] a outputs_generated[].');
-      analyzeBriefResponse();
-      return;
-    }
-
-    showMsg('briefIaMsg','warn','Tipo de corrección automática no reconocido.');
-
-  }catch(error){
-    showMsg('briefIaMsg','err','No fue posible aplicar la corrección automática. Detalle: ' + error.message);
-  }
-}
-  
+ 
 function saveBriefGapCorrection(encodedPath){
   const editor = qs('briefResponseEditor');
   const valueBox = qs('briefGuidedValue');
@@ -9448,7 +9212,7 @@ function applyBriefToLmp(forceApply = false){
         if(loader) loader.classList.add('hidden');
 
         if(issues.length){
-          showMsg('asisBuilderMsg','warn','Brief aplicado al Proceso AS-IS con pendientes estructurales. Revisa las conexiones antes de continuar.');
+          showMsg('asisBuilderMsg','warn','Brief aplicado al Proceso AS-IS con vacios estructurales. Revisa las conexiones antes de continuar.');
         }else{
           showMsg('asisBuilderMsg','ok','Brief aplicado correctamente al Proceso AS-IS.');
         }
@@ -9542,154 +9306,6 @@ function confirmBriefApplyWithGaps(){
   applyBriefToLmp(true);
 }
 
-function approveBriefAndUnlockAnalysis(){
-  const rawText = qs('briefEditor')?.value.trim() || '';
-  if(!rawText){ showMsg('briefIaMsg','warn','No hay Brief para aprobar.'); return; }
-  try{
-    const parsed = JSON.parse(rawText);
-    let normalized = normalizeBriefPayload(parsed);
-    const responseRawText = qs('briefResponseEditor')?.value.trim() || '';
-    if(!String(normalized.summary?.executiveSummary || '').trim() && responseRawText){
-      try{
-        const responseParsed = extractJsonFromText(responseRawText);
-        const responseNormalized = normalizeBriefPayload(responseParsed);
-        if(String(responseNormalized.summary?.executiveSummary || '').trim()){
-          normalized = responseNormalized;
-        }
-      }catch(_){ }
-    }
-    const issues = evaluateBriefCompleteness(normalized);
-    console.log('[SGMP][BRIEF] parsed', parsed);
-    console.log('[SGMP][BRIEF] normalized', normalized);
-    console.log('[SGMP][BRIEF] issues', issues);
-    state.briefReview = { raw: normalized, approved: issues.length === 0 };
-    state.brief = normalized;
-    renderBriefDraft();
-    renderBriefValidation();
-    refreshCargaFlowState();
-    if(issues.length){
-      showMsg('briefIaMsg','warn','No se puede aprobar el Brief porque está incompleto.');
-      return;
-    }
-    showMsg('briefIaMsg','ok','Brief aprobado correctamente. Ya puedes generar los bloques de análisis.');
-  }catch(error){
-    showMsg('briefIaMsg','err','El Brief editable no contiene un JSON válido. Detalle: ' + error.message);
-  }
-}
-
-async function generateAnalysisPromptFromApprovedBrief(){
-  if(!(state.briefReview && state.briefReview.raw)){ showMsg('cargaMsg','warn','Debes procesar y aprobar primero el Brief.'); return; }
-  const brief = normalizeBriefPayload(state.briefReview.raw);
-  const issues = evaluateBriefCompleteness(brief);
-  state.briefReview.raw = brief;
-  state.brief = brief;
-  state.briefReview.approved = issues.length === 0;
-  if(issues.length || !state.briefReview.approved){ renderBriefDraft(); renderBriefValidation(); refreshCargaFlowState(); showMsg('cargaMsg','warn','Debes procesar y aprobar primero el Brief.'); return; }
-  const master = state.master || mergeMaster();
-  const c = master.context || state.context || {};
-  const sourceActivities = sgmpGetStructuralSourceActivities();
-  const evidencePack = {
-    source_activities: sourceActivities,
-    source_activity_count: sourceActivities.length,
-    master_sipoc: master.sipoc || {},
-    preInterview: safeArray(master.preInterview || master.pre || []),
-    interview: safeArray(master.interview || []),
-    additionalDocuments: safeArray(master.notes?.additionalDocuments).map(d => ({name:d.name, preview:d.preview || d.content || ''})),
-    context: c
-  };
-  const dynamic = `FUENTE ESTRUCTURAL OBLIGATORIA DEL AS IS:
-${JSON.stringify({ source_activity_count: sourceActivities.length, source_activities: sourceActivities }, null, 2)}
-
-BRIEF APROBADO (USAR COMO RESUMEN EJECUTIVO, NO COMO FUENTE ÚNICA DEL FLUJO):
-${JSON.stringify(brief, null, 2)}
-
-EVIDENCIA OPERATIVA COMPLEMENTARIA (NO PERDERLA POR RESUMEN EXCESIVO):
-${JSON.stringify(evidencePack, null, 2)}`;
-  const hardening = `
-
-REGLAS CRÍTICAS DE ANÁLISIS CONSULTIVO:
-- FUENTE ESTRUCTURAL OBLIGATORIA: si existe source_activities, debes usar esa lista como base principal del AS IS.
-- PROHIBIDO reconstruir el flujo desde flowSummary o sipoc.process cuando source_activities exista.
-- PROHIBIDO reducir, agrupar o fusionar actividades de source_activities.
-- Si source_activity_count es mayor a 10, tu salida debe incluir al menos esa misma cantidad de actividades en as_is.activities, activities y sb_contract.sipoc_input.activities.
-- Cada actividad de source_activities debe conservar su id, name, actor, document, previous, next, is_start, is_end y note cuando existan.
-- flowSummary y sipoc.process son referencias ejecutivas, no reemplazan el flujo operativo.
-- NO resumas demasiado pronto ni borres evidencia operativa valiosa.
-- PRESERVA excepciones, retrabajos, controles manuales, aprobaciones informales, handoffs, variaciones y dependencias de personas.
-- DISTINGUE hechos observados, inferencias, supuestos y vacíos.
-- NO confundas áreas funcionales con procesos.
-- NO aceptes procesos mal definidos; si la definición es débil, señálalo explícitamente.
-- NO propongas mejoras decorativas, teóricas o genéricas.
-- NO llames “quick win” a algo que requiera rediseño complejo, dependencia transversal o cambio cultural profundo.
-- NO conviertas todas las actividades en operation; clasifica correctamente decision, control, document y end cuando aplique.
-- EVITA verbos genéricos como “gestionar”, “coordinar”, “dar seguimiento” si no explican la acción real.
-- INCLUYE handoffs, controles, excepciones, criterios de aprobación y reprocesos cuando aparezcan en la evidencia.
-- DEFINE indicadores de control además de indicadores resultado.
-- El TO BE debe ser implementable, conectado al AS IS y defendible operativamente.
-- La salida debe servir simultáneamente para LMP, Evaluador documental, Integrador y SIPOC Builder.
-
-OBLIGATORIO PRESERVAR Y REPORTAR:
-- evidence_highlights
-- contradictions_detected
-- hidden_controls
-- manual_dependencies
-- suspected_constraints
-- stage_details
-- handoffs
-- exceptions_and_criteria
-- undocumented_knowledge
-
-JSON DEBE INCLUIR, ADEMÁS DE LO YA DEFINIDO:
-- as_is.stage_details
-- as_is.handoffs
-- as_is.exceptions_and_criteria
-- ava.evidence
-- findings.evidence_highlights
-- findings.contradictions_detected
-- findings.hidden_controls
-- findings.manual_dependencies
-- findings.suspected_constraints
-- improvements.support_basis
-- to_be.assumptions
-- indicators.control_indicators
-- sipoc_builder_ready.sipoc_input_precheck
-`;
-  const staticBase = sgmpPrompt('prompt_analysis', '');
-  const fallback = `ACTÚA COMO:
-
-1. Consultor senior en procesos, Lean, Six Sigma y TOC
-2. Experto en la industria: ${c.industry || '[INDUSTRIA]'}
-3. Especialista en la actividad de negocio: ${c.activity || '[ACTIVIDAD]'}
-4. Experto en el tipo de proceso: ${c.processType || '[TIPO_PROCESO]'}
-
-OBJETIVO GENERAL
-Analizar el BRIEF APROBADO del proceso y la evidencia operativa complementaria para construir AS IS robusto, AVA serio, hallazgos defendibles, mejoras con sustento, one page útil, TO BE implementable, propuesta documental, input integrador, indicadores de control y un JSON contractual realmente usable.
-
-${hardening}`;
-  const prompt = (staticBase ? staticBase.replace('{{industry}}', c.industry || '[INDUSTRIA]').replace('{{activity}}', c.activity || '[ACTIVIDAD]').replace('{{processType}}', c.processType || '[TIPO_PROCESO]') + hardening : fallback) + '\n\n' + dynamic;
-  try{ state.results = state.results || {}; state.results.sbNormalizationPrompt = buildSbNormalizationPrompt(); }catch(e){}
-  if(sgmpGlobalApiEnabled() && sgmpStageUseApi('lmp_analysis')){
-    showMsg('cargaMsg','ok','Ejecutando IA para análisis por bloques...');
-    showLoader('Generando análisis con IA...', 'Etapa B · Flujo por bloques.');
-    try{
-      const result = await sgmpCallAI('lmp_analysis', prompt);
-      if(qs('iaResponseEditor')) qs('iaResponseEditor').value = sgmpAIResultText(result);
-      // SGMP: procesamiento global eliminado. El usuario debe procesar por etapa.
-      refreshCargaFlowState();
-      hideLoader();
-      return;
-    }catch(error){
-      hideLoader();
-      if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
-      refreshCargaFlowState();
-      showMsg('cargaMsg','warn','Modo manual activado. No fue posible ejecutar la IA automáticamente. Detalle: ' + error.message);
-      return;
-    }
-  }
-  if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
-  refreshCargaFlowState();
-  showMsg('cargaMsg','ok','Prompt B generado correctamente.');
-}
 
 function buildSbNormalizationPrompt(){
   const analysis = state.analysis || {};
