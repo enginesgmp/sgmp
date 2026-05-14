@@ -6022,8 +6022,10 @@ function moveAsisActivity(index, direction){
 function syncAsisRow(index){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
   const data = readAsisRow(item);
+
   if(data){
     state.asis.activities[index] = data;
+    refreshActivitySummary(item, index);
     updateAsIsPreview();
     updateTopStatus();
   }
@@ -12644,7 +12646,6 @@ function downloadSipocExtractor(){
       name,
       actor: clean(a.actor || raw.actor || raw.role || raw.lane || ''),
       type: clean(raw.type || a.type || 'actividad'),
-      description: clean(raw.description || raw.descripcion || raw.detail || raw.detalle || ''),
       inputs_used: uniq(inputObjects.map(v => typeof v === 'object' ? (v.input || v.name || v.value || v.text || v.description || JSON.stringify(v)) : v)),
       outputs_generated: uniq(outputObjects.map(v => typeof v === 'object' ? (v.output || v.name || v.value || v.text || v.description || JSON.stringify(v)) : v)),
       previous: uniq(raw.previous || a.previous || []),
@@ -12834,7 +12835,6 @@ const readOutputsCustomersSilent = function(){
           <div class="field w-5"><label>Nombre de la actividad</label><input class="a_name" value="${escapeHtml(safe.name)}" oninput="syncAsisRow(${index})" /></div>
           <div class="field w-4"><label>Actor / rol</label><input class="a_actor" value="${escapeHtml(safe.actor)}" oninput="syncAsisRow(${index})" /></div>
           <div class="field w-3"><label>Tipo</label><select class="a_type" onchange="syncAsisRow(${index})"><option value="actividad" ${type==='actividad'?'selected':''}>Actividad</option><option value="decisión" ${type==='decisión'?'selected':''}>Decisión</option></select></div>
-          <div class="field w-9"><label>Descripción</label><textarea class="a_description" oninput="syncAsisRow(${index})">${escapeHtml(safe.description)}</textarea></div>
           <div class="field w-3"><label>Anterior</label><input class="a_previous" value="${escapeHtml(safe.previous.join(', '))}" oninput="syncAsisRow(${index})" /></div>
           <div class="field w-3"><label>Siguiente</label><input class="a_next" value="${escapeHtml(safe.next.join(', '))}" oninput="syncAsisRow(${index})" /></div>
           <div class="field w-6"><label>Entradas recibidas/usadas</label><textarea class="a_inputs" oninput="syncAsisRow(${index})">${escapeHtml(safe.inputs_used.join('\n'))}</textarea></div>
@@ -12855,7 +12855,6 @@ const readOutputsCustomersSilent = function(){
       name: get('.a_name'),
       actor: get('.a_actor'),
       type: get('.a_type') || 'actividad',
-      description: get('.a_description'),
       inputs_used: splitText(get('.a_inputs')),
       outputs_generated: splitText(get('.a_outputs')),
       previous: splitText(get('.a_previous')),
@@ -12872,16 +12871,33 @@ const readOutputsCustomersSilent = function(){
     return activity.name ? activity : null;
   };
 
-  window.addAsisActivity = function(data = {}){
-    collectAsisActivities();
-    state.asis = state.asis || {};
-    state.asis.activities = state.asis.activities || [];
-    state.asis.activities.push(Object.assign({
-      id:'A' + String(state.asis.activities.length + 1).padStart(2,'0'), name:'', actor:'', type:'actividad', description:'', inputs_used:[], outputs_generated:[], previous:[], next:[], clarifying_notes:[], source:sourceRouteLabel(), editable:true
-    }, data || {}));
-    renumberAsIsSequence(false);
-    renderAsIsActivities();
-  };
+ window.addAsisActivity = function(data = {}){
+  collectAsisActivities();
+
+  state.asis = state.asis || {};
+  state.asis.activities = state.asis.activities || [];
+
+  const cleanData = { ...(data || {}) };
+  delete cleanData.description;
+
+  state.asis.activities.unshift(Object.assign({
+    id:'A01',
+    name:'',
+    actor:'',
+    type:'actividad',
+    inputs_used:[],
+    outputs_generated:[],
+    previous:[],
+    next:[],
+    clarifying_notes:[],
+    source:sourceRouteLabel(),
+    editable:true
+  }, cleanData));
+
+  renumberAsIsSequence(false);
+  renderAsIsActivities();
+  openFirstAsIsActivity();
+};
 
   window.renderAsIsActivities = function(){
     const container = qs('asisActivities');
@@ -12908,7 +12924,68 @@ const readOutputsCustomersSilent = function(){
     if(typeof updateTopStatus === 'function') updateTopStatus();
     return state.asis.activities;
   };
+function refreshAsIsMiniSummary(row){
+  if(!row) return;
 
+  const summary = row.querySelector('.asis-mini-summary');
+  if(!summary) return;
+
+  const strong = summary.querySelector('strong');
+  const small = summary.querySelector('small');
+
+  if(row.classList.contains('supplier-input-row')){
+    const inputText = row.querySelector('.si_inputs')?.value || '';
+    const supplier = clean(row.querySelector('.si_supplier')?.value || 'Proveedor pendiente');
+    const firstInput = splitText(inputText)[0] || 'Entrada sin nombre';
+
+    if(strong) strong.textContent = firstInput;
+    if(small) small.textContent = 'Proveedor: ' + supplier;
+  }
+
+  if(row.classList.contains('output-customer-row')){
+    const output = clean(row.querySelector('.oc_output')?.value || 'Salida sin nombre');
+    const customerText = row.querySelector('.oc_customers')?.value || '';
+    const firstCustomer = splitText(customerText)[0] || 'Cliente pendiente';
+
+    if(strong) strong.textContent = output;
+    if(small) small.textContent = 'Cliente: ' + firstCustomer;
+  }
+}
+
+function openFirstAsIsMiniRow(containerId){
+  const first = qs(containerId)?.querySelector('details');
+  if(!first) return;
+
+  first.setAttribute('open', 'open');
+
+  setTimeout(() => {
+    first.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 80);
+}
+
+function refreshActivitySummary(item, index){
+  if(!item) return;
+
+  const strong = item.querySelector('.activity-top strong');
+  const badge = item.querySelector('.activity-top .status-badge');
+
+  const name = clean(item.querySelector('.a_name')?.value || 'Actividad sin nombre');
+  const actor = clean(item.querySelector('.a_actor')?.value || 'Sin actor');
+
+  if(strong) strong.textContent = `${index + 1}. ${name}`;
+  if(badge) badge.textContent = actor;
+}
+
+function openFirstAsIsActivity(){
+  const first = qs('asisActivities')?.querySelector('details.activity-item');
+  if(!first) return;
+
+  first.setAttribute('open', 'open');
+
+  setTimeout(() => {
+    first.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 80);
+}
   window.renderSupplierInputRows = function(){
   const el = qs('asisSuppliersInputs');
   if(!el) return;
@@ -12971,8 +13048,14 @@ const readOutputsCustomersSilent = function(){
 
   return state.asis.suppliers_inputs;
 };
-  window.syncSupplierInputRow = function(){ collectSupplierInputRows(); updateAsIsPreview(); };
-  window.addSupplierInputRow = function(data){ collectSupplierInputRows(); state.asis.suppliers_inputs.push(Object.assign({ supplier:'', inputs:[], source:sourceRouteLabel(), editable:true }, data || {})); renderSupplierInputRows(); updateAsIsPreview(); };
+window.syncSupplierInputRow = function(){
+  const active = document.activeElement?.closest('.supplier-input-row');
+  if(active) refreshAsIsMiniSummary(active);
+
+  collectSupplierInputRows();
+  updateAsIsPreview();
+};
+  window.addSupplierInputRow = function(data){   collectSupplierInputRows();    state.asis.suppliers_inputs.unshift(Object.assign({     supplier:'',     inputs:[],     editable:true   }, data || {}));    renderSupplierInputRows();   openFirstAsIsMiniRow('asisSuppliersInputs');   updateAsIsPreview(); };
   window.deleteSupplierInputRow = function(index){ collectSupplierInputRows(); state.asis.suppliers_inputs.splice(index,1); renderSupplierInputRows(); updateAsIsPreview(); };
 
  window.renderOutputCustomerRows = function(){
@@ -13036,8 +13119,26 @@ const readOutputsCustomersSilent = function(){
 
   return state.asis.outputs_customers;
 };
-  window.syncOutputCustomerRow = function(){ collectOutputCustomerRows(); updateAsIsPreview(); };
-  window.addOutputCustomerRow = function(data){   collectOutputCustomerRows();    state.asis.outputs_customers.push(Object.assign({     output:'',     customers:[],     editable:true   }, data || {}));    renderOutputCustomerRows();   updateAsIsPreview(); };
+window.syncOutputCustomerRow = function(){
+  const active = document.activeElement?.closest('.output-customer-row');
+  if(active) refreshAsIsMiniSummary(active);
+
+  collectOutputCustomerRows();
+  updateAsIsPreview();
+};
+  window.addOutputCustomerRow = function(data){
+  collectOutputCustomerRows();
+
+  state.asis.outputs_customers.unshift(Object.assign({
+    output:'',
+    customers:[],
+    editable:true
+  }, data || {}));
+
+  renderOutputCustomerRows();
+  openFirstAsIsMiniRow('asisOutputsCustomers');
+  updateAsIsPreview();
+};
   window.deleteOutputCustomerRow = function(index){ collectOutputCustomerRows(); state.asis.outputs_customers.splice(index,1); renderOutputCustomerRows(); updateAsIsPreview(); };
 
   window.renderAdditionalInfoRows = function(){
