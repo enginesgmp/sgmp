@@ -1884,6 +1884,18 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   flex-wrap:wrap;
   margin-top:16px;
 }
+  .asis-focus-highlight{
+  outline:3px solid rgba(242,153,74,.85) !important;
+  box-shadow:0 0 0 6px rgba(242,153,74,.18), 0 16px 34px rgba(242,153,74,.18) !important;
+  border-color:rgba(242,153,74,.75) !important;
+  animation:asisFocusPulse 1.2s ease-in-out 2;
+}
+
+@keyframes asisFocusPulse{
+  0%{transform:scale(1);}
+  50%{transform:scale(1.01);}
+  100%{transform:scale(1);}
+}
 </style>
   
 </head>
@@ -3180,11 +3192,11 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <article class="card">
 <h3>JSON de Brief generado por IA</h3>
-<p>Pega aquí el JSON de Brief generado por la IA. Puedes editarlo directamente para completar vacíos antes de aplicarlo al LMP.</p>
+<p>Pega aquí el JSON de Brief generado por la IA. El sistema validará si la estructura JSON puede aplicarse al LMP; los vacíos estructurales se revisarán en Proceso AS-IS.</p>
 <textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
   <div class="actions-left">
-    <button class="btn-warn" id="btnAnalyzeBrief" onclick="analyzeBriefResponse()" type="button">Analizar Brief</button>
+    <button class="btn-warn" id="btnAnalyzeBrief" onclick="validateBriefResponse()" type="button">Validar Brief</button>
     <button class="btn-ghost" onclick="formatBriefJson()" type="button">Formatear JSON</button>
   </div>
 </div>
@@ -3193,24 +3205,28 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <article class="card">
 <h3>Estado del Brief</h3>
-<p>Revisa los vacíos estructurales antes de aplicar el Brief al LMP.</p>
+<p>Valida la estructura del JSON antes de aplicarlo al LMP. Los vacíos estructurales se corregirán en Proceso AS-IS.</p>
 
 <div class="kpi-wrap">
   <div class="kpi-card">
-    <h4>Estado</h4>
+    <h4>JSON Brief</h4>
     <div class="big" id="briefApprovedKpi">No</div>
-    <small>aprobado</small>
+    <small>validado</small>
   </div>
   <div class="kpi-card">
     <h4>Vacíos estructurales</h4>
     <div class="big" id="briefGapsKpi">0</div>
-    <small>detectados</small>                
+    <small>se revisarán en AS-IS</small>                
   </div>
 </div>
 
-<div class="box" id="briefGapsList" style="margin-top:14px">Sin vacíos estructurales detectados.</div>
+<div class="box" id="briefGapsList" style="margin-top:14px">
+Aún no se ha validado el Brief.
+</div>
+
 <div class="msg" id="briefValidationMsg"></div>
 <div id="briefApplyConfirmPanel" class="brief-apply-confirm hidden" aria-live="polite"></div>
+
 <div class="actions" style="justify-content:center;">
   <div class="actions-left" style="justify-content:center;">
     <button class="btn-ok" id="btnApplyBrief" onclick="applyBriefToLmp()" type="button">Procesar y aplicar al LMP</button>
@@ -3307,6 +3323,27 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </div>
 <div class="step-pill">Paso 4</div>
 </div>
+  <article class="card" id="asisStructuralStatusCard">
+  <h3>Estado estructural del AS-IS</h3>
+  <p>Revisa los vacíos estructurales antes de continuar con los análisis B1–B6.</p>
+
+  <div class="kpi-wrap" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+    <div class="kpi-card">
+      <h4>Vacíos estructurales</h4>
+      <div class="big" id="asisStructuralIssuesKpi">0</div>
+      <small>detectados</small>
+    </div>
+    <div class="kpi-card">
+      <h4>Estado AS-IS</h4>
+      <div class="big" id="asisStructuralStatusKpi">Sin validar</div>
+      <small>estructura actual</small>
+    </div>
+  </div>
+
+  <div class="box" id="asisStructuralIssuesList" style="margin-top:14px">
+    Sin vacíos estructurales detectados.
+  </div>
+</article>
 <div class="cards">
 <article class="card">
 <h3>Actividades del proceso</h3>
@@ -8406,10 +8443,10 @@ function renderBriefValidation(){
   );
 
   const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
-  const approved = !!state.briefReview?.approved;
+  const validated = !!state.briefReview?.validated || !!state.briefReview?.raw;
 
   if(qs('briefApprovedKpi')){
-    qs('briefApprovedKpi').textContent = approved ? 'Sí' : 'No';
+    qs('briefApprovedKpi').textContent = validated ? 'Sí' : 'No';
   }
 
   if(qs('briefGapsKpi')){
@@ -8419,65 +8456,138 @@ function renderBriefValidation(){
   const list = qs('briefGapsList');
 
   if(list){
-    if(!issues.length){
-      list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
+    if(!validated){
+      list.innerHTML = 'Aún no se ha validado el Brief.';
+    }else if(!issues.length){
+      list.innerHTML = 'Brief válido. No se detectaron vacíos estructurales.';
     }else{
-      list.innerHTML =
-        '<div class="brief-gap-header">' +
-          '<span><strong>Vacíos estructurales:</strong> ' + issues.length + '</span>' +
-          '<button type="button" class="brief-mini-btn" onclick="formatBriefJson()">Formatear JSON</button>' +
-        '</div>' +
-
-        '<div class="brief-gap-list">' +
-          issues.map((issue, index) => {
-            const where = issue.where || issue.field || 'as_is_process';
-const helper = getBriefIssueHelper(issue, brief);
-const encodedPath = encodeURIComponent(where);
-const encodedIssue = encodeURIComponent(JSON.stringify(issue));
-const searchHint = issue.searchHint || issue.affectedValue || helper.target || where;
-
-            return (
-              '<div class="brief-gap-row">' +
-                '<div class="brief-gap-num">' + (index + 1) + '</div>' +
-
-                '<div class="brief-gap-body">' +
-                  '<div class="brief-gap-title">' + escapeHtml(helper.title) + '</div>' +
-(helper.target ? '<div class="brief-gap-target"><strong>Elemento afectado:</strong> ' + escapeHtml(helper.target) + '</div>' : '') +
-
-                  '<div class="brief-gap-human">' +
-                    '<strong>Qué falta:</strong> ' + escapeHtml(helper.what) +
-                  '</div>' +
-
-                  '<div class="brief-gap-human">' +
-                    '<strong>Cómo corregir:</strong> ' + escapeHtml(helper.how) +
-                  '</div>' +
-
-                  '<div class="brief-gap-actions">' +
-  '<button type="button" class="brief-mini-btn primary" onclick="openBriefGapEditor(decodeURIComponent(\'' + encodedPath + '\'))">Corregir este vacío</button>' +
-'</div>' +
-                '</div>' +
-              '</div>'
-            );
-          }).join('') +
-        '</div>' +
-
-        '<div id="briefGuidedEditorPanel" class="brief-guided-editor hidden"></div>';
+      list.innerHTML = `
+        Brief válido para aplicar al LMP.<br/>
+        Se detectaron <strong>${issues.length}</strong> vacío(s) estructural(es).<br/>
+        Estos vacíos se mostrarán y corregirán en la sección <strong>Proceso AS-IS</strong>.
+      `;
     }
   }
 
   if(qs('briefValidationMsg')){
-    if(issues.length){
-      showMsg(
-        'briefValidationMsg',
-        'warn',
-        `Estado: Brief con ${issues.length} vacío(s) estructural(es). Corrige el JSON si aplica o procesa bajo validación.`
-      );
+    if(!validated){
+      showMsg('briefValidationMsg','warn','Valida el Brief antes de aplicarlo al LMP.');
+    }else if(issues.length){
+      showMsg('briefValidationMsg','warn',`Brief validado con ${issues.length} vacío(s) estructural(es). Podrás corregirlos en Proceso AS-IS.`);
     }else{
-      showMsg('briefValidationMsg','ok','Estado: Brief sin vacíos estructurales. Puedes aplicarlo al LMP.');
+      showMsg('briefValidationMsg','ok','Brief validado sin vacíos estructurales.');
     }
   }
 }
 
+function renderAsIsStructuralIssues(){
+  const brief = stripDescriptionFromAsIsProcess(
+    state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
+  );
+
+  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
+
+  state.briefReview = state.briefReview || {};
+  state.briefReview.issues = issues;
+
+  if(qs('asisStructuralIssuesKpi')){
+    qs('asisStructuralIssuesKpi').textContent = issues.length;
+  }
+
+  if(qs('asisStructuralStatusKpi')){
+    qs('asisStructuralStatusKpi').textContent = issues.length ? 'Revisar' : 'OK';
+  }
+
+  const list = qs('asisStructuralIssuesList');
+
+  if(!list) return;
+
+  if(!issues.length){
+    list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
+    return;
+  }
+
+  list.innerHTML =
+    '<div class="brief-gap-list">' +
+      issues.map((issue, index) => {
+        const helper = getBriefIssueHelper(issue, brief);
+        const where = issue.where || issue.field || '';
+        const target = helper.target || issue.affectedValue || issue.searchHint || '';
+
+        return `
+          <div class="brief-gap-row">
+            <div class="brief-gap-num">${index + 1}</div>
+            <div class="brief-gap-body">
+              <div class="brief-gap-title">${escapeHtml(helper.title || issue.message || 'Vacío estructural')}</div>
+              ${target ? `<div class="brief-gap-target"><strong>Elemento afectado:</strong> ${escapeHtml(target)}</div>` : ''}
+              <div class="brief-gap-human">
+                <strong>Qué falta:</strong> ${escapeHtml(helper.what || issue.message || 'Revisar estructura del elemento.')}
+              </div>
+              <div class="brief-gap-actions">
+                <button type="button" class="brief-mini-btn primary" onclick="focusAsIsIssue('${encodeURIComponent(where)}','${encodeURIComponent(target)}')">
+                  Corregir vacío
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('') +
+    '</div>';
+}
+
+function focusAsIsIssue(encodedWhere, encodedTarget){
+  const where = decodeURIComponent(encodedWhere || '');
+  const target = decodeURIComponent(encodedTarget || '');
+
+  let containerId = 'asisActivities';
+
+  if(where.includes('suppliers_inputs')){
+    containerId = 'asisSuppliersInputs';
+  }else if(where.includes('outputs_customers')){
+    containerId = 'asisOutputsCustomers';
+  }else if(where.includes('additional_information')){
+    containerId = 'asisAdditionalInfo';
+  }
+
+  const container = qs(containerId);
+
+  if(!container){
+    showMsg('asisBuilderMsg','warn','No se encontró el bloque visual para corregir este vacío.');
+    return;
+  }
+
+  const candidates = Array.from(container.querySelectorAll('.activity-item, .repeat-item, .field, div'));
+
+  let found = null;
+
+  if(target){
+    const targetKey = normalizeTextForSearch(target);
+    found = candidates.find(el => normalizeTextForSearch(el.textContent || '').includes(targetKey));
+  }
+
+  if(!found){
+    found = container;
+  }
+
+  document.querySelectorAll('.asis-focus-highlight').forEach(el => {
+    el.classList.remove('asis-focus-highlight');
+  });
+
+  found.classList.add('asis-focus-highlight');
+  found.scrollIntoView({behavior:'smooth', block:'center'});
+
+  showMsg('asisBuilderMsg','warn','Vacío localizado. Revisa y corrige el elemento resaltado.');
+}
+
+function normalizeTextForSearch(value){
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .replace(/\s+/g,' ')
+    .trim();
+}
+  
 function evaluateAnalysisCompleteness(data){
   const issues = [];
   if(!data && !state.analysis && !state.asis?.activities?.length && !state.master){
@@ -9110,7 +9220,7 @@ function closeBriefGapEditor(){
   }
 }
   
-function analyzeBriefResponse(){
+function validateBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value?.trim() || '';
 
   if(!rawText){
@@ -9121,13 +9231,15 @@ function analyzeBriefResponse(){
   try{
     const parsed = extractJsonFromText(rawText);
     const normalized = stripDescriptionFromAsIsProcess(
-  parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
-);
-    const issues = evaluateBriefCompleteness(normalized);
+      parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
+    );
+
+    const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(normalized));
 
     state.briefReview = {
       raw: normalized,
       approved: false,
+      validated: true,
       issues: issues
     };
 
@@ -9140,17 +9252,29 @@ function analyzeBriefResponse(){
     renderBriefValidation();
 
     if(issues.length){
-      showMsg('briefIaMsg','warn','Brief analizado. Se detectaron vacíos estructurales. Revisa el Estado del Brief antes de aplicar al LMP.');
+      showMsg(
+        'briefIaMsg',
+        'warn',
+        `Brief validado. La estructura JSON es procesable, pero se detectaron ${issues.length} vacío(s) estructural(es). Se corregirán en Proceso AS-IS.`
+      );
     }else{
-      showMsg('briefIaMsg','ok','Brief analizado correctamente. No se detectaron vacíos estructurales. Puedes aplicarlo al LMP.');
+      showMsg(
+        'briefIaMsg',
+        'ok',
+        'Brief validado correctamente. No se detectaron vacíos estructurales. Puedes aplicarlo al LMP.'
+      );
     }
 
     refreshCargaFlowState();
     updateTopStatus();
 
   }catch(error){
-    showMsg('briefIaMsg','err','No fue posible analizar el Brief. Detalle: ' + error.message);
+    showMsg('briefIaMsg','err','No fue posible validar el Brief. Detalle: ' + error.message);
   }
+}
+
+function analyzeBriefResponse(){
+  validateBriefResponse();
 }
 
 function applyBriefToLmp(forceApply = false){
@@ -9208,6 +9332,9 @@ function applyBriefToLmp(forceApply = false){
         if(typeof updateAsIsPreview === 'function'){
           updateAsIsPreview();
         }
+        if(typeof renderAsIsStructuralIssues === 'function'){
+          renderAsIsStructuralIssues();
+        }
 
         if(loader) loader.classList.add('hidden');
 
@@ -9246,7 +9373,7 @@ function showBriefApplyConfirmation(issues){
 
   panel.classList.remove('hidden');
 
- panel.innerHTML = `
+panel.innerHTML = `
   <div class="brief-apply-confirm-card">
     <div class="brief-apply-confirm-head">
       <strong>Aplicar Brief con vacíos estructurales</strong>
@@ -9258,25 +9385,24 @@ function showBriefApplyConfirmation(issues){
         Se detectaron <strong>${total}</strong> vacío(s) estructural(es) en el Brief.
       </p>
       <p>
-        Puedes cancelar para seguir corrigiendo el Brief o continuar y aplicarlo al LMP bajo validación.
+        Puedes aplicar el Brief al LMP y corregir estos vacíos en la sección <strong>Proceso AS-IS</strong>.
       </p>
       <p class="brief-apply-confirm-warning">
-        La información faltante podría dejar actividades, relaciones o campos sueltos
-        y afectar pasos posteriores del análisis.
+        Si continúas, el proceso será cargado al AS-IS bajo validación estructural.
+        Antes de ejecutar B1–B6, revisa y corrige los vacíos detectados.
       </p>
     </div>
 
     <div class="brief-apply-confirm-actions">
       <button class="btn-ghost" type="button" onclick="cancelBriefApplyConfirmation()">
-        Cancelar y seguir corrigiendo
+        Cancelar
       </button>
       <button class="btn-ok" type="button" onclick="confirmBriefApplyWithGaps()">
-        Continuar y aplicar al LMP
+        Aplicar y revisar en AS-IS
       </button>
     </div>
   </div>
 `;
-
   panel.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
@@ -9291,7 +9417,7 @@ function cancelBriefApplyConfirmation(){
   showMsg(
     'briefIaMsg',
     'warn',
-    'Aplicación cancelada. Puedes seguir corrigiendo el JSON del Brief antes de aplicarlo al LMP.'
+    'Aplicación cancelada. Puedes revisar el JSON del Brief antes de aplicarlo al LMP.'
   );
 }
 
