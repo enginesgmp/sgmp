@@ -7273,14 +7273,18 @@ function syncVisibleStage(){
       try{ state.master = JSON.parse(qs('masterEditor').value); }catch(e){}
     }
   }
-  if(active === 'asis') collectAsisActivities();
-  if(active === 'analisis'){
-    if(qs('analysisEditor').value.trim()){
-      try{ state.analysis = JSON.parse(qs('analysisEditor').value); }catch(e){}
-    }
+  if(active === 'asis'){
+  collectAsisActivities();
+
+  if(typeof buildAsIsProcessFromCurrentState === 'function'){
+    state.asIsProcess = buildAsIsProcessFromCurrentState();
   }
-  if(active === 'tobe') collectImprovements();
-  state.metadata.lastSavedAt = new Date().toISOString();
+
+  if(state.master){
+    delete state.master.as_is_process;
+    delete state.master.asIsProcess;
+    delete state.master.activities;
+  }
 }
 
 function downloadBackup(){
@@ -7322,7 +7326,8 @@ function resetAll(){
     briefReview:{raw:null,approved:false},
     loads:{pre:[],interview:[],brief:[],docs:[]},
     master:null,
-    asis:{activities:[]},
+    asis:{activities:[], suppliers_inputs:[], outputs_customers:[], additional_information:[]},
+asIsProcess:null,
     analysis:null,
     analysisRun:{raw:null,qa:false},
     sb_contract:null,
@@ -12891,19 +12896,71 @@ function downloadSipocExtractor(){
     return result || state.master;
   };
 
-  window.hydrateAsIsFromMaster = function(){
-    if(state.asIsModel){ applyAsIsProcess(asIsProcessFromModel(state.asIsModel)); updateTopStatus(); return true; }
-    const master = state.master || {};
-    if(master.as_is_process){ applyAsIsProcess({ as_is_process: master.as_is_process }); updateTopStatus(); return true; }
-    if(master.asIsProcess){ applyAsIsProcess({ as_is_process: master.asIsProcess }); updateTopStatus(); return true; }
-    const acts = (typeof extractAsIsActivitiesFromPayload === 'function') ? extractAsIsActivitiesFromPayload(master) : arr(master.activities);
-    if(acts.length){
-      applyAsIsProcess({ as_is_process: { source_route: sourceRouteLabel(), activities: acts, suppliers_inputs: supplierInputRowsFrom(master), outputs_customers: outputCustomerRowsFrom(master), additional_information: additionalInfoFrom(master) }});
-      updateTopStatus();
-      return true;
-    }
-    renderAsIsActivities(); updateTopStatus(); return false;
-  };
+window.hydrateAsIsFromMaster = function(){
+  // Fuente oficial actual
+  if(state.asIsProcess?.as_is_process){
+    applyAsIsProcess(state.asIsProcess);
+    updateTopStatus();
+    return true;
+  }
+
+  // Ruta documentada/extractor
+  if(state.asIsModel){
+    state.asIsProcess = asIsProcessFromModel(state.asIsModel);
+    applyAsIsProcess(state.asIsProcess);
+    updateTopStatus();
+    return true;
+  }
+
+  const master = state.master || {};
+
+  // Compatibilidad con respaldos antiguos: migrar una sola vez y limpiar duplicados
+  if(master.as_is_process){
+    state.asIsProcess = { as_is_process: master.as_is_process };
+    delete master.as_is_process;
+    delete master.asIsProcess;
+    delete master.activities;
+    applyAsIsProcess(state.asIsProcess);
+    updateTopStatus();
+    return true;
+  }
+
+  if(master.asIsProcess){
+    state.asIsProcess = { as_is_process: master.asIsProcess };
+    delete master.as_is_process;
+    delete master.asIsProcess;
+    delete master.activities;
+    applyAsIsProcess(state.asIsProcess);
+    updateTopStatus();
+    return true;
+  }
+
+  const acts = (typeof extractAsIsActivitiesFromPayload === 'function')
+    ? extractAsIsActivitiesFromPayload(master)
+    : arr(master.activities);
+
+  if(acts.length){
+    state.asIsProcess = {
+      as_is_process: {
+        source_route: sourceRouteLabel(),
+        activities: acts,
+        suppliers_inputs: supplierInputRowsFrom(master),
+        outputs_customers: outputCustomerRowsFrom(master),
+        additional_information: additionalInfoFrom(master)
+      }
+    };
+
+    delete master.activities;
+
+    applyAsIsProcess(state.asIsProcess);
+    updateTopStatus();
+    return true;
+  }
+
+  renderAsIsActivities();
+  updateTopStatus();
+  return false;
+};
 
   window.updateAsIsPreview = function(){
     const snapshot = buildAsIsProcessFromCurrentState();
@@ -12919,7 +12976,7 @@ function downloadSipocExtractor(){
     if(qs('asisJsonPreview')) qs('asisJsonPreview').textContent = JSON.stringify(snapshot, null, 2);
   };
 
- window.saveAsIsAndContinue = function(){
+window.saveAsIsAndContinue = function(){
   const snapshot = buildAsIsProcessFromCurrentState();
   const acts = snapshot.as_is_process.activities || [];
 
@@ -12938,16 +12995,26 @@ function downloadSipocExtractor(){
   // Fuente oficial única del AS-IS corregido
   state.asIsProcess = snapshot;
 
-  // Buffer visual sincronizado, solo para que la pantalla siga reflejando lo guardado
+  // Buffer visual editable, solo para mantener la pantalla sincronizada
   state.asis = state.asis || {};
   state.asis.activities = acts.map(a => ({ ...a }));
+  state.asis.suppliers_inputs = snapshot.as_is_process.suppliers_inputs || [];
+  state.asis.outputs_customers = snapshot.as_is_process.outputs_customers || [];
+  state.asis.additional_information = snapshot.as_is_process.additional_information || [];
 
-  // Evitar copias duplicadas dentro del master
+  // Limpieza: master no debe guardar una copia viva del AS-IS corregido
   if(state.master){
     delete state.master.as_is_process;
     delete state.master.asIsProcess;
     delete state.master.activities;
   }
+
+  renderAsIsValidatedJson();
+  updateTopStatus();
+
+  showMsg('asisBuilderMsg','ok','Proceso AS-IS guardado correctamente como fuente oficial.');
+  goToNext('asis');
+};
 
   renderAsIsValidatedJson();
   updateTopStatus();
