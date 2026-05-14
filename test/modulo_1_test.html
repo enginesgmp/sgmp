@@ -1979,6 +1979,33 @@ color:#0B2E59;
 .asis-accordion > article.card > h3{
   display:none !important;
 }
+/* AS-IS · Guardar estructura validada */
+.asis-save-row{
+  display:flex !important;
+  justify-content:flex-end !important;
+  align-items:center !important;
+  margin-top:18px !important;
+  padding-top:16px !important;
+  border-top:1px solid rgba(11,46,89,.08) !important;
+}
+
+.asis-save-row .btn{
+  min-width:190px !important;
+  padding:13px 20px !important;
+  border-radius:999px !important;
+  font-weight:900 !important;
+  box-shadow:0 10px 22px rgba(11,46,89,.13) !important;
+}
+
+@media(max-width:900px){
+  .asis-save-row{
+    justify-content:stretch !important;
+  }
+
+  .asis-save-row .btn{
+    width:100% !important;
+  }
+}
 
 @media(max-width:900px){
   .asis-accordion > summary{
@@ -2020,6 +2047,18 @@ color:#0B2E59;
   .asis-issue-action .brief-mini-btn{
     width:100% !important;
   }
+}
+  /* AS-IS · Estado visual durante carga */
+#asis.asis-loading > .section-head,
+#asis.asis-loading #asisStructuralStatusCard,
+#asis.asis-loading .asis-accordion-layout,
+#asis.asis-loading .asis-save-row{
+  display:none !important;
+}
+
+#asis.asis-loading #asisBriefLoader{
+  display:block !important;
+  margin-top:0 !important;
 }
 </style>
 </head>
@@ -3300,7 +3339,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <button class="btn-ghost" id="btnCopyMaster" onclick="copyMasterJson()" type="button">Copiar consolidado</button>
 </div>
 </div>
-<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de archivos." style="width:100%;min-height:260px;resize:vertical;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de archivos." style="width:100%;min-height:260px;resize:vertical;background:#0d1b2a;color:#d6e7ffff7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card">
@@ -3317,7 +3356,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <article class="card">
 <h3>JSON de Brief generado por IA</h3>
-<p>Pega aquí el JSON de Brief generado por la IA. El sistema validará si la estructura JSON puede aplicarse al LMP; los vacíos estructurales se revisarán en Proceso AS-IS.</p>
+<p>Pega aquí el JSON de Brief generado por la IA. El sistema validará si la estructura JSON puede aplicarse al LMP.</p>
 <textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
   <div class="actions-left">
@@ -3330,7 +3369,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
 <article class="card">
 <h3>Estado del Brief</h3>
-<p>Valida la estructura del JSON antes de aplicarlo al LMP. Los vacíos estructurales se corregirán en Proceso AS-IS.</p>
+<p>Valida si el JSON puede aplicarse al LMP.</p>
 
 <div class="kpi-wrap">
   <div class="kpi-card">
@@ -3341,7 +3380,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
   <div class="kpi-card">
     <h4>Vacíos estructurales</h4>
     <div class="big" id="briefGapsKpi">0</div>
-    <small>se revisarán en AS-IS</small>                
+    <small>detectados</small>                
   </div>
 </div>
 
@@ -3513,8 +3552,6 @@ Aún no se ha validado el Brief.
 
 <div class="asis-save-row">
   <button class="btn" onclick="saveAsIsAndContinue()" type="button">Guardar y continuar</button>
-</div>
-</div>
 </div>
 </section>
 <!-- ANALISIS POR ETAPAS -->
@@ -8553,6 +8590,8 @@ function normalizeBriefIssuesList(issues){
 
 function renderBriefValidation(){
   const brief = stripDescriptionFromAsIsProcess(
+    statfunction renderBriefValidation(){
+  const brief = stripDescriptionFromAsIsProcess(
     state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
   );
 
@@ -8577,19 +8616,18 @@ function renderBriefValidation(){
     }else{
       list.innerHTML = `
         Brief válido para aplicar al LMP.<br/>
-        Se detectaron <strong>${issues.length}</strong> vacío(s) estructural(es).<br/>
-        Estos vacíos se mostrarán y corregirán en la sección <strong>Proceso AS-IS</strong>.
+        Vacíos estructurales detectados: <strong>${issues.length}</strong>.
       `;
     }
   }
 
   if(qs('briefValidationMsg')){
     if(!validated){
-      showMsg('briefValidationMsg','warn','Valida el Brief antes de aplicarlo al LMP.');
-    }else if(issues.length){
-      showMsg('briefValidationMsg','warn',`Brief validado con ${issues.length} vacío(s) estructural(es). Podrás corregirlos en Proceso AS-IS.`);
+      qs('briefValidationMsg').className = 'msg';
+      qs('briefValidationMsg').textContent = '';
     }else{
-      showMsg('briefValidationMsg','ok','Brief validado sin vacíos estructurales.');
+      qs('briefValidationMsg').className = 'msg';
+      qs('briefValidationMsg').textContent = '';
     }
   }
 }
@@ -9095,12 +9133,14 @@ function validateBriefResponse(){
 
     renderBriefValidation();
 
-    if(issues.length){
-      showMsg(
-        'briefIaMsg',
-        'warn',
-        `Brief validado. La estructura JSON es procesable, pero se detectaron ${issues.length} vacío(s) estructural(es). Se corregirán en Proceso AS-IS.`
-      );
+showMsg(
+  'briefIaMsg',
+  issues.length ? 'warn' : 'ok',
+  issues.length
+    ? `Brief validado. JSON procesable con ${issues.length} vacío(s) estructural(es).`
+    : 'Brief validado. JSON procesable sin vacíos estructurales.'
+);
+    
     }else{
       showMsg(
         'briefIaMsg',
