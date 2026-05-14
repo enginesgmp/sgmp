@@ -9292,11 +9292,6 @@ function applyBriefToLmp(forceApply = false){
 );
     const issues = evaluateBriefCompleteness(normalized);
 
-    if(issues.length && !forceApply){
-      showBriefApplyConfirmation(issues);
-      return;
-    }
-
     state.briefReview = {
       raw: normalized,
       approved: true,
@@ -9314,44 +9309,53 @@ function applyBriefToLmp(forceApply = false){
 
     showSection('asis');
 
-    const loader = qs('asisBriefLoader');
-    if(loader) loader.classList.remove('hidden');
+const loader = qs('asisBriefLoader');
+if(loader){
+  loader.classList.remove('hidden');
+}
 
-    setTimeout(function(){
-      try{
-        if(normalized?.as_is_process && typeof applyAsIsProcess === 'function'){
-          applyAsIsProcess(normalized);
-        }else if(typeof seedAsIsBuilderFromBrief === 'function'){
-          seedAsIsBuilderFromBrief(false);
-        }
+setTimeout(() => {
+  try{
+    applyAsIsProcess(normalized.as_is_process || normalized.as_is || normalized);
 
-        if(typeof renderAsIsActivities === 'function'){
-          renderAsIsActivities();
-        }
+    if(typeof updateAsIsPreview === 'function'){
+      updateAsIsPreview();
+    }
 
-        if(typeof updateAsIsPreview === 'function'){
-          updateAsIsPreview();
-        }
-        if(typeof renderAsIsStructuralIssues === 'function'){
-          renderAsIsStructuralIssues();
-        }
+    if(typeof renderAsIsStructuralIssues === 'function'){
+      renderAsIsStructuralIssues();
+    }
 
-        if(loader) loader.classList.add('hidden');
+    if(loader){
+      loader.classList.add('hidden');
+    }
 
-        if(issues.length){
-          showMsg('asisBuilderMsg','warn','Brief aplicado al Proceso AS-IS con vacios estructurales. Revisa las conexiones antes de continuar.');
-        }else{
-          showMsg('asisBuilderMsg','ok','Brief aplicado correctamente al Proceso AS-IS.');
-        }
+    if(issues.length){
+      showMsg(
+        'asisBuilderMsg',
+        'warn',
+        `Brief aplicado al Proceso AS-IS con ${issues.length} vacío(s) estructural(es). Revisa el panel Estado estructural del AS-IS antes de continuar con B1–B6.`
+      );
+    }else{
+      showMsg(
+        'asisBuilderMsg',
+        'ok',
+        'Brief aplicado al Proceso AS-IS correctamente. No se detectaron vacíos estructurales.'
+      );
+    }
 
-        refreshCargaFlowState();
-        updateTopStatus();
+  }catch(error){
+    if(loader){
+      loader.classList.add('hidden');
+    }
 
-      }catch(innerError){
-        if(loader) loader.classList.add('hidden');
-        showMsg('asisBuilderMsg','err','No fue posible cargar el Brief en Proceso AS-IS. Detalle: ' + innerError.message);
-      }
-    }, 900);
+    showMsg(
+      'asisBuilderMsg',
+      'err',
+      'No fue posible aplicar el Brief al Proceso AS-IS. Detalle: ' + error.message
+    );
+  }
+}, 3000);
 
   }catch(error){
     showMsg('briefIaMsg','err','No fue posible aplicar el Brief al LMP. Detalle: ' + error.message);
