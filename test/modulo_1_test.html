@@ -12876,35 +12876,6 @@ window.buildBriefPrompt = function(master){
     }
   };
 
-  window.processBriefResponse = function(){
-    const rawText = qs('briefResponseEditor')?.value.trim() || '';
-    if(!rawText){ showMsg('briefIaMsg','warn','Pega primero el JSON generado externamente por IA.'); return; }
-    try{
-      const parsed = (typeof extractJsonFromText === 'function') ? extractJsonFromText(rawText) : JSON.parse(rawText);
-      if(parsed.as_is_process){
-        applyAsIsProcess(parsed);
-        state.briefReview = { raw: parsed, approved: !!parsed.as_is_process.activities?.length };
-        state.brief = parsed;
-        if(qs('briefEditor')) qs('briefEditor').value = JSON.stringify(parsed, null, 2);
-        if(typeof renderBriefValidation === 'function') renderBriefValidation();
-        if(typeof refreshCargaFlowState === 'function') refreshCargaFlowState();
-        showMsg('briefIaMsg','ok','JSON Proceso AS-IS procesado correctamente. Revisa la sección Proceso AS-IS.');
-        return;
-      }
-      const normalized = (typeof normalizeBriefPayload === 'function') ? normalizeBriefPayload(parsed) : parsed;
-      const issues = (typeof evaluateBriefCompleteness === 'function') ? evaluateBriefCompleteness(normalized) : [];
-      state.briefReview = { raw: normalized, approved: issues.length === 0 };
-      state.brief = normalized;
-      if(typeof renderBriefDraft === 'function') renderBriefDraft();
-      if(typeof renderBriefValidation === 'function') renderBriefValidation();
-      if(typeof seedAsIsBuilderFromBrief === 'function') seedAsIsBuilderFromBrief(false);
-      if(typeof refreshCargaFlowState === 'function') refreshCargaFlowState();
-      showMsg('briefIaMsg', issues.length ? 'warn' : 'ok', issues.length ? 'Brief procesado con vacíos. Revisa antes de aprobar.' : 'Brief procesado correctamente.');
-    }catch(error){
-      showMsg('briefIaMsg','err','No fue posible procesar el JSON. Detalle: ' + error.message);
-    }
-  };
-
   window.generateAnalysisStagePrompt = function(stageKey){
     if(!(state.briefReview && state.briefReview.approved)){ showMsg('cargaMsg','warn','Debes aprobar primero el Brief.'); return; }
     state.analysisStages = state.analysisStages || { current:'B1', results:{} };
