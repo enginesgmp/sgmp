@@ -12490,12 +12490,6 @@ function downloadSipocExtractor(){
     if(current === 'analisis_b1'){ showSection('asis'); return; }
     const idx = ANALYSIS_SCREEN_ORDER.indexOf(current); if(idx > 0) showSection(ANALYSIS_SCREEN_ORDER[idx-1]);
   };
-  window.saveAsIsAndContinue = function(){
-    if(typeof syncAsIsFromDom === 'function') syncAsIsFromDom();
-    const acts = cleanActivities(state.asis?.activities || window.sgmpGetBestAnalysisSourceActivities());
-    if(!acts.length){ if(typeof showMsg === 'function') showMsg('asisBuilderMsg','warn','No hay actividades AS IS para continuar.'); return; }
-    state.asis.activities = acts; if(typeof renderAsIsActivities === 'function') renderAsIsActivities(); if(typeof updateTopStatus === 'function') updateTopStatus(); showSection('analisis_b1');
-  };
   window.saveAnalysisAndContinue = function(){ showSection('decision'); };
 })();
 </script>
@@ -12925,19 +12919,42 @@ function downloadSipocExtractor(){
     if(qs('asisJsonPreview')) qs('asisJsonPreview').textContent = JSON.stringify(snapshot, null, 2);
   };
 
-  window.saveAsIsAndContinue = function(){
-    const snapshot = buildAsIsProcessFromCurrentState();
-    const acts = snapshot.as_is_process.activities;
-    if(!acts.length){ showMsg('asisBuilderMsg','warn','Carga o agrega al menos una actividad en Proceso AS-IS antes de continuar.'); return; }
-    const missing = acts.filter(a => !a.name || !a.actor);
-    if(missing.length){ showMsg('asisBuilderMsg','warn','Hay actividades sin nombre o sin actor. Corrige antes de continuar.'); return; }
-    state.asIsProcess = snapshot;
-    state.master = state.master || {};
-    state.master.as_is_process = snapshot.as_is_process;
-    state.master.activities = acts.map(a => ({...a}));
-    showMsg('asisBuilderMsg','ok','Proceso AS-IS guardado correctamente.');
-    goToNext('asis');
-  };
+ window.saveAsIsAndContinue = function(){
+  const snapshot = buildAsIsProcessFromCurrentState();
+  const acts = snapshot.as_is_process.activities || [];
+
+  if(!acts.length){
+    showMsg('asisBuilderMsg','warn','Carga o agrega al menos una actividad en Proceso AS-IS antes de continuar.');
+    return;
+  }
+
+  const missing = acts.filter(a => !a.name || !a.actor);
+
+  if(missing.length){
+    showMsg('asisBuilderMsg','warn','Hay actividades sin nombre o sin actor. Corrige antes de continuar.');
+    return;
+  }
+
+  // Fuente oficial única del AS-IS corregido
+  state.asIsProcess = snapshot;
+
+  // Buffer visual sincronizado, solo para que la pantalla siga reflejando lo guardado
+  state.asis = state.asis || {};
+  state.asis.activities = acts.map(a => ({ ...a }));
+
+  // Evitar copias duplicadas dentro del master
+  if(state.master){
+    delete state.master.as_is_process;
+    delete state.master.asIsProcess;
+    delete state.master.activities;
+  }
+
+  renderAsIsValidatedJson();
+  updateTopStatus();
+
+  showMsg('asisBuilderMsg','ok','Proceso AS-IS guardado correctamente como fuente oficial.');
+  goToNext('asis');
+};
 
   const originalBuildMaster = window.buildMaster;
 window.buildMaster = function(){
