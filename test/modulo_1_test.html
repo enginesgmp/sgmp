@@ -2167,14 +2167,40 @@ color:#A93226;
 .asis-activity-summary{
   cursor:pointer !important;
   list-style:none !important;
-  display:flex !important;
-  justify-content:space-between !important;
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto !important;
   align-items:center !important;
   gap:14px !important;
   padding:15px 16px !important;
   margin-bottom:0 !important;
 }
 
+  /* AS-IS · Badge de tipo de actividad */
+.asis-activity-summary .status-badge{
+  justify-self:end !important;
+  min-width:88px !important;
+  text-align:center !important;
+  border-radius:999px !important;
+  padding:7px 12px !important;
+  font-size:.76rem !important;
+  font-weight:900 !important;
+  text-transform:lowercase !important;
+}
+
+/* Actividad: azul/celeste suave */
+.asis-activity-summary .status-badge{
+  background:rgba(0,194,255,.10) !important;
+  color:#0B2E59 !important;
+  border:1px solid rgba(0,194,255,.22) !important;
+}
+
+/* Decisión: naranja suave */
+.asis-activity-summary .status-badge.is-decision{
+  background:rgba(242,153,74,.13) !important;
+  color:#8A570D !important;
+  border:1px solid rgba(242,153,74,.24) !important;
+}
+  
 .asis-activity-summary::-webkit-details-marker{
   display:none !important;
 }
@@ -2210,21 +2236,11 @@ color:#A93226;
   margin-top:0 !important;
 }
 
-.asis-activity-summary::after{
-  content:'Abrir' !important;
-  border-radius:999px !important;
-  padding:6px 10px !important;
-  background:rgba(0,194,255,.12) !important;
-  border:1px solid rgba(0,194,255,.24) !important;
-  color:#0B2E59 !important;
-  font-size:.75rem !important;
-  font-weight:900 !important;
-}
-
+/* AS-IS · Actividades: sin botón Abrir/Cerrar */
+.asis-activity-summary::after,
 .asis-activity-accordion[open] > .asis-activity-summary::after{
-  content:'Cerrar' !important;
-  background:rgba(11,46,89,.08) !important;
-  border-color:rgba(11,46,89,.16) !important;
+  content:none !important;
+  display:none !important;
 }
   /* AS-IS · Estado visual durante carga */
 #asis.asis-loading > .section-head,
@@ -6062,8 +6078,15 @@ function renderAsIsActivities(){
     updateAsIsPreview();
     return;
   }
-  activities.forEach((a, index) => container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index)));
-  updateAsIsPreview();
+activities.forEach((a, index) => container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index)));
+
+bindAsIsActivityLiveSync();
+
+qsa('#asisActivities .activity-item').forEach((item, index) => {
+  refreshActivitySummary(item, index);
+});
+
+updateAsIsPreview();
 }
 
 function addAsisActivity(data = {}){
@@ -6106,9 +6129,10 @@ function syncAsisRow(index){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
   if(!item) return;
 
-  // Actualiza el encabezado visual siempre, aunque el registro esté incompleto.
+  // Actualización visual inmediata del encabezado
   refreshActivitySummary(item, index);
 
+  // Guardado del estado si la fila ya tiene datos válidos
   const data = readAsisRow(item);
 
   if(data){
@@ -6119,6 +6143,52 @@ function syncAsisRow(index){
 
   updateAsIsPreview();
   updateTopStatus();
+}
+  function bindAsIsActivityLiveSync(){
+  const container = qs('asisActivities');
+  if(!container || container.dataset.liveSyncBound === '1') return;
+
+  container.dataset.liveSyncBound = '1';
+
+  container.addEventListener('input', function(event){
+    const item = event.target.closest('.activity-item');
+    if(!item) return;
+
+    const index = Number(item.dataset.index);
+    if(Number.isNaN(index)) return;
+
+    refreshActivitySummary(item, index);
+
+    const data = readAsisRow(item);
+    if(data){
+      state.asis = state.asis || {};
+      state.asis.activities = state.asis.activities || [];
+      state.asis.activities[index] = data;
+    }
+
+    updateAsIsPreview();
+    updateTopStatus();
+  });
+
+  container.addEventListener('change', function(event){
+    const item = event.target.closest('.activity-item');
+    if(!item) return;
+
+    const index = Number(item.dataset.index);
+    if(Number.isNaN(index)) return;
+
+    refreshActivitySummary(item, index);
+
+    const data = readAsisRow(item);
+    if(data){
+      state.asis = state.asis || {};
+      state.asis.activities = state.asis.activities || [];
+      state.asis.activities[index] = data;
+    }
+
+    updateAsIsPreview();
+    updateTopStatus();
+  });
 }
 
 function renumberAsIsSequence(showMessage = true){
@@ -12917,7 +12987,7 @@ window.asisActivityTemplate = function(data = {}, index = 0){
           <strong>${index + 1}. ${escapeHtml(safe.name || 'Actividad sin nombre')}</strong>
           <small>Actor: ${escapeHtml(safe.actor || 'Sin actor')}</small>
         </div>
-        <span class="status-badge">${escapeHtml(type)}</span>
+        <span class="status-badge ${/decisi[oó]n|decision/i.test(type) ? 'is-decision' : ''}">${escapeHtml(type)}</span>
       </summary>
 
       <div class="asis-activity-body">
@@ -13126,8 +13196,10 @@ function refreshActivitySummary(item, index){
   }
 
   if(badge){
-    badge.textContent = type || 'actividad';
-  }
+  const normalizedType = type || 'actividad';
+  badge.textContent = normalizedType;
+  badge.classList.toggle('is-decision', /decisi[oó]n|decision/i.test(normalizedType));
+}
 }
 
 function openFirstAsIsActivity(){
