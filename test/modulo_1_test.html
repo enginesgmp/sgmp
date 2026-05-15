@@ -9179,18 +9179,31 @@ function renderAsIsStructuralIssues(){
     }).join('') +
   '</div>';
 }
+
 function focusAsIsIssue(encodedWhere, encodedTarget){
   const where = decodeURIComponent(encodedWhere || '');
   const target = decodeURIComponent(encodedTarget || '');
 
   let containerId = 'asisActivities';
+  let rowSelector = '.activity-item';
+  let indexMatch = null;
 
   if(where.includes('suppliers_inputs')){
     containerId = 'asisSuppliersInputs';
+    rowSelector = '.supplier-input-row';
+    indexMatch = where.match(/suppliers_inputs\[(\d+)\]/);
   }else if(where.includes('outputs_customers')){
     containerId = 'asisOutputsCustomers';
+    rowSelector = '.output-customer-row';
+    indexMatch = where.match(/outputs_customers\[(\d+)\]/);
+  }else if(where.includes('activities')){
+    containerId = 'asisActivities';
+    rowSelector = '.activity-item';
+    indexMatch = where.match(/activities\[(\d+)\]/);
   }else if(where.includes('additional_information')){
     containerId = 'asisAdditionalInfo';
+    rowSelector = '.additional-info-readonly-item';
+    indexMatch = where.match(/additional_information\[(\d+)\]/);
   }
 
   const container = qs(containerId);
@@ -9206,13 +9219,20 @@ function focusAsIsIssue(encodedWhere, encodedTarget){
     accordion.setAttribute('open', 'open');
   }
 
-  const candidates = Array.from(container.querySelectorAll('.activity-item, .repeat-item, .field, div'));
-
   let found = null;
 
-  if(target){
+  if(indexMatch && indexMatch[1] !== undefined){
+    const index = Number(indexMatch[1]);
+    found = container.querySelector(`${rowSelector}[data-index="${index}"]`);
+  }
+
+  if(!found && target){
     const targetKey = normalizeTextForSearch(target);
-    found = candidates.find(el => normalizeTextForSearch(el.textContent || '').includes(targetKey));
+    const candidates = Array.from(container.querySelectorAll(rowSelector));
+
+    found = candidates.find(el => {
+      return normalizeTextForSearch(el.textContent || '').includes(targetKey);
+    });
   }
 
   if(!found){
@@ -9224,12 +9244,17 @@ function focusAsIsIssue(encodedWhere, encodedTarget){
   });
 
   setTimeout(() => {
+    if(found.tagName && found.tagName.toLowerCase() === 'details'){
+      found.setAttribute('open', 'open');
+    }
+
     found.classList.add('asis-focus-highlight');
     found.scrollIntoView({behavior:'smooth', block:'center'});
 
-    showMsg('asisBuilderMsg','warn','Vacío localizado. Revisa el apartado abierto y corrige el elemento resaltado.');
+    showMsg('asisBuilderMsg','warn','Vacío localizado. Revisa el elemento resaltado y corrige el campo correspondiente.');
   }, 120);
 }
+  
 function normalizeTextForSearch(value){
   return String(value || '')
     .normalize('NFD')
