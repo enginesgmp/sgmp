@@ -3521,7 +3521,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
   </div>
 </div>
 <div class="field-grid" style="margin-top:14px">
-  <div class="field w-12"><label>Archivos adicionales</label><div class="drop-zone" data-input="docFiles">Arrastra archivos aquí o elige archivos<input id="docFiles" multiple type="file"/></div></div>
+  <div class="field w-12">   <label>Archivos adicionales TXT</label>   <div class="drop-zone" data-input="docFiles">     Arrastra archivos .txt aquí o elige archivos     <input accept=".txt,text/plain" id="docFiles" multiple type="file"/>   </div> </div>
 </div>
 <div class="actions">
 <div class="actions-left">
@@ -9884,26 +9884,61 @@ async function loadAllInputs(){
     await loadInstrumentFiles('pre');
     await loadInstrumentFiles('interview');
   }
-  const docs = Array.from((qs('docFiles')?.files || []));
-  const additions = [];
-  for(const file of docs){
-    const sizeKb = Math.round((file.size || 0) / 1024);
-    let preview = '';
-    if((file.type || '').startsWith('text/') || /\.(txt|md|json|csv|xml|html|js|css)$/i.test(file.name)){
-      try{ preview = (await file.text()).slice(0, 4000); }catch(e){ preview = ''; }
-    }
-    additions.push({ name:file.name, preview, __summary: preview ? `Vista previa disponible (${Math.min(preview.length,4000)} chars)` : 'Solo metadatos para evitar saturación', __sizeLabel: `${sizeKb} KB`, size:file.size || 0, type:file.type || '' });
+const docs = Array.from((qs('docFiles')?.files || []));
+const additions = [];
+const rejectedDocs = [];
+
+for(const file of docs){
+  const isTxt = /\.txt$/i.test(file.name) || (file.type || '') === 'text/plain';
+
+  if(!isTxt){
+    rejectedDocs.push(file.name);
+    continue;
   }
-  if(additions.length){
-    state.loads.docs = [...(state.loads.docs || []), ...additions];
+
+  const sizeKb = Math.round((file.size || 0) / 1024);
+  let content = '';
+
+  try{
+    content = await file.text();
+  }catch(error){
+    rejectedDocs.push(file.name);
+    continue;
   }
+
+  additions.push({
+    title: file.name.replace(/\.txt$/i, ''),
+    type: 'archivo_adicional',
+    content: content,
+    name: file.name,
+    __fileName: file.name,
+    __loadedAt: new Date().toISOString(),
+    __summary: `Archivo TXT cargado como información adicional cruda (${content.length} caracteres)`,
+    __sizeLabel: `${sizeKb} KB`,
+    size: file.size || 0,
+    mime_type: file.type || 'text/plain',
+    editable: true
+  });
+}
+
+if(additions.length){
+  state.loads.docs = [...(state.loads.docs || []), ...additions];
+}
+
+if(rejectedDocs.length){
+  showMsg(
+    'cargaMsg',
+    'warn',
+    `Solo se permiten archivos .txt en Archivos adicionales. No se cargaron: ${rejectedDocs.join(', ')}`
+  );
+}
   updateLoadKpis();
   refreshLoadViews();
   if((state.loads.docs || []).length >= 10){
-    showMsg('cargaMsg','warn','Se cargó un volumen alto de archivos adicionales. El sistema conserva metadatos y vista previa para evitar saturación.');
-  } else if(additions.length) {
-    showMsg('cargaMsg','ok',`Se agregaron ${additions.length} archivo(s) adicionales sin reemplazar la carga previa.`);
-  }
+  showMsg('cargaMsg','warn','Se cargó un volumen alto de archivos TXT adicionales. El contenido crudo se conservará para análisis.');
+} else if(additions.length && !rejectedDocs.length) {
+  showMsg('cargaMsg','ok',`Se agregaron ${additions.length} archivo(s) TXT como información adicional cruda.`);
+}
   ['filePre','fileInterview','fileSipoc','docFiles'].forEach(id => {
     const input = qs(id);
     if(input) input.value = '';
