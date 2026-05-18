@@ -4625,7 +4625,6 @@ var SGMP_LOADED  = false;
   ==========================================================
 */
 window.SGMP_AI_MANUAL_MODE = true;
-window.SGMP_AI_MANUAL_MODE = true;
 
 function sgmpLoadPrompts(moduleCode, onReady, forceReload) {
   var cacheKey = 'sgmp_p_' + moduleCode;
@@ -14489,12 +14488,13 @@ const ORDER = ['B1','B2','B3','B4','B5','B6'];  const $ = id => document.getElem
         additional_information: arr(asis.additional_information)
       },
       previous_analysis_results: {
-        ava: applied.B1 || null,
-        quick_wins: applied.B2 || null,
-        wastes: applied.B3 || null,
-        problems: applied.B4 || null,
-        improvements: applied.B5 || null
-      },
+  ava: applied.B1 || null,
+  quick_wins: applied.B2 || null,
+  wastes: applied.B3 || null,
+  problems: applied.B4 || null,
+  restrictions: applied.B5 || null,
+  improvements: applied.B6 || null
+},
       raw_additional_information: arr(asis.additional_information),
       rules: {
         do_not_mix_as_is_with_to_be: true,
@@ -14930,10 +14930,9 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
 
   let prompt = promptBox?.value?.trim() || '';
 
-  if(!prompt && typeof window.generateAnalysisScreenPrompt === 'function'){
-    window.generateAnalysisScreenPrompt(stageKey);
-    prompt = promptBox?.value?.trim() || '';
-  }
+ if(!prompt && typeof window.generateAnalysisScreenPrompt === 'function'){
+  prompt = await window.generateAnalysisScreenPrompt(stageKey);
+}
 
   if(!prompt){
     if(typeof showMsg === 'function'){
@@ -14991,67 +14990,85 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
     return window.validateAnalysisScreenStage(stageKey);
   };
 
-  window.applyAnalysisStageAndContinue = function(stageKey){
-    state.analysisStages = state.analysisStages || { current: stageKey, results: {}, validated: {} };
-    const parsed = state.analysisStages.validated?.[stageKey] || window.validateAnalysisScreenStage(stageKey);
-    if(!parsed) return;
+window.applyAnalysisStageAndContinue = function(stageKey){
+  state.analysisStages = state.analysisStages || { current: stageKey, results: {}, validated: {} };
 
-    state.analysisStages.results = state.analysisStages.results || {};
-    state.analysisStages.results[stageKey] = parsed;
-    state.analysisStages.current = stageKey;
+  const parsed = state.analysisStages.validated?.[stageKey] || window.validateAnalysisScreenStage(stageKey);
+  if(!parsed) return;
 
-    const summary = getSummary();
-    state.analysis = state.analysis || {};
-    state.analysis.mode = 'manual_controlled_v2';
-    state.analysis.summary = {
-      ava: summary.ava,
-      quick_wins_count: summary.quickWinsCount,
-      wastes_count: summary.wastesCount,
-      problems_count: summary.problemsCount,
-      improvements_count: summary.improvementsCount,
-      stages_completed: Object.keys(state.analysisStages.results || {}).length
-    };
-    state.analysis.results = {
-      ava: state.analysisStages.results.B1 || null,
-      quick_wins: state.analysisStages.results.B2 || null,
-      wastes: state.analysisStages.results.B3 || null,
-      problems: state.analysisStages.results.B4 || null,
-      improvements: state.analysisStages.results.B5 || null
-    };
-    state.analysis.master_snapshot = buildAnalysisMaster(stageKey);
-    state.analysisRun = { raw: state.analysis, qa: false, mode: 'manual_controlled_v2' };
+  state.analysisStages.results = state.analysisStages.results || {};
+  state.analysisStages.results[stageKey] = parsed;
+  state.analysisStages.current = stageKey;
 
-if(stageKey === 'B6'){
-  const improvements = getImprovements(parsed).map((x, idx) => {
-    const normalized = (typeof normalizeImprovement === 'function') ? normalizeImprovement(x) : x;
-    return Object.assign({}, normalized, {
-      id: normalized.id || normalized.improvement_id || ('IM-' + String(idx + 1).padStart(3,'0')),
-      title: normalized.title || normalized.improvement_title || normalized.name || '',
-      description: normalized.description || normalized.improvement_description || '',
-      status: normalized.status || 'pending',
-      customText: normalized.customText || ''
-    });
-  });
-state.tobe = state.tobe || {};
+  const summary = getSummary();
 
-state.tobe.future_flow_proposed = parsed.future_flow_proposed || parsed.futureFlow || parsed.proposed_flow || {};
-state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is || parsed.differences || parsed.gaps_vs_as_is);
-state.tobe.expected_benefits = arr(parsed.expected_benefits || parsed.benefits);
-state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || parsed.documentation_proposal || parsed.document_proposal || {};
-state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan || parsed.implementation_plan || parsed.plan);
-state.tobe.mode_a = parsed.mode_a || parsed.modeA || {};
-state.tobe.mode_b = parsed.mode_b || parsed.modeB || {};
-state.tobe.executive_report = parsed.executive_report || parsed.informe_ejecutivo || '';
-state.tobe.technical_report = parsed.technical_report || parsed.informe_tecnico || '';
+  state.analysis = state.analysis || {};
+  state.analysis.mode = 'manual_controlled_v2';
 
-if(typeof renderImprovements === 'function') renderImprovements();
-if(typeof renderToBeSummary === 'function') renderToBeSummary();
-
-    refreshAllAnalysisViews();
-    if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey, 'ok', stageKey + ' aplicado correctamente.');
-    const nextId = ANALYSIS_STAGE_DEFS_V2[stageKey]?.next || 'decision';
-    if(typeof showSection === 'function') showSection(nextId);
+  state.analysis.summary = {
+    ava: summary.ava,
+    quick_wins_count: summary.quickWinsCount,
+    wastes_count: summary.wastesCount,
+    problems_count: summary.problemsCount,
+    restrictions_count: summary.restrictionsCount,
+    improvements_count: summary.improvementsCount,
+    stages_completed: Object.keys(state.analysisStages.results || {}).length
   };
+
+  state.analysis.results = {
+    ava: state.analysisStages.results.B1 || null,
+    quick_wins: state.analysisStages.results.B2 || null,
+    wastes: state.analysisStages.results.B3 || null,
+    problems: state.analysisStages.results.B4 || null,
+    restrictions: state.analysisStages.results.B5 || null,
+    improvements: state.analysisStages.results.B6 || null
+  };
+
+  state.analysis.master_snapshot = buildAnalysisMaster(stageKey);
+  state.analysisRun = { raw: state.analysis, qa: false, mode: 'manual_controlled_v2' };
+
+  if(stageKey === 'B6'){
+    const improvements = getImprovements(parsed).map((x, idx) => {
+      const normalized = (typeof normalizeImprovement === 'function') ? normalizeImprovement(x) : x;
+
+      return Object.assign({}, normalized, {
+        id: normalized.id || normalized.improvement_id || ('IM-' + String(idx + 1).padStart(3,'0')),
+        title: normalized.title || normalized.improvement_title || normalized.name || '',
+        description: normalized.description || normalized.improvement_description || '',
+        status: normalized.status || 'pending',
+        customText: normalized.customText || ''
+      });
+    });
+
+    state.tobe = state.tobe || {};
+    state.tobe.improvements = improvements;
+
+    state.tobe.future_flow_proposed = parsed.future_flow_proposed || parsed.futureFlow || parsed.proposed_flow || {};
+    state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is || parsed.differences || parsed.gaps_vs_as_is);
+    state.tobe.expected_benefits = arr(parsed.expected_benefits || parsed.benefits);
+    state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || parsed.documentation_proposal || parsed.document_proposal || {};
+    state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan || parsed.implementation_plan || parsed.plan);
+    state.tobe.mode_a = parsed.mode_a || parsed.modeA || {};
+    state.tobe.mode_b = parsed.mode_b || parsed.modeB || {};
+    state.tobe.executive_report = parsed.executive_report || parsed.informe_ejecutivo || '';
+    state.tobe.technical_report = parsed.technical_report || parsed.informe_tecnico || '';
+
+    if(typeof renderImprovements === 'function') renderImprovements();
+    if(typeof renderToBeSummary === 'function') renderToBeSummary();
+  }
+
+  refreshAllAnalysisViews();
+
+  if(typeof showMsg === 'function'){
+    showMsg('analysisMsg_' + stageKey, 'ok', stageKey + ' aplicado correctamente.');
+  }
+
+  const nextId = ANALYSIS_STAGE_DEFS_V2[stageKey]?.next || 'decision';
+
+  if(typeof showSection === 'function'){
+    showSection(nextId);
+  }
+};
 
   window.downloadAnalysisStageJson = function(stageKey){
     const parsed = state.analysisStages?.validated?.[stageKey] || state.analysisStages?.results?.[stageKey] || (() => {
@@ -15279,91 +15296,7 @@ if(q('technicalText')) q('technicalText').value = typeof stripHtml === 'function
       }
     }
   };
-  <script id="sgmp-final-contracts-prompt-layer">
-/*
-  SGMP · LMP · CAPA FINAL DE CONTRATOS SB / IP / ED
-*/
-(function(){
-  function q(id){ return document.getElementById(id); }
-  function asArray(value){ return Array.isArray(value) ? value : []; }
 
-  function getFinalContractsPromptBase(){
-    ...
-  }
-
-  window.buildFinalContractsMaster = function(){
-    ...
-  };
-
-  window.generateFinalContractsPrompt = function(){
-    ...
-  };
-
-  window.validateFinalContractsResponse = function(){
-    ...
-  };
-
-  window.applyFinalContractsResponse = function(){
-    ...
-  };
-
-  // PEGAR AQUÍ LA FUNCIÓN NUEVA
-  window.runFinalContractsGPT = async function(){
-    const msgId = 'resultsMsg';
-    const promptBox = q('finalContractsPromptEditor');
-    const responseBox = q('finalContractsResponseEditor');
-
-    if(window.SGMP_AI_MANUAL_MODE === true){
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'warn', 'API GPT señalada pero aún desactivada. Para activarla, cambiar SGMP_AI_MANUAL_MODE a false y validar sgmpCallAI(stageCode, prompt).');
-      }
-      return;
-    }
-
-    if(typeof sgmpCallAI !== 'function'){
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'err', 'No existe sgmpCallAI(). Revisa SGMP_API y Apps Script.');
-      }
-      return;
-    }
-
-    let prompt = promptBox?.value?.trim() || '';
-
-    if(!prompt){
-      window.generateFinalContractsPrompt();
-      prompt = promptBox?.value?.trim() || '';
-    }
-
-    if(!prompt){
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'warn', 'No hay prompt final para ejecutar.');
-      }
-      return;
-    }
-
-    try{
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'ok', 'Ejecutando GPT para contratos finales SB/IP/ED...');
-      }
-
-      const result = await sgmpCallAI('lmp_final_contracts', prompt);
-      const text = typeof sgmpAIResultText === 'function'
-        ? sgmpAIResultText(result)
-        : (result?.text || String(result || ''));
-
-      if(responseBox) responseBox.value = text;
-
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'ok', 'Respuesta GPT recibida. Ahora valida y aplica contratos finales.');
-      }
-    }catch(error){
-      if(typeof showMsg === 'function'){
-        showMsg(msgId, 'err', 'Error al ejecutar GPT para contratos finales. Puedes continuar manualmente. Detalle: ' + error.message);
-      }
-    }
-  };
-
-})();
 </script>
 })();
 </script>
