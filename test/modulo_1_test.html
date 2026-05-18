@@ -6583,8 +6583,12 @@ function syncAsisRow(index){
     state.asis.activities[index] = data;
   }
 
-  updateAsIsPreview();
-  updateTopStatus();
+updateAsIsPreview();
+updateTopStatus();
+
+if(typeof renderAsIsStructuralIssues === 'function'){
+  renderAsIsStructuralIssues();
+}
 }
   function bindAsIsActivityLiveSync(){
   const container = qs('asisActivities');
@@ -6608,8 +6612,12 @@ function syncAsisRow(index){
       state.asis.activities[index] = data;
     }
 
-    updateAsIsPreview();
-    updateTopStatus();
+updateAsIsPreview();
+updateTopStatus();
+
+if(typeof renderAsIsStructuralIssues === 'function'){
+  renderAsIsStructuralIssues();
+}
   });
 
   container.addEventListener('change', function(event){
@@ -6627,9 +6635,12 @@ function syncAsisRow(index){
       state.asis.activities = state.asis.activities || [];
       state.asis.activities[index] = data;
     }
+updateAsIsPreview();
+updateTopStatus();
 
-    updateAsIsPreview();
-    updateTopStatus();
+if(typeof renderAsIsStructuralIssues === 'function'){
+  renderAsIsStructuralIssues();
+}
   });
 }
 
@@ -9423,11 +9434,24 @@ function renderBriefValidation(){
 }
 
 function renderAsIsStructuralIssues(){
-  const brief = stripDescriptionFromAsIsProcess(
-    state.brief || state.briefReview?.raw || getBriefPayload?.() || {}
-  );
+  if(typeof collectAsisActivities === 'function') collectAsisActivities();
+  if(typeof collectSupplierInputRows === 'function') collectSupplierInputRows();
+  if(typeof collectOutputCustomerRows === 'function') collectOutputCustomerRows();
+  if(typeof collectAdditionalInfoRows === 'function') collectAdditionalInfoRows();
 
-  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(brief));
+  const currentAsIs = {
+    as_is_process: {
+      source_route: typeof sourceRouteLabel === 'function' ? sourceRouteLabel() : '',
+      activities: safeArray(state.asis?.activities),
+      suppliers_inputs: safeArray(state.asis?.suppliers_inputs),
+      outputs_customers: safeArray(state.asis?.outputs_customers),
+      additional_information: safeArray(state.asis?.additional_information)
+    }
+  };
+
+  state.asIsProcess = currentAsIs;
+
+  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(currentAsIs));
 
   state.briefReview = state.briefReview || {};
   state.briefReview.issues = issues;
@@ -9441,7 +9465,6 @@ function renderAsIsStructuralIssues(){
   }
 
   const list = qs('asisStructuralIssuesList');
-
   if(!list) return;
 
   if(!issues.length){
@@ -9449,32 +9472,32 @@ function renderAsIsStructuralIssues(){
     return;
   }
 
- list.innerHTML =
-  '<div class="asis-issue-list">' +
-    issues.map((issue, index) => {
-      const helper = getBriefIssueHelper(issue, brief);
-      const where = issue.where || issue.field || '';
-      const target = helper.target || issue.affectedValue || issue.searchHint || '';
+  list.innerHTML =
+    '<div class="asis-issue-list">' +
+      issues.map((issue, index) => {
+        const helper = getBriefIssueHelper(issue, currentAsIs);
+        const where = issue.where || issue.field || '';
+        const target = helper.target || issue.affectedValue || issue.searchHint || '';
 
-      return `
-        <div class="asis-issue-row">
-          <div class="asis-issue-index">${index + 1}</div>
+        return `
+          <div class="asis-issue-row">
+            <div class="asis-issue-index">${index + 1}</div>
 
-          <div class="asis-issue-content">
-            <strong>${escapeHtml(helper.title || issue.message || 'Vacío estructural')}</strong>
-            ${target ? `<span><b>Elemento afectado:</b> ${escapeHtml(target)}</span>` : ''}
-            <span><b>Qué falta:</b> ${escapeHtml(helper.what || issue.message || 'Revisar estructura del elemento.')}</span>
+            <div class="asis-issue-content">
+              <strong>${escapeHtml(helper.title || issue.message || 'Vacío estructural')}</strong>
+              ${target ? `<span><b>Elemento afectado:</b> ${escapeHtml(target)}</span>` : ''}
+              <span><b>Qué falta:</b> ${escapeHtml(helper.what || issue.message || 'Revisar estructura del elemento.')}</span>
+            </div>
+
+            <div class="asis-issue-action">
+              <button type="button" class="brief-mini-btn primary" onclick="focusAsIsIssue('${encodeURIComponent(where)}','${encodeURIComponent(target)}')">
+                Corregir vacío
+              </button>
+            </div>
           </div>
-
-          <div class="asis-issue-action">
-            <button type="button" class="brief-mini-btn primary" onclick="focusAsIsIssue('${encodeURIComponent(where)}','${encodeURIComponent(target)}')">
-              Corregir vacío
-            </button>
-          </div>
-        </div>
-      `;
-    }).join('') +
-  '</div>';
+        `;
+      }).join('') +
+    '</div>';
 }
 
 function focusAsIsIssue(encodedWhere, encodedTarget){
@@ -13908,9 +13931,13 @@ window.syncSupplierInputRow = function(){
 
   collectSupplierInputRows();
   updateAsIsPreview();
+
+  if(typeof renderAsIsStructuralIssues === 'function'){
+    renderAsIsStructuralIssues();
+  }
 };
   window.addSupplierInputRow = function(data){   collectSupplierInputRows();    state.asis.suppliers_inputs.unshift(Object.assign({     supplier:'',     inputs:[],     editable:true   }, data || {}));    renderSupplierInputRows();   openFirstAsIsMiniRow('asisSuppliersInputs');   updateAsIsPreview(); };
-  window.deleteSupplierInputRow = function(index){ collectSupplierInputRows(); state.asis.suppliers_inputs.splice(index,1); renderSupplierInputRows(); updateAsIsPreview(); };
+  window.deleteSupplierInputRow = function(index){   collectSupplierInputRows();   state.asis.suppliers_inputs.splice(index,1);   renderSupplierInputRows();   updateAsIsPreview();    if(typeof renderAsIsStructuralIssues === 'function'){     renderAsIsStructuralIssues();   } };
 
  window.renderOutputCustomerRows = function(){
   const el = qs('asisOutputsCustomers');
@@ -13979,6 +14006,10 @@ window.syncOutputCustomerRow = function(){
 
   collectOutputCustomerRows();
   updateAsIsPreview();
+
+  if(typeof renderAsIsStructuralIssues === 'function'){
+    renderAsIsStructuralIssues();
+  }
 };
   window.addOutputCustomerRow = function(data){
   collectOutputCustomerRows();
@@ -13993,7 +14024,7 @@ window.syncOutputCustomerRow = function(){
   openFirstAsIsMiniRow('asisOutputsCustomers');
   updateAsIsPreview();
 };
-  window.deleteOutputCustomerRow = function(index){ collectOutputCustomerRows(); state.asis.outputs_customers.splice(index,1); renderOutputCustomerRows(); updateAsIsPreview(); };
+  window.deleteOutputCustomerRow = function(index){   collectOutputCustomerRows();   state.asis.outputs_customers.splice(index,1);   renderOutputCustomerRows();   updateAsIsPreview();    if(typeof renderAsIsStructuralIssues === 'function'){     renderAsIsStructuralIssues();   } };
 
 window.renderAdditionalInfoRows = function(){
   const el = qs('asisAdditionalInfo');
