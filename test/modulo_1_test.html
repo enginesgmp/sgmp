@@ -14406,63 +14406,146 @@ Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
     return `${getPromptBase(stageKey)}\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes actividades, actores, entradas, salidas, problemas, desperdicios ni mejoras.\n- Usa pendiente_validacion cuando falte información textual.\n- Usa [] cuando falten listas.\n- Mantén trazabilidad hacia actividad, tramo del flujo o información adicional considerada.\n- No mezcles AS-IS con TO-BE.\n\nMASTER DE ANÁLISIS (${def.promptKey}):\n${JSON.stringify(master, null, 2)}`;
   }
 
-  function normalizeAvaSummary(result){
-    const summary = result?.summary || result?.ava_summary || result?.ava?.summary || result?.ava || {};
-    const rows = arr(result?.activities || result?.activity_analysis || result?.ava?.activityAnalysis || result?.ava?.activities);
-    let va = Number(summary.va_count ?? summary.VA ?? summary.va ?? 0);
-    let nnva = Number(summary.nnva_count ?? summary.NNVA ?? summary.nnva ?? 0);
-    let nva = Number(summary.nva_count ?? summary.NVA ?? summary.nva ?? 0);
-    if(!va && !nnva && !nva && rows.length){
-      rows.forEach(r => {
-        const cls = clean(r.ava_classification || r.classification || r.ava).toUpperCase();
-        if(cls === 'VA') va += 1;
-        else if(cls === 'NNVA') nnva += 1;
-        else if(cls === 'NVA') nva += 1;
-      });
+function normalizeAvaSummary(result){
+  const summary = result?.summary || result?.ava_summary || result?.ava?.summary || result?.ava || {};
+  const rows = arr(
+    result?.activities_analysis ||
+    result?.activities ||
+    result?.activity_analysis ||
+    result?.ava?.activityAnalysis ||
+    result?.ava?.activities
+  );
+
+  let vac = Number(summary.ava_classification_counts?.VAC ?? summary.VAC ?? summary.vac_count ?? summary.vac ?? 0);
+  let van = Number(summary.ava_classification_counts?.VAN ?? summary.VAN ?? summary.van_count ?? summary.van ?? 0);
+  let nvan = Number(summary.ava_classification_counts?.NVAN ?? summary.NVAN ?? summary.nvan_count ?? summary.nvan ?? 0);
+  let nva = Number(summary.ava_classification_counts?.NVA ?? summary.NVA ?? summary.nva_count ?? summary.nva ?? 0);
+
+  const operationCounts = {
+    OP: Number(summary.operation_type_counts?.OP ?? 0),
+    P: Number(summary.operation_type_counts?.P ?? 0),
+    M: Number(summary.operation_type_counts?.M ?? 0),
+    E: Number(summary.operation_type_counts?.E ?? 0),
+    I: Number(summary.operation_type_counts?.I ?? 0),
+    A: Number(summary.operation_type_counts?.A ?? 0)
+  };
+
+  if(!vac && !van && !nvan && !nva && rows.length){
+    rows.forEach(r => {
+      const cls = clean(r.ava_classification || r.classification || r.ava).toUpperCase();
+      if(cls === 'VAC') vac += 1;
+      else if(cls === 'VAN') van += 1;
+      else if(cls === 'NVAN') nvan += 1;
+      else if(cls === 'NVA') nva += 1;
+
+      const op = clean(r.operation_type_code || r.operation_type || r.type).toUpperCase();
+      if(Object.prototype.hasOwnProperty.call(operationCounts, op)) operationCounts[op] += 1;
+    });
+  }
+
+  const total = Number(summary.total_activities || summary.total || (vac + van + nvan + nva) || rows.length || 0);
+  const pct = n => total ? Math.round((Number(n || 0) / total) * 100) : 0;
+  const improvementCandidates = summary.improvement_candidates || {};
+
+  return {
+    total,
+    vac_count: vac,
+    van_count: van,
+    nvan_count: nvan,
+    nva_count: nva,
+    vac_percentage: Number(summary.ava_classification_percentages?.VAC ?? summary.vac_percentage ?? pct(vac)),
+    van_percentage: Number(summary.ava_classification_percentages?.VAN ?? summary.van_percentage ?? pct(van)),
+    nvan_percentage: Number(summary.ava_classification_percentages?.NVAN ?? summary.nvan_percentage ?? pct(nvan)),
+    nva_percentage: Number(summary.ava_classification_percentages?.NVA ?? summary.nva_percentage ?? pct(nva)),
+    value_added_total: {
+      count: Number(summary.value_added_total?.count ?? (vac + van)),
+      percentage: Number(summary.value_added_total?.percentage ?? pct(vac + van))
+    },
+    non_value_added_total: {
+      count: Number(summary.non_value_added_total?.count ?? (nvan + nva)),
+      percentage: Number(summary.non_value_added_total?.percentage ?? pct(nvan + nva))
+    },
+    operation_type_counts: operationCounts,
+    operation_type_percentages: {
+      OP: Number(summary.operation_type_percentages?.OP ?? pct(operationCounts.OP)),
+      P: Number(summary.operation_type_percentages?.P ?? pct(operationCounts.P)),
+      M: Number(summary.operation_type_percentages?.M ?? pct(operationCounts.M)),
+      E: Number(summary.operation_type_percentages?.E ?? pct(operationCounts.E)),
+      I: Number(summary.operation_type_percentages?.I ?? pct(operationCounts.I)),
+      A: Number(summary.operation_type_percentages?.A ?? pct(operationCounts.A))
+    },
+    improvement_candidates: {
+      elimination: Number(improvementCandidates.elimination ?? 0),
+      automation: Number(improvementCandidates.automation ?? 0),
+      simplification: Number(improvementCandidates.simplification ?? 0),
+      digitalization: Number(improvementCandidates.digitalization ?? 0),
+      integration: Number(improvementCandidates.integration ?? 0),
+      redesign: Number(improvementCandidates.redesign ?? 0)
     }
-    const total = Number(summary.total_activities || summary.total || (va + nnva + nva) || rows.length || 0);
-    const pct = n => total ? Math.round((n / total) * 100) : Number(n || 0);
-    return {
-      total,
-      va_count: va,
-      nnva_count: nnva,
-      nva_count: nva,
-      va_percentage: Number(summary.va_percentage ?? summary.va_pct ?? pct(va)),
-      nnva_percentage: Number(summary.nnva_percentage ?? summary.nnva_pct ?? pct(nnva)),
-      nva_percentage: Number(summary.nva_percentage ?? summary.nva_pct ?? pct(nva))
-    };
-  }
+  };
+}
 
-  function getQuickWins(result){ return arr(result?.quick_wins || result?.quickWins || result?.items); }
-  function getWastes(result){ return arr(result?.wastes || result?.lean_wastes || result?.desperdicios || result?.items); }
-  function getProblems(result){ return arr(result?.problems || result?.critical_points || result?.puntos_criticos || result?.items); }
-  function getImprovements(result){ return arr(result?.improvements || result?.mejoras || result?.opportunities || result?.items); }
+function getQuickWins(result){
+  return arr(result?.quick_wins || result?.quickWins || result?.findings || result?.items);
+}
 
-  function getSummary(){
-    const results = state.analysisStages?.results || {};
-    const ava = normalizeAvaSummary(results.B1 || {});
-    return {
-      ava,
-      quickWinsCount: getQuickWins(results.B2 || {}).length,
-      wastesCount: getWastes(results.B3 || {}).length,
-      problemsCount: getProblems(results.B4 || {}).length,
-      improvementsCount: getImprovements(results.B5 || {}).length
-    };
-  }
+function getWastes(result){
+  return arr(result?.wastes || result?.lean_wastes || result?.desperdicios || result?.findings || result?.items);
+}
 
-  function setText(id, text){ const el = $(id); if(el) el.textContent = text; }
+function getProblems(result){
+  return arr(result?.problems || result?.critical_points || result?.puntos_criticos || result?.findings || result?.items);
+}
 
-  function renderSummaryFor(stageKey){
-    const s = getSummary();
-    setText(   'analysisAvaKpi_' + stageKey,   `VA: ${s.ava.va_percentage || 0}% (${s.ava.va_count || 0})
-NNVA: ${s.ava.nnva_percentage || 0}% (${s.ava.nnva_count || 0})
-NVA: ${s.ava.nva_percentage || 0}% (${s.ava.nva_count || 0})` );
-    setText('analysisQuickWinsKpi_' + stageKey, s.quickWinsCount);
-    setText('analysisWastesKpi_' + stageKey, s.wastesCount);
-    setText('analysisProblemsKpi_' + stageKey, s.problemsCount);
-    setText('analysisImprovementsKpi_' + stageKey, s.improvementsCount);
-  }
+function getRestrictions(result){
+  return arr(result?.restrictions || result?.constraints || result?.restricciones || result?.findings || result?.items);
+}
 
+function getImprovements(result){
+  return arr(result?.improvements || result?.mejoras || result?.opportunities || result?.proposals || result?.items);
+}
+
+function getSummary(){
+  const results = state.analysisStages?.results || {};
+  const ava = normalizeAvaSummary(results.B1 || {});
+
+  return {
+    ava,
+    quickWinsCount: getQuickWins(results.B2 || {}).length,
+    wastesCount: getWastes(results.B3 || {}).length,
+    problemsCount: getProblems(results.B4 || {}).length,
+    restrictionsCount: getRestrictions(results.B5 || {}).length,
+    improvementsCount: getImprovements(results.B6 || {}).length
+  };
+}
+
+function setText(id, text){
+  const el = $(id);
+  if(el) el.textContent = text;
+}
+
+function renderSummaryFor(stageKey){
+  const s = getSummary();
+  const a = s.ava;
+
+  setText('analysisAvaKpi_' + stageKey,
+    `VAC: ${a.vac_percentage || 0}% (${a.vac_count || 0})
+VAN: ${a.van_percentage || 0}% (${a.van_count || 0})
+NVAN: ${a.nvan_percentage || 0}% (${a.nvan_count || 0})
+NVA: ${a.nva_percentage || 0}% (${a.nva_count || 0})
+
+VA total: ${a.value_added_total?.percentage || 0}% (${a.value_added_total?.count || 0})
+NVA total: ${a.non_value_added_total?.percentage || 0}% (${a.non_value_added_total?.count || 0})
+
+Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P || 0} · M ${a.operation_type_counts?.M || 0} · E ${a.operation_type_counts?.E || 0} · I ${a.operation_type_counts?.I || 0} · A ${a.operation_type_counts?.A || 0}`
+  );
+
+  setText('analysisQuickWinsKpi_' + stageKey, s.quickWinsCount);
+  setText('analysisWastesKpi_' + stageKey, s.wastesCount);
+  setText('analysisProblemsKpi_' + stageKey, s.problemsCount);
+  setText('analysisRestrictionsKpi_' + stageKey, s.restrictionsCount);
+  setText('analysisImprovementsKpi_' + stageKey, s.improvementsCount);
+}
   function itemText(item, fields){
     for(const f of fields){
       const v = item?.[f];
