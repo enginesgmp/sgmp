@@ -6586,8 +6586,8 @@ function syncAsisRow(index){
 updateAsIsPreview();
 updateTopStatus();
 
-if(typeof renderAsIsStructuralIssues === 'function'){
-  renderAsIsStructuralIssues();
+if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
 }
 }
   function bindAsIsActivityLiveSync(){
@@ -6615,8 +6615,8 @@ if(typeof renderAsIsStructuralIssues === 'function'){
 updateAsIsPreview();
 updateTopStatus();
 
-if(typeof renderAsIsStructuralIssues === 'function'){
-  renderAsIsStructuralIssues();
+if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
 }
   });
 
@@ -6638,8 +6638,8 @@ if(typeof renderAsIsStructuralIssues === 'function'){
 updateAsIsPreview();
 updateTopStatus();
 
-if(typeof renderAsIsStructuralIssues === 'function'){
-  renderAsIsStructuralIssues();
+if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
 }
   });
 }
@@ -9434,12 +9434,7 @@ function renderBriefValidation(){
 }
 
 function renderAsIsStructuralIssues(){
-  if(typeof collectAsisActivities === 'function') collectAsisActivities();
-  if(typeof collectSupplierInputRows === 'function') collectSupplierInputRows();
-  if(typeof collectOutputCustomerRows === 'function') collectOutputCustomerRows();
-  if(typeof collectAdditionalInfoRows === 'function') collectAdditionalInfoRows();
-
-  const currentAsIs = {
+  const baseAsIs = state.asIsProcess || {
     as_is_process: {
       source_route: typeof sourceRouteLabel === 'function' ? sourceRouteLabel() : '',
       activities: safeArray(state.asis?.activities),
@@ -9449,9 +9444,7 @@ function renderAsIsStructuralIssues(){
     }
   };
 
-  state.asIsProcess = currentAsIs;
-
-  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(currentAsIs));
+  const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(baseAsIs));
 
   state.briefReview = state.briefReview || {};
   state.briefReview.issues = issues;
@@ -9475,7 +9468,7 @@ function renderAsIsStructuralIssues(){
   list.innerHTML =
     '<div class="asis-issue-list">' +
       issues.map((issue, index) => {
-        const helper = getBriefIssueHelper(issue, currentAsIs);
+        const helper = getBriefIssueHelper(issue, baseAsIs);
         const where = issue.where || issue.field || '';
         const target = helper.target || issue.affectedValue || issue.searchHint || '';
 
@@ -9500,6 +9493,24 @@ function renderAsIsStructuralIssues(){
     '</div>';
 }
 
+  function refreshAsIsStructuralIssuesAfterEdit(){
+  if(typeof collectAsisActivities === 'function') collectAsisActivities();
+  if(typeof collectSupplierInputRows === 'function') collectSupplierInputRows();
+  if(typeof collectOutputCustomerRows === 'function') collectOutputCustomerRows();
+  if(typeof collectAdditionalInfoRows === 'function') collectAdditionalInfoRows();
+
+  state.asIsProcess = {
+    as_is_process: {
+      source_route: typeof sourceRouteLabel === 'function' ? sourceRouteLabel() : '',
+      activities: safeArray(state.asis?.activities),
+      suppliers_inputs: safeArray(state.asis?.suppliers_inputs),
+      outputs_customers: safeArray(state.asis?.outputs_customers),
+      additional_information: safeArray(state.asis?.additional_information)
+    }
+  };
+
+  renderAsIsStructuralIssues();
+}
 function focusAsIsIssue(encodedWhere, encodedTarget){
   const where = decodeURIComponent(encodedWhere || '');
   const target = decodeURIComponent(encodedTarget || '');
@@ -10037,9 +10048,9 @@ setTimeout(() => {
       updateAsIsPreview();
     }
 
-    if(typeof renderAsIsStructuralIssues === 'function'){
-      renderAsIsStructuralIssues();
-    }
+    if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
+}
 
 if(loader){
   loader.classList.add('hidden');
@@ -13932,17 +13943,19 @@ window.syncSupplierInputRow = function(){
   collectSupplierInputRows();
   updateAsIsPreview();
 
-  if(typeof renderAsIsStructuralIssues === 'function'){
-    renderAsIsStructuralIssues();
-  }
+if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
+}
 };
   window.addSupplierInputRow = function(data){   collectSupplierInputRows();    state.asis.suppliers_inputs.unshift(Object.assign({     supplier:'',     inputs:[],     editable:true   }, data || {}));    renderSupplierInputRows();   openFirstAsIsMiniRow('asisSuppliersInputs');   updateAsIsPreview(); };
-  window.deleteSupplierInputRow = function(index){   collectSupplierInputRows();   state.asis.suppliers_inputs.splice(index,1);   renderSupplierInputRows();   updateAsIsPreview();    if(typeof renderAsIsStructuralIssues === 'function'){     renderAsIsStructuralIssues();   } };
+  window.deleteSupplierInputRow = function(index){   collectSupplierInputRows();   state.asis.suppliers_inputs.splice(index,1);   renderSupplierInputRows();   updateAsIsPreview();    if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
+} };
 
  window.renderOutputCustomerRows = function(){
   const el = qs('asisOutputsCustomers');
-  if(!el) return;
-
+  if(!el) return;  
+                                            
   state.asis = state.asis || {};
   state.asis.outputs_customers = mergeOutputCustomerRows(state.asis.outputs_customers || []);
 
@@ -14007,9 +14020,9 @@ window.syncOutputCustomerRow = function(){
   collectOutputCustomerRows();
   updateAsIsPreview();
 
-  if(typeof renderAsIsStructuralIssues === 'function'){
-    renderAsIsStructuralIssues();
-  }
+if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
+}
 };
   window.addOutputCustomerRow = function(data){
   collectOutputCustomerRows();
@@ -14024,7 +14037,9 @@ window.syncOutputCustomerRow = function(){
   openFirstAsIsMiniRow('asisOutputsCustomers');
   updateAsIsPreview();
 };
-  window.deleteOutputCustomerRow = function(index){   collectOutputCustomerRows();   state.asis.outputs_customers.splice(index,1);   renderOutputCustomerRows();   updateAsIsPreview();    if(typeof renderAsIsStructuralIssues === 'function'){     renderAsIsStructuralIssues();   } };
+  window.deleteOutputCustomerRow = function(index){   collectOutputCustomerRows();   state.asis.outputs_customers.splice(index,1);   renderOutputCustomerRows();   updateAsIsPreview();    if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+  refreshAsIsStructuralIssuesAfterEdit();
+} };
 
 window.renderAdditionalInfoRows = function(){
   const el = qs('asisAdditionalInfo');
