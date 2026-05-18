@@ -3944,6 +3944,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B1')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B1','analysisMsg_B1','Prompt B1 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4023,6 +4024,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B2')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B2','analysisMsg_B2','Prompt B2 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4102,6 +4104,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B3')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B3','analysisMsg_B3','Prompt B3 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4181,6 +4184,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B4')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B4','analysisMsg_B4','Prompt B4 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4260,6 +4264,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B5')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B5','analysisMsg_B5','Prompt B5 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4339,6 +4344,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B6')" type="button">Generar prompt</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B6','analysisMsg_B6','Prompt B6 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4470,6 +4476,7 @@ Aún no se ha validado el Brief.
   <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
     <div class="actions-left">
       <button class="btn" onclick="generateFinalContractsPrompt()" type="button">Generar prompt final</button>
+      <button class="btn-warn" onclick="runFinalContractsGPT()" type="button">Ejecutar GPT contratos</button>
       <button class="btn-ghost" onclick="copyTextFromId('finalContractsPromptEditor','resultsMsg','Prompt final copiado correctamente.')" type="button">Copiar prompt final</button>
     </div>
   </div>
@@ -4588,6 +4595,36 @@ var SGMP_STAGE_CONFIG = {};
 window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
 var SGMP_LOADED  = false;
+  /*
+  ==========================================================
+  PUNTO DE CONEXIÓN API GPT · SGMP LMP
+  ----------------------------------------------------------
+  Actualmente el módulo trabaja en modo manual controlado:
+  - genera prompt;
+  - el usuario copia;
+  - ejecuta externamente en GPT;
+  - pega JSON;
+  - valida;
+  - aplica.
+
+  Para que el módulo ejecute GPT automáticamente:
+  1. Apps Script debe tener habilitada la acción: action=call_ai.
+  2. SGMP_API debe apuntar al Web App /exec correcto.
+  3. Google Sheets debe tener los prompt_key vigentes:
+     - prompt_brief
+     - prompt_analysis_B1
+     - prompt_analysis_B2
+     - prompt_analysis_B3
+     - prompt_analysis_B4
+     - prompt_analysis_B5
+     - prompt_analysis_B6
+     - prompt_results_contracts
+  4. Cambiar esta bandera a false:
+     window.SGMP_AI_MANUAL_MODE = false;
+  5. Revisar la función sgmpCallAI(stageCode, prompt).
+  ==========================================================
+*/
+window.SGMP_AI_MANUAL_MODE = true;
 window.SGMP_AI_MANUAL_MODE = true;
 
 function sgmpLoadPrompts(moduleCode, onReady, forceReload) {
@@ -14832,10 +14869,64 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
     refreshAllAnalysisViews();
   };
 
-  window.runAnalysisScreenStage = function(stageKey){
-    if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey, 'warn', 'Modo manual controlado: no se ejecuta IA desde el LMP. Copia el prompt, ejecútalo externamente y pega el JSON de respuesta.');
-  };
+ window.runAnalysisScreenStage = async function(stageKey){
+  const msgId = 'analysisMsg_' + stageKey;
 
+  if(window.SGMP_AI_MANUAL_MODE === true){
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'warn', 'API GPT señalada pero aún desactivada. Para activarla, cambiar SGMP_AI_MANUAL_MODE a false y validar sgmpCallAI(stageCode, prompt).');
+    }
+    return;
+  }
+
+  if(typeof sgmpCallAI !== 'function'){
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'err', 'No existe sgmpCallAI(). Revisa el bloque SGMP_API y la conexión Apps Script.');
+    }
+    return;
+  }
+
+  const promptBox = document.getElementById('analysisPrompt_' + stageKey);
+  const responseBox = document.getElementById('analysisResponse_' + stageKey);
+
+  let prompt = promptBox?.value?.trim() || '';
+
+  if(!prompt && typeof window.generateAnalysisScreenPrompt === 'function'){
+    window.generateAnalysisScreenPrompt(stageKey);
+    prompt = promptBox?.value?.trim() || '';
+  }
+
+  if(!prompt){
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'warn', 'No hay prompt para ejecutar. Genera primero el prompt de la etapa.');
+    }
+    return;
+  }
+
+  try{
+    const def = window.sgmpGetAnalysisStageDefinitions?.()[stageKey] || {};
+    const stageCode = def.stageCode || ('lmp_analysis_' + String(stageKey).toLowerCase());
+
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'ok', 'Ejecutando GPT para ' + stageKey + '...');
+    }
+
+    const result = await sgmpCallAI(stageCode, prompt);
+    const text = typeof sgmpAIResultText === 'function'
+      ? sgmpAIResultText(result)
+      : (result?.text || String(result || ''));
+
+    if(responseBox) responseBox.value = text;
+
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'ok', 'Respuesta GPT recibida. Ahora valida y aplica el JSON.');
+    }
+  }catch(error){
+    if(typeof showMsg === 'function'){
+      showMsg(msgId, 'err', 'Error al ejecutar GPT. Puedes continuar en modo manual. Detalle: ' + error.message);
+    }
+  }
+};
   window.validateAnalysisScreenStage = function(stageKey){
     const responseBox = $('analysisResponse_' + stageKey);
     const validationBox = $('analysisValidation_' + stageKey);
@@ -14967,6 +15058,249 @@ if(stageKey === 'B6'){
   });
 })();
 </script>
+<script id="sgmp-final-contracts-prompt-layer">
+/*
+  ==========================================================
+  SGMP · LMP · CAPA FINAL DE CONTRATOS SB / IP / ED
+  ----------------------------------------------------------
+  Este bloque habilita:
+  - Generar prompt final desde prompt_results_contracts.
+  - Construir MASTER FINAL LMP.
+  - Validar JSON final con sb_contract, ip_contract y ed_contract.
+  - Aplicar contratos finales al estado del módulo.
+  ==========================================================
+*/
+(function(){
+  function q(id){ return document.getElementById(id); }
+  function asArray(value){ return Array.isArray(value) ? value : []; }
 
+  function getFinalContractsPromptBase(){
+    if(typeof sgmpPrompt === 'function'){
+      return sgmpPrompt(
+        'prompt_results_contracts',
+        'ACTÚA COMO arquitecto senior del SGMP. Genera los contratos finales SB, IP y ED usando el MASTER FINAL LMP. Responde SOLO JSON válido.'
+      );
+    }
+
+    return 'ACTÚA COMO arquitecto senior del SGMP. Genera los contratos finales SB, IP y ED usando el MASTER FINAL LMP. Responde SOLO JSON válido.';
+  }
+
+  window.buildFinalContractsMaster = function(){
+    const analysisPayload = typeof window.sgmpAssembleStagedAnalysisPayload === 'function'
+      ? window.sgmpAssembleStagedAnalysisPayload()
+      : {};
+
+    return {
+      module_code: 'LMP',
+      master_type: 'LMP_MASTER_FINAL',
+      generated_at: new Date().toISOString(),
+      context: window.state?.context || {},
+      as_is_process: window.state?.asIsProcess || window.state?.asis || {},
+      analysis_payload: analysisPayload,
+      to_be: window.state?.tobe || {},
+      selected_improvements: asArray(window.state?.tobe?.improvements).filter(x => x.status !== 'reject'),
+      rules: {
+        sb_contract: 'Debe contener todo el flujo lógico para diagramar SIPOC/proceso.',
+        ip_contract: 'Debe contener todas las entradas y salidas del proceso.',
+        ed_contract: 'Debe contener solo la propuesta documental inicial para cubrir el proceso.',
+        no_inventar: true,
+        missing_text: 'pendiente_validacion',
+        missing_lists: []
+      }
+    };
+  };
+
+  window.generateFinalContractsPrompt = function(){
+    const box = q('finalContractsPromptEditor');
+    if(!box) return;
+
+    const base = getFinalContractsPromptBase();
+    const master = window.buildFinalContractsMaster();
+
+    box.value =
+`${base}
+
+MASTER FINAL LMP:
+${JSON.stringify(master, null, 2)}
+
+REGLA FINAL:
+Responde SOLO JSON válido conforme al contrato solicitado.`;
+
+    if(typeof showMsg === 'function'){
+      showMsg('resultsMsg','ok','Prompt final de contratos SB/IP/ED generado correctamente.');
+    }
+  };
+
+  window.validateFinalContractsResponse = function(){
+    const raw = q('finalContractsResponseEditor')?.value.trim() || '';
+    const box = q('finalContractsValidationBox');
+
+    if(!raw){
+      if(box) box.textContent = 'No hay JSON final para validar.';
+      return false;
+    }
+
+    try{
+      const parsed = typeof extractJsonFromText === 'function'
+        ? extractJsonFromText(raw)
+        : JSON.parse(raw);
+
+      const errors = [];
+
+      if(!parsed.sb_contract) errors.push('Falta sb_contract.');
+      if(!parsed.ip_contract) errors.push('Falta ip_contract.');
+      if(!parsed.ed_contract) errors.push('Falta ed_contract.');
+
+      if(parsed.sb_contract && !asArray(parsed.sb_contract.activities).length){
+        errors.push('sb_contract no contiene activities para diagramación.');
+      }
+
+      if(parsed.ip_contract && !asArray(parsed.ip_contract.inputs_inventory).length && !asArray(parsed.ip_contract.outputs_inventory).length){
+        errors.push('ip_contract no contiene inputs_inventory ni outputs_inventory.');
+      }
+
+      if(parsed.ed_contract && !parsed.ed_contract.initial_documentation_proposal){
+        errors.push('ed_contract no contiene initial_documentation_proposal.');
+      }
+
+      if(box){
+        box.textContent = errors.length
+          ? 'JSON parseable, pero con observaciones:\n- ' + errors.join('\n- ')
+          : 'JSON final válido. Contiene sb_contract, ip_contract y ed_contract.';
+      }
+
+      return !errors.length;
+    }catch(error){
+      if(box) box.textContent = 'JSON inválido. Detalle: ' + error.message;
+      return false;
+    }
+  };
+
+  window.applyFinalContractsResponse = function(){
+    const raw = q('finalContractsResponseEditor')?.value.trim() || '';
+
+    if(!raw){
+      if(typeof showMsg === 'function'){
+        showMsg('resultsMsg','warn','Pega primero el JSON final de contratos SB/IP/ED.');
+      }
+      return;
+    }
+
+    try{
+      const parsed = typeof extractJsonFromText === 'function'
+        ? extractJsonFromText(raw)
+        : JSON.parse(raw);
+
+      window.state.finalContracts = parsed;
+      window.state.sb_contract = parsed.sb_contract || {};
+      window.state.ip_contract = parsed.ip_contract || {};
+      window.state.ed_contract = parsed.ed_contract || {};
+
+      window.state.results = window.state.results || {};
+      window.state.results.sbJson = parsed.sb_contract || {};
+      window.state.results.ipJson = parsed.ip_contract || {};
+      window.state.results.edJson = parsed.ed_contract || {};
+
+      if(q('sbJsonView')) q('sbJsonView').textContent = JSON.stringify(window.state.sb_contract, null, 2);
+      if(q('ipJsonView')) q('ipJsonView').textContent = JSON.stringify(window.state.ip_contract, null, 2);
+      if(q('edJsonView')) q('edJsonView').textContent = JSON.stringify(window.state.ed_contract, null, 2);
+
+      if(typeof showMsg === 'function'){
+        showMsg('resultsMsg','ok','Contratos finales SB/IP/ED aplicados correctamente.');
+      }
+    }catch(error){
+      if(typeof showMsg === 'function'){
+        showMsg('resultsMsg','err','No fue posible aplicar contratos finales. Detalle: ' + error.message);
+      }
+    }
+  };
+  <script id="sgmp-final-contracts-prompt-layer">
+/*
+  SGMP · LMP · CAPA FINAL DE CONTRATOS SB / IP / ED
+*/
+(function(){
+  function q(id){ return document.getElementById(id); }
+  function asArray(value){ return Array.isArray(value) ? value : []; }
+
+  function getFinalContractsPromptBase(){
+    ...
+  }
+
+  window.buildFinalContractsMaster = function(){
+    ...
+  };
+
+  window.generateFinalContractsPrompt = function(){
+    ...
+  };
+
+  window.validateFinalContractsResponse = function(){
+    ...
+  };
+
+  window.applyFinalContractsResponse = function(){
+    ...
+  };
+
+  // PEGAR AQUÍ LA FUNCIÓN NUEVA
+  window.runFinalContractsGPT = async function(){
+    const msgId = 'resultsMsg';
+    const promptBox = q('finalContractsPromptEditor');
+    const responseBox = q('finalContractsResponseEditor');
+
+    if(window.SGMP_AI_MANUAL_MODE === true){
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'warn', 'API GPT señalada pero aún desactivada. Para activarla, cambiar SGMP_AI_MANUAL_MODE a false y validar sgmpCallAI(stageCode, prompt).');
+      }
+      return;
+    }
+
+    if(typeof sgmpCallAI !== 'function'){
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'err', 'No existe sgmpCallAI(). Revisa SGMP_API y Apps Script.');
+      }
+      return;
+    }
+
+    let prompt = promptBox?.value?.trim() || '';
+
+    if(!prompt){
+      window.generateFinalContractsPrompt();
+      prompt = promptBox?.value?.trim() || '';
+    }
+
+    if(!prompt){
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'warn', 'No hay prompt final para ejecutar.');
+      }
+      return;
+    }
+
+    try{
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'ok', 'Ejecutando GPT para contratos finales SB/IP/ED...');
+      }
+
+      const result = await sgmpCallAI('lmp_final_contracts', prompt);
+      const text = typeof sgmpAIResultText === 'function'
+        ? sgmpAIResultText(result)
+        : (result?.text || String(result || ''));
+
+      if(responseBox) responseBox.value = text;
+
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'ok', 'Respuesta GPT recibida. Ahora valida y aplica contratos finales.');
+      }
+    }catch(error){
+      if(typeof showMsg === 'function'){
+        showMsg(msgId, 'err', 'Error al ejecutar GPT para contratos finales. Puedes continuar manualmente. Detalle: ' + error.message);
+      }
+    }
+  };
+
+})();
+</script>
+})();
+</script>
 </body>
 </html>
