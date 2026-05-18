@@ -4463,6 +4463,35 @@ Aún no se ha validado el Brief.
 <div class="step-pill">Paso 8</div>
 </div>
 <div class="cards">
+  <article class="card">
+  <h3>Prompt final · Contratos SB / IP / ED</h3>
+  <p>Genera el prompt final desde Google Sheets/API usando el prompt_key <strong>prompt_results_contracts</strong>. Este prompt construye los tres contratos finales: SB para diagramación, IP para entradas/salidas y ED para propuesta documental inicial.</p>
+
+  <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+    <div class="actions-left">
+      <button class="btn" onclick="generateFinalContractsPrompt()" type="button">Generar prompt final</button>
+      <button class="btn-ghost" onclick="copyTextFromId('finalContractsPromptEditor','resultsMsg','Prompt final copiado correctamente.')" type="button">Copiar prompt final</button>
+    </div>
+  </div>
+
+  <textarea id="finalContractsPromptEditor" placeholder="Aquí aparecerá el prompt final para contratos SB/IP/ED." style="width:100%;min-height:280px;resize:vertical;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+</article>
+
+<article class="card">
+  <h3>Respuesta JSON final SB / IP / ED</h3>
+  <p>Pega aquí el JSON final generado por IA. El LMP lo validará y lo guardará como contratos finales.</p>
+
+  <textarea id="finalContractsResponseEditor" placeholder="Pega aquí el JSON con sb_contract, ip_contract y ed_contract." style="width:100%;min-height:260px;resize:vertical;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+
+  <div class="actions">
+    <div class="actions-left">
+      <button class="btn-warn" onclick="validateFinalContractsResponse()" type="button">Validar contratos finales</button>
+      <button class="btn-ok" onclick="applyFinalContractsResponse()" type="button">Aplicar contratos finales</button>
+    </div>
+  </div>
+
+  <div class="box" id="finalContractsValidationBox">Aún no se han validado los contratos finales.</div>
+</article>
 <article class="card">
 <h3>Generación de salidas</h3>
 <div class="actions">
@@ -4480,6 +4509,15 @@ Aún no se ha validado el Brief.
 <article class="card half">
 <h3>JSON SB compatible</h3>
 <div class="pre" id="sbJsonView"></div>
+</article>
+  <article class="card half">
+  <h3>JSON IP · Entradas y salidas</h3>
+  <div class="pre" id="ipJsonView"></div>
+</article>
+
+<article class="card half">
+  <h3>JSON ED · Propuesta documental inicial</h3>
+  <div class="pre" id="edJsonView"></div>
 </article>
 <article class="card half">
 <h3>Plan de implementación</h3>
@@ -4851,7 +4889,7 @@ sgmpLoadPrompts('LMP', async function() {
   await sgmpLoadRuntimeConfig();
 });
 
-const stageOrder = ['inicio','preparacion','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','decision','tobe','resultados'];
+const stageOrder = ['inicio','preparacion','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
 
 const preQuestionMap = {
   'Operativo': [
@@ -7503,7 +7541,13 @@ function buildImpactText(){
 function buildTechnicalHtml(){
   const acts = state.asis.activities.map((a,i)=>`<li><strong>${i+1}. ${escapeHtml(a.name)}</strong> · ${escapeHtml(a.actor)} · ${escapeHtml(a.type)}${a.problems ? ` · ${escapeHtml(a.problems)}`:''}</li>`).join('');
   const listHtml = arr => safeArray(arr).length ? `<ul>${safeArray(arr).map(x=>`<li>${escapeHtml(typeof x === 'string' ? x : sgmpTextOf(x))}</li>`).join('')}</ul>` : '<p>-</p>';
-  const improvements = safeArray(state.tobe?.improvements?.length ? state.tobe.improvements : state.analysis?.improvements);
+const improvements = safeArray(
+  parsed.improvements ||
+  parsed.mejoras ||
+  parsed.proposals ||
+  parsed.analysis_results?.improvements?.improvements ||
+  parsed.analysis_results?.improvements
+);
   const improvementsHtml = improvements.length
     ? `<ul>${improvements.map(x => `<li><strong>${escapeHtml(x.title || 'Mejora')}</strong><br><b>Actividad:</b> ${escapeHtml(x.applies_to_activity || '-')}<br><b>Hallazgo:</b> ${escapeHtml(x.linked_finding || x.problem || '-')}<br><b>Solución:</b> ${escapeHtml(x.solution || x.proposedState || '-')}<br><b>Impacto:</b> ${escapeHtml(x.expected_impact || x.impact || '-')}</li>`).join('')}</ul>`
     : '<p>-</p>';
@@ -11682,27 +11726,43 @@ function sgmpAssembleStagedAnalysisPayload(){
   const b4 = results.B4 || {};
   const b5 = results.B5 || {};
   const b6 = results.B6 || {};
-  let activities = safeArray(b2.as_is?.activities || b1.as_is?.activities || state.asis?.activities || state.briefReview?.raw?.as_is?.activities || state.briefReview?.raw?.activities_preliminary).map(a => ({...a}));
-  const avaActivityAnalysis = safeArray(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
-  if(avaActivityAnalysis.length && activities.length){
-    activities = activities.map(a => {
-      const hit = avaActivityAnalysis.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase());
-      return hit ? Object.assign({}, a, {
-        ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification,
-        ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason
-      }) : a;
-    });
-  }
-  const mergedFindings = Object.assign({}, b3.findings || {}, b4.findings || {});
-  return sgmpEnrichAnalysisModel({
+
+  const activities = safeArray(
+    state.asIsProcess?.as_is_process?.activities ||
+    state.asIsProcess?.activities ||
+    state.asis?.activities ||
+    state.master?.activities ||
+    state.briefReview?.raw?.as_is?.activities ||
+    state.briefReview?.raw?.activities_preliminary
+  ).map(a => ({ ...a }));
+
+  return {
+    module_code: 'LMP',
+    source: 'sgmp_lmp_analysis_staged',
     context: state.context || state.master?.context || {},
-    as_is: { activities },
-    ava: b2.ava || {},
-    findings: mergedFindings,
-    quickWins: b5.quickWins || b5.quick_wins || [],
-    improvements: b5.improvements || [],
-    sb_contract: b6.sipoc_input ? { sipoc_input: b6.sipoc_input } : (b6.sb_contract || {})
-  });
+    as_is_process: {
+      activities,
+      suppliers_inputs: safeArray(state.asIsProcess?.as_is_process?.suppliers_inputs || state.asIsProcess?.suppliers_inputs || state.asis?.suppliers_inputs),
+      outputs_customers: safeArray(state.asIsProcess?.as_is_process?.outputs_customers || state.asIsProcess?.outputs_customers || state.asis?.outputs_customers),
+      additional_information: safeArray(state.asIsProcess?.as_is_process?.additional_information || state.asIsProcess?.additional_information || state.asis?.additional_information)
+    },
+    analysis_results: {
+      ava: b1,
+      quick_wins: b2,
+      wastes: b3,
+      problems: b4,
+      restrictions: b5,
+      improvements: b6
+    },
+    summary: {
+      ava: normalizeAvaSummary(b1),
+      quick_wins_count: getQuickWins(b2).length,
+      wastes_count: getWastes(b3).length,
+      problems_count: getProblems(b4).length,
+      restrictions_count: getRestrictions(b5).length,
+      improvements_count: getImprovements(b6).length
+    }
+  };
 }
 
 function processAnalysisStageResponse(){
@@ -11810,7 +11870,7 @@ function processAnalysisStageResponse(){
       state.analysisStages.current = next;
       showMsg('iaMsg','ok','Etapa ' + key + ' procesada correctamente. Siguiente sugerida: ' + next + '.');
     }else{
-      showMsg('iaMsg','ok','B6 procesado. Análisis por bloques finalizado; revisa el contrato final LMP → SB.');
+      showMsg('iaMsg','ok','B6 procesado. Análisis por etapas finalizado; revisa Propuestas de mejora y continúa a Resultados finales.');
     }
   }catch(error){
     showMsg('iaMsg','err','No fue posible procesar la etapa. Detalle: ' + error.message);
@@ -11848,11 +11908,12 @@ function normalizeAnalysisPayload(parsed){
   const asisBlock = parsed.as_is || parsed.asIs || {};
   const findings = parsed.findings || {};
   const topFindings = {
-    wastes: parsed.wastes,
-    problems: parsed.problems,
-    restrictions: parsed.restrictions,
-    quickWins: parsed.quickWins
-  };
+  quickWins: parsed.quick_wins || parsed.quickWins,
+  wastes: parsed.wastes || parsed.lean_wastes || parsed.desperdicios,
+  problems: parsed.problems || parsed.critical_points || parsed.puntos_criticos,
+  restrictions: parsed.restrictions || parsed.constraints || parsed.restricciones,
+  improvements: parsed.improvements || parsed.mejoras || parsed.proposals
+};
 
   const context = Object.assign(
     {},
@@ -13094,30 +13155,40 @@ function downloadSipocExtractor(){
       const normalized = (typeof normalizeAnalysisPayload === 'function') ? normalizeAnalysisPayload(assembled) : assembled;
       const enriched = (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel(normalized) : normalized;
       state.analysis = enriched;
-      if(stageKey === 'B5'){
-        const improvements = arr(enriched.improvements).map(x => (typeof normalizeImprovement === 'function' ? normalizeImprovement(x) : x));
-        state.tobe = state.tobe || {}; state.tobe.improvements = improvements; if(typeof renderImprovements === 'function') renderImprovements();
-      }
-      if(stageKey === 'B6'){
-        const sipocInput = parsed?.sipoc_input || parsed?.sb_contract?.sipoc_input || enriched?.sb_contract?.sipoc_input;
-        if(sipocInput){ state.sb_contract = { sipoc_input: sipocInput }; state.sbContractBuilder = state.sbContractBuilder || {}; state.sbContractBuilder.raw = { sipoc_input: sipocInput }; state.sbContractBuilder.approved = true; }
-      }
+     if(stageKey === 'B6'){
+  const improvements = getImprovements(parsed).map((x, idx) => {
+    const normalized = (typeof normalizeImprovement === 'function') ? normalizeImprovement(x) : x;
+    return Object.assign({}, normalized, {
+      id: normalized.id || normalized.improvement_id || ('IM-' + String(idx + 1).padStart(3,'0')),
+      title: normalized.title || normalized.improvement_title || normalized.name || '',
+      description: normalized.description || normalized.improvement_description || '',
+      status: normalized.status || 'pending',
+      customText: normalized.customText || ''
+    });
+  });
+
+  state.tobe = state.tobe || {};
+  state.tobe.improvements = improvements;
+
+  state.tobe.future_flow_proposed = parsed.future_flow_proposed || {};
+  state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is);
+  state.tobe.expected_benefits = arr(parsed.expected_benefits);
+  state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || {};
+  state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan);
+  state.tobe.mode_a = parsed.mode_a || {};
+  state.tobe.mode_b = parsed.mode_b || {};
+
+  if(typeof renderImprovements === 'function') renderImprovements();
+}
       window.renderAnalysisScreenAccumulated(stageKey);
       if(typeof renderAnalysisFromState === 'function') renderAnalysisFromState();
       if(typeof updateTopStatus === 'function') updateTopStatus();
       if(typeof showMsg === 'function') showMsg(msgId,'ok','Respuesta ' + stageKey + ' procesada correctamente.');
     }catch(error){ console.error('[LMP process ' + stageKey + '] Error:', error); if(typeof showMsg === 'function') showMsg(msgId,'err','No fue posible procesar ' + stageKey + '. Detalle: ' + error.message); }
   };
-  window.sgmpAssembleStagedAnalysisPayload = function(){
-    const results = state.analysisStages?.results || {}, b1 = results.B1 || {}, b2 = results.B2 || {}, b3 = results.B3 || {}, b4 = results.B4 || {}, b5 = results.B5 || {}, b6 = results.B6 || {};
-    let activities = cleanActivities(b2.as_is?.activities || b1.as_is?.activities || window.sgmpGetBestAnalysisSourceActivities());
-    const avaItems = arr(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
-    if(avaItems.length && activities.length){
-      activities = activities.map(a => { const hit = avaItems.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase()); return hit ? Object.assign({}, a, { ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification || a.ava, ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason }) : a; });
-    }
-    const mergedFindings = Object.assign({}, b3.findings || {}, b4.findings || {});
-    return (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel({ context: state.context || state.master?.context || {}, as_is: { activities }, ava: b2.ava || {}, findings: mergedFindings, quickWins: b5.quickWins || b5.quick_wins || [], improvements: b5.improvements || [], sb_contract: b6.sipoc_input ? { sipoc_input: b6.sipoc_input } : (b6.sb_contract || {}) }) : { as_is:{ activities }, findings: mergedFindings, improvements:b5.improvements || [] };
-  };
+window.sgmpAssembleStagedAnalysisPayload = function(){
+  return sgmpAssembleStagedAnalysisPayload();
+};
   window.renderAnalysisScreenAccumulated = function(stageKey){
     const assembled = window.sgmpAssembleStagedAnalysisPayload();
     const acts = arr(assembled?.as_is?.activities), findings = assembled?.findings || {}, improvements = arr(assembled?.improvements);
@@ -13140,7 +13211,7 @@ function downloadSipocExtractor(){
     const key = ANALYSIS_KEY_BY_SECTION[id];
     if(key){ state.analysisStages = state.analysisStages || { current:key, results:{} }; state.analysisStages.current = key; if(!el('analysisPrompt_' + key)?.value) window.generateAnalysisScreenPrompt(key); window.renderAnalysisScreenAccumulated(key); }
   };
-  window.labelStage = function(id){ return { inicio:'Inicio', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b1:'B1 · Validación AS IS', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
+  window.labelStage = function(id){   return {     inicio: 'Inicio',     preparacion: 'Preparación y contexto',     carga: 'Carga y consolidación',     asis: 'Proceso AS-IS',     analisis: 'Análisis - AVA',     analisis_b1: 'Análisis - AVA',     analisis_b2: 'Análisis - Quick wins',     analisis_b3: 'Análisis - Desperdicios',     analisis_b4: 'Análisis - Problemas',     analisis_b5: 'Análisis - Restricciones',     analisis_b6: 'Análisis - Propuestas de mejora',     decision: 'Decisión',     tobe: 'TO BE',     resultados: 'Resultados'   }[id] || id; };
   window.goToNext = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
     if(current === 'preparacion'){ showSection('carga'); return; }
@@ -14555,41 +14626,67 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
     return 'pendiente_validacion';
   }
 
-  function makeAppliedRows(){
-    const r = state.analysisStages?.results || {};
-    const rows = [];
-    arr(r.B1?.activities || r.B1?.activity_analysis || r.B1?.ava?.activityAnalysis).forEach(item => rows.push({
-      type: 'AVA',
-      affected: itemText(item, ['activity_name','activity_id','name','activity']),
-      why: itemText(item, ['justification','impact_note','reason']),
-      evidence: itemText(item, ['evidence_considered','evidence'])
-    }));
-    getQuickWins(r.B2 || {}).forEach(item => rows.push({
-      type: 'Quick win',
-      affected: itemText(item, ['activity_name','activity_id','flow_segment','affected_activity_or_segment']),
-      why: itemText(item, ['why_quick_win','quick_win','expected_impact']),
-      evidence: itemText(item, ['evidence_considered','evidence'])
-    }));
-    getWastes(r.B3 || {}).forEach(item => rows.push({
-      type: 'Desperdicio Lean',
-      affected: itemText(item, ['activity_name','activity_id','flow_segment','affected_activity_or_segment']),
-      why: itemText(item, ['why_applies','waste_description','probable_impact']),
-      evidence: itemText(item, ['evidence_considered','evidence'])
-    }));
-    getProblems(r.B4 || {}).forEach(item => rows.push({
-      type: 'Problema / punto crítico',
-      affected: itemText(item, ['activity_name','activity_id','flow_segment','affected_activity_or_segment']),
-      why: itemText(item, ['why_it_affects_the_process','problem','problem_type']),
-      evidence: itemText(item, ['evidence_considered','evidence'])
-    }));
-    getImprovements(r.B5 || {}).forEach(item => rows.push({
-      type: 'Mejora propuesta',
-      affected: itemText(item, ['affected_activity_or_segment','activity_name','flow_segment']),
-      why: itemText(item, ['justification','proposed_improvement','expected_impact']),
-      evidence: itemText(item, ['improvement_origin','related_problem_or_waste_or_quick_win','evidence_considered'])
-    }));
-    return rows;
+ function makeAppliedRows(){
+  const results = state.analysisStages?.results || {};
+  const rows = [];
+
+  function affectedText(item){
+    const activities = arr(item?.related_activities || item?.activities || item?.activity_names);
+    const ids = arr(item?.related_activity_ids || item?.activity_ids);
+
+    if(activities.length) return activities.join(', ');
+    if(ids.length) return ids.join(', ');
+    return clean(item?.flow_segment || item?.process_area || item?.activity_name || item?.affected || item?.scope || 'Proceso general');
   }
+
+  function pushMany(type, items, whyFields, evidenceFields){
+    arr(items).forEach(item => {
+      rows.push({
+        type,
+        affected: affectedText(item),
+        why: itemText(item, whyFields),
+        evidence: itemText(item, evidenceFields)
+      });
+    });
+  }
+
+  pushMany(
+    'Quick win',
+    getQuickWins(results.B2 || {}),
+    ['why_it_is_quick_win', 'quick_win_description', 'description', 'recommended_action', 'expected_benefit'],
+    ['evidence_considered', 'evidence', 'support']
+  );
+
+  pushMany(
+    'Desperdicio',
+    getWastes(results.B3 || {}),
+    ['why_it_is_waste', 'waste_description', 'why_it_is_not_necessary', 'current_effect'],
+    ['evidence_considered', 'evidence', 'support']
+  );
+
+  pushMany(
+    'Problema',
+    getProblems(results.B4 || {}),
+    ['why_it_is_a_problem', 'problem_description', 'current_effect', 'risk_if_not_solved'],
+    ['evidence_considered', 'evidence', 'support']
+  );
+
+  pushMany(
+    'Restricción',
+    getRestrictions(results.B5 || {}),
+    ['why_it_is_a_restriction', 'restriction_description', 'what_it_limits', 'effect_on_process_flow'],
+    ['evidence_considered', 'evidence', 'support']
+  );
+
+  pushMany(
+    'Propuesta de mejora',
+    getImprovements(results.B6 || {}),
+    ['improvement_description', 'current_situation', 'proposed_change', 'expected_benefit'],
+    ['evidence_considered', 'evidence', 'support']
+  );
+
+  return rows;
+}
 
   function renderAppliedList(stageKey){
     const el = $('analysisAppliedList_' + stageKey);
@@ -14618,18 +14715,86 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
   }
 
   function stageValidationRules(stageKey, parsed){
-    if(stageKey === 'B1'){
-      const rows = arr(parsed?.activities || parsed?.activity_analysis || parsed?.ava?.activityAnalysis);
-      const summary = normalizeAvaSummary(parsed);
-      if(!rows.length) return 'JSON válido, pero no se encontraron actividades clasificadas.';
-      return `JSON válido. AVA detectado: ${summary.va_percentage}% VA / ${summary.nnva_percentage}% NNVA / ${summary.nva_percentage}% NVA. Actividades clasificadas: ${rows.length}.`;
+  if(stageKey === 'B1'){
+    const rows = arr(
+      parsed?.activities_analysis ||
+      parsed?.activities ||
+      parsed?.activity_analysis ||
+      parsed?.ava?.activityAnalysis ||
+      parsed?.ava?.activities
+    );
+
+    const summary = normalizeAvaSummary(parsed);
+
+    if(parsed?.analysis_type && parsed.analysis_type !== 'prompt_analysis_B1'){
+      return 'JSON válido, pero analysis_type no coincide con prompt_analysis_B1.';
     }
-    if(stageKey === 'B2') return `JSON válido. Quick wins detectados: ${getQuickWins(parsed).length}.`;
-    if(stageKey === 'B3') return `JSON válido. Desperdicios Lean detectados: ${getWastes(parsed).length}.`;
-    if(stageKey === 'B4') return `JSON válido. Problemas / puntos críticos detectados: ${getProblems(parsed).length}.`;
-    if(stageKey === 'B5') return `JSON válido. Mejoras propuestas detectadas: ${getImprovements(parsed).length}.`;
-    return 'JSON válido.';
+
+    if(!parsed?.summary){
+      return 'JSON válido, pero falta el objeto summary.';
+    }
+
+    if(!rows.length){
+      return 'JSON válido, pero no se encontraron actividades clasificadas en activities_analysis.';
+    }
+
+    const avaTotal =
+      Number(summary.vac_count || 0) +
+      Number(summary.van_count || 0) +
+      Number(summary.nvan_count || 0) +
+      Number(summary.nva_count || 0);
+
+    const opTotal =
+      Number(summary.operation_type_counts?.OP || 0) +
+      Number(summary.operation_type_counts?.P || 0) +
+      Number(summary.operation_type_counts?.M || 0) +
+      Number(summary.operation_type_counts?.E || 0) +
+      Number(summary.operation_type_counts?.I || 0) +
+      Number(summary.operation_type_counts?.A || 0);
+
+    if(summary.total && avaTotal !== summary.total){
+      return `JSON válido, pero la suma AVA no coincide con total_activities. Total declarado: ${summary.total}. Suma AVA: ${avaTotal}.`;
+    }
+
+    if(summary.total && opTotal !== summary.total){
+      return `JSON válido, pero la suma de tipos de operación no coincide con total_activities. Total declarado: ${summary.total}. Suma tipos: ${opTotal}.`;
+    }
+
+    return `JSON válido. AVA detectado: VAC ${summary.vac_percentage}% / VAN ${summary.van_percentage}% / NVAN ${summary.nvan_percentage}% / NVA ${summary.nva_percentage}%. Actividades clasificadas: ${rows.length}.`;
   }
+
+  if(stageKey === 'B2'){
+    const count = getQuickWins(parsed).length;
+    if(count < 5 || count > 10) return `JSON válido, pero Quick wins debe tener mínimo 5 y máximo 10. Detectados: ${count}.`;
+    return `JSON válido. Quick wins detectados: ${count}.`;
+  }
+
+  if(stageKey === 'B3'){
+    const count = getWastes(parsed).length;
+    if(count < 5 || count > 10) return `JSON válido, pero Desperdicios debe tener mínimo 5 y máximo 10. Detectados: ${count}.`;
+    return `JSON válido. Desperdicios Lean detectados: ${count}.`;
+  }
+
+  if(stageKey === 'B4'){
+    const count = getProblems(parsed).length;
+    if(count < 5 || count > 10) return `JSON válido, pero Problemas debe tener mínimo 5 y máximo 10. Detectados: ${count}.`;
+    return `JSON válido. Problemas detectados: ${count}.`;
+  }
+
+  if(stageKey === 'B5'){
+    const count = getRestrictions(parsed).length;
+    if(count < 5 || count > 10) return `JSON válido, pero Restricciones debe tener mínimo 5 y máximo 10. Detectadas: ${count}.`;
+    return `JSON válido. Restricciones detectadas: ${count}.`;
+  }
+
+  if(stageKey === 'B6'){
+    const count = getImprovements(parsed).length;
+    if(count < 5 || count > 10) return `JSON válido, pero Propuestas de mejora debe tener mínimo 5 y máximo 10. Detectadas: ${count}.`;
+    return `JSON válido. Propuestas de mejora detectadas: ${count}.`;
+  }
+
+  return 'JSON válido.';
+}
 
   window.sgmpGetAnalysisStageDefinitions = function(){
     const defs = {};
@@ -14726,22 +14891,30 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
     state.analysis.master_snapshot = buildAnalysisMaster(stageKey);
     state.analysisRun = { raw: state.analysis, qa: false, mode: 'manual_controlled_v2' };
 
-    if(stageKey === 'B5'){
-      state.tobe = state.tobe || {};
-      state.tobe.improvements = getImprovements(parsed).map((item, idx) => ({
-        id: item.id || 'MEJ-' + String(idx + 1).padStart(2, '0'),
-        title: item.title || item.proposed_improvement || item.improvement || 'Mejora propuesta',
-        type: item.improvement_type || item.type || 'pendiente_validacion',
-        applies_to_activity: item.affected_activity_or_segment || item.activity_name || item.flow_segment || '',
-        solution: item.proposed_improvement || item.solution || '',
-        expected_impact: item.expected_impact || '',
-        effort_level: item.estimated_complexity || item.effort_level || '',
-        linked_finding: item.related_problem_or_waste_or_quick_win || item.improvement_origin || '',
-        justification: item.justification || '',
-        status: item.status || 'pending'
-      }));
-      if(typeof renderImprovements === 'function') renderImprovements();
-    }
+if(stageKey === 'B6'){
+  const improvements = getImprovements(parsed).map((x, idx) => {
+    const normalized = (typeof normalizeImprovement === 'function') ? normalizeImprovement(x) : x;
+    return Object.assign({}, normalized, {
+      id: normalized.id || normalized.improvement_id || ('IM-' + String(idx + 1).padStart(3,'0')),
+      title: normalized.title || normalized.improvement_title || normalized.name || '',
+      description: normalized.description || normalized.improvement_description || '',
+      status: normalized.status || 'pending',
+      customText: normalized.customText || ''
+    });
+  });
+
+  state.tobe = state.tobe || {};
+  state.tobe.improvements = improvements;
+  state.tobe.future_flow_proposed = parsed.future_flow_proposed || {};
+  state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is);
+  state.tobe.expected_benefits = arr(parsed.expected_benefits);
+  state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || {};
+  state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan);
+  state.tobe.mode_a = parsed.mode_a || {};
+  state.tobe.mode_b = parsed.mode_b || {};
+
+  if(typeof renderImprovements === 'function') renderImprovements();
+}
 
     refreshAllAnalysisViews();
     if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey, 'ok', stageKey + ' aplicado correctamente.');
