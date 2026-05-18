@@ -4024,7 +4024,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B2')" type="button">Generar prompt</button>
-          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B2')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B2','analysisMsg_B2','Prompt B2 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4104,7 +4104,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B3')" type="button">Generar prompt</button>
-          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B3')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B3','analysisMsg_B3','Prompt B3 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4184,7 +4184,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B4')" type="button">Generar prompt</button>
-          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B4')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B4','analysisMsg_B4','Prompt B4 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4264,7 +4264,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B5')" type="button">Generar prompt</button>
-          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B5')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B5','analysisMsg_B5','Prompt B5 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4344,7 +4344,7 @@ Aún no se ha validado el Brief.
       <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
         <div class="actions-left">
           <button class="btn" onclick="generateAnalysisScreenPrompt('B6')" type="button">Generar prompt</button>
-          <button class="btn-warn" onclick="runAnalysisScreenStage('B1')" type="button">Ejecutar con GPT</button>
+          <button class="btn-warn" onclick="runAnalysisScreenStage('B6')" type="button">Ejecutar con GPT</button>
           <button class="btn-ghost" onclick="copyTextFromId('analysisPrompt_B6','analysisMsg_B6','Prompt B6 copiado correctamente.')" type="button">Copiar prompt</button>
         </div>
       </div>
@@ -4679,7 +4679,24 @@ function sgmpRegisterPrompt(p) {
 function sgmpPrompt(key, fallback) {
   return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
 }
+function sgmpEnsurePromptsLoaded(forceReload){
+  return new Promise(resolve => {
+    if(typeof sgmpLoadPrompts !== 'function'){
+      resolve(false);
+      return;
+    }
 
+    sgmpLoadPrompts('LMP', function(){
+      resolve(true);
+    }, forceReload === true);
+  });
+}
+
+function sgmpPromptDebug(key){
+  const found = !!(SGMP_PROMPTS && SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim());
+  console.log('[SGMP PROMPT]', key, found ? 'CARGADO DESDE SHEETS' : 'NO ENCONTRADO / FALLBACK', SGMP_PROMPT_META?.[key] || null);
+  return found;
+}
 function sgmpYes(value){
   return ['YES','SI','SÍ','TRUE','1','ON'].includes(String(value ?? '').trim().toUpperCase());
 }
@@ -7040,12 +7057,87 @@ function renderToBeSummary(){
     ['tobeDocsView','docs'],
     ['tobePlanView','plan']
   ];
+
   const artifacts = buildToBeArtifacts();
-  refs.forEach(([id,key]) => { const el = qs(id); if(el) el.innerHTML = artifacts[key]; });
+
+  refs.forEach(([id,key]) => {
+    const el = qs(id);
+    if(el) el.innerHTML = artifacts[key];
+  });
+
+  renderToBeExtendedFromState();
 }
 
+function sgmpRenderAny(value){
+  if(value === undefined || value === null || value === ''){
+    return '<p>pendiente_validacion</p>';
+  }
 
+  if(typeof value === 'string'){
+    return '<p>' + escapeHtml(value) + '</p>';
+  }
 
+  if(Array.isArray(value)){
+    if(!value.length) return '<p>Sin registros.</p>';
+
+    return '<ul>' + value.map(item => {
+      if(typeof item === 'string') return '<li>' + escapeHtml(item) + '</li>';
+
+      const title = item.title || item.name || item.activity_name || item.phase || item.step || item.description || item.difference || item.benefit || item.action || 'Elemento';
+      const detail = item.description || item.detail || item.current_situation || item.proposed_change || item.expected_benefit || item.reason || item.responsible || '';
+
+      return '<li><strong>' + escapeHtml(title) + '</strong>' + (detail ? '<br>' + escapeHtml(detail) : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  if(typeof value === 'object'){
+    const entries = Object.entries(value);
+
+    if(!entries.length) return '<p>Sin registros.</p>';
+
+    return '<ul>' + entries.map(([k,v]) => {
+      const label = escapeHtml(k);
+      const val = typeof v === 'object'
+        ? '<pre>' + escapeHtml(JSON.stringify(v, null, 2)) + '</pre>'
+        : escapeHtml(v);
+
+      return '<li><strong>' + label + ':</strong> ' + val + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  return '<p>' + escapeHtml(String(value)) + '</p>';
+}
+
+function renderToBeExtendedFromState(){
+  const t = state.tobe || {};
+
+  const map = [
+    ['tobeFutureFlowView', t.future_flow_proposed || t.futureFlow || t.proposed_flow],
+    ['tobeDiffView', t.differences_vs_as_is || t.differences || t.gaps_vs_as_is],
+    ['tobeBenefitsView', t.expected_benefits || t.benefits],
+    ['tobeDocsView', t.initial_documentation_proposal || t.documentation_proposal || t.document_proposal],
+    ['tobePlanView', t.to_be_implementation_plan || t.implementation_plan || t.plan]
+  ];
+
+  map.forEach(([id,value]) => {
+    const el = qs(id);
+    if(el && value !== undefined && value !== null && !(Array.isArray(value) && !value.length)){
+      el.innerHTML = sgmpRenderAny(value);
+    }
+  });
+
+  if(t.mode_a || t.mode_b){
+    const el = qs('tobePlanView');
+    if(el){
+      el.innerHTML += `
+        <h3>Modo A</h3>
+        ${sgmpRenderAny(t.mode_a || [])}
+        <h3>Modo B</h3>
+        ${sgmpRenderAny(t.mode_b || [])}
+      `;
+    }
+  }
+}
 
 
 /* =========================
@@ -7745,6 +7837,13 @@ function generateResults(){
   state.results.sbValidation = sbValidation;
   state.results.executiveHtml = buildExecutiveHtml();
   state.results.technicalHtml = buildTechnicalHtml();
+  if(state.tobe?.executive_report){
+  state.results.executiveHtml = sgmpRenderAny(state.tobe.executive_report);
+}
+
+if(state.tobe?.technical_report){
+  state.results.technicalHtml = sgmpRenderAny(state.tobe.technical_report);
+}
   state.results.implementationHtml = buildImplementationHtml();
   const artifacts = buildToBeArtifacts();
   state.results.documentProposal = artifacts.documentProposal || [];
@@ -14286,7 +14385,6 @@ window.buildBriefPrompt = function(master){
 <script id="sgmp-lmp-analysis-v2-manual-architecture">
 (function(){
   'use strict';
-
 const ANALYSIS_STAGE_DEFS_V2 = {
   B1: {
     id: 'analisis_b1',
@@ -14294,152 +14392,57 @@ const ANALYSIS_STAGE_DEFS_V2 = {
     label: 'Análisis - AVA',
     promptKey: 'prompt_analysis_B1',
     stageCode: 'lmp_analisis_ava',
-    fallback: `Actúa como especialista senior en gestión por procesos y análisis AVA.
-
-OBJETIVO:
-Realizar el Análisis - AVA de todas las actividades AS-IS del proceso.
-
-REGLA CENTRAL:
-Este es el único análisis que debe cubrir obligatoriamente todas las actividades del AS-IS, una por una.
-
-CLASIFICACIÓN AVA:
-- VAC: Valor Agregado al Cliente.
-- VAN: Valor Agregado al Negocio.
-- NVAN: No Valor Agregado Necesario.
-- NVA: No Valor Agregado.
-
-TIPOS DE OPERACIÓN:
-- OP: Operación.
-- P: Preparación.
-- M: Movimiento.
-- E: Espera.
-- I: Inspección.
-- A: Archivo.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'analisis_b2',
+    fallback: 'ACTÚA COMO especialista SGMP. Ejecuta Análisis - AVA usando el MASTER recibido. Responde SOLO JSON válido con el contrato prompt_analysis_B1.'
   },
-
   B2: {
     id: 'analisis_b2',
     shortLabel: 'Quick wins',
     label: 'Análisis - Quick wins',
     promptKey: 'prompt_analysis_B2',
     stageCode: 'lmp_analisis_quick_wins',
-    fallback: `Actúa como especialista senior en mejora continua y gestión por procesos.
-
-OBJETIVO:
-Identificar quick wins relevantes del proceso AS-IS.
-
-REGLA CENTRAL:
-No generes obligatoriamente un quick win por cada actividad.
-Identifica solo oportunidades rápidas reales, visibles y justificables a nivel de proceso, tramo, grupo de actividades o actividad puntual.
-
-Un quick win debe ser una mejora de baja complejidad, bajo esfuerzo relativo, rápida implementación y beneficio visible.
-
-Si no existe evidencia suficiente para un quick win, no lo inventes.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'analisis_b3',
+    fallback: 'ACTÚA COMO especialista SGMP. Identifica entre 5 y 10 quick wins reales del proceso completo usando el MASTER recibido. Responde SOLO JSON válido.'
   },
-
   B3: {
     id: 'analisis_b3',
     shortLabel: 'Desperdicios',
     label: 'Análisis - Desperdicios',
     promptKey: 'prompt_analysis_B3',
     stageCode: 'lmp_analisis_desperdicios',
-    fallback: `Actúa como especialista senior Lean y gestión por procesos.
-
-OBJETIVO:
-Identificar desperdicios relevantes del proceso AS-IS.
-
-REGLA CENTRAL:
-No generes obligatoriamente un desperdicio por cada actividad.
-Identifica solo desperdicios reales, observables o inferibles con evidencia suficiente a nivel de proceso, tramo, grupo de actividades o actividad puntual.
-
-Considera desperdicios Lean como espera, movimiento, transporte, sobreproceso, inventario, defectos, sobreproducción y talento no utilizado.
-
-Si no existe evidencia suficiente, no inventes desperdicios.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'analisis_b4',
+    fallback: 'ACTÚA COMO especialista Lean. Identifica entre 5 y 10 desperdicios reales, eliminables e innecesarios del proceso completo usando el MASTER recibido. Responde SOLO JSON válido.'
   },
-
   B4: {
     id: 'analisis_b4',
     shortLabel: 'Problemas',
     label: 'Análisis - Problemas',
     promptKey: 'prompt_analysis_B4',
     stageCode: 'lmp_analisis_problemas',
-    fallback: `Actúa como especialista senior en diagnóstico de procesos.
-
-OBJETIVO:
-Identificar problemas, fallas, riesgos, bloqueos o puntos críticos relevantes del proceso AS-IS.
-
-REGLA CENTRAL:
-No generes obligatoriamente un problema por cada actividad.
-Identifica solo problemas reales o razonablemente inferibles desde la evidencia disponible a nivel de proceso, tramo, grupo de actividades o actividad puntual.
-
-Si no existe evidencia suficiente, no inventes problemas.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'analisis_b5',
+    fallback: 'ACTÚA COMO arquitecto senior de procesos. Identifica entre 5 y 10 problemas críticos del proceso completo usando el MASTER recibido. Responde SOLO JSON válido.'
   },
-
   B5: {
     id: 'analisis_b5',
     shortLabel: 'Restricciones',
     label: 'Análisis - Restricciones',
     promptKey: 'prompt_analysis_B5',
     stageCode: 'lmp_analisis_restricciones',
-    fallback: `Actúa como especialista senior en gestión por procesos y análisis de restricciones.
-
-OBJETIVO:
-Identificar restricciones relevantes que condicionan, limitan o dificultan el desempeño del proceso AS-IS.
-
-REGLA CENTRAL:
-No generes obligatoriamente una restricción por cada actividad.
-Identifica solo restricciones reales o razonablemente inferibles a nivel de proceso, tramo, grupo de actividades o actividad puntual.
-
-TIPOS DE RESTRICCIÓN:
-- Operativa.
-- Tecnológica.
-- Normativa.
-- Documental.
-- Física.
-- Recursos.
-- Coordinación.
-- Información.
-- Capacidad.
-- Tiempo.
-
-Si no existe evidencia suficiente, no inventes restricciones.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'analisis_b6',
+    fallback: 'ACTÚA COMO especialista TOC y gestión por procesos. Identifica entre 5 y 10 restricciones reales que limitan el avance del proceso o del líder. Responde SOLO JSON válido.'
   },
-
   B6: {
     id: 'analisis_b6',
-    shortLabel: 'Mejoras propuestas',
+    shortLabel: 'Propuestas de mejora',
     label: 'Análisis - Propuestas de mejora',
     promptKey: 'prompt_analysis_B6',
     stageCode: 'lmp_analisis_mejoras',
-    fallback: `Actúa como especialista senior en mejora continua, rediseño de procesos y gestión por procesos.
-
-OBJETIVO:
-Proponer mejoras trazables para el proceso AS-IS a partir del análisis acumulado.
-
-REGLA CENTRAL:
-No generes obligatoriamente una mejora por cada actividad.
-Propón solo mejoras justificadas por AVA, quick wins, desperdicios, problemas, restricciones o información adicional cruda.
-
-Cada mejora puede estar asociada a una actividad, varias actividades, un tramo del flujo o el proceso completo.
-
-Si no existe evidencia suficiente para una mejora, no la inventes.
-
-Devuelve SOLO JSON válido conforme al contrato solicitado por el LMP.`
+    next: 'decision',
+    fallback: 'ACTÚA COMO consultor senior SGMP. Genera entre 5 y 10 propuestas de mejora, flujo futuro propuesto, diferencias vs AS-IS, beneficios esperados, modo A, modo B, propuesta documental inicial y plan de implementación TO-BE. Responde SOLO JSON válido.'
   }
 };
 
-  const ORDER = ['B1','B2','B3','B4','B5','B6'];
-  const $ = id => document.getElementById(id);
+const ORDER = ['B1','B2','B3','B4','B5','B6'];  const $ = id => document.getElementById(id);
   const arr = value => Array.isArray(value) ? value : (value ? [value] : []);
   const clean = value => String(value ?? '').trim();
   const esc = value => String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -14855,20 +14858,56 @@ Tipos: OP ${a.operation_type_counts?.OP || 0} · P ${a.operation_type_counts?.P 
     refreshAllAnalysisViews();
   };
 
-  window.generateAnalysisScreenPrompt = function(stageKey){
-    const def = ANALYSIS_STAGE_DEFS_V2[stageKey];
-    if(!def) return;
-    state.analysisStages = state.analysisStages || { current: stageKey, results: {}, validated: {} };
-    state.analysisStages.current = stageKey;
+ window.generateAnalysisScreenPrompt = async function(stageKey){
+  const def = ANALYSIS_STAGE_DEFS_V2[stageKey];
 
-    if(!$('analysisMaster_' + stageKey)?.value.trim()) window.createAnalysisMaster(stageKey);
-    const prompt = buildPrompt(stageKey);
-    const box = $('analysisPrompt_' + stageKey);
-    if(box) box.value = prompt;
-    if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey, 'ok', 'Prompt ' + stageKey + ' generado con prompt_key: ' + def.promptKey + '.');
-    refreshAllAnalysisViews();
-  };
+  if(!def){
+    if(typeof showMsg === 'function'){
+      showMsg('analysisMsg_' + stageKey, 'err', 'Etapa de análisis no definida: ' + stageKey);
+    }
+    return '';
+  }
 
+  state.analysisStages = state.analysisStages || { current: stageKey, results: {}, validated: {} };
+  state.analysisStages.current = stageKey;
+
+  if(typeof showMsg === 'function'){
+    showMsg('analysisMsg_' + stageKey, 'warn', 'Cargando prompt desde Google Sheets para ' + def.promptKey + '...');
+  }
+
+  if(typeof sgmpEnsurePromptsLoaded === 'function'){
+    await sgmpEnsurePromptsLoaded(true);
+  }
+
+  if(typeof sgmpPromptDebug === 'function'){
+    sgmpPromptDebug(def.promptKey);
+  }
+
+  if(!$('analysisMaster_' + stageKey)?.value.trim()){
+    window.createAnalysisMaster(stageKey);
+  }
+
+  const prompt = buildPrompt(stageKey);
+  const box = $('analysisPrompt_' + stageKey);
+
+  if(box) box.value = prompt;
+
+  const cameFromSheets = !!(SGMP_PROMPTS && SGMP_PROMPTS[def.promptKey] && SGMP_PROMPTS[def.promptKey].trim());
+
+  if(typeof showMsg === 'function'){
+    showMsg(
+      'analysisMsg_' + stageKey,
+      cameFromSheets ? 'ok' : 'warn',
+      cameFromSheets
+        ? 'Prompt ' + stageKey + ' cargado desde Google Sheets con prompt_key: ' + def.promptKey + '.'
+        : 'No se encontró ' + def.promptKey + ' en Google Sheets. Se usó fallback de seguridad.'
+    );
+  }
+
+  refreshAllAnalysisViews();
+  return prompt;
+};
+  
  window.runAnalysisScreenStage = async function(stageKey){
   const msgId = 'analysisMsg_' + stageKey;
 
@@ -14993,19 +15032,20 @@ if(stageKey === 'B6'){
       customText: normalized.customText || ''
     });
   });
+state.tobe = state.tobe || {};
 
-  state.tobe = state.tobe || {};
-  state.tobe.improvements = improvements;
-  state.tobe.future_flow_proposed = parsed.future_flow_proposed || {};
-  state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is);
-  state.tobe.expected_benefits = arr(parsed.expected_benefits);
-  state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || {};
-  state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan);
-  state.tobe.mode_a = parsed.mode_a || {};
-  state.tobe.mode_b = parsed.mode_b || {};
+state.tobe.future_flow_proposed = parsed.future_flow_proposed || parsed.futureFlow || parsed.proposed_flow || {};
+state.tobe.differences_vs_as_is = arr(parsed.differences_vs_as_is || parsed.differences || parsed.gaps_vs_as_is);
+state.tobe.expected_benefits = arr(parsed.expected_benefits || parsed.benefits);
+state.tobe.initial_documentation_proposal = parsed.initial_documentation_proposal || parsed.documentation_proposal || parsed.document_proposal || {};
+state.tobe.to_be_implementation_plan = arr(parsed.to_be_implementation_plan || parsed.implementation_plan || parsed.plan);
+state.tobe.mode_a = parsed.mode_a || parsed.modeA || {};
+state.tobe.mode_b = parsed.mode_b || parsed.modeB || {};
+state.tobe.executive_report = parsed.executive_report || parsed.informe_ejecutivo || '';
+state.tobe.technical_report = parsed.technical_report || parsed.informe_tecnico || '';
 
-  if(typeof renderImprovements === 'function') renderImprovements();
-}
+if(typeof renderImprovements === 'function') renderImprovements();
+if(typeof renderToBeSummary === 'function') renderToBeSummary();
 
     refreshAllAnalysisViews();
     if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey, 'ok', stageKey + ' aplicado correctamente.');
@@ -15074,16 +15114,24 @@ if(stageKey === 'B6'){
   function q(id){ return document.getElementById(id); }
   function asArray(value){ return Array.isArray(value) ? value : []; }
 
-  function getFinalContractsPromptBase(){
-    if(typeof sgmpPrompt === 'function'){
-      return sgmpPrompt(
-        'prompt_results_contracts',
-        'ACTÚA COMO arquitecto senior del SGMP. Genera los contratos finales SB, IP y ED usando el MASTER FINAL LMP. Responde SOLO JSON válido.'
-      );
-    }
-
-    return 'ACTÚA COMO arquitecto senior del SGMP. Genera los contratos finales SB, IP y ED usando el MASTER FINAL LMP. Responde SOLO JSON válido.';
+async function getFinalContractsPromptBase(){
+  if(typeof sgmpEnsurePromptsLoaded === 'function'){
+    await sgmpEnsurePromptsLoaded(true);
   }
+
+  if(typeof sgmpPromptDebug === 'function'){
+    sgmpPromptDebug('prompt_results_contracts');
+  }
+
+  if(typeof sgmpPrompt === 'function'){
+    return sgmpPrompt(
+      'prompt_results_contracts',
+      'ACTÚA COMO arquitecto senior del SGMP. Genera contratos SB, IP, ED, informe ejecutivo, informe técnico y plan de implementación usando el MASTER FINAL LMP. Responde SOLO JSON válido.'
+    );
+  }
+
+  return 'ACTÚA COMO arquitecto senior del SGMP. Genera contratos SB, IP, ED, informe ejecutivo, informe técnico y plan de implementación usando el MASTER FINAL LMP. Responde SOLO JSON válido.';
+}
 
   window.buildFinalContractsMaster = function(){
     const analysisPayload = typeof window.sgmpAssembleStagedAnalysisPayload === 'function'
@@ -15110,11 +15158,11 @@ if(stageKey === 'B6'){
     };
   };
 
-  window.generateFinalContractsPrompt = function(){
+window.generateFinalContractsPrompt = async function(){
     const box = q('finalContractsPromptEditor');
     if(!box) return;
 
-    const base = getFinalContractsPromptBase();
+    const base = await getFinalContractsPromptBase();
     const master = window.buildFinalContractsMaster();
 
     box.value =
@@ -15200,7 +15248,24 @@ Responde SOLO JSON válido conforme al contrato solicitado.`;
       window.state.results.sbJson = parsed.sb_contract || {};
       window.state.results.ipJson = parsed.ip_contract || {};
       window.state.results.edJson = parsed.ed_contract || {};
+if(parsed.executive_report || parsed.informe_ejecutivo){
+  window.state.results.executiveHtml = sgmpRenderAny(parsed.executive_report || parsed.informe_ejecutivo);
+}
 
+if(parsed.technical_report || parsed.informe_tecnico){
+  window.state.results.technicalHtml = sgmpRenderAny(parsed.technical_report || parsed.informe_tecnico);
+}
+
+if(parsed.implementation_plan || parsed.to_be_implementation_plan){
+  window.state.results.implementationHtml = sgmpRenderAny(parsed.implementation_plan || parsed.to_be_implementation_plan);
+}
+
+if(q('executiveDoc')) q('executiveDoc').innerHTML = window.state.results.executiveHtml || '';
+if(q('technicalDoc')) q('technicalDoc').innerHTML = window.state.results.technicalHtml || '';
+if(q('implementationView')) q('implementationView').innerHTML = window.state.results.implementationHtml || '';
+
+if(q('executiveText')) q('executiveText').value = typeof stripHtml === 'function' ? stripHtml(window.state.results.executiveHtml || '') : '';
+if(q('technicalText')) q('technicalText').value = typeof stripHtml === 'function' ? stripHtml(window.state.results.technicalHtml || '') : '';
       if(q('sbJsonView')) q('sbJsonView').textContent = JSON.stringify(window.state.sb_contract, null, 2);
       if(q('ipJsonView')) q('ipJsonView').textContent = JSON.stringify(window.state.ip_contract, null, 2);
       if(q('edJsonView')) q('edJsonView').textContent = JSON.stringify(window.state.ed_contract, null, 2);
