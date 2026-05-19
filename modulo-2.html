@@ -1704,11 +1704,184 @@ function extractEdgeCells(xml){
   while((m = re.exec(clean)) !== null) edges.push(m[0]);
   return edges;
 }
+function insertEdgesIntoXML(xml, edges){
+  const base = stripMxGraphWrapper(xml);
+  if(!base || !base.includes('</root>') || !edges || !edges.length) return '';
+  const existing = new Set();
+  (base.match(/<mxCell\b(?=[^>]*edge=\"1\")[\s\S]*?(?:<\/mxCell>|\/>)/g) || []).forEach(cell => {
+    const s = (cell.match(/\ssource=\"([^\"]+)\"/) || [,''])[1];
+    const t = (cell.match(/\starget=\"([^\"]+)\"/) || [,''])[1];
+    if(s && t) existing.add(s + '->' + t);
+  });
+  const filtered = edges.filter(cell => {
+    const s = (cell.match(/\ssource=\"([^\"]+)\"/) || [,''])[1];
+    const t = (cell.match(/\starget=\"([^\"]+)\"/) || [,''])[1];
+    if(!s || !t) return true;
+    const key = s + '->' + t;
+    if(existing.has(key)) return false;
+    existing.add(key);
+    return true;
+  });
+  if(!filtered.length) return base;
+  return base.replace('</root>', filtered.join('\n') + '\n</root>');
+}
 function mergeEdgesIntoBaseXML(baseXML, aiXML){
-  const base = stripMxGraphWrapper(baseXML);
   const edges = extractEdgeCells(aiXML);
-  if(!base || !base.includes('</root>') || !edges.length) return '';
-  return base.replace('</root>', edges.join('\n') + '\n</root>');
+  return insertEdgesIntoXML(baseXML, edges);
+}
+function parseIdReference(){
+  const ref = String(S.idRef || '');
+  const map = { activities:{}, suppliers:{}, inputs:{}, outputs:{}, customers:{}, lanes:{} };
+  let section = '';
+  ref.split(/\r?\n/).forEach(line => {
+    const t = line.trim();
+    if(/^SWIMLANES:/i.test(t)) section = 'lanes';
+    else if(/^ACTIVIDADES:/i.test(t)) section = 'activities';
+    else if(/^SUPPLIERS:/i.test(t)) section = 'suppliers';
+    else if(/^INPUTS:/i.test(t)) section = 'inputs';
+    else if(/^OUTPUTS:/i.test(t)) section = 'outputs';
+    else if(/^CUSTOMERS:/i.test(t)) section = 'customers';
+    const m = t.match(/^\"([\s\S]+?)\"(?:\s*\([^\)]*\))?\s*->\s*id=\"([^\"]+)\"/);
+    if(m && section && map[section]){
+      map[section][normalizeText(m[1]).toLowerCase()] = { name:m[1], id:m[2] };
+    }
+  });
+  return map;
+}
+function edgeCell(id, source, target, label){
+  const val = label ? ex(label) : '';
+  return `<mxCell id="${id}" value="${val}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#245B8F;fontSize=10;fontColor=#0A1F44;" edge="1" parent="1" source="${source}" target="${target}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
+}
+function asNameArray(v){
+  if(Array.isArray(v)) return v.map(x => normalizeText(typeof x === 'string' ? x : (x && (x.name || x.value || x.label)) || '')).filter(Boolean);
+  const s = normalizeText(v);
+  return s ? [s] : [];
+}
+function firstExistingId(map, names){
+  for(const name of asNameArray(names)){
+    const hit = map[normalizeText(name).toLowerCase()];
+    if(hit && hit.id) return hit.id;
+  }
+  return '';
+}
+function activityIdByName(idMap, name){
+  const key = normalizeText(name).toLowerCase();
+  return idMap.activities[key] ? idMap.activities[key].id : '';
+}
+function buildFallbackInternalEdges(){
+  const idMap = parseIdReference();
+  const acts = Array.isArray(S.sp && S.sp.activities) ? S.sp.activities.slice() : [];
+  if(!acts.length) return [];
+  const ordered = acts.map((a, idx) => Object.assign({}, a, { __idx:idx, order:Number(a.order || a.sequence || idx + 1) || idx + 1 }))
+    .sort((a,b) => (a.order-b.order) || (a.__idx-b.__idx));
+  const edges = [];
+  const seen = new Set();
+  const add = (fromName, toName, label) => {
+    const s = activityIdByName(idMap, fromName);
+    const t = activityIdByName(idMap, toName);
+    if(!s || !t || s === t) return;
+    const key = s + '->' + t;
+    if(seen.has(key)) return;
+    seen.add(key);
+    edges.push(edgeCell('sgmp_f2_edge_' + edges.length + '_' + s + '_' + t, s, t, label || ''));
+  };
+  ordered.forEach((a, idx) => {
+    const nexts = asNameArray(a.next);
+    if(nexts.length) nexts.forEach(n => add(a.name, n, a.branch_label || a.route_label || ''));
+    else if(idx < ordered.length - 1) add(a.name, ordered[idx+1].name, '');
+  });
+  return edges;
+}
+function buildFallbackPeripheralEdges(){
+  const idMap = parseIdReference();
+  const sp = S.sp || {};
+  const acts = Array.isArray(sp.activities) ? sp.activities.slice() : [];
+  const ordered = acts.map((a, idx) => Object.assign({}, a, { __idx:idx, order:Number(a.order || a.sequence || idx + 1) || idx + 1 }))
+    .sort((a,b) => (a.order-b.order) || (a.__idx-b.__idx));
+  const edges = [];
+  const seen = new Set();
+  const addRaw = (prefix, source, target, label) => {
+    if(!source || !target || source === target) return;
+    const key = source + '->' + target;
+    if(seen.has(key)) return;
+    seen.add(key);
+    edges.push(edgeCell(prefix + '_' + edges.length + '_' + source + '_' + target, source, target, label || ''));
+  };
+  const start = ordered.find(a => a.is_start) || ordered[0];
+  const end = [...ordered].reverse().find(a => a.is_end) || ordered[ordered.length-1];
+
+  // Suppliers -> Inputs según catálogo del builder cuando exista relación proveedor/entrada
+  (S.cats && S.cats.suppliers ? S.cats.suppliers : []).forEach(sup => {
+    const sid = firstExistingId(idMap.suppliers, [sup.name]);
+    const iid = firstExistingId(idMap.inputs, [sup.input]);
+    addRaw('sgmp_f3_sup_in', sid, iid, '');
+  });
+
+  // Inputs -> actividad inicial o actividades con ext_inputs declarados
+  ordered.forEach(a => {
+    const targetAct = activityIdByName(idMap, a.name);
+    asNameArray(a.ext_inputs || a.inputs).forEach(inp => addRaw('sgmp_f3_in_act', firstExistingId(idMap.inputs, [inp]), targetAct, ''));
+  });
+  if(!edges.some(e => /sgmp_f3_in_act/.test(e)) && start){
+    asNameArray(start.ext_inputs && start.ext_inputs.length ? start.ext_inputs : sp.inputs).slice(0, 4)
+      .forEach(inp => addRaw('sgmp_f3_in_start', firstExistingId(idMap.inputs, [inp]), activityIdByName(idMap, start.name), ''));
+  }
+
+  // Actividades -> Outputs
+  ordered.forEach(a => {
+    const sourceAct = activityIdByName(idMap, a.name);
+    asNameArray(a.ext_outputs || a.outputs).forEach(out => addRaw('sgmp_f3_act_out', sourceAct, firstExistingId(idMap.outputs, [out]), ''));
+  });
+  if(!edges.some(e => /sgmp_f3_act_out/.test(e)) && end){
+    asNameArray(end.ext_outputs && end.ext_outputs.length ? end.ext_outputs : sp.outputs).slice(0, 4)
+      .forEach(out => addRaw('sgmp_f3_end_out', activityIdByName(idMap, end.name), firstExistingId(idMap.outputs, [out]), ''));
+  }
+
+  // Outputs -> Customers según catálogo del builder cuando exista relación cliente/salida
+  (S.cats && S.cats.customers ? S.cats.customers : []).forEach(cus => {
+    const oid = firstExistingId(idMap.outputs, [cus.output]);
+    const cid = firstExistingId(idMap.customers, [cus.name]);
+    addRaw('sgmp_f3_out_cus', oid, cid, '');
+  });
+  if(!edges.some(e => /sgmp_f3_out_cus/.test(e))){
+    const outs = asNameArray(sp.outputs);
+    const cuss = asNameArray(sp.customers);
+    const n = Math.min(outs.length, cuss.length, 4);
+    for(let i=0;i<n;i++) addRaw('sgmp_f3_out_cus_fb', firstExistingId(idMap.outputs, [outs[i]]), firstExistingId(idMap.customers, [cuss[i]]), '');
+  }
+  return edges;
+}
+function ensureInternalEdges(targetId, vldId, stageLabel){
+  const xml = $(targetId) ? $(targetId).value : '';
+  if(countXMLEdges(xml) > 0) return true;
+  const edges = buildFallbackInternalEdges();
+  const merged = insertEdgesIntoXML(xml, edges);
+  if(merged && merged !== xml){
+    $(targetId).value = merged;
+    validateXML(targetId, vldId);
+    gMsg('warn', stageLabel + ': la IA devolvió el XML sin conexiones internas. Se generaron conectores automáticos usando previous/next y el mapa de IDs.');
+    return true;
+  }
+  return false;
+}
+function ensurePeripheralEdges(sourceId, targetId, vldId, stageLabel){
+  const baseEdges = countXMLEdges($(sourceId) ? $(sourceId).value : '');
+  let xml = $(targetId) ? $(targetId).value : '';
+  if(countXMLEdges(xml) === 0) {
+    const internal = buildFallbackInternalEdges();
+    const mergedInternal = insertEdgesIntoXML(xml, internal);
+    if(mergedInternal) xml = $(targetId).value = mergedInternal;
+  }
+  if(countXMLEdges(xml) > baseEdges) return true;
+  const edges = buildFallbackPeripheralEdges();
+  const merged = insertEdgesIntoXML(xml, edges);
+  if(merged && merged !== xml){
+    $(targetId).value = merged;
+    validateXML(targetId, vldId);
+    gMsg('warn', stageLabel + ': la IA no agregó conexiones SIPOC periféricas. Se generaron conectores mínimos con ext_inputs/ext_outputs y catálogos S-I-O-C.');
+    return true;
+  }
+  return false;
 }
 function repairEdgesOnlyResponse(sourceId, targetId, vldId, stageLabel){
   const aiXML = $(targetId) ? $(targetId).value : '';
@@ -1730,16 +1903,19 @@ async function runF1AI(){ return runSBStageAI('sb_f1', $('pf1_box').textContent.
 async function runF2AI(){
   return runSBStageAI('sb_f2', $('pf2_box').textContent.trim(), 'xml_f2', 'vld_f2', 'F2', function(){
     if(!validateXML('xml_f2','vld_f2')) repairEdgesOnlyResponse('xml_f1','xml_f2','vld_f2','F2');
+    ensureInternalEdges('xml_f2','vld_f2','F2');
   });
 }
 async function runF3AI(){
   return runSBStageAI('sb_f3', $('pf3_box').textContent.trim(), 'xml_f3', 'vld_f3', 'F3', function(){
     if(!validateXML('xml_f3','vld_f3')) repairEdgesOnlyResponse('xml_f2','xml_f3','vld_f3','F3');
+    ensurePeripheralEdges('xml_f2','xml_f3','vld_f3','F3');
   });
 }
 async function runF4AI(){
   return runSBStageAI('sb_f4', $('pf4_box').textContent.trim(), 'xml_f4', 'vld_f4', 'F4', function(){
     if(!validateXML('xml_f4','vld_f4')) repairEdgesOnlyResponse('xml_f3','xml_f4','vld_f4','F4');
+    if(countXMLEdges($('xml_f4').value) === 0) ensurePeripheralEdges('xml_f3','xml_f4','vld_f4','F4');
   });
 }
 function addAIRunButton(containerSelector, id, text, handler){
@@ -2761,8 +2937,11 @@ function genTemplate() {
 // PROMPT STEP NAVIGATION
 // ═══════════════════════════════════════════════════════════════
 function stepNext(tabId, srcId, vldId, storeKey, buildNext) {
+  if (!$(srcId).value.trim()) { gMsg('warn', 'Pega el XML resultado antes de continuar.'); return; }
+  if (storeKey==='f2') ensureInternalEdges(srcId, vldId, 'F2');
+  if (storeKey==='f3') ensurePeripheralEdges('xml_f2', srcId, vldId, 'F3');
+  if (storeKey==='f4' && countXMLEdges($(srcId).value) === 0) ensurePeripheralEdges('xml_f3', srcId, vldId, 'F4');
   const xml = $(srcId).value.trim();
-  if (!xml) { gMsg('warn', 'Pega el XML resultado antes de continuar.'); return; }
   if (!validateXML(srcId, vldId)) { gMsg('warn', 'El XML no es v\u00e1lido. Revisa antes de continuar.'); return; }
   if (storeKey==='f1') S.xmlF1 = xml;
   if (storeKey==='f2') S.xmlF2 = xml;
@@ -2770,7 +2949,7 @@ function stepNext(tabId, srcId, vldId, storeKey, buildNext) {
   if (storeKey==='f4') S.xmlF4 = xml;
   buildNext();
   switchTab(tabId);
-  gMsg('ok', 'Paso completado. Copia el nuevo prompt y ej\u00e9cutalo en la IA.');
+  gMsg('ok', 'Paso completado. Copia el nuevo prompt y ejecútalo en la IA.');
 }
 
 function goFinal(srcId='xml_f4', vldId='vld_f4') {
