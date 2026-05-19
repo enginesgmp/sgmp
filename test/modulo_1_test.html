@@ -5410,26 +5410,22 @@ function isExtractorSipocJson(parsed){
 }
 
 function createEmptyAsIsModel(sourceType){
-  return {
-    processHeader: {},
-    sourceType: sourceType || 'new_process_interview',
-    suppliers: [],
-    inputs: [],
-    activities: [],
-    decisions: [],
-    outputs: [],
-    customers: [],
-    relations: [],
-    notes: [],
-    observations: [],
-    findings: [],
-    problems: [],
-    wastes: [],
-    restrictions: [],
-    opportunities: [],
-    actors: [],
-    documents: []
-  };
+return {
+  source,
+  processHeader: {},
+  suppliers: [],
+  inputs: [],
+  outputs: [],
+  customers: [],
+  actors: [],
+  documents: [],
+  activities: [],
+  decisions: [],
+  relations: [],
+  notes: [],
+  validation: {},
+  traceability: []
+};
 }
 
 function extractorText(value){
@@ -5641,7 +5637,7 @@ function buildMasterFromAsIsModel(model, raw){
     relations: model.relations || [],
     issues: { keyIssues:[], delays:[], rework:[], constraints:[], frictions:[], quickWins:[], futureVision:[], wastes:[] },
     indicators: [],
-    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: (model.notes || []).map(n => n.text || n).join('\n') },
+    notes: { analystNotes:[], preInterviewNotes:[], additionalDocuments: state.loads.docs || [], docNotes: safeArray(model.notes).map(n => n?.text || n || '').filter(Boolean).join('\n') },
     raw,
     asIsModel: model
   };
@@ -5679,11 +5675,26 @@ function applyAsIsModelToState(model, raw){
 }
 
 function formatExtractorImportSummary(model){
-  const decisions = (model.decisions || []).length;
-  const activities = Math.max(0, (model.activities || []).length - decisions);
-  const pending = (model.activities || []).filter(a => a.pending_validation).length;
-  const base = `JSON del Extractor SIPOC importado: ${model.suppliers.length} proveedores, ${model.inputs.length} entradas, ${activities} actividades, ${decisions} decisiones, ${model.outputs.length} salidas, ${model.customers.length} clientes, ${model.relations.length} relaciones y ${model.notes.length} notas.`;
-  return pending ? base + ` Advertencia: ${pending} actividad(es) tienen pendiente_validacion.` : base;
+  model = model || {};
+
+  const suppliers = safeArray(model.suppliers);
+  const inputs = safeArray(model.inputs);
+  const outputs = safeArray(model.outputs);
+  const customers = safeArray(model.customers);
+  const relations = safeArray(model.relations);
+  const notes = safeArray(model.notes);
+  const decisionsList = safeArray(model.decisions);
+  const activitiesList = safeArray(model.activities);
+
+  const decisions = decisionsList.length;
+  const activities = Math.max(0, activitiesList.length - decisions);
+  const pending = activitiesList.filter(a => a && a.pending_validation).length;
+
+  const base = `JSON del Extractor SIPOC importado: ${suppliers.length} proveedores, ${inputs.length} entradas, ${activities} actividades, ${decisions} decisiones, ${outputs.length} salidas, ${customers.length} clientes, ${relations.length} relaciones y ${notes.length} notas.`;
+
+  return pending
+    ? base + ` Advertencia: ${pending} actividad(es) tienen pendiente_validacion.`
+    : base;
 }
 
 function importFromExtractorJson(json){
