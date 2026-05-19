@@ -9950,7 +9950,46 @@ function setValueByPath(root, parts, newValue){
   ref[parts[parts.length - 1]] = newValue;
   return true;
 }
-  
+function buildAsIsStructuralPayloadFromBrief(normalizedBrief){
+  const stripped = stripDescriptionFromAsIsProcess(normalizedBrief || {});
+  const p = stripped.as_is_process || stripped.as_is || stripped || {};
+
+  const activities = safeArray(p.activities)
+    .map((a, idx) => normalizeActivityForAsIs(a, idx))
+    .filter(a => a.name);
+
+  const suppliersInputs = mergeSupplierInputRows(
+    p.suppliers_inputs || p.suppliersInputs || []
+  );
+
+  const outputsCustomers = mergeOutputCustomerRows(
+    p.outputs_customers || p.outputsCustomers || []
+  );
+
+  const additionalInformation = safeArray(
+    p.additional_information || p.additionalInformation || []
+  ).map((r, i) => ({
+    title: clean(r.title || r.name || r.fileName || r.__fileName || `Información adicional ${i + 1}`),
+    type: clean(r.type || r.category || 'archivo_adicional'),
+    content: String(r.content || r.text || r.preview || ''),
+    editable: r.editable !== false
+  })).filter(r => r.title || r.content || r.type);
+
+  return {
+    as_is_process: {
+      source_route: p.source_route || sourceRouteLabel(),
+      activities,
+      suppliers_inputs: suppliersInputs,
+      outputs_customers: outputsCustomers,
+      additional_information: additionalInformation
+    }
+  };
+}
+
+function evaluateBriefAsIsStructuralIssues(normalizedBrief){
+  const structuralPayload = buildAsIsStructuralPayloadFromBrief(normalizedBrief);
+  return normalizeBriefIssuesList(evaluateBriefCompleteness(structuralPayload));
+}  
 function validateBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value?.trim() || '';
 
@@ -9965,7 +10004,7 @@ function validateBriefResponse(){
       parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
     );
 
-    const issues = normalizeBriefIssuesList(evaluateBriefCompleteness(normalized));
+    const issues = evaluateBriefAsIsStructuralIssues(normalized);
 
     state.briefReview = {
       raw: normalized,
@@ -10011,7 +10050,7 @@ function applyBriefToLmp(forceApply = false){
     const normalized = stripDescriptionFromAsIsProcess(
   parsed?.as_is_process ? parsed : normalizeBriefPayload(parsed)
 );
-    const issues = evaluateBriefCompleteness(normalized);
+    const issues = evaluateBriefAsIsStructuralIssues(normalized);
 
     state.briefReview = {
       raw: normalized,
@@ -13654,6 +13693,7 @@ window.asisActivityTemplate = function(data = {}, index = 0){
 
       <div class="asis-activity-body">
         <div class="asis-activity-actions">
+        <button class="btn-ok" type="button" onclick="saveAsIsActivityRow(${index})">Guardar actividad</button>
           <button class="btn-ghost" type="button" onclick="moveAsisActivity(${index}, -1)">↑ Subir</button>
           <button class="btn-ghost" type="button" onclick="moveAsisActivity(${index}, 1)">↓ Bajar</button>
           <button class="btn-danger" type="button" onclick="deleteAsisActivity(${index})">Eliminar</button>
@@ -13799,6 +13839,34 @@ window.asisActivityTemplate = function(data = {}, index = 0){
     if(typeof updateTopStatus === 'function') updateTopStatus();
     return state.asis.activities;
   };
+
+  window.saveAsIsActivityRow = function(index){
+  const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
+
+  if(!item){
+    showMsg('asisBuilderMsg','warn','No se encontró la actividad para guardar.');
+    return;
+  }
+
+  refreshActivitySummary(item, index);
+
+  const data = readAsisRow(item);
+
+  if(data){
+    state.asis = state.asis || {};
+    state.asis.activities = state.asis.activities || [];
+    state.asis.activities[index] = data;
+  }
+
+  updateAsIsPreview();
+  updateTopStatus();
+
+  if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+    refreshAsIsStructuralIssuesAfterEdit();
+  }
+
+  showMsg('asisBuilderMsg','ok','Actividad guardada. Vacíos estructurales actualizados.');
+};
 function refreshAsIsMiniSummary(row){
   if(!row) return;
 
@@ -13917,6 +13985,7 @@ function openFirstAsIsActivity(){
         </div>
 
         <div class="actions asis-mini-actions">
+          <button class="btn-ok" type="button" onclick="saveSupplierInputRow(${i})">Guardar entrada</button> 
           <button class="btn-danger" type="button" onclick="deleteSupplierInputRow(${i})">Eliminar</button>
         </div>
       </details>
@@ -13935,6 +14004,22 @@ function openFirstAsIsActivity(){
     .filter(r => r.supplier || r.inputs.length);
 
   return state.asis.suppliers_inputs;
+};
+  window.saveSupplierInputRow = function(index){
+  collectSupplierInputRows();
+  updateAsIsPreview();
+
+  if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+    refreshAsIsStructuralIssuesAfterEdit();
+  }
+
+  const row = qs('asisSuppliersInputs')?.querySelector(`.supplier-input-row[data-index="${index}"]`);
+
+  if(row){
+    refreshAsIsMiniSummary(row);
+  }
+
+  showMsg('asisBuilderMsg','ok','Entrada guardada. Vacíos estructurales actualizados.');
 };
 window.syncSupplierInputRow = function(){
   const active = document.activeElement?.closest('.supplier-input-row');
@@ -13994,6 +14079,7 @@ if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
         </div>
 
         <div class="actions asis-mini-actions">
+          <button class="btn-ok" type="button" onclick="saveOutputCustomerRow(${i})">Guardar salida</button> 
           <button class="btn-danger" type="button" onclick="deleteOutputCustomerRow(${i})">Eliminar</button>
         </div>
       </details>
@@ -14012,6 +14098,22 @@ if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
     .filter(r => r.output || r.customers.length);
 
   return state.asis.outputs_customers;
+};
+  window.saveOutputCustomerRow = function(index){
+  collectOutputCustomerRows();
+  updateAsIsPreview();
+
+  if(typeof refreshAsIsStructuralIssuesAfterEdit === 'function'){
+    refreshAsIsStructuralIssuesAfterEdit();
+  }
+
+  const row = qs('asisOutputsCustomers')?.querySelector(`.output-customer-row[data-index="${index}"]`);
+
+  if(row){
+    refreshAsIsMiniSummary(row);
+  }
+
+  showMsg('asisBuilderMsg','ok','Salida guardada. Vacíos estructurales actualizados.');
 };
 window.syncOutputCustomerRow = function(){
   const active = document.activeElement?.closest('.output-customer-row');
