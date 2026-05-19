@@ -1688,10 +1688,60 @@ async function runP0AI(){
   const prompt = $('p0_box') ? $('p0_box').textContent.trim() : '';
   return runSBStageAI('sb_p0', prompt, 'p0_resp', null, 'Prompt 0', function(){ loadP0(); });
 }
+function countXMLVertices(xml){ return (String(xml || '').match(/vertex=\"1\"/g) || []).length; }
+function countXMLEdges(xml){ return (String(xml || '').match(/edge=\"1\"/g) || []).length; }
+function stripMxGraphWrapper(xml){
+  let out = String(xml || '').trim();
+  const fence = out.match(/```(?:xml)?\s*([\s\S]*?)```/i);
+  if(fence) out = fence[1].trim();
+  return out;
+}
+function extractEdgeCells(xml){
+  const clean = stripMxGraphWrapper(xml);
+  const edges = [];
+  const re = /<mxCell\b(?=[^>]*edge=\"1\")[\s\S]*?<\/mxCell>|<mxCell\b(?=[^>]*edge=\"1\")[^>]*\/>/g;
+  let m;
+  while((m = re.exec(clean)) !== null) edges.push(m[0]);
+  return edges;
+}
+function mergeEdgesIntoBaseXML(baseXML, aiXML){
+  const base = stripMxGraphWrapper(baseXML);
+  const edges = extractEdgeCells(aiXML);
+  if(!base || !base.includes('</root>') || !edges.length) return '';
+  return base.replace('</root>', edges.join('\n') + '\n</root>');
+}
+function repairEdgesOnlyResponse(sourceId, targetId, vldId, stageLabel){
+  const aiXML = $(targetId) ? $(targetId).value : '';
+  const baseXML = $(sourceId) ? $(sourceId).value : '';
+  const aiVertices = countXMLVertices(aiXML);
+  const aiEdges = countXMLEdges(aiXML);
+  if(aiVertices < 2 && aiEdges > 0 && baseXML && countXMLVertices(baseXML) >= 2){
+    const merged = mergeEdgesIntoBaseXML(baseXML, aiXML);
+    if(merged){
+      $(targetId).value = merged;
+      const ok = validateXML(targetId, vldId);
+      if(ok) gMsg('warn', stageLabel + ': la IA devolvió solo conectores. El módulo fusionó automáticamente esos conectores con el XML base para no perder los nodos originales.');
+      return ok;
+    }
+  }
+  return false;
+}
 async function runF1AI(){ return runSBStageAI('sb_f1', $('pf1_box').textContent.trim(), 'xml_f1', 'vld_f1', 'F1'); }
-async function runF2AI(){ return runSBStageAI('sb_f2', $('pf2_box').textContent.trim(), 'xml_f2', 'vld_f2', 'F2'); }
-async function runF3AI(){ return runSBStageAI('sb_f3', $('pf3_box').textContent.trim(), 'xml_f3', 'vld_f3', 'F3'); }
-async function runF4AI(){ return runSBStageAI('sb_f4', $('pf4_box').textContent.trim(), 'xml_f4', 'vld_f4', 'F4'); }
+async function runF2AI(){
+  return runSBStageAI('sb_f2', $('pf2_box').textContent.trim(), 'xml_f2', 'vld_f2', 'F2', function(){
+    if(!validateXML('xml_f2','vld_f2')) repairEdgesOnlyResponse('xml_f1','xml_f2','vld_f2','F2');
+  });
+}
+async function runF3AI(){
+  return runSBStageAI('sb_f3', $('pf3_box').textContent.trim(), 'xml_f3', 'vld_f3', 'F3', function(){
+    if(!validateXML('xml_f3','vld_f3')) repairEdgesOnlyResponse('xml_f2','xml_f3','vld_f3','F3');
+  });
+}
+async function runF4AI(){
+  return runSBStageAI('sb_f4', $('pf4_box').textContent.trim(), 'xml_f4', 'vld_f4', 'F4', function(){
+    if(!validateXML('xml_f4','vld_f4')) repairEdgesOnlyResponse('xml_f3','xml_f4','vld_f4','F4');
+  });
+}
 function addAIRunButton(containerSelector, id, text, handler){
   if($(id)) return;
   const container = document.querySelector(containerSelector);
