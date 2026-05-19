@@ -14204,7 +14204,102 @@ window.addAdditionalInfoRow = function(){
 window.deleteAdditionalInfoRow = function(){
   showMsg('asisBuilderMsg','warn','La información adicional no se elimina desde Proceso AS-IS. Ajusta la carga de insumos si necesitas retirarla.');
 };
+function normalizeActivityForAsIs(activity = {}, index = 0){
+  const source = activity || {};
 
+  const name = clean(
+    source.name ||
+    source.activity_name ||
+    source.title ||
+    source.label ||
+    source.text ||
+    ''
+  );
+
+  const id = clean(
+    source.id ||
+    source.activity_id ||
+    source.code ||
+    ('ACT-' + String(index + 1).padStart(3, '0'))
+  );
+
+  const typeRaw = clean(
+    source.type ||
+    source.activity_type ||
+    source.kind ||
+    'activity'
+  );
+
+  const type = /decisi[oó]n|decision/i.test(typeRaw)
+    ? 'decision'
+    : 'activity';
+
+  const actor = clean(
+    source.actor ||
+    source.responsible ||
+    source.owner ||
+    source.role ||
+    source.area ||
+    ''
+  );
+
+  const documentSystem = clean(
+    source.document ||
+    source.document_system ||
+    source.document_or_system ||
+    source.system ||
+    source.tool ||
+    source.format ||
+    ''
+  );
+
+  const previous = safeArray(
+    source.previous ||
+    source.previous_activity_ids ||
+    source.previous_activities ||
+    source.prev ||
+    source.predecessors
+  );
+
+  const next = safeArray(
+    source.next ||
+    source.next_activity_ids ||
+    source.next_activities ||
+    source.following ||
+    source.successors
+  );
+
+  const inputsReceived = safeArray(
+    source.inputs_received ||
+    source.inputs ||
+    source.ext_inputs ||
+    source.input ||
+    source.inputs_used
+  );
+
+  const outputsGenerated = safeArray(
+    source.outputs_generated ||
+    source.outputs ||
+    source.ext_outputs ||
+    source.output ||
+    source.outputs_delivered
+  );
+
+  return {
+    id,
+    name,
+    type,
+    actor,
+    document: documentSystem,
+    previous,
+    next,
+    inputs_received: inputsReceived,
+    outputs_generated: outputsGenerated,
+    note: clean(source.note || source.notes || source.aclaracion || source.clarification || ''),
+    observations: clean(source.observations || source.observation || source.comments || ''),
+    editable: source.editable !== false
+  };
+}
   function applyAsIsProcess(process){
     const p = process?.as_is_process || process || {};
     state.asis = state.asis || {};
