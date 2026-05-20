@@ -247,6 +247,104 @@
     background:#0d1b2a;color:#d6e7f7;border-radius:14px;padding:14px;border:1px solid #17355b;
     min-height:150px;white-space:pre-wrap;word-break:break-word;font-size:.92rem;line-height:1.55
   }
+  /* TO BE · Mejoras desplegables */
+.improvement-card{
+  overflow:hidden;
+}
+
+.improvement-card summary{
+  list-style:none;
+  cursor:pointer;
+}
+
+.improvement-card summary::-webkit-details-marker{
+  display:none;
+}
+
+.improvement-summary-row{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  gap:12px;
+  align-items:flex-start;
+}
+
+.improvement-mode-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:78px;
+  padding:7px 10px;
+  border-radius:999px;
+  font-size:.76rem;
+  font-weight:900;
+  border:1px solid rgba(11,46,89,.12);
+  background:#eef6ff;
+  color:#0B2E59;
+  white-space:nowrap;
+}
+
+.improvement-mode-a{
+  background:#eafaf2;
+  color:#176B3A;
+  border-color:rgba(39,174,96,.22);
+}
+
+.improvement-mode-b{
+  background:#fff4e6;
+  color:#8A570D;
+  border-color:rgba(242,153,74,.30);
+}
+
+.improvement-chevron{
+  font-weight:900;
+  color:#5B6F8A;
+  transition:.18s ease;
+}
+
+.improvement-card[open] .improvement-chevron{
+  transform:rotate(180deg);
+}
+
+.improvement-detail{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid rgba(11,46,89,.08);
+}
+
+.improvement-soft-box{
+  background:#F8FBFF !important;
+  color:#0A1F44 !important;
+  border:1px solid rgba(11,46,89,.10) !important;
+  border-radius:14px;
+  padding:14px;
+  min-height:120px;
+  white-space:pre-wrap;
+  word-break:break-word;
+  font-size:.92rem;
+  line-height:1.55;
+}
+
+.improvement-grid-2{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+  margin-top:12px;
+}
+
+.improvement-grid-3{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:14px;
+  margin-top:12px;
+}
+
+@media(max-width:920px){
+  .improvement-summary-row,
+  .improvement-grid-2,
+  .improvement-grid-3{
+    grid-template-columns:1fr;
+  }
+}
   .hidden{display:none!important}
 
   .kpi-wrap{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:12px}
@@ -4941,66 +5039,182 @@ function setDecisionRoute(route, navigate = true){
 /* =========================
    TO BE
 ========================= */
+  function getImprovementMode(data = {}){
+  const rawMode = String(
+    data.mode ||
+    data.improvementMode ||
+    data.improvement_mode ||
+    data.tipo_modo ||
+    data.modo ||
+    ''
+  ).trim().toLowerCase();
+
+  if(['a','modo a','mode a','directa','implementacion directa','implementación directa'].includes(rawMode)){
+    return {
+      code: 'A',
+      label: 'Modo A',
+      className: 'improvement-mode-a',
+      description: 'Mejora de implementación directa'
+    };
+  }
+
+  if(['b','modo b','mode b','estructurada','implementacion estructurada','implementación estructurada'].includes(rawMode)){
+    return {
+      code: 'B',
+      label: 'Modo B',
+      className: 'improvement-mode-b',
+      description: 'Mejora estructurada'
+    };
+  }
+
+  const text = [
+    data.title,
+    data.summary,
+    data.problem,
+    data.currentState,
+    data.proposedState,
+    data.support,
+    data.impact,
+    data.justification,
+    data.action,
+    data.recommendation
+  ].join(' ').toLowerCase();
+
+  const isModeB =
+    data.status === 'custom' ||
+    /automat|sistema|digital|erp|integraci[oó]n|rediseñ|redisen|flujo|estructura|transversal|dependenc|proyecto|implementaci[oó]n|desarrollo|validaci[oó]n/i.test(text) ||
+    String(data.proposedState || data.action || '').length > 170;
+
+  return isModeB
+    ? {
+        code: 'B',
+        label: 'Modo B',
+        className: 'improvement-mode-b',
+        description: 'Mejora estructurada'
+      }
+    : {
+        code: 'A',
+        label: 'Modo A',
+        className: 'improvement-mode-a',
+        description: 'Mejora de implementación directa'
+      };
+} 
 function improvementTemplate(data = {}){
   const id = String(data.id || cryptoRandom());
   data.id = id;
+
   const safeId = escapeHtml(id);
   const jsId = id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const status = data.status || 'pending';
-  const badgeClass = status === 'execute' ? 'status-execute' : status === 'custom' ? 'status-custom' : status === 'reject' ? 'status-reject' : '';
-  const badgeText = status === 'execute' ? 'Ejecutar' : status === 'custom' ? 'Personalizar' : status === 'reject' ? 'Rechazar' : 'Pendiente';
+
+  const badgeClass = status === 'execute'
+    ? 'status-execute'
+    : status === 'custom'
+    ? 'status-custom'
+    : status === 'reject'
+    ? 'status-reject'
+    : '';
+
+  const badgeText = status === 'execute'
+    ? 'Ejecutar'
+    : status === 'custom'
+    ? 'Personalizar'
+    : status === 'reject'
+    ? 'Rechazar'
+    : 'Pendiente';
+
+  const mode = getImprovementMode(data);
+
+  const currentText =
+    data.currentState ||
+    data.problem ||
+    data.summary ||
+    'Estado actual por validar';
+
+  const proposedText =
+    data.proposedState ||
+    data.action ||
+    data.recommendation ||
+    'Estado propuesto por validar';
+
+  const supportText =
+    data.support ||
+    data.justification ||
+    data.technicalRationale ||
+    data.technical_rationale ||
+    '';
+
+  const impactText =
+    data.impact ||
+    data.expectedImpact ||
+    data.expected_impact ||
+    data.expectedBenefit ||
+    data.expected_benefit ||
+    'Impacto esperado por validar';
 
   return `
-    <div class="improvement-card" data-id="${safeId}" data-status="${status}">
-      <div class="improvement-head">
-        <div>
-          <h4>${escapeHtml(data.title || 'Mejora propuesta')}</h4>
-          <p>${escapeHtml(data.summary || data.problem || 'Revisa la propuesta y registra una decisión.')}</p>
-        </div>
-        <div class="status-badge ${badgeClass}" data-role="badge">${badgeText}</div>
-      </div>
+    <details class="improvement-card" data-id="${safeId}" data-status="${status}">
+      <summary>
+        <div class="improvement-summary-row">
+          <div class="improvement-mode-badge ${mode.className}" title="${escapeHtml(mode.description)}">
+            ${escapeHtml(mode.label)}
+          </div>
 
-      <div class="split3">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Problema</h3>
-          <div class="box">${escapeHtml(data.problem || data.summary || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado actual</h3>
-          <div class="box">${escapeHtml(data.currentState || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado propuesto</h3>
-          <div class="box">${escapeHtml(data.proposedState || '')}</div>
-        </div>
-      </div>
+          <div class="improvement-head" style="margin-bottom:0;">
+            <div>
+              <h4>${escapeHtml(data.title || 'Mejora propuesta')}</h4>
+              <p>${escapeHtml(data.summary || data.problem || 'Revisa la propuesta y registra una decisión.')}</p>
+            </div>
+          </div>
 
-      <div class="split2" style="margin-top:14px;">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Sustento</h3>
-          <div class="box">${escapeHtml(data.support || data.justification || '')}</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="status-badge ${badgeClass}" data-role="badge">${badgeText}</div>
+            <div class="improvement-chevron">⌄</div>
+          </div>
         </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Impacto esperado</h3>
-          <div class="box">${escapeHtml(data.impact || '')}</div>
-        </div>
-      </div>
+      </summary>
 
-      <div class="actions">
-        <div class="actions-left">
-          <button class="btn-ok" type="button" onclick="setImprovementStatus('${jsId}','execute')">Ejecutar</button>
-          <button class="btn-warn" type="button" onclick="setImprovementStatus('${jsId}','custom')">Personalizar</button>
-          <button class="btn-danger" type="button" onclick="setImprovementStatus('${jsId}','reject')">Rechazar</button>
-        </div>
-      </div>
+      <div class="improvement-detail">
+        <div class="improvement-grid-2">
+          <div>
+            <h3 style="margin:0 0 8px;font-size:.95rem;">Estado actual / problema</h3>
+            <div class="improvement-soft-box">${escapeHtml(currentText)}</div>
+          </div>
 
-      <div class="field-grid ${status === 'custom' ? '' : 'hidden'}" data-role="edit-zone">
-        <div class="field w-12">
-          <label for="customText_${safeId}">Personalización de la mejora</label>
-          <textarea id="customText_${safeId}" data-role="custom-text">${escapeHtml(data.customText || data.adjustedState || '')}</textarea>
+          <div>
+            <h3 style="margin:0 0 8px;font-size:.95rem;">Estado propuesto</h3>
+            <div class="improvement-soft-box">${escapeHtml(proposedText)}</div>
+          </div>
+        </div>
+
+        <div class="improvement-grid-2" style="margin-top:14px;">
+          <div>
+            <h3 style="margin:0 0 8px;font-size:.95rem;">Sustento</h3>
+            <div class="improvement-soft-box">${escapeHtml(supportText)}</div>
+          </div>
+
+          <div>
+            <h3 style="margin:0 0 8px;font-size:.95rem;">Impacto esperado</h3>
+            <div class="improvement-soft-box">${escapeHtml(impactText)}</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div class="actions-left">
+            <button class="btn-ok" type="button" onclick="setImprovementStatus('${jsId}','execute')">Ejecutar</button>
+            <button class="btn-warn" type="button" onclick="setImprovementStatus('${jsId}','custom')">Personalizar</button>
+            <button class="btn-danger" type="button" onclick="setImprovementStatus('${jsId}','reject')">Rechazar</button>
+          </div>
+        </div>
+
+        <div class="field-grid ${status === 'custom' ? '' : 'hidden'}" data-role="edit-zone">
+          <div class="field w-12">
+            <label for="customText_${safeId}">Personalización de la mejora</label>
+            <textarea id="customText_${safeId}" data-role="custom-text">${escapeHtml(data.customText || data.adjustedState || '')}</textarea>
+          </div>
         </div>
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -5018,7 +5232,7 @@ function addImprovement(data = {}){
     support: data.support || data.justification || data.technicalRationale || data.technical_rationale || data.evidence || data.rootCauseAddressed || data.root_cause_addressed || data.requiredDependency || data.required_dependency || '',
     impact: data.impact || data.expectedImpact || data.expected_impact || data.expectedBenefit || data.expected_benefit || data.benefit || '',
     justification: data.justification || data.technicalRationale || data.technical_rationale || data.rootCauseAddressed || data.root_cause_addressed || data.evidence || '',
-    mode: data.mode || '',
+    mode: data.mode || data.modo || data.improvementMode || data.improvement_mode || data.tipo_modo || '',
     improvementType: data.improvementType || data.improvement_type || data.type || '',
     priority: data.priority || '',
     effort: data.effort || '',
@@ -5123,10 +5337,8 @@ function buildToBeArtifacts(){
     const actionText = x.status === 'custom' ? (x.customText || x.proposedState || x.summary || x.problem || '') : (x.proposedState || x.summary || x.problem || '');
     const justification = `${x.justification || ''} ${x.impact || ''}`.toLowerCase();
     const current = `${x.currentState || ''} ${x.problem || ''}`.toLowerCase();
-    const isStructural =
-      x.status === 'custom' ||
-      /automat|sistema|digital|erp|flujo|redise|estructura|dependenc|transversal|integr/i.test(justification + ' ' + current) ||
-      actionText.length > 170;
+const modeInfo = getImprovementMode(x);
+const isStructural = modeInfo.code === 'B';
 
     const item = {
       id: x.id || ('imp-' + i),
