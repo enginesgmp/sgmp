@@ -7256,6 +7256,8 @@ function addImprovement(data = {}){
 
   const improvement = {
     id: String(data.id || cryptoRandom()),
+    source: data.source || (Object.keys(data || {}).length ? 'ai_or_imported' : 'manual'),
+    userAdded: data.userAdded !== undefined ? data.userAdded : !Object.keys(data || {}).length,
     title: data.title || data.name || data.titulo || data.improvementTitle || data.improvement_title || data.recommendation || data.action || data.header || data.category || data.type || 'Mejora propuesta',
     summary: data.summary || data.description || data.technicalRationale || data.technical_rationale || data.expected_benefit || data.expectedBenefit || '',
     problem: data.problem || data.problemSolved || data.problem_solved || data.problem_to_solve || data.relatedProblem || data.related_problem || data.restriction || data.description || data.summary || '',
@@ -8175,6 +8177,9 @@ function buildImplementationHtml(){
 
 function generateResults(){
   syncVisibleStage();
+    if(state.tobe && Array.isArray(state.tobe.improvements)){
+    collectImprovements();
+  }
 
   if (typeof window.getPreparationContext === "function") {
     const prepCtx = window.getPreparationContext();
@@ -13413,9 +13418,14 @@ function seedImprovementsFromAnalysis(){
     ].filter(meaningfulText).length;
   };
 
-  const userAlreadyDecided = (item = {}) => {
-    return ['execute','custom','reject'].includes(item.status) || meaningfulText(item.customText);
-  };
+ const userAlreadyDecided = (item = {}) => {
+  return (
+    ['execute','custom','reject'].includes(item.status) ||
+    meaningfulText(item.customText) ||
+    item.source === 'manual' ||
+    item.userAdded === true
+  );
+};
 
   const sourceImprovements = [
     ...toArray(data.raw_original?.improvements),
@@ -13548,13 +13558,75 @@ function seedImprovementsFromAnalysis(){
 }
 function saveToBeAndContinue(){
   collectImprovements();
-  const selected = getSelectedToBeImprovements();
-  if(state.decision.route === 'tobe' && !selected.length){ showMsg('tobeMsg','warn','No hay mejoras activas para continuar. Conserva al menos una propuesta o agrega una mejora manual.'); return; }
+
+  state.tobe = state.tobe || {};
+  state.results = state.results || {};
+
+  const allImprovements = safeArray(state.tobe.improvements).map((item, index) => {
+    return {
+      id: item.id || ('IMP-' + String(index + 1).padStart(2, '0')),
+      title: item.title || 'Mejora propuesta',
+      summary: item.summary || '',
+      problem: item.problem || item.problemOrigin || '',
+      currentState: item.currentState || '',
+      proposedState: item.proposedState || '',
+      support: item.support || item.evidence || '',
+      impact: item.impact || item.expectedBenefit || '',
+      justification: item.justification || item.support || '',
+      mode: item.mode || 'pendiente_validacion',
+      improvementType: item.improvementType || item.type || '',
+      relatedElements: safeArray(item.relatedElements || item.affectedActivities || item.relatedActivities),
+      status: item.status || 'pending',
+      customText: item.customText || '',
+      source: item.source || 'tobe_editor',
+      problemOrigin: item.problemOrigin || item.problem || '',
+      affectedActivities: safeArray(item.affectedActivities || item.relatedElements || item.relatedActivities),
+      evidence: item.evidence || item.support || '',
+      expectedBenefit: item.expectedBenefit || item.impact || ''
+    };
+  });
+
+  const selected = allImprovements.filter(item => item.status === 'execute' || item.status === 'custom');
+  const rejected = allImprovements.filter(item => item.status === 'reject');
+  const pending = allImprovements.filter(item => !['execute', 'custom', 'reject'].includes(item.status));
+
+  state.tobe.improvements = allImprovements;
+  state.tobe.selectedImprovements = selected;
+  state.tobe.rejectedImprovements = rejected;
+  state.tobe.pendingImprovements = pending;
+  state.tobe.savedAt = new Date().toISOString();
+
+  state.results.tobeImprovements = {
+    all: allImprovements,
+    selected,
+    rejected,
+    pending,
+    savedAt: state.tobe.savedAt
+  };
+
+  state.metadata.lastSavedAt = new Date().toISOString();
+
+  if(state.decision.route === 'tobe' && !selected.length){
+    showMsg(
+      'tobeMsg',
+      'warn',
+      'Las mejoras fueron guardadas, pero para continuar a TO BE debes marcar al menos una como Ejecutar o Personalizar.'
+    );
+    renderImprovements();
+    renderToBeSummary();
+    updateTopStatus();
+    return;
+  }
+
   state.decision.finalMode = state.decision.route === 'tobe' ? 'tobe' : (state.decision.finalMode || 'asis');
+
+  renderImprovements();
   renderToBeSummary();
+  updateTopStatus();
+
+  showMsg('tobeMsg', 'ok', 'Mejoras TO BE guardadas correctamente.');
   goToNext('tobe');
 }
-
 function renderAllFromState(){
   updateTopStatus();
   if(typeof hydrateContextFromState === 'function') hydrateContextFromState();
