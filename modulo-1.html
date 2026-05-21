@@ -9003,7 +9003,7 @@ function lmpStructuralParser(input){
   };
 }
 
-const LMP_B1_WARNING_TAXONOMY = Object.freeze({
+window.LMP_B1_WARNING_TAXONOMY = Object.freeze({
   activity_completeness: {
     label: 'Actividades incompletas',
     description: 'Campos mínimos faltantes en actividades AS IS.',
@@ -9037,19 +9037,25 @@ const LMP_B1_WARNING_TAXONOMY = Object.freeze({
 });
 
 function lmpB1TaxonomyCategory(type){
+  const taxonomy = window.LMP_B1_WARNING_TAXONOMY || {};
   const issueType = String(type || '');
-  const hit = Object.keys(LMP_B1_WARNING_TAXONOMY).find(category => {
-    return LMP_B1_WARNING_TAXONOMY[category].types.includes(issueType);
+  const hit = Object.keys(taxonomy).find(category => {
+    return taxonomy[category].types.includes(issueType);
   });
   return hit || 'catalog_consistency';
 }
 
 function lmpB1TaxonomySummary(issues){
+  const taxonomy = window.LMP_B1_WARNING_TAXONOMY || {};
   const normalizedIssues = safeArray(issues);
   const byCategory = {};
-  Object.keys(LMP_B1_WARNING_TAXONOMY).forEach(category => {
-    const meta = LMP_B1_WARNING_TAXONOMY[category];
-    const categoryIssues = normalizedIssues.filter(issue => (issue.taxonomy_category || issue.category) === category || meta.types.includes(issue.type));
+
+  Object.keys(taxonomy).forEach(category => {
+    const meta = taxonomy[category];
+    const categoryIssues = normalizedIssues.filter(issue => {
+      return (issue.taxonomy_category || issue.category) === category || meta.types.includes(issue.type);
+    });
+
     byCategory[category] = {
       label: meta.label,
       description: meta.description,
@@ -9059,8 +9065,9 @@ function lmpB1TaxonomySummary(issues){
       types: meta.types
     };
   });
+
   return {
-    categories: LMP_B1_WARNING_TAXONOMY,
+    categories: taxonomy,
     by_category: byCategory,
     critical: normalizedIssues.filter(issue => issue.level === 'critical').map(issue => issue.type),
     warning: normalizedIssues.filter(issue => issue.level !== 'critical').map(issue => issue.type)
