@@ -7211,21 +7211,25 @@ function improvementTemplate(data = {}){
             <textarea data-role="imp-impact" placeholder="Impacto esperado">${escapeHtml(data.impact || '')}</textarea>
           </div>
 
-          <div class="field w-4">
-            <label>Modo / tipo</label>
-            <input data-role="imp-mode" value="${escapeHtml(data.mode || '')}" placeholder="Modo A / Modo B / tipo"/>
-          </div>
+       <div class="field w-4">
+  <label>Modo</label>
+  <select data-role="imp-mode">
+    <option value="">Selecciona modo</option>
+    <option value="Modo A" ${data.mode === 'Modo A' ? 'selected' : ''}>Modo A</option>
+    <option value="Modo B" ${data.mode === 'Modo B' ? 'selected' : ''}>Modo B</option>
+    <option value="pendiente_validacion" ${data.mode === 'pendiente_validacion' ? 'selected' : ''}>Pendiente validación</option>
+  </select>
+</div>
 
-          <div class="field w-4">
-            <label>Prioridad</label>
-            <input data-role="imp-priority" value="${escapeHtml(data.priority || '')}" placeholder="Alta / Media / Baja"/>
-          </div>
+<div class="field w-4">
+  <label>Tipo de mejora</label>
+  <input data-role="imp-improvementType" value="${escapeHtml(data.improvementType || '')}" placeholder="Digitalización, automatización, eliminación de actividad, etc."/>
+</div>
 
-          <div class="field w-4">
-            <label>Actividades relacionadas</label>
-            <input data-role="imp-relatedActivities" value="${escapeHtml(data.relatedActivities || '')}" placeholder="Actividades relacionadas"/>
-          </div>
-        </div>
+<div class="field w-4">
+  <label>Elementos relacionados</label>
+  <input data-role="imp-relatedElements" value="${escapeHtml(Array.isArray(data.relatedElements) ? data.relatedElements.join(', ') : (data.relatedElements || ''))}" placeholder="Áreas, actividades, entradas, salidas, sistemas, documentos..."/>
+</div>
 
         <div class="actions">
           <div class="actions-left">
@@ -7324,29 +7328,42 @@ function setImprovementStatus(id, status){
 }
 
 function collectImprovements(){
+  state.tobe = state.tobe || {};
+  state.tobe.improvements = state.tobe.improvements || [];
+
   state.tobe.improvements.forEach(item => {
     const card = getImprovementCardById(item.id);
-    if(card){
-      const getValue = role => {
-        const el = card.querySelector(`[data-role="${role}"]`);
-        return el ? el.value.trim() : '';
-      };
+    if(!card) return;
 
-      item.title = getValue('imp-title') || item.title || 'Mejora propuesta';
-      item.summary = getValue('imp-summary') || item.summary || '';
-      item.problem = getValue('imp-problem') || item.problem || '';
-      item.currentState = getValue('imp-currentState') || item.currentState || '';
-      item.proposedState = getValue('imp-proposedState') || item.proposedState || '';
-      item.support = getValue('imp-support') || item.support || '';
-      item.justification = item.support;
-      item.impact = getValue('imp-impact') || item.impact || '';
-      item.mode = getValue('imp-mode') || item.mode || '';
-      item.priority = getValue('imp-priority') || item.priority || '';
-      item.relatedActivities = getValue('imp-relatedActivities') || item.relatedActivities || '';
+    const getValue = role => {
+      const el = card.querySelector(`[data-role="${role}"]`);
+      return el ? el.value.trim() : '';
+    };
 
-      const custom = card.querySelector('[data-role="custom-text"]');
-      item.customText = custom ? custom.value.trim() : '';
-    }
+    const splitList = value => String(value || '')
+      .split(/\n|;|,/)
+      .map(x => x.trim())
+      .filter(Boolean);
+
+    item.title = getValue('imp-title') || 'Mejora propuesta';
+    item.summary = getValue('imp-summary') || 'Resumen breve pendiente de validación.';
+    item.problem = getValue('imp-problem') || 'pendiente_validacion';
+    item.currentState = getValue('imp-currentState') || 'pendiente_validacion';
+    item.proposedState = getValue('imp-proposedState') || 'pendiente_validacion';
+    item.support = getValue('imp-support') || 'pendiente_validacion';
+    item.impact = getValue('imp-impact') || 'pendiente_validacion';
+    item.mode = getValue('imp-mode') || 'pendiente_validacion';
+    item.improvementType = getValue('imp-improvementType') || 'pendiente_validacion';
+    item.relatedElements = splitList(getValue('imp-relatedElements'));
+
+    const custom = card.querySelector('[data-role="custom-text"]');
+    item.customText = custom ? custom.value.trim() : '';
+
+    // Compatibilidad con contrato anterior
+    item.problemOrigin = item.problem;
+    item.affectedActivities = item.relatedElements;
+    item.evidence = item.support;
+    item.expectedBenefit = item.impact;
   });
 }
 
@@ -11726,62 +11743,147 @@ function extractAsIsActivitiesFromPayload(payload){
 }
 
 function normalizeImprovement(item = {}){
-  const firstText = (...values) => values.map(value => {
-    if(value === undefined || value === null) return '';
-    if(Array.isArray(value)) return value.map(v => typeof v === 'string' ? v : sgmpTextOf(v)).filter(Boolean).join('; ');
-    if(typeof value === 'object') return value.title || value.name || value.problem || value.description || value.summary || value.restriction || value.constraint || value.finding || JSON.stringify(value);
-    return String(value);
-  }).map(value => String(value || '').trim()).find(Boolean) || '';
+  if(typeof item === 'string'){
+    item = {
+      title: item,
+      summary: item,
+      problem: item
+    };
+  }
 
-  const problem = firstText(item.problem, item.problem_to_solve, item.problemSolved, item.problem_solved, item.relatedProblem, item.related_problem, item.problema, item.restriction, item.constraint, item.finding, item.linked_finding, item.description, item.summary);
-  const solution = firstText(item.solution, item.proposedState, item.proposed_state, item.to_be, item.toBeState, item.to_be_state, item.action, item.recommendation, item.descripcion_solucion);
-  const howItWorks = firstText(item.how_it_works, item.howItWorks, item.mechanism, item.mecanismo, item.implementation_logic);
-  const impact = firstText(item.impact, item.impacto, item.expectedImpact, item.expected_impact, item.expectedBenefit, item.expected_benefit, item.benefit);
-  const support = [
-    firstText(item.support, item.sustento, item.justification, item.justificacion, item.technicalRationale, item.technical_rationale, item.evidence),
-    firstText(item.source, item.reference, item.fuente, item.industry_reference, item.industryReference, item.improvementType, item.improvement_type, item.type)
-  ].filter(Boolean).join(' | ');
-  const titleBase = firstText(
-    item.title, item.name, item.titulo,
-    item.improvementTitle, item.improvement_title,
-    item.recommendation, item.action, item.header,
-    item.category, item.type,
-    solution, problem, impact
+  const toText = value => {
+    if(Array.isArray(value)) return value.filter(Boolean).join(', ');
+    if(value && typeof value === 'object') return JSON.stringify(value);
+    return String(value ?? '').trim();
+  };
+
+  const toArray = value => {
+    if(Array.isArray(value)) return value.map(x => toText(x)).filter(Boolean);
+    if(typeof value === 'string'){
+      return value
+        .split(/\n|;|,/)
+        .map(x => x.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const id = String(item.id || cryptoRandom());
+
+  const title = toText(
+    item.title ||
+    item.name ||
+    item.titulo ||
+    item.header ||
+    'Mejora propuesta'
   );
-  const title = titleBase && titleBase !== 'Mejora propuesta'
-    ? (titleBase.length > 96 ? titleBase.slice(0, 93) + '...' : titleBase)
-    : 'Mejora propuesta';
-  const finalProposed = solution || (problem ? 'Implementar una acción de mejora para resolver: ' + problem : impact || title);
+
+  const summary = toText(
+    item.summary ||
+    item.elevatorPitch ||
+    item.description ||
+    item.recommendation ||
+    ''
+  );
+
+  const problem = toText(
+    item.problem ||
+    item.problemOrigin ||
+    item.problemSolved ||
+    item.problem_to_solve ||
+    item.problemSolved ||
+    item.consequence ||
+    item.issue ||
+    ''
+  );
+
+  const currentState = toText(
+    item.currentState ||
+    item.current_state ||
+    item.asIsState ||
+    item.as_is_state ||
+    item.cause ||
+    item.rootCause ||
+    item.root_cause ||
+    ''
+  );
+
+  const proposedState = toText(
+    item.proposedState ||
+    item.proposed_state ||
+    item.toBeState ||
+    item.to_be_state ||
+    item.action ||
+    item.expectedBenefit ||
+    item.expected_benefit ||
+    ''
+  );
+
+  const support = toText(
+    item.support ||
+    item.evidence ||
+    item.justification ||
+    item.technicalRationale ||
+    item.technical_rationale ||
+    item.rationale ||
+    ''
+  );
+
+  const impact = toText(
+    item.impact ||
+    item.expectedImpact ||
+    item.expected_impact ||
+    item.benefit ||
+    item.expectedBenefit ||
+    item.expected_benefit ||
+    ''
+  );
+
+  const mode = toText(
+    item.mode ||
+    item.improvementMode ||
+    item.improvement_mode ||
+    ''
+  );
+
+  const improvementType = toText(
+    item.improvementType ||
+    item.improvement_type ||
+    item.type ||
+    item.category ||
+    ''
+  );
+
+  const relatedElements = toArray(
+    item.relatedElements ||
+    item.related_elements ||
+    item.affectedActivities ||
+    item.affected_activities ||
+    item.relatedActivities ||
+    item.related_activities ||
+    []
+  );
 
   return {
-    id: firstText(item.id, item.code, item.codigo),
-    title,
-    type: firstText(item.type, item.improvement_type, item.improvementType, item.support) || 'gradual',
-    applies_to_activity: firstText(item.applies_to_activity, item.appliesToActivity, item.activity, item.actividad, item.relatedActivity),
-    linked_finding: firstText(item.linked_finding, item.linkedFinding, item.finding, item.relatedFinding, problem),
-    problem,
-    root_cause: firstText(item.root_cause, item.rootCause, item.causa_raiz, item.cause),
-    solution: finalProposed,
-    how_it_works: howItWorks || finalProposed,
-    industry_reference: firstText(item.industry_reference, item.industryReference, item.reference, item.benchmark, item.best_practice),
-    adaptation_logic: firstText(item.adaptation_logic, item.adaptationLogic, item.adaptation, item.logic),
-    expected_impact: impact,
-    impact_level: firstText(item.impact_level, item.impactLevel, item.impactLevelText) || firstText(item.impactLevel) || 'medium',
-    effort_level: firstText(item.effort_level, item.effortLevel, item.effort) || 'medium',
-    priority_score: firstText(item.priority_score, item.priorityScore, item.priority, item.score),
-    implementation_steps: safeArray(item.implementation_steps || item.implementationSteps || item.steps || item.plan),
-    required_roles: safeArray(item.required_roles || item.requiredRoles || item.roles),
-    required_systems_or_documents: safeArray(item.required_systems_or_documents || item.requiredSystemsOrDocuments || item.documents || item.systems),
-    risks: safeArray(item.risks || item.riesgos),
-    success_indicators: safeArray(item.success_indicators || item.successIndicators || item.indicators || item.kpis),
-    summary: firstText(item.summary, item.description, item.technicalRationale, item.technical_rationale, impact, problem),
-    currentState: firstText(item.currentState, item.current_state, item.as_is, item.asIsState, item.as_is_state, problem),
-    proposedState: finalProposed,
-    support,
-    impact,
-    justification: [support, impact].filter(Boolean).join(' | '),
-    status: (item.status === 'adjust' ? 'custom' : item.status === 'discard' ? 'reject' : (item.status || 'pending')),
-    customText: item.customText || item.custom_text || item.adjustedState || item.adjusted_state || ''
+    ...item,
+    id,
+    title: title || 'Mejora propuesta',
+    summary: summary || 'Resumen breve pendiente de validación.',
+    problem: problem || 'pendiente_validacion',
+    currentState: currentState || 'pendiente_validacion',
+    proposedState: proposedState || 'pendiente_validacion',
+    support: support || 'pendiente_validacion',
+    impact: impact || 'pendiente_validacion',
+    mode: mode || 'pendiente_validacion',
+    improvementType: improvementType || 'pendiente_validacion',
+    relatedElements,
+    status: item.status || 'pending',
+
+    // Compatibilidad con campos anteriores
+    problemOrigin: item.problemOrigin || problem || '',
+    affectedActivities: item.affectedActivities || relatedElements || [],
+    expectedBenefit: item.expectedBenefit || proposedState || impact || '',
+    evidence: item.evidence || support || ''
   };
 }
 
