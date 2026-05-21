@@ -2681,28 +2681,102 @@ if (state.segments.length && !state.preparedImageData) {
       if (mode === "MANUAL" || mode === "MANUAL_SYSTEM") return false;
       return useApi !== "NO";
     }
+function optimizeImageDataForAI(dataUrl, maxSide = 1800, quality = 0.82) {
+  return new Promise(function(resolve, reject) {
+    if (!dataUrl || !String(dataUrl).startsWith("data:image/")) {
+      resolve(dataUrl || "");
+      return;
+    }
 
+    const img = new Image();
+
+    img.onload = function() {
+      const originalWidth = img.naturalWidth || img.width;
+      const originalHeight = img.naturalHeight || img.height;
+
+      if (!originalWidth || !originalHeight) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const scale = Math.min(1, maxSide / Math.max(originalWidth, originalHeight));
+      const width = Math.max(1, Math.round(originalWidth * scale));
+      const height = Math.max(1, Math.round(originalHeight * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+
+    img.onerror = function() {
+      reject(new Error("No se pudo optimizar la imagen para IA."));
+    };
+
+    img.src = dataUrl;
+  });
+}
     async function sgmpCallAI(stageKey, prompt, imageData) {
       if (!sgmpStageUseApi(stageKey)) {
         throw new Error("La etapa está configurada en modo manual.");
       }
+const optimizedImageData = imageData
+  ? await optimizeImageDataForAI(imageData, 1800, 0.82)
+  : "";
 
-      const payload = {
-        action: "call_ai",
-        module_code: SGMP_MODULE_CODE,
-        stage_code: SGMP_STAGE_CODES[stageKey],
-        prompt: prompt || "",
-        // La imagen se envía internamente al backend. No se muestra ni se exporta como base64.
-        image_data: imageData || ""
-      };
+const payload = {
+  action: "call_ai",
+  module_code: SGMP_MODULE_CODE,
+  stage_code: SGMP_STAGE_CODES[stageKey],
+  prompt: prompt || "",
+  image_data: optimizedImageData
+};
 
-const response = await fetch(SGMP_API_URL + '?action=call_ai', {
-  method: "POST",
-  body: JSON.stringify(payload),
-  headers: { "Content-Type": "text/plain;charset=utf-8" }
-});
+let response;
 
-      const data = await response.json();
+try {
+  response = await fetch(SGMP_API_URL + '?action=call_ai', {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    }
+  });
+} catch (fetchError) {
+  throw new Error(
+    "No se pudo conectar con el backend SGMP. Posibles causas: imagen demasiado pesada, URL Apps Script no publicada como Web App, permisos incorrectos o bloqueo CORS. Detalle: " +
+    fetchError.message
+  );
+}
+
+const rawText = await response.text();
+
+let data;
+try {
+  data = JSON.parse(rawText);
+} catch (parseError) {
+  throw new Error(
+    "El backend respondió, pero no devolvió JSON válido. HTTP " +
+    response.status +
+    ". Respuesta: " +
+    rawText.slice(0, 500)
+  );
+}
+
+if (!response.ok) {
+  throw new Error(
+    "Error HTTP del backend SGMP: " +
+    response.status +
+    ". " +
+    (data.error || data.message || rawText.slice(0, 300))
+  );
+}
       if (!data || data.ok === false) {
         throw new Error((data && (data.error || data.message)) || "Error en ejecución IA.");
       }
