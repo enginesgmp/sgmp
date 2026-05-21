@@ -3013,7 +3013,87 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   }
 }
 </style>
+<style id="sgmp-tobe-improvements-accordion-editable">
+  .improvement-accordion{
+    padding:0 !important;
+    overflow:hidden !important;
+  }
 
+  .improvement-summary{
+    cursor:pointer !important;
+    list-style:none !important;
+    display:flex !important;
+    justify-content:space-between !important;
+    align-items:flex-start !important;
+    gap:14px !important;
+    padding:16px !important;
+    background:linear-gradient(135deg,#F7FBFF,#FFFFFF) !important;
+    border-left:5px solid #00C2FF !important;
+  }
+
+  .improvement-summary::-webkit-details-marker{
+    display:none !important;
+  }
+
+  .improvement-summary-main{
+    min-width:0 !important;
+    flex:1 1 auto !important;
+  }
+
+  .improvement-summary-main h4{
+    margin:0 0 5px !important;
+    color:#0B2E59 !important;
+    font-size:1rem !important;
+    font-weight:950 !important;
+  }
+
+  .improvement-summary-main p{
+    margin:0 !important;
+    color:#5B6F8A !important;
+    font-size:.88rem !important;
+    line-height:1.35 !important;
+  }
+
+  .improvement-summary-actions{
+    display:flex !important;
+    align-items:center !important;
+    gap:8px !important;
+    flex-wrap:wrap !important;
+    justify-content:flex-end !important;
+  }
+
+  .improvement-delete-btn{
+    min-height:34px !important;
+    padding:7px 11px !important;
+    border-radius:999px !important;
+    font-size:.76rem !important;
+  }
+
+  .improvement-body{
+    padding:16px !important;
+    border-top:1px solid rgba(11,46,89,.08) !important;
+    background:#FFFFFF !important;
+  }
+
+  .improvement-accordion:not([open]) .improvement-summary{
+    border-bottom:none !important;
+  }
+
+  .improvement-accordion[open] .improvement-summary{
+    background:linear-gradient(135deg,#EAF7FF,#FFFFFF) !important;
+  }
+
+  @media(max-width:720px){
+    .improvement-summary{
+      flex-direction:column !important;
+    }
+
+    .improvement-summary-actions{
+      width:100% !important;
+      justify-content:flex-start !important;
+    }
+  }
+</style>
 
 </head>
 <body>
@@ -7081,56 +7161,88 @@ function improvementTemplate(data = {}){
   const badgeText = status === 'execute' ? 'Ejecutar' : status === 'custom' ? 'Personalizar' : status === 'reject' ? 'Rechazar' : 'Pendiente';
 
   return `
-    <div class="improvement-card" data-id="${safeId}" data-status="${status}">
-      <div class="improvement-head">
-        <div>
+    <details class="improvement-card improvement-accordion" data-id="${safeId}" data-status="${status}">
+      <summary class="improvement-summary">
+        <div class="improvement-summary-main">
           <h4>${escapeHtml(data.title || 'Mejora propuesta')}</h4>
           <p>${escapeHtml(data.summary || data.problem || 'Revisa la propuesta y registra una decisión.')}</p>
         </div>
-        <div class="status-badge ${badgeClass}" data-role="badge">${badgeText}</div>
-      </div>
 
-      <div class="split3">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Problema</h3>
-          <div class="box">${escapeHtml(data.problem || data.summary || '')}</div>
+        <div class="improvement-summary-actions">
+          <span class="status-badge ${badgeClass}" data-role="badge">${badgeText}</span>
+          <button class="btn-danger improvement-delete-btn" type="button" onclick="event.preventDefault(); event.stopPropagation(); deleteImprovement('${jsId}')">Eliminar</button>
         </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado actual</h3>
-          <div class="box">${escapeHtml(data.currentState || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Estado propuesto</h3>
-          <div class="box">${escapeHtml(data.proposedState || '')}</div>
-        </div>
-      </div>
+      </summary>
 
-      <div class="split2" style="margin-top:14px;">
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Sustento</h3>
-          <div class="box">${escapeHtml(data.support || data.justification || '')}</div>
-        </div>
-        <div>
-          <h3 style="margin:0 0 8px;font-size:.95rem;">Impacto esperado</h3>
-          <div class="box">${escapeHtml(data.impact || '')}</div>
-        </div>
-      </div>
+      <div class="improvement-body">
+        <div class="field-grid">
+          <div class="field w-6">
+            <label>Título de la mejora</label>
+            <input data-role="imp-title" value="${escapeHtml(data.title || '')}" placeholder="Título de la mejora"/>
+          </div>
 
-      <div class="actions">
-        <div class="actions-left">
-          <button class="btn-ok" type="button" onclick="setImprovementStatus('${jsId}','execute')">Ejecutar</button>
-          <button class="btn-warn" type="button" onclick="setImprovementStatus('${jsId}','custom')">Personalizar</button>
-          <button class="btn-danger" type="button" onclick="setImprovementStatus('${jsId}','reject')">Rechazar</button>
-        </div>
-      </div>
+          <div class="field w-6">
+            <label>Resumen</label>
+            <input data-role="imp-summary" value="${escapeHtml(data.summary || '')}" placeholder="Resumen breve"/>
+          </div>
 
-      <div class="field-grid ${status === 'custom' ? '' : 'hidden'}" data-role="edit-zone">
-        <div class="field w-12">
-          <label for="customText_${safeId}">Personalización de la mejora</label>
-          <textarea id="customText_${safeId}" data-role="custom-text">${escapeHtml(data.customText || data.adjustedState || '')}</textarea>
+          <div class="field w-12">
+            <label>Problema / hallazgo asociado</label>
+            <textarea data-role="imp-problem" placeholder="Problema o hallazgo que origina la mejora">${escapeHtml(data.problem || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Estado actual AS IS</label>
+            <textarea data-role="imp-currentState" placeholder="Situación actual">${escapeHtml(data.currentState || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Estado propuesto TO BE</label>
+            <textarea data-role="imp-proposedState" placeholder="Situación propuesta">${escapeHtml(data.proposedState || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Sustento / justificación</label>
+            <textarea data-role="imp-support" placeholder="Sustento técnico, causa o evidencia">${escapeHtml(data.support || data.justification || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Impacto esperado</label>
+            <textarea data-role="imp-impact" placeholder="Impacto esperado">${escapeHtml(data.impact || '')}</textarea>
+          </div>
+
+          <div class="field w-4">
+            <label>Modo / tipo</label>
+            <input data-role="imp-mode" value="${escapeHtml(data.mode || '')}" placeholder="Modo A / Modo B / tipo"/>
+          </div>
+
+          <div class="field w-4">
+            <label>Prioridad</label>
+            <input data-role="imp-priority" value="${escapeHtml(data.priority || '')}" placeholder="Alta / Media / Baja"/>
+          </div>
+
+          <div class="field w-4">
+            <label>Actividades relacionadas</label>
+            <input data-role="imp-relatedActivities" value="${escapeHtml(data.relatedActivities || '')}" placeholder="Actividades relacionadas"/>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div class="actions-left">
+            <button class="btn-ok" type="button" onclick="setImprovementStatus('${jsId}','execute')">Ejecutar</button>
+            <button class="btn-warn" type="button" onclick="setImprovementStatus('${jsId}','custom')">Personalizar</button>
+            <button class="btn-danger" type="button" onclick="setImprovementStatus('${jsId}','reject')">Rechazar</button>
+          </div>
+        </div>
+
+        <div class="field-grid ${status === 'custom' ? '' : 'hidden'}" data-role="edit-zone">
+          <div class="field w-12">
+            <label for="customText_${safeId}">Personalización de la mejora</label>
+            <textarea id="customText_${safeId}" data-role="custom-text" placeholder="Describe cómo se ajustará la mejora propuesta">${escapeHtml(data.customText || data.adjustedState || '')}</textarea>
+          </div>
         </div>
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -7215,12 +7327,41 @@ function collectImprovements(){
   state.tobe.improvements.forEach(item => {
     const card = getImprovementCardById(item.id);
     if(card){
+      const getValue = role => {
+        const el = card.querySelector(`[data-role="${role}"]`);
+        return el ? el.value.trim() : '';
+      };
+
+      item.title = getValue('imp-title') || item.title || 'Mejora propuesta';
+      item.summary = getValue('imp-summary') || item.summary || '';
+      item.problem = getValue('imp-problem') || item.problem || '';
+      item.currentState = getValue('imp-currentState') || item.currentState || '';
+      item.proposedState = getValue('imp-proposedState') || item.proposedState || '';
+      item.support = getValue('imp-support') || item.support || '';
+      item.justification = item.support;
+      item.impact = getValue('imp-impact') || item.impact || '';
+      item.mode = getValue('imp-mode') || item.mode || '';
+      item.priority = getValue('imp-priority') || item.priority || '';
+      item.relatedActivities = getValue('imp-relatedActivities') || item.relatedActivities || '';
+
       const custom = card.querySelector('[data-role="custom-text"]');
       item.customText = custom ? custom.value.trim() : '';
     }
   });
 }
 
+  function deleteImprovement(id){
+  const targetId = String(id || '');
+  if(!targetId || !state.tobe || !Array.isArray(state.tobe.improvements)) return;
+
+  state.tobe.improvements = state.tobe.improvements.filter(item => String(item.id) !== targetId);
+
+  renderImprovements();
+  renderToBeSummary();
+  updateTopStatus();
+
+  showMsg('tobeMsg', 'ok', 'Mejora eliminada correctamente.');
+}
 
 function getSelectedToBeImprovements(){
   return (state.tobe.improvements || []).filter(i => i.status !== 'reject');
