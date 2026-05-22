@@ -5275,6 +5275,9 @@ async function sgmpCallAI(stageCode, prompt){
     user_id: sgmpUserId() || 'u_admin',
     module_code: 'LMP',
     stage_code: stageCode,
+    process_name: (state && state.context && state.context.processName) ? state.context.processName : '',
+    prompt_chars: String(prompt || '').length,
+    estimated_input_tokens_front: Math.ceil(String(prompt || '').length / 4),
     prompt: prompt
   };
 
@@ -5368,6 +5371,7 @@ const state = {
   preInterview: null,
   interview: null,
   brief: null,
+  compactContext: null,
   briefReview: { raw:null, approved:false },
   loads: {
     pre: [],
@@ -10664,6 +10668,7 @@ function processBriefResponse(){
     console.log('[SGMP][BRIEF] issues', issues);
     state.briefReview = { raw: normalized, approved: issues.length === 0 };
     state.brief = normalized;
+    saveCompactContextFromBrief();
     renderBriefDraft();
     renderBriefValidation();
     seedAsIsBuilderFromBrief(false);
@@ -10698,6 +10703,7 @@ function approveBriefAndUnlockAnalysis(){
     console.log('[SGMP][BRIEF] issues', issues);
     state.briefReview = { raw: normalized, approved: issues.length === 0 };
     state.brief = normalized;
+    saveCompactContextFromBrief();
     renderBriefDraft();
     renderBriefValidation();
     refreshCargaFlowState();
@@ -12709,37 +12715,266 @@ SALIDA JSON ESTRICTA:
   };
 }
 
+
+/* =========================================================
+   SGMP LMP · FASE 3 OPTIMIZACIÓN DE TOKENS
+   Objetivo: enviar a IA solo la evidencia necesaria por etapa.
+   No cambia la UI ni la lógica de prompts; compacta el payload.
+========================================================= */
+function lmpStageSafeArray_(value){
+  if (Array.isArray(value)) return value;
+  if (typeof safeArray === 'function') return safeArray(value);
+  if (value === undefined || value === null || value === '') return [];
+  return [value];
+}
+
+function lmpStageCompactObject_(obj, maxDepth, maxArrayItems){
+  maxDepth = maxDepth === undefined ? 4 : maxDepth;
+  maxArrayItems = maxArrayItems === undefined ? 20 : maxArrayItems;
+  const seen = new WeakSet();
+
+  function clean(value, depth){
+    if(value === undefined || value === null) return value;
+    if(typeof value === 'string'){
+      const trimmed = value.trim();
+      return trimmed.length > 1800 ? trimmed.slice(0, 1800) + '...[TRUNCADO]' : trimmed;
+    }
+    if(typeof value !== 'object') return value;
+    if(seen.has(value)) return '[Circular]';
+    seen.add(value);
+    if(depth <= 0) return Array.isArray(value) ? '[Array compactado]' : '[Object compactado]';
+    if(Array.isArray(value)){
+      return value.slice(0, maxArrayItems).map(v => clean(v, depth - 1));
+    }
+    const out = {};
+    Object.keys(value).forEach(k => {
+      const v = value[k];
+      const emptyArray = Array.isArray(v) && !v.length;
+      const emptyObject = v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length;
+      if(v === undefined || v === null || v === '' || emptyArray || emptyObject) return;
+      out[k] = clean(v, depth - 1);
+    });
+    return out;
+  }
+
+  return clean(obj || {}, maxDepth);
+}
+
+function buildCompactContextFromBrief(briefPayload){
+  const raw = briefPayload || state?.briefReview?.raw || state?.brief || {};
+  const brief = (typeof normalizeBriefPayload === 'function') ? normalizeBriefPayload(raw) : raw;
+  const master = state?.master || (typeof mergeMaster === 'function' ? mergeMaster() : {});
+  const ctx = Object.assign({}, state?.context || {}, master?.context || {}, brief?.context || {});
+  const activities = lmpStageSafeArray_(
+    state?.asis?.activities?.length ? state.asis.activities :
+    brief?.as_is?.activities ||
+    brief?.activities_preliminary ||
+    brief?.flowSummary ||
+    (typeof sgmpGetStructuralSourceActivities === 'function' ? sgmpGetStructuralSourceActivities() : [])
+  );
+
+  return lmpStageCompactObject_({
+    context: {
+      company: ctx.company || '',
+      processName: ctx.processName || brief?.processName || '',
+      processCode: ctx.processCode || '',
+      owner: ctx.owner || '',
+      analyst: ctx.analyst || '',
+      industry: ctx.industry || '',
+      processType: ctx.processType || '',
+      activity: ctx.activity || '',
+      purpose: ctx.purpose || brief?.processPurpose || ''
+    },
+    purpose: ctx.purpose || brief?.processPurpose || '',
+    scope: brief?.scope || '',
+    startEvent: brief?.startEvent || '',
+    endEvent: brief?.endEvent || '',
+    actors: brief?.actors || brief?.sipoc?.actors || [],
+    documents: brief?.documents || [],
+    systems: brief?.systems || [],
+    sipoc: brief?.sipoc_preliminary || brief?.sipoc || master?.sipoc || {},
+    mainActivities: activities,
+    mainPainPoints: brief?.mainPainPoints || brief?.findings?.problems || [],
+    informationGaps: brief?.informationGaps || brief?.validation?.blockingGaps || [],
+    visibleRisks: brief?.visibleRisks || brief?.findings?.risks || [],
+    suspectedConstraints: brief?.suspectedConstraints || brief?.preliminaryRestrictions || [],
+    mentionedIndicators: brief?.mentionedIndicators || [],
+    globalIndicators: state?.context?.globalIndicators || []
+  }, 5, 30);
+}
+
+function saveCompactContextFromBrief(){
+  try{
+    state.compactContext = buildCompactContextFromBrief(state.briefReview?.raw || state.brief || {});
+    state.metadata = state.metadata || {};
+    state.metadata.lastCompactContextAt = new Date().toISOString();
+    return state.compactContext;
+  }catch(err){
+    console.warn('[LMP Fase 3] No se pudo crear compactContext:', err);
+    return null;
+  }
+}
+
+function lmpGetStageResult_(stageKey){
+  const results = state?.analysisStages?.results || {};
+  return results[stageKey] || results[String(stageKey || '').toUpperCase()] || results[String(stageKey || '').toLowerCase()] || {};
+}
+
+function lmpGetBestActivitiesForStage_(stageKey){
+  const b1 = lmpGetStageResult_('B1');
+  const candidates = [
+    b1?.as_is?.activities,
+    b1?.as_is_process?.activities,
+    state?.asis?.activities,
+    state?.compactContext?.mainActivities,
+    state?.brief?.as_is?.activities,
+    state?.brief?.activities_preliminary,
+    typeof sgmpGetStructuralSourceActivities === 'function' ? sgmpGetStructuralSourceActivities() : []
+  ];
+  for(const c of candidates){
+    const cleaned = (typeof cleanActivities === 'function') ? cleanActivities(c) : lmpStageSafeArray_(c);
+    if(cleaned.length) return cleaned;
+  }
+  return [];
+}
+
+function buildEvidencePackForStage(stageKey){
+  stageKey = String(stageKey || 'B1').toUpperCase();
+  const compact = state.compactContext || saveCompactContextFromBrief() || buildCompactContextFromBrief();
+  const activities = lmpGetBestActivitiesForStage_(stageKey);
+  const b1 = lmpGetStageResult_('B1');
+  const b2 = lmpGetStageResult_('B2');
+  const b3 = lmpGetStageResult_('B3');
+  const b4 = lmpGetStageResult_('B4');
+  const b5 = lmpGetStageResult_('B5');
+  const b6 = lmpGetStageResult_('B6');
+
+  const deterministicValidation = stageKey === 'B1' && typeof lmpStructuralValidator === 'function'
+    ? lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: activities }))
+    : null;
+
+  const packs = {
+    B1: {
+      current_stage: 'B1',
+      compactContext: compact,
+      source_activity_count: activities.length,
+      source_activities: activities,
+      informationGaps: compact.informationGaps || [],
+      deterministic_validation: deterministicValidation,
+      rules: {
+        preserve_activity_granularity: true,
+        b1_no_ava_no_improvements_no_to_be: true,
+        return_only_valid_json: true
+      }
+    },
+    B2: {
+      current_stage: 'B2',
+      compactContext: compact,
+      validated_as_is: lmpStageCompactObject_(b1, 4, 25),
+      source_activity_count: activities.length,
+      source_activities: activities,
+      rules: { analyze_ava_only: true, return_only_valid_json: true }
+    },
+    B3: {
+      current_stage: 'B3',
+      compactContext: compact,
+      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || {}, 4, 25),
+      ava_result: lmpStageCompactObject_(b2, 4, 25),
+      source_activities: activities,
+      rules: { identify_wastes_problems_and_root_hypotheses: true, return_only_valid_json: true }
+    },
+    B4: {
+      current_stage: 'B4',
+      compactContext: compact,
+      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || {}, 3, 20),
+      ava_result: lmpStageCompactObject_(b2, 3, 20),
+      problems_and_wastes: lmpStageCompactObject_(b3, 4, 25),
+      suspectedConstraints: compact.suspectedConstraints || [],
+      rules: { identify_constraints_not_generic_bottlenecks: true, return_only_valid_json: true }
+    },
+    B5: {
+      current_stage: 'B5',
+      compactContext: compact,
+      validated_as_is_summary: lmpStageCompactObject_(b1?.validation || b1?.operational_state || b1?.as_is || {}, 3, 20),
+      ava_result: lmpStageCompactObject_(b2, 3, 20),
+      problems_and_wastes: lmpStageCompactObject_(b3, 3, 25),
+      restrictions: lmpStageCompactObject_(b4, 4, 25),
+      rules: { propose_prioritized_improvements_only: true, max_items_per_array: 10, return_only_valid_json: true }
+    },
+    B6: {
+      current_stage: 'B6',
+      compactContext: {
+        context: compact.context,
+        purpose: compact.purpose,
+        scope: compact.scope,
+        startEvent: compact.startEvent,
+        endEvent: compact.endEvent,
+        actors: compact.actors,
+        documents: compact.documents,
+        systems: compact.systems,
+        sipoc: compact.sipoc
+      },
+      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || { activities }, 5, 40),
+      improvements_summary: lmpStageCompactObject_(b5?.improvements || b5?.quickWins || [], 3, 12),
+      existing_contract: lmpStageCompactObject_(b6?.sb_contract || state?.sb_contract || {}, 4, 20),
+      rules: { build_lmp_to_sb_contract_only: true, return_only_valid_json: true }
+    }
+  };
+
+  return packs[stageKey] || { current_stage: stageKey, compactContext: compact };
+}
+
+function lmpEstimatePromptTokens(prompt){
+  return Math.ceil(String(prompt || '').length / 4);
+}
+
+function lmpRegisterPromptMetrics(stageKey, prompt, source){
+  const chars = String(prompt || '').length;
+  const estimatedTokens = lmpEstimatePromptTokens(prompt);
+  state.aiMetrics = state.aiMetrics || {};
+  state.aiMetrics[stageKey] = {
+    stage: stageKey,
+    source: source || 'prompt',
+    chars,
+    estimatedTokens,
+    timestamp: new Date().toISOString()
+  };
+  console.log('[LMP Fase 3] Prompt size', state.aiMetrics[stageKey]);
+  return state.aiMetrics[stageKey];
+}
+
+function lmpWarnIfPromptTooLarge(stageKey, prompt, msgId){
+  const metrics = lmpRegisterPromptMetrics(stageKey, prompt, 'stage_prompt');
+  const softLimit = 12000;
+  if(metrics.estimatedTokens > softLimit){
+    const message = 'El prompt de ' + stageKey + ' está pesado: ' + metrics.estimatedTokens + ' tokens estimados. Se recomienda revisar compactación antes de enviar.';
+    if(typeof showMsg === 'function' && msgId) showMsg(msgId, 'warn', message);
+    else console.warn(message);
+  }
+  return metrics;
+}
+
+function lmpResolveB1DeterministicIfValid(){
+  const activities = lmpGetBestActivitiesForStage_('B1');
+  if(!activities.length || typeof lmpStructuralValidator !== 'function') return null;
+  const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: activities }));
+  const blocking = lmpStageSafeArray_(deterministic?.blockingIssues || deterministic?.validation?.critical_gaps || []);
+  if(deterministic && deterministic.valid === true && blocking.length === 0){
+    return deterministic;
+  }
+  return null;
+}
+
 function sgmpBuildAnalysisStagePrompt(stageKey){
   const defs = sgmpGetAnalysisStageDefinitions();
   const def = defs[stageKey] || defs.B1;
-  const master = state.master || mergeMaster();
-  const brief = normalizeBriefPayload(state.briefReview?.raw || state.brief || {});
-  const c = master.context || state.context || {};
-  const stageResults = state.analysisStages?.results || {};
-  const baseActivities = safeArray(
-    stageResults.B1?.as_is?.activities ||
-    state.asis?.activities ||
-    brief.as_is?.activities ||
-    brief.activities_preliminary ||
-    sgmpGetStructuralSourceActivities()
-  );
-  const deterministicValidation = stageKey === 'B1'
-    ? lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: baseActivities }))
-    : null;
-  const evidencePack = {
-    context: c,
-    brief,
-    current_as_is: baseActivities,
-    previous_stage_results: stageResults,
-    master_sipoc: master.sipoc || {},
-    source_activity_count: baseActivities.length,
-    source_activities: baseActivities,
-    deterministic_validation: deterministicValidation
-  };
-  const stagePolicy = stageKey === 'B1'
+  const evidencePack = buildEvidencePackForStage(stageKey);
+  const stagePolicy = String(stageKey || '').toUpperCase() === 'B1'
     ? '\n\nPOLÍTICA OBLIGATORIA B1:\n- B1 solo valida estructura AS IS.\n- B1 no genera AVA, mejoras, quick wins, TO BE, desperdicios, restricciones ni soluciones.\n- Usa deterministic_validation como baseline y conserva sus gaps, warnings, lifecycle y score.\n'
     : '';
-  return `${def.instruction}${stagePolicy}\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n\nINSUMOS:\n${JSON.stringify(evidencePack, null, 2)}`;
+  const prompt = `${def.instruction}${stagePolicy}\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n- No repitas el contexto completo en campos narrativos.\n- Limita arrays a los elementos de mayor valor operativo salvo que la etapa exija conservar todas las actividades.\n\nINSUMOS COMPACTADOS POR ETAPA:\n${JSON.stringify(evidencePack, null, 2)}`;
+  lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'cargaMsg');
+  return prompt;
 }
 
 function generateAnalysisStagePrompt(stageKey){
@@ -12754,6 +12989,7 @@ function generateAnalysisStagePrompt(stageKey){
   state.analysisStages = state.analysisStages || { current:'B1', results:{} };
   state.analysisStages.current = stageKey || 'B1';
   const prompt = sgmpBuildAnalysisStagePrompt(state.analysisStages.current);
+  lmpWarnIfPromptTooLarge(state.analysisStages.current, prompt, 'cargaMsg');
   if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
   showMsg('cargaMsg','ok','Prompt ' + state.analysisStages.current + ' generado correctamente.');
 }
@@ -12827,6 +13063,7 @@ function processAnalysisStageResponse(){
       parsed = lmpConsolidateB1WithAi(deterministic, parsed);
     }
     state.analysisStages.results[key] = parsed;
+    saveCompactContextFromBrief();
 
     const assembled = sgmpAssembleStagedAnalysisPayload();
     const normalized = normalizeAnalysisPayload(assembled);
@@ -14211,18 +14448,15 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   window.sgmpBuildAnalysisStagePrompt = function(stageKey){
     const defs = (typeof sgmpGetAnalysisStageDefinitions === 'function') ? sgmpGetAnalysisStageDefinitions() : {};
     const def = defs[stageKey] || defs.B1 || { instruction:'Responde JSON válido.', stageCode:'lmp_analysis' };
-    const master = (window.state && (state.master || (typeof mergeMaster === 'function' ? mergeMaster() : {}))) || {};
-    const brief = (typeof normalizeBriefPayload === 'function') ? normalizeBriefPayload(state.briefReview?.raw || state.brief || {}) : (state.briefReview?.raw || state.brief || {});
-    const results = state.analysisStages?.results || {};
-    const sourceActivities = stageKey === 'B1' ? window.sgmpGetBestAnalysisSourceActivities() : cleanActivities(results.B1?.as_is?.activities || window.sgmpGetBestAnalysisSourceActivities());
-    const deterministicValidation = stageKey === 'B1' && typeof lmpStructuralValidator === 'function'
-      ? lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: sourceActivities }))
-      : null;
-    const payload = { context: Object.assign({}, state.context || {}, master.context || {}), brief, current_stage: stageKey, previous_stage_results: results, source_activity_count: sourceActivities.length, source_activities: sourceActivities, deterministic_validation: deterministicValidation, master_sipoc: master.sipoc || {}, rules: { source_activities_are_mandatory: true, do_not_reduce_activities: true, return_only_valid_json: true, b1_no_ava_no_improvements_no_to_be: stageKey === 'B1' } };
-    const stagePolicy = stageKey === 'B1'
+    const evidencePack = (typeof buildEvidencePackForStage === 'function')
+      ? buildEvidencePackForStage(stageKey)
+      : { compactContext: state.compactContext || state.context || {}, current_stage: stageKey };
+    const stagePolicy = String(stageKey || '').toUpperCase() === 'B1'
       ? '\n\nPOLÍTICA OBLIGATORIA B1:\n- B1 solo valida estructura AS IS.\n- B1 no genera AVA, mejoras, quick wins, TO BE, desperdicios, restricciones ni soluciones.\n- Usa deterministic_validation como baseline y conserva sus gaps, warnings, lifecycle y score.\n'
       : '';
-    return def.instruction + stagePolicy + '\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n\nINSUMOS:\n' + JSON.stringify(payload, null, 2);
+    const prompt = def.instruction + stagePolicy + '\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n- No repitas el contexto completo en campos narrativos.\n- Limita arrays a los elementos de mayor valor operativo salvo que la etapa exija conservar todas las actividades.\n\nINSUMOS COMPACTADOS POR ETAPA:\n' + JSON.stringify(evidencePack, null, 2);
+    if(typeof lmpWarnIfPromptTooLarge === 'function') lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'analysisMsg_' + stageKey);
+    return prompt;
   };
   window.generateAnalysisScreenPrompt = function(stageKey){
     if(!(state.briefReview && state.briefReview.approved)){ if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey,'warn','Debes aprobar primero el Brief.'); return; }
@@ -14242,6 +14476,21 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     const msgId = 'analysisMsg_' + stageKey;
     try{
       state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey;
+      if(String(stageKey || '').toUpperCase() === 'B1' && typeof lmpResolveB1DeterministicIfValid === 'function'){
+        const deterministicOnly = lmpResolveB1DeterministicIfValid();
+        if(deterministicOnly){
+          state.analysisStages.results.B1 = deterministicOnly;
+          const resultBox = el('analysisResult_B1'); if(resultBox) resultBox.value = JSON.stringify(deterministicOnly, null, 2);
+          const responseBox = el('analysisResponse_B1'); if(responseBox) responseBox.value = JSON.stringify(deterministicOnly, null, 2);
+          if(deterministicOnly.as_is && deterministicOnly.as_is.activities){
+            state.asis = state.asis || {};
+            state.asis.activities = deterministicOnly.as_is.activities;
+            if(typeof renderAsIsActivities === 'function') renderAsIsActivities();
+          }
+          if(typeof showMsg === 'function') showMsg(msgId,'ok','B1 validado con motor determinístico. No se consumieron tokens de IA.');
+          return;
+        }
+      }
       const prompt = window.generateAnalysisScreenPrompt(stageKey); if(!prompt) return;
       if(typeof showLoader === 'function') showLoader('Ejecutando ' + stageKey + ' con IA...', 'Procesando etapa individual del análisis.');
       if(typeof showMsg === 'function') showMsg(msgId,'ok','Ejecutando IA para ' + stageKey + '...');
@@ -14264,7 +14513,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
         const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput(parsed));
         parsed = lmpConsolidateB1WithAi(deterministic, parsed);
       }
-      state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey; state.analysisStages.results[stageKey] = parsed;
+      state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey; state.analysisStages.results[stageKey] = parsed; if(typeof saveCompactContextFromBrief === 'function') saveCompactContextFromBrief();
       const resultBox = el('analysisResult_' + stageKey); if(resultBox) resultBox.value = JSON.stringify(parsed, null, 2);
       if(stageKey === 'B1'){
         const acts = (typeof lmpNormalizeStructuralActivities === 'function')
