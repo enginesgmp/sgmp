@@ -180,7 +180,17 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   display:grid;
   gap:10px;
 }
+.global-progress .bar{
+  height:14px;
+  background:#E3F1E9;
+  border:1px solid #CBE4D5;
+}
 
+.global-progress .fill{
+  height:100%;
+  display:block;
+  background:linear-gradient(90deg,#087F5B,#24C47E);
+}
 .global-progress .top{
   display:flex;
   justify-content:space-between;
@@ -305,14 +315,36 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   margin-top:16px;
 }
 
+.bar{
+  height:12px;
+  width:100%;
+  background:#E3F1E9;
+  border:1px solid #CBE4D5;
+  border-radius:999px;
+  overflow:hidden;
+  position:relative;
+}
+
+.fill{
+  height:100%;
+  width:0%;
+  display:block;
+  min-width:0;
+  background:linear-gradient(90deg,#087F5B,#24C47E);
+  border-radius:999px;
+  transition:width .25s ease;
+}  
+  
 .macro-progress .bar{
   height:12px;
-  background:#e8f4ee;
-  border:1px solid #d7eadf;
+  background:#E3F1E9;
+  border:1px solid #CBE4D5;
 }
 
 .macro-progress .fill{
-  background:linear-gradient(90deg,#148954,#29c884);
+  height:100%;
+  display:block;
+  background:linear-gradient(90deg,#087F5B,#24C47E);
 }
 
 .macro-stats{
@@ -359,7 +391,7 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
 .list{display:grid;gap:10px}
 .row{
   display:grid;
-  grid-template-columns:1fr 130px 130px 150px;
+  grid-template-columns:1fr 130px 130px 190px;
   gap:12px;
   align-items:center;
   background:#fff;
@@ -370,6 +402,15 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   cursor:pointer;
 }
 .row:hover{border-color:#9ED4B8;box-shadow:0 14px 30px rgba(24,155,91,.10)}
+  .row .bar{
+  height:13px;
+  min-width:150px;
+}
+
+.row .fill{
+  height:100%;
+  display:block;
+}
 .status{font-size:11px;font-weight:950;text-transform:uppercase;border-radius:999px;padding:6px 10px;background:#F3FAF6;color:#0F5132;border:1px solid #D7EBDD;display:inline-flex;justify-content:center}
 .pending{color:var(--danger);font-weight:950}
 .detail-layout{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
@@ -589,10 +630,23 @@ function setGlobal(){
 
 function render(){
   setGlobal();
-  if(SESSION.rol==="analista") renderAnalystHome();
-  else if(VIEW.type==="macro") renderMacro(VIEW.id);
-  else if(VIEW.type==="process") renderProcess(VIEW.id);
-  else renderHome();
+
+  if(VIEW.type==="process"){
+    renderProcess(VIEW.id);
+    return;
+  }
+
+  if(VIEW.type==="macro"){
+    renderMacro(VIEW.id);
+    return;
+  }
+
+  if(SESSION.rol==="analista"){
+    renderAnalystHome();
+    return;
+  }
+
+  renderHome();
 }
 
 function renderHome(){
@@ -652,7 +706,19 @@ function macroCard(m){
   </article>`;
 }
 function openMacro(id){ VIEW={type:"macro",id}; render(); window.scrollTo(0,0); }
-function openProcess(id){ VIEW={type:"process",id}; render(); window.scrollTo(0,0); }
+function openProcess(id){
+  if(SESSION?.rol === "analista"){
+    const allowed = getVisibleProcesses().some(p => p.proceso_id === id);
+    if(!allowed){
+      toast("No tienes acceso a este proceso.");
+      return;
+    }
+  }
+
+  VIEW = {type:"process", id};
+  render();
+  window.scrollTo(0,0);
+}
 function backHome(){ VIEW={type:"home"}; render(); }
 function renderMacro(mid){
   const m=DATA.macroprocesos.find(x=>x.macro_id===mid);
@@ -735,7 +801,14 @@ function hitoCard(h,p){
   const av=hitoAdvance(h.hito_proceso_id);
   const acts=DATA.actividades.filter(a=>a.hito_proceso_id===h.hito_proceso_id).sort((a,b)=>Number(a.orden_actividad)-Number(b.orden_actividad));
   const done=acts.filter(a=>isTrue(a.completado)).length;
-  const canEdit=SESSION.rol==="admin" || SESSION.rol==="analista";
+  const assignedToAnalyst =
+  SESSION.rol === "analista" &&
+  (
+    String(p.analista_user || "").toLowerCase() === String(SESSION.username || "").toLowerCase() ||
+    norm(p.analista) === norm(SESSION.analista_nombre || SESSION.nombre)
+  );
+
+const canEdit = SESSION.rol === "admin" || assignedToAnalyst;
   const showActivities=SESSION.rol!=="gerencia";
   return `<article class="hito">
     <h3>${esc(h.hito)}</h3>
