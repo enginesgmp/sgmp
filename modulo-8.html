@@ -499,6 +499,21 @@ async function api(action,payload={}){
   return json.data;
 }
 
+async function apiWrite(action,payload={}){
+  if(!apiReady()) throw new Error("API no configurada");
+
+  await fetch(API_URL, {
+    method:"POST",
+    mode:"no-cors",
+    headers:{
+      "Content-Type":"text/plain;charset=utf-8"
+    },
+    body:JSON.stringify({action,payload})
+  });
+
+  return { sent:true };
+}
+
 function toast(msg){
   const el=$("toast"); el.textContent=msg; el.classList.remove("hidden");
   clearTimeout(window.__t); window.__t=setTimeout(()=>el.classList.add("hidden"),3000);
@@ -758,13 +773,35 @@ function renderAnalystHome(){
 }
 
 async function toggleActivity(id,checked){
-  const a=DATA.actividades.find(x=>x.actividad_id===id);
+  const a = DATA.actividades.find(x=>x.actividad_id===id);
   if(!a) return;
-  a.completado=checked;
-  a.estado=checked?"Completado":"Pendiente";
-  try{ if(apiReady()) await api("update_activity",{actividad_id:id,completado:checked,estado:a.estado,username:SESSION.username}); }
-  catch(e){ toast("Cambio local. API: "+e.message); }
+
+  const previous = {
+    completado: a.completado,
+    estado: a.estado
+  };
+
+  a.completado = checked;
+  a.estado = checked ? "Completado" : "Pendiente";
+
   render();
+
+  try{
+    if(apiReady()){
+      await apiWrite("update_activity",{
+        actividad_id:id,
+        completado:checked,
+        estado:a.estado,
+        username:SESSION.username
+      });
+      toast("Check actualizado.");
+    }
+  }catch(e){
+    a.completado = previous.completado;
+    a.estado = previous.estado;
+    render();
+    toast("No se pudo guardar el check: " + e.message);
+  }
 }
 async function updateProcess(pid,field,value){
   const p=DATA.procesos.find(x=>x.proceso_id===pid);
