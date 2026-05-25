@@ -701,7 +701,38 @@ async function login() {
       return;
     }
 
-    SESSION = sessionUser;
+   const rawUser = sessionUser?.usuario || sessionUser?.user || sessionUser?.data || sessionUser;
+
+SESSION = {
+  ...rawUser,
+  username: rawUser.username || rawUser.usuario || rawUser.user || user,
+  nombre: rawUser.nombre || rawUser.name || rawUser.full_name || rawUser.username || user,
+  rol: String(rawUser.rol || rawUser.role || rawUser.cargo || "").trim().toLowerCase(),
+  analista_nombre: rawUser.analista_nombre || rawUser.nombre || rawUser.name || ""
+};
+
+console.log("SESSION NORMALIZADA:", SESSION);
+    const sessionRole = String(SESSION.rol || "").trim().toLowerCase();
+const sessionName = SESSION.nombre || SESSION.username || "";
+
+if (sessionRole === "gerencia") {
+  $("userBadge").classList.add("hidden");
+  $("userBadge").textContent = "";
+} else {
+  $("userBadge").classList.remove("hidden");
+
+  if (sessionRole === "admin") {
+    $("userBadge").textContent = sessionName
+      ? `Administrador · ${sessionName}`
+      : "Administrador";
+  } else if (sessionRole === "analista") {
+    $("userBadge").textContent = sessionName
+      ? `Analista · ${sessionName}`
+      : "Analista";
+  } else {
+    $("userBadge").textContent = "Usuario";
+  }
+}
 
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
@@ -756,11 +787,17 @@ function logout(){ SESSION=null; location.reload(); }
 
 function getVisibleProcesses(){
   if(!SESSION) return [];
-  if(SESSION.rol==="analista"){
-    const user=String(SESSION.username||"");
-    const ana=norm(SESSION.analista_nombre || SESSION.nombre);
-    return DATA.procesos.filter(p => String(p.analista_user||"")===user || norm(p.analista)===ana);
+
+  if(isAnalyst()){
+    const user = String(SESSION.username || "").trim().toLowerCase();
+    const ana = norm(SESSION.analista_nombre || SESSION.nombre);
+
+    return DATA.procesos.filter(p =>
+      String(p.analista_user || "").trim().toLowerCase() === user ||
+      norm(p.analista) === ana
+    );
   }
+
   return DATA.procesos.slice();
 }
 function actsForProcess(pid){
@@ -793,12 +830,20 @@ function isTrue(v){
   return v === true || value === 'TRUE' || value === 'SI' || value === 'VERDADERO';
 }
 
+function sessionRole(){
+  return String(SESSION?.rol || "").trim().toLowerCase();
+}
+
 function isAdmin(){
-  return SESSION && String(SESSION.rol || '').toLowerCase() === 'admin';
+  return sessionRole() === "admin";
 }
 
 function isAnalyst(){
-  return SESSION && String(SESSION.rol || '').toLowerCase() === 'analista';
+  return sessionRole() === "analista";
+}
+
+function isManagement(){
+  return sessionRole() === "gerencia";
 }
 
 function isLockedForAnalyst(activity){
@@ -836,10 +881,10 @@ function render(){
     return;
   }
 
-  if(SESSION.rol==="analista"){
-    renderAnalystHome();
-    return;
-  }
+if(isAnalyst()){
+  renderAnalystHome();
+  return;
+}
 
   renderHome();
 }
@@ -1157,15 +1202,15 @@ function hitoCard(h,p){
   const av=hitoAdvance(h.hito_proceso_id);
   const acts = activeActivities()   .filter(a => a.hito_proceso_id === h.hito_proceso_id)   .sort((a,b) => Number(a.orden_actividad || 0) - Number(b.orden_actividad || 0));
   const done=acts.filter(a=>isTrue(a.completado)).length;
-  const assignedToAnalyst =
-  SESSION.rol === "analista" &&
+const assignedToAnalyst =
+isAnalyst() &&
   (
     String(p.analista_user || "").toLowerCase() === String(SESSION.username || "").toLowerCase() ||
     norm(p.analista) === norm(SESSION.analista_nombre || SESSION.nombre)
   );
 
-const canEdit = SESSION.rol === "admin" || assignedToAnalyst;
-  const showActivities=SESSION.rol!=="gerencia";
+const canEdit = isAdmin() || assignedToAnalyst;
+const showActivities = !isManagement();
   return `<article class="hito">
     <h3>${esc(h.hito)}</h3>
     <div class="meta">${done}/${acts.length} actividades completadas · ${av}%</div>
@@ -1175,7 +1220,7 @@ const canEdit = SESSION.rol === "admin" || assignedToAnalyst;
 }
 function activityRow(a,canEdit){
   const lockedForAnalyst = String(a.bloqueado_analista || '').trim().toUpperCase() === 'SI';
-  const disabled = !canEdit || (SESSION.rol === 'analista' && lockedForAnalyst);
+  const disabled = !canEdit || (isAnalyst() && lockedForAnalyst);
 
   return `<label class="activity">
     <input type="checkbox" ${isTrue(a.completado)?"checked":""} ${disabled ? "disabled" : ""} onchange="toggleActivity('${a.actividad_id}',this.checked)">
