@@ -883,6 +883,12 @@ function selectOptions(values, current){
     return `<option value="${esc(v)}" ${selected}>${esc(v)}</option>`;
   }).join('');
 }
+  function selectObjectOptions(values, current){
+  return values.map(item => {
+    const selected = String(item.value) === String(current) ? 'selected' : '';
+    return `<option value="${esc(item.value)}" ${selected}>${esc(item.label)}</option>`;
+  }).join('');
+}
 
 function analystOptions(currentUser){
   return analystUsers().map(u => {
@@ -960,17 +966,20 @@ function processStatus(pid){
 }
 function adminEditor(p){
   const criticidades = catalogValues('criticidad');
-  const origenes = ['NUEVO', 'AS-IS PREVIO'];
+  const origenes = [
+  { value:'NUEVO', label:'PLANIFICADO' },
+  { value:'AS-IS PREVIO', label:'LEVANTADO AS-IS' }
+];
 
   return `<div class="admin-editor">
     <b>Edición admin</b>
     <div class="admin-grid" style="margin-top:10px">
 
       <div class="field">
-        <label>Origen del proceso</label>
-        <select onchange="updateProcess('${p.proceso_id}','origen_proceso',this.value)">
-          ${selectOptions(origenes, p.origen_proceso || 'NUEVO')}
-        </select>
+        <label>Estado inicial</label>
+<select onchange="updateProcessAndReload('${p.proceso_id}','origen_proceso',this.value)">
+  ${selectObjectOptions(origenes, p.origen_proceso || 'NUEVO')}
+</select>
       </div>
 
       <div class="field">
@@ -1113,6 +1122,18 @@ async function updateProcess(pid,field,value){
   p[field]=value || "Pendiente";
   try{ if(apiReady()) await api("update_process",{proceso_id:pid,field,value,username:SESSION.username}); }
   catch(e){ toast("Cambio local. API: "+e.message); }
+  render();
+}
+  async function updateProcessAndReload(id, field, value){
+  await updateProcess(id, field, value);
+
+  if(apiReady()){
+    const fresh = await apiWrite("bootstrap", { username: SESSION.username });
+    if(fresh){
+      DATA = fresh;
+    }
+  }
+
   render();
 }
 function downloadPdf(){
