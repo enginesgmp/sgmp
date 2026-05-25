@@ -926,14 +926,6 @@ function processStatus(pid){
   const total = acts.length;
   const done = acts.filter(a => isTrue(a.completado)).length;
 
-  const baseAsIsDone = acts.filter(a =>
-    isBaseAsIsActivity(a) && isTrue(a.completado)
-  ).length;
-
-  const extraToBeDone = acts.filter(a =>
-    !isBaseAsIsActivity(a) && isTrue(a.completado)
-  ).length;
-
   const origen = String(
     p?.origen_proceso || (isTrue(p?.as_is) ? 'AS-IS PREVIO' : 'NUEVO')
   ).trim().toUpperCase();
@@ -942,29 +934,20 @@ function processStatus(pid){
     return 'COMPLETADO TO-BE';
   }
 
-  if (origen === 'AS-IS PREVIO') {
-    if (baseAsIsDone === 9 && extraToBeDone === 0) {
-      return 'LEVANTADO AS-IS';
-    }
-
-    if (baseAsIsDone === 9 && extraToBeDone > 0) {
-      return 'AS-IS EN CURSO TO-BE';
-    }
-
-    if (done > 0) {
-      return 'AS-IS EN CURSO TO-BE';
-    }
-
+  if (origen === 'AS-IS PREVIO' && done <= 9) {
     return 'LEVANTADO AS-IS';
   }
 
-  if (done > 0) {
+  if (origen === 'AS-IS PREVIO' && done > 9) {
+    return 'AS-IS EN CURSO TO-BE';
+  }
+
+  if (origen === 'NUEVO' && done > 0) {
     return 'NUEVO EN CURSO TO-BE';
   }
 
   return 'PLANIFICADO';
-}
-function adminEditor(p){
+}on adminEditor(p){
   const criticidades = catalogValues('criticidad');
   const origenes = [
   { value:'NUEVO', label:'PLANIFICADO' },
@@ -1128,7 +1111,7 @@ async function updateProcess(pid,field,value){
   await updateProcess(id, field, value);
 
   if(apiReady()){
-    const fresh = await apiWrite("bootstrap", { username: SESSION.username });
+    const fresh = await api("bootstrap", { username: SESSION.username });
     if(fresh){
       DATA = fresh;
     }
