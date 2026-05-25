@@ -458,24 +458,7 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mini-analyst{display:grid;grid-template-columns:340px 1fr;gap:16px}
 .toast{position:fixed;right:24px;bottom:24px;background:#0B3D2E;color:#fff;border-radius:16px;padding:13px 15px;font-weight:800;box-shadow:0 16px 35px rgba(0,0,0,.2);z-index:50}
-@media(max-width:1100px){
-  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .detail-layout,.mini-analyst{grid-template-columns:1fr}
-  .side-panel{position:static}
-  .filters{grid-template-columns:1fr}
-}
-@media(max-width:760px){
-  .login-card{grid-template-columns:1fr}
-  .header-inner{
-    grid-template-columns:1fr;
-    gap:14px;
-  }
-.brand-avatar{
-  width:86px;
-  height:86px;
-  min-width:86px;
-}
+
   .login-loading-overlay {
   position: fixed;
   inset: 0;
@@ -525,6 +508,25 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   animation: loginSpin 0.8s linear infinite;
 }
 
+@media(max-width:1100px){
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .detail-layout,.mini-analyst{grid-template-columns:1fr}
+  .side-panel{position:static}
+  .filters{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .login-card{grid-template-columns:1fr}
+  .header-inner{
+    grid-template-columns:1fr;
+    gap:14px;
+  }
+.brand-avatar{
+  width:86px;
+  height:86px;
+  min-width:86px;
+}
+
 @keyframes loginSpin {
   to {
     transform: rotate(360deg);
@@ -559,7 +561,7 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
       <p class="sub">Control ejecutivo del plan de levantamiento de procesos, macroprocesos, hitos y actividades del equipo de Procesos y Mejora Continua.</p>
       <div class="field"><label>Usuario</label><input id="loginUser" placeholder="usuario"></div>
       <div class="field"><label>Contraseña</label><input id="loginPass" type="password" placeholder="clave"></div>
-      <button type="button" class="login-btn" onclick="login()">Ingresar</button>
+      <button type="button" class="btn primary" onclick="login()">Ingresar</button>
       <div id="loginError" class="error"></div>
       <p class="sub" style="font-size:12px;margin-top:14px">Con API configurada, el acceso se valida contra Google Sheets. En modo local usa la data embebida del MVP.</p>
     </div>
@@ -593,6 +595,13 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   </div>
 </header>
   <main class="main" id="main"></main>
+</div>
+  <div id="loginLoadingOverlay" class="login-loading-overlay hidden">
+  <div class="login-loading-card">
+    <div class="login-spinner"></div>
+    <h3>Validando acceso</h3>
+    <p>RADAR está verificando sus credenciales...</p>
+  </div>
 </div>
 <div id="toast" class="toast hidden"></div>
 
@@ -655,23 +664,69 @@ function hideLoginLoading() {
   overlay.classList.add("hidden");
 }
 async function login() {
-  console.log("LOGIN EJECUTADO");
-alert("Login ejecutado");
-  
-  showLoginLoading("Validando acceso, por favor espere...");
+  const user = $("loginUser").value.trim();
+  const pass = $("loginPass").value.trim();
+  const err = $("loginError");
+
+  err.classList.remove("show");
+  err.textContent = "";
+
+  if (!user || !pass) {
+    err.textContent = "RADAR no puede validar el acceso: ingrese usuario y contraseña.";
+    err.classList.add("show");
+    return;
+  }
+
+  showLoginLoading("RADAR está validando sus credenciales...");
 
   try {
-    // AQUÍ DEJA TODO TU CÓDIGO ACTUAL DEL LOGIN
-    // No borres la validación de usuario, contraseña, backend ni sesión
+    let sessionUser = null;
+
+    if (apiReady()) {
+      sessionUser = await api("login", {
+        username: user,
+        password: pass
+      });
+    } else {
+      sessionUser = DATA.usuarios.find(u =>
+        String(u.username || "").trim().toLowerCase() === user.toLowerCase() &&
+        String(u.password || "").trim() === pass &&
+        String(u.estado || "").trim().toUpperCase() === "ACTIVO"
+      );
+    }
+
+    if (!sessionUser) {
+      err.textContent = "RADAR no autorizó el acceso. Revise usuario o contraseña.";
+      err.classList.add("show");
+      return;
+    }
+
+    SESSION = sessionUser;
+
+    $("login").classList.add("hidden");
+    $("app").classList.remove("hidden");
+
+    $("userBadge").textContent = `${SESSION.nombre || SESSION.username} · ${SESSION.rol || ""}`;
+
+    if (isAdmin()) {
+      $("adminBadge").classList.remove("hidden");
+    } else {
+      $("adminBadge").classList.add("hidden");
+    }
+
+    await syncData();
+    render();
 
   } catch (error) {
     console.error("Error en login:", error);
-    alert("No se pudo validar el acceso. Intente nuevamente.");
+    err.textContent = "RADAR no pudo validar el acceso. Revise la conexión o la configuración de la API.";
+    err.classList.add("show");
   } finally {
     hideLoginLoading();
   }
 }
-  window.login = login;
+
+window.login = login;
 async function syncData(){
   try{
     if(apiReady() && SESSION) DATA=await api("bootstrap",{username:SESSION.username});
