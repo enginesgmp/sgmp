@@ -204,7 +204,34 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   align-items:center;
   gap:12px;
 }
+.global-progress-main{
+  width:100%;
+  max-width:1540px;
+  margin:0 auto 18px auto;
+  padding:0;
+}
 
+.global-progress-main .top{
+  margin-bottom:8px;
+}
+
+.global-progress-main .progress-label{
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.global-progress-main .progress-value{
+  font-size:32px;
+  font-weight:950;
+  line-height:1;
+}
+
+.global-progress-main .bar{
+  width:100%;
+  height:18px;
+}
 .progress-label{
   font-size:12px;
   font-weight:900;
@@ -630,11 +657,11 @@ function isTrue(v){
 }
 
 function isAdmin(){
-  return currentUser && String(currentUser.rol || '').toLowerCase() === 'admin';
+  return SESSION && String(SESSION.rol || '').toLowerCase() === 'admin';
 }
 
 function isAnalyst(){
-  return currentUser && String(currentUser.rol || '').toLowerCase() === 'analista';
+  return SESSION && String(SESSION.rol || '').toLowerCase() === 'analista';
 }
 
 function isLockedForAnalyst(activity){
@@ -651,8 +678,12 @@ function macroAdvance(mid){
   return Math.round(ps.reduce((s,p)=>s+processAdvance(p.proceso_id),0)/ps.length);
 }
 function setGlobal(){
-  const v=globalAdvance();
-  $("globalPct").textContent=v+"%"; $("globalFill").style.width=v+"%";
+  const v = globalAdvance();
+  const pct = $("globalPct");
+  const fill = $("globalFill");
+
+  if (pct) pct.textContent = v + "%";
+  if (fill) fill.style.width = v + "%";
 }
 
 function render(){
@@ -681,7 +712,17 @@ function renderHome(){
   const macros=DATA.macroprocesos.slice().sort((a,b)=>String(a.macroproceso).localeCompare(String(b.macroproceso)));
   const completed=ps.filter(p=>processAdvance(p.proceso_id)>=100).length;
   const levantados=ps.filter(p=>isTrue(p.as_is)).length;
-  $("main").innerHTML = `
+$("main").innerHTML = `
+    <div class="global-progress global-progress-main">
+      <div class="top">
+        <span class="progress-label">Avance global del plan</span>
+        <span class="progress-value" id="globalPct">${globalAdvance()}%</span>
+      </div>
+      <div class="bar">
+        <div class="fill" id="globalFill" style="width:${globalAdvance()}%"></div>
+      </div>
+    </div>
+
     <section class="hero" id="pdfArea">
       <h1>Plan de levantamiento de procesos y avances</h1>
       <p class="sub">Vista por macroproceso, proceso e hitos. Información alimentada por el plan de levantamiento.</p>
@@ -766,17 +807,24 @@ function renderMacro(mid){
     <div class="filters">
       <input id="q" placeholder="Buscar proceso, líder o analista" oninput="filterRows()">
       <select id="crit" onchange="filterRows()"><option value="">Toda criticidad</option>${options(unique(DATA.procesos.map(p=>p.criticidad)))}</select>
-      <select id="st" onchange="filterRows()"><option value="">Todo estado</option>${options(unique(DATA.procesos.map(p=>p.estado_general)))}</select>
+      <select id="st" onchange="filterRows()"><option value="">Todo estado</option>${options(unique(DATA.procesos.map(p=>processStatus(p.proceso_id))))}</select>
       <button class="btn soft" onclick="filterRows()">Filtrar</button>
     </div>
     <section class="list" id="processList">${ps.map(processRow).join("")}</section>`;
 }
 function processRow(p){
-  const av=processAdvance(p.proceso_id);
-  return `<article class="row proc-row" data-search="${esc((p.proceso+' '+p.lider+' '+p.analista).toLowerCase())}" data-crit="${esc(p.criticidad)}" data-st="${esc(p.estado_general)}" onclick="openProcess('${p.proceso_id}')">
-    <div><strong>${esc(p.proceso)}</strong><div class="meta">${esc(p.macroproceso)} · Semana ${p.semana || "Pendiente"} · Analista: ${pending(p.analista)} · Líder: ${pending(p.lider)}</div></div>
+  const av = processAdvance(p.proceso_id);
+  const st = processStatus(p.proceso_id);
+
+  return `<article class="row proc-row" data-search="${esc((p.proceso+' '+p.lider+' '+p.analista).toLowerCase())}" data-crit="${esc(p.criticidad)}" data-st="${esc(st)}" onclick="openProcess('${p.proceso_id}')">
+    <div>
+      <strong>${esc(p.proceso)}</strong>
+      <div class="meta">
+        ${esc(p.macroproceso)} · Inicio: Semana ${p.semana_inicio || p.semana || "Pendiente"} · Entrega: Semana ${p.semana_entrega || "Pendiente"} · Analista: ${pending(p.analista)} · Líder: ${pending(p.lider)}
+      </div>
+    </div>
     <span class="status">${esc(p.criticidad)}</span>
-    <span class="status">${esc(p.estado_general)}</span>
+    <span class="status">${esc(st)}</span>
     <div><b>${av}%</b><div class="bar" style="margin-top:6px"><div class="fill" style="width:${av}%"></div></div></div>
   </article>`;
 }
@@ -975,7 +1023,7 @@ function renderAnalystHome(){
 }
 
 async function toggleActivity(id,checked){
-  const a = DATA.actividades.find(x=>x.actividad_id===id);
+  const a = activeActivities().find(x => x.actividad_id === id);
   if(!a) return;
 
   const previous = {
