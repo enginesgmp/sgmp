@@ -899,10 +899,64 @@ function weekOptions(current){
   }
   return html;
 }
+  function isBaseAsIsActivity(a){
+  const hito = String(a.hito_id || '').trim().toUpperCase();
+  const orden = Number(a.orden_actividad || 0);
+
+  return (
+    (hito === 'H01' && orden >= 1 && orden <= 4) ||
+    (hito === 'H02' && orden >= 1 && orden <= 5)
+  );
+}
 
 function processStatus(pid){
   const p = DATA.procesos.find(x => x.proceso_id === pid);
-  return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
+  const acts = actsForProcess(pid);
+
+  if (!acts.length) {
+    return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
+  }
+
+  const total = acts.length;
+  const done = acts.filter(a => isTrue(a.completado)).length;
+
+  const baseAsIsDone = acts.filter(a =>
+    isBaseAsIsActivity(a) && isTrue(a.completado)
+  ).length;
+
+  const extraToBeDone = acts.filter(a =>
+    !isBaseAsIsActivity(a) && isTrue(a.completado)
+  ).length;
+
+  const origen = String(
+    p?.origen_proceso || (isTrue(p?.as_is) ? 'AS-IS PREVIO' : 'NUEVO')
+  ).trim().toUpperCase();
+
+  if (total > 0 && done === total) {
+    return 'COMPLETADO TO-BE';
+  }
+
+  if (origen === 'AS-IS PREVIO') {
+    if (baseAsIsDone === 9 && extraToBeDone === 0) {
+      return 'LEVANTADO AS-IS';
+    }
+
+    if (baseAsIsDone === 9 && extraToBeDone > 0) {
+      return 'AS-IS EN CURSO TO-BE';
+    }
+
+    if (done > 0) {
+      return 'AS-IS EN CURSO TO-BE';
+    }
+
+    return 'LEVANTADO AS-IS';
+  }
+
+  if (done > 0) {
+    return 'NUEVO EN CURSO TO-BE';
+  }
+
+  return 'PLANIFICADO';
 }
 function adminEditor(p){
   const criticidades = catalogValues('criticidad');
