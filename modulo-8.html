@@ -623,8 +623,16 @@ function processAdvance(pid){
   const p = DATA.procesos.find(x => x.proceso_id === pid);
   return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
 }
+function isActiveRow(row){
+  return String(row?.activo || 'SI').trim().toUpperCase() !== 'NO';
+}
+
+function activeActivities(){
+  return DATA.actividades.filter(isActiveRow);
+}
+
 function hitoAdvance(hpid){
-  const arr=DATA.actividades.filter(a=>a.hito_proceso_id===hpid);
+  const arr = activeActivities().filter(a => a.hito_proceso_id === hpid);
   if(!arr.length) return 0;
   return Math.round(arr.filter(a=>isTrue(a.completado)).length/arr.length*100);
 }
@@ -800,7 +808,7 @@ function renderProcess(pid){
     <section class="detail-layout">
       <aside class="card side-panel">
         <h3>${esc(p.proceso)}</h3>
-        <p class="meta">${esc(p.macroproceso)} · Semana ${p.semana || "Pendiente"}</p>
+        <p class="meta">   ${esc(p.macroproceso)} · Inicio: Semana ${p.semana_inicio || p.semana || "Pendiente"} · Entrega: Semana ${p.semana_entrega || "Pendiente"} </p>
         <div style="font-size:44px;font-weight:950;margin-top:12px">${processAdvance(pid)}%</div>
         <div class="bar"><div class="fill" style="width:${processAdvance(pid)}%"></div></div>
         <div style="margin-top:12px" class="meta">
@@ -817,20 +825,117 @@ function renderProcess(pid){
       </section>
     </section>`;
 }
+  function catalogValues(tipo){
+  return DATA.catalogos
+    .filter(c => String(c.tipo || '').trim().toLowerCase() === String(tipo || '').trim().toLowerCase())
+    .sort((a,b) => Number(a.orden || 0) - Number(b.orden || 0))
+    .map(c => c.valor);
+}
+
+function analystUsers(){
+  return DATA.usuarios
+    .filter(u => String(u.rol || '').toLowerCase() === 'analista')
+    .map(u => ({
+      username: u.username || '',
+      nombre: u.analista_nombre || u.nombre || u.username
+    }));
+}
+
+function selectOptions(values, current){
+  return values.map(v => {
+    const selected = String(v) === String(current) ? 'selected' : '';
+    return `<option value="${esc(v)}" ${selected}>${esc(v)}</option>`;
+  }).join('');
+}
+
+function analystOptions(currentUser){
+  return analystUsers().map(u => {
+    const selected = String(u.username || '').toLowerCase() === String(currentUser || '').toLowerCase() ? 'selected' : '';
+    return `<option value="${esc(u.username)}" ${selected}>${esc(u.nombre)}</option>`;
+  }).join('');
+}
+
+function weekOptions(current){
+  let html = '<option value="">Pendiente</option>';
+  for(let i = 1; i <= 53; i++){
+    const selected = String(i) === String(current || '') ? 'selected' : '';
+    html += `<option value="${i}" ${selected}>Semana ${i}</option>`;
+  }
+  return html;
+}
+
+function processStatus(pid){
+  const p = DATA.procesos.find(x => x.proceso_id === pid);
+  return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
+}
 function adminEditor(p){
+  const criticidades = catalogValues('criticidad');
+  const origenes = ['NUEVO', 'AS-IS PREVIO'];
+
   return `<div class="admin-editor">
     <b>Edición admin</b>
     <div class="admin-grid" style="margin-top:10px">
-      <div class="field"><label>Estado</label><input value="${esc(p.estado_general)}" onchange="updateProcess('${p.proceso_id}','estado_general',this.value)"></div>
-      <div class="field"><label>Analista</label><input value="${esc(p.analista)}" onchange="updateProcess('${p.proceso_id}','analista',this.value)"></div>
-      <div class="field"><label>Líder</label><input value="${esc(p.lider)}" onchange="updateProcess('${p.proceso_id}','lider',this.value)"></div>
-      <div class="field"><label>Criticidad</label><input value="${esc(p.criticidad)}" onchange="updateProcess('${p.proceso_id}','criticidad',this.value)"></div>
+
+      <div class="field">
+        <label>Origen del proceso</label>
+        <select onchange="updateProcess('${p.proceso_id}','origen_proceso',this.value)">
+          ${selectOptions(origenes, p.origen_proceso || 'NUEVO')}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Estado automático</label>
+        <input value="${esc(processStatus(p.proceso_id))}" disabled>
+      </div>
+
+      <div class="field">
+        <label>Analista</label>
+        <select onchange="updateAnalyst('${p.proceso_id}', this)">
+          <option value="">Pendiente</option>
+          ${analystOptions(p.analista_user)}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Líder</label>
+        <input value="${esc(p.lider)}" onchange="updateProcess('${p.proceso_id}','lider',this.value)">
+      </div>
+
+      <div class="field">
+        <label>Criticidad</label>
+        <select onchange="updateProcess('${p.proceso_id}','criticidad',this.value)">
+          ${selectOptions(criticidades, p.criticidad)}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Semana inicio</label>
+        <select onchange="updateProcess('${p.proceso_id}','semana_inicio',this.value)">
+          ${weekOptions(p.semana_inicio || p.semana)}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Semana entrega</label>
+        <select onchange="updateProcess('${p.proceso_id}','semana_entrega',this.value)">
+          ${weekOptions(p.semana_entrega)}
+        </select>
+      </div>
+
     </div>
   </div>`;
 }
+  function updateAnalyst(procesoId, selectEl){
+  const username = selectEl.value;
+  const user = DATA.usuarios.find(u => String(u.username || '').toLowerCase() === String(username || '').toLowerCase());
+  const name = user ? (user.analista_nombre || user.nombre || username) : 'Pendiente';
+
+  updateProcess(procesoId, 'analista_user', username);
+  updateProcess(procesoId, 'analista', name);
+}
 function hitoCard(h,p){
   const av=hitoAdvance(h.hito_proceso_id);
-  const acts=DATA.actividades.filter(a=>a.hito_proceso_id===h.hito_proceso_id).sort((a,b)=>Number(a.orden_actividad)-Number(b.orden_actividad));
+  const acts = activeActivities()   .filter(a => a.hito_proceso_id === h.hito_proceso_id)   .sort((a,b) => Number(a.orden_actividad || 0) - Number(b.orden_actividad || 0));
   const done=acts.filter(a=>isTrue(a.completado)).length;
   const assignedToAnalyst =
   SESSION.rol === "analista" &&
@@ -849,9 +954,15 @@ const canEdit = SESSION.rol === "admin" || assignedToAnalyst;
   </article>`;
 }
 function activityRow(a,canEdit){
+  const lockedForAnalyst = String(a.bloqueado_analista || '').trim().toUpperCase() === 'SI';
+  const disabled = !canEdit || (SESSION.rol === 'analista' && lockedForAnalyst);
+
   return `<label class="activity">
-    <input type="checkbox" ${isTrue(a.completado)?"checked":""} ${canEdit?"":"disabled"} onchange="toggleActivity('${a.actividad_id}',this.checked)">
-    <span><b>${esc(a.actividad)}</b><br><small class="meta">${a.entregable?esc(a.entregable):"Sin entregable definido"}</small></span>
+    <input type="checkbox" ${isTrue(a.completado)?"checked":""} ${disabled ? "disabled" : ""} onchange="toggleActivity('${a.actividad_id}',this.checked)">
+    <span>
+      <b>${esc(a.actividad)}</b><br>
+      <small class="meta">${a.entregable?esc(a.entregable):"Sin entregable definido"}${lockedForAnalyst ? " · AS-IS bloqueado" : ""}</small>
+    </span>
     <span class="status">${isTrue(a.completado)?"OK":"Pendiente"}</span>
   </label>`;
 }
