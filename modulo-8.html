@@ -603,16 +603,47 @@ function getVisibleProcesses(){
 function actsForProcess(pid){ return DATA.actividades.filter(a=>a.proceso_id===pid); }
 function hitosForProcess(pid){ return DATA.hitos.filter(h=>h.proceso_id===pid).sort((a,b)=>Number(a.orden)-Number(b.orden)); }
 function processAdvance(pid){
-  const hs=hitosForProcess(pid);
-  if(!hs.length) return 0;
-  return Math.round(hs.reduce((s,h)=>s+hitoAdvance(h.hito_proceso_id),0)/hs.length);
+  const p = DATA.procesos.find(x => x.proceso_id === pid);
+
+  if (p && p.avance_pct !== undefined && p.avance_pct !== '') {
+    return Number(p.avance_pct || 0);
+  }
+
+  const acts = DATA.actividades.filter(a =>
+    a.proceso_id === pid &&
+    String(a.activo || 'SI').toUpperCase() !== 'NO'
+  );
+
+  if (!acts.length) return 0;
+
+  const done = acts.filter(a => isTrue(a.completado)).length;
+  return Math.round((done / acts.length) * 100);
+}
+  function processStatus(pid){
+  const p = DATA.procesos.find(x => x.proceso_id === pid);
+  return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
 }
 function hitoAdvance(hpid){
   const arr=DATA.actividades.filter(a=>a.hito_proceso_id===hpid);
   if(!arr.length) return 0;
   return Math.round(arr.filter(a=>isTrue(a.completado)).length/arr.length*100);
 }
-function isTrue(v){ return v===true || String(v).toUpperCase()==="TRUE" || String(v).toUpperCase()==="SI"; }
+function isTrue(v){
+  const value = String(v ?? '').trim().toUpperCase();
+  return v === true || value === 'TRUE' || value === 'SI' || value === 'VERDADERO';
+}
+
+function isAdmin(){
+  return currentUser && String(currentUser.rol || '').toLowerCase() === 'admin';
+}
+
+function isAnalyst(){
+  return currentUser && String(currentUser.rol || '').toLowerCase() === 'analista';
+}
+
+function isLockedForAnalyst(activity){
+  return String(activity?.bloqueado_analista || '').trim().toUpperCase() === 'SI';
+}
 function globalAdvance(){
   const ps=DATA.procesos;
   if(!ps.length) return 0;
