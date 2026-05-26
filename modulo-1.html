@@ -6596,9 +6596,78 @@ function downloadDocJson(textareaId, filename, msgId){
 function mergeLoadedState(loaded){
   const defaults = JSON.parse(JSON.stringify(state));
   const merged = deepMerge(defaults, loaded);
+
   Object.keys(state).forEach(k => delete state[k]);
   Object.assign(state, merged);
+
+  if(!state.metadata) state.metadata = {};
   if(!state.metadata.currentStage) state.metadata.currentStage = 'inicio';
+
+  cleanEmptyAsisActivities();
+}
+
+  function isMeaningfulAsisActivity(activity){
+  if(!activity || typeof activity !== 'object') return false;
+
+  return !!(
+    String(activity.name || '').trim() ||
+    String(activity.actor || '').trim() ||
+    String(activity.document || '').trim() ||
+    String(activity.problems || '').trim() ||
+    String(activity.wastes || '').trim() ||
+    String(activity.note || '').trim() ||
+    safeArray(activity.previous).length ||
+    safeArray(activity.next).length ||
+    safeArray(activity.ext_suppliers).length ||
+    safeArray(activity.ext_inputs).length ||
+    safeArray(activity.ext_outputs).length ||
+    safeArray(activity.ext_customers).length
+  );
+}
+
+function cleanEmptyAsisActivities(){
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities).filter(isMeaningfulAsisActivity);
+}
+
+function hydratePreparationFieldsFromState(){
+  const c = state.context || {};
+
+  const set = (id, value) => {
+    const el = qs(id);
+    if(el) el.value = value || '';
+  };
+
+  set('prep_company', c.company);
+  set('prep_processName', c.processName);
+  set('prep_processCode', c.processCode);
+  set('prep_owner', c.owner);
+  set('prep_analyst', c.analyst);
+  set('prep_industry', c.industry);
+  set('prep_processType', c.processType);
+  set('prep_activity', c.activity);
+  set('prep_purpose', c.purpose);
+  set('ctx_observation', c.observation);
+
+  if(typeof renderIndicatorsChips === 'function'){
+    renderIndicatorsChips();
+  }
+
+  const preview = qs('prepContextPreview');
+  const card = qs('prep_summary_card');
+
+  if(preview){
+    preview.textContent = JSON.stringify(c, null, 2);
+  }
+
+  if(card && Object.values(c).some(v => {
+    if(Array.isArray(v)) return v.length;
+    return String(v || '').trim();
+  })){
+    card.style.display = '';
+  }
+
+  updateTopStatus();
 }
 
 /* =========================
@@ -8436,7 +8505,7 @@ function syncVisibleStage(){
       try{ state.master = JSON.parse(qs('masterEditor').value); }catch(e){}
     }
   }
-  if(active === 'asis') collectAsisActivities();
+  if(active === 'asis'){   collectAsisActivities();   cleanEmptyAsisActivities(); }
   if(active === 'analisis'){
     if(qs('analysisEditor').value.trim()){
       try{ state.analysis = JSON.parse(qs('analysisEditor').value); }catch(e){}
@@ -8448,6 +8517,8 @@ function syncVisibleStage(){
 
 function downloadBackup(){
   syncVisibleStage();
+  cleanEmptyAsisActivities();
+
   const backup = JSON.stringify(state, null, 2);
   downloadText('lmp_respaldo.json', backup, 'application/json;charset=utf-8');
 }
@@ -13869,10 +13940,17 @@ function saveToBeAndContinue(){
   showMsg('tobeMsg', 'ok', 'Mejoras TO BE guardadas correctamente.');
   goToNext('tobe');
 }
+  
 function renderAllFromState(){
+  cleanEmptyAsisActivities();
+
   updateTopStatus();
-  if(typeof hydrateContextFromState === 'function') hydrateContextFromState();
-  if(typeof window.hydratePreparationFromState === 'function') window.hydratePreparationFromState();
+
+  if(typeof hydrateContextFromState === 'function'){
+    hydrateContextFromState();
+  }
+
+  hydratePreparationFieldsFromState();
   updateLoadKpis();
   if(state.master){
     const masterEditor = qs('masterEditor');
