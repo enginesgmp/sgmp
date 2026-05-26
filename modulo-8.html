@@ -462,6 +462,185 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
 .mini-analyst{display:grid;grid-template-columns:340px 1fr;gap:16px}
 .toast{position:fixed;right:24px;bottom:24px;background:#0B3D2E;color:#fff;border-radius:16px;padding:13px 15px;font-weight:800;box-shadow:0 16px 35px rgba(0,0,0,.2);z-index:50}
 
+  .admin-control{
+  margin:22px 0;
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:30px;
+  box-shadow:var(--shadow);
+  padding:22px;
+}
+
+.admin-control-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+
+.admin-control-head h2{
+  margin:0;
+  font-size:26px;
+  letter-spacing:-.04em;
+}
+
+.admin-control-tabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:14px 0;
+}
+
+.admin-tab{
+  border:1px solid var(--line);
+  background:#fff;
+  color:var(--green3);
+  border-radius:999px;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:950;
+}
+
+.admin-tab.active{
+  background:linear-gradient(135deg,#0B3D2E,#189B5B);
+  color:#fff;
+  border-color:#0B3D2E;
+}
+
+.admin-alert-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+
+.admin-alert-card{
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:14px;
+  background:#F9FFFB;
+}
+
+.admin-alert-card.danger{
+  background:#FFF1F1;
+  border-color:#F2C7C7;
+}
+
+.admin-alert-card.warn{
+  background:#FFFBEB;
+  border-color:#F5D49B;
+}
+
+.admin-alert-card .num{
+  font-size:30px;
+  font-weight:950;
+  letter-spacing:-.05em;
+}
+
+.admin-alert-card .label{
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  font-weight:900;
+}
+
+.admin-table{
+  display:grid;
+  gap:8px;
+  margin-top:14px;
+}
+
+.admin-control-row{
+  display:grid;
+  grid-template-columns:90px 1.4fr 1fr 1fr 120px 120px;
+  gap:10px;
+  align-items:center;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:12px 14px;
+  background:#fff;
+  cursor:pointer;
+}
+
+.admin-control-row:hover{
+  border-color:#9ED4B8;
+  box-shadow:0 10px 24px rgba(24,155,91,.10);
+}
+
+.admin-control-row.header{
+  cursor:default;
+  background:#F3FAF6;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  font-weight:950;
+  color:var(--green3);
+  box-shadow:none;
+}
+
+.admin-control-row.header:hover{
+  border-color:var(--line);
+  box-shadow:none;
+}
+
+.admin-chip{
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  border-radius:999px;
+  border:1px solid var(--line);
+  padding:5px 9px;
+  font-size:11px;
+  font-weight:950;
+  background:#fff;
+}
+
+.admin-chip.danger{
+  background:#FFF1F1;
+  border-color:#F2C7C7;
+  color:#991B1B;
+}
+
+.admin-chip.warn{
+  background:#FFFBEB;
+  border-color:#F5D49B;
+  color:#92400E;
+}
+
+.admin-chip.ok{
+  background:#ECFDF5;
+  border-color:#BBF7D0;
+  color:#166534;
+}
+
+.admin-filter-bar{
+  display:grid;
+  grid-template-columns:1fr 180px 220px 180px;
+  gap:10px;
+  margin:14px 0;
+}
+
+@media(max-width:1100px){
+  .admin-alert-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .admin-control-row{
+    grid-template-columns:1fr;
+  }
+
+  .admin-control-row.header{
+    display:none;
+  }
+
+  .admin-filter-bar{
+    grid-template-columns:1fr;
+  }
+}
+
   .login-loading-overlay {
   position: fixed;
   inset: 0;
@@ -874,6 +1053,91 @@ if(isAnalyst()){
   renderHome();
 }
 
+function getProcessStartWeek(p){
+  return Number(p.semana_inicio || p.semana || 0);
+}
+
+function getProcessDeliveryWeek(p){
+  return Number(p.semana_entrega || 0);
+}
+
+function isMissingValue(v){
+  const value = String(v ?? "").trim().toLowerCase();
+  return !value || value === "pendiente" || value === "undefined" || value === "null" || value === "-";
+}
+
+function processAlerts(p){
+  const alerts = [];
+
+  if(isMissingValue(p.analista) || isMissingValue(p.analista_user)){
+    alerts.push({type:"danger", text:"Sin analista"});
+  }
+
+  if(!getProcessStartWeek(p)){
+    alerts.push({type:"danger", text:"Sin semana inicio"});
+  }
+
+  if(!getProcessDeliveryWeek(p)){
+    alerts.push({type:"danger", text:"Sin semana entrega"});
+  }
+
+  if(isMissingValue(p.lider)){
+    alerts.push({type:"warn", text:"Sin líder"});
+  }
+
+  if(isMissingValue(p.criticidad)){
+    alerts.push({type:"warn", text:"Sin criticidad"});
+  }
+
+  if(isMissingValue(processStatus(p.proceso_id))){
+    alerts.push({type:"warn", text:"Sin estado"});
+  }
+
+  return alerts;
+}
+
+function adminPlanStats(){
+  const ps = DATA.procesos || [];
+  const withAlerts = ps.filter(p => processAlerts(p).length > 0);
+
+  return {
+    total: ps.length,
+    sinAnalista: ps.filter(p => isMissingValue(p.analista) || isMissingValue(p.analista_user)).length,
+    sinSemanaInicio: ps.filter(p => !getProcessStartWeek(p)).length,
+    sinSemanaEntrega: ps.filter(p => !getProcessDeliveryWeek(p)).length,
+    sinLider: ps.filter(p => isMissingValue(p.lider)).length,
+    conAlertas: withAlerts.length
+  };
+}
+
+function currentPlanWeek(){
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), 0, 1);
+  const pastDays = Math.floor((now - firstDay) / 86400000);
+  return Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+}
+
+function planWeeks(){
+  const weeks = DATA.procesos
+    .flatMap(p => [getProcessStartWeek(p), getProcessDeliveryWeek(p)])
+    .filter(Boolean);
+
+  return [...new Set(weeks)].sort((a,b)=>a-b);
+}
+
+function adminWeekOptions(){
+  return planWeeks().map(w => `<option value="${w}">Semana ${w}</option>`).join("");
+}
+
+function adminAnalystOptions(){
+  const analysts = DATA.usuarios
+    .filter(u => String(u.rol || "").toLowerCase() === "analista")
+    .map(u => u.analista_nombre || u.nombre || u.username)
+    .filter(Boolean);
+
+  return unique(analysts).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+}
+  
 function renderHome(){
   const ps=getVisibleProcesses();
   const macros=DATA.macroprocesos.slice().sort((a,b)=>String(a.macroproceso).localeCompare(String(b.macroproceso)));
@@ -900,11 +1164,218 @@ $("main").innerHTML = `
         <div class="fill" id="globalFill" style="width:${globalAdvance()}%"></div>
       </div>
     </div>
+        ${isAdmin() ? renderAdminControlCenter() : ""}
     <div class="section-title"><h2>Macroprocesos</h2><span class="meta">Click para ver procesos</span></div>
     <section class="grid">
       ${macros.map(m=>macroCard(m)).join("")}
     </section>`;
 }
+function renderAdminControlCenter(){
+  const stats = adminPlanStats();
+  const currentWeek = currentPlanWeek();
+
+  return `
+    <section class="admin-control">
+      <div class="admin-control-head">
+        <div>
+          <h2>Centro de Control del Plan</h2>
+          <p class="sub" style="margin-bottom:0">
+            Control operativo exclusivo para administración: semanas, entregas, analistas y pendientes críticos del plan.
+          </p>
+        </div>
+        <span class="pill">Solo administrador</span>
+      </div>
+
+      <div class="admin-alert-grid">
+        <div class="admin-alert-card">
+          <div class="num">${stats.total}</div>
+          <div class="label">Procesos del plan</div>
+        </div>
+        <div class="admin-alert-card danger">
+          <div class="num">${stats.sinAnalista}</div>
+          <div class="label">Sin analista</div>
+        </div>
+        <div class="admin-alert-card danger">
+          <div class="num">${stats.sinSemanaInicio + stats.sinSemanaEntrega}</div>
+          <div class="label">Sin semanas completas</div>
+        </div>
+        <div class="admin-alert-card warn">
+          <div class="num">${stats.conAlertas}</div>
+          <div class="label">Con alertas</div>
+        </div>
+      </div>
+
+      <div class="admin-control-tabs">
+        <button class="admin-tab active" type="button" onclick="adminControlView('week', this)">Por semana</button>
+        <button class="admin-tab" type="button" onclick="adminControlView('analyst', this)">Por analista</button>
+        <button class="admin-tab" type="button" onclick="adminControlView('alerts', this)">Alertas</button>
+        <button class="admin-tab" type="button" onclick="adminControlView('all', this)">Todos</button>
+      </div>
+
+      <div class="admin-filter-bar">
+        <input id="adminControlSearch" placeholder="Buscar proceso, analista, líder o macroproceso" oninput="adminApplyFilters()">
+
+        <select id="adminControlWeek" onchange="adminApplyFilters()">
+          <option value="">Todas las semanas</option>
+          <option value="${currentWeek}">Semana actual (${currentWeek})</option>
+          ${adminWeekOptions()}
+        </select>
+
+        <select id="adminControlAnalyst" onchange="adminApplyFilters()">
+          <option value="">Todos los analistas</option>
+          <option value="Pendiente">Pendiente</option>
+          ${adminAnalystOptions()}
+        </select>
+
+        <select id="adminControlAlert" onchange="adminApplyFilters()">
+          <option value="">Todas las alertas</option>
+          <option value="sin_analista">Sin analista</option>
+          <option value="sin_semana">Sin semana</option>
+          <option value="sin_lider">Sin líder</option>
+        </select>
+      </div>
+
+      <div id="adminControlContent">
+        ${renderAdminControlRows("week")}
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminControlRows(mode = "week"){
+  let ps = DATA.procesos.slice();
+
+  if(mode === "alerts"){
+    ps = ps.filter(p => processAlerts(p).length > 0);
+  }
+
+  if(mode === "week"){
+    ps.sort((a,b) =>
+      getProcessStartWeek(a) - getProcessStartWeek(b) ||
+      getProcessDeliveryWeek(a) - getProcessDeliveryWeek(b) ||
+      String(a.proceso).localeCompare(String(b.proceso))
+    );
+  }
+
+  if(mode === "analyst"){
+    ps.sort((a,b) =>
+      String(a.analista || "Pendiente").localeCompare(String(b.analista || "Pendiente")) ||
+      getProcessStartWeek(a) - getProcessStartWeek(b)
+    );
+  }
+
+  if(mode === "all"){
+    ps.sort((a,b) => Number(a.numero || 0) - Number(b.numero || 0));
+  }
+
+  return `
+    <div class="admin-table" data-admin-mode="${mode}">
+      <div class="admin-control-row header">
+        <div>Inicio / entrega</div>
+        <div>Proceso</div>
+        <div>Analista</div>
+        <div>Líder</div>
+        <div>Estado</div>
+        <div>Alertas</div>
+      </div>
+      ${ps.map(adminControlRow).join("") || `<div class="card"><b>No hay procesos para mostrar.</b></div>`}
+    </div>
+  `;
+}
+
+function adminControlRow(p){
+  const startWeek = getProcessStartWeek(p) || "Pendiente";
+  const deliveryWeek = getProcessDeliveryWeek(p) || "Pendiente";
+  const alerts = processAlerts(p);
+  const alertText = alerts.map(a => a.text).join(" ");
+  const status = processStatus(p.proceso_id);
+  const advance = processAdvance(p.proceso_id);
+
+  const alertHtml = alerts.length
+    ? alerts.map(a => `<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")
+    : `<span class="admin-chip ok">Completo</span>`;
+
+  return `
+    <article 
+      class="admin-control-row admin-control-item"
+      onclick="openProcess('${p.proceso_id}')"
+      data-search="${esc((p.proceso + ' ' + p.macroproceso + ' ' + p.analista + ' ' + p.lider + ' ' + status + ' ' + alertText).toLowerCase())}"
+      data-start-week="${esc(startWeek)}"
+      data-delivery-week="${esc(deliveryWeek)}"
+      data-analyst="${esc(p.analista || 'Pendiente')}"
+      data-alerts="${esc(alertText.toLowerCase())}"
+    >
+      <div>
+        <b>Inicio:</b> ${startWeek === "Pendiente" ? pending(startWeek) : "Semana " + esc(startWeek)}<br>
+        <span class="meta"><b>Entrega:</b> ${deliveryWeek === "Pendiente" ? pending(deliveryWeek) : "Semana " + esc(deliveryWeek)}</span>
+      </div>
+
+      <div>
+        <strong>${esc(p.proceso)}</strong>
+        <div class="meta">${esc(p.macroproceso)} · ${esc(p.criticidad || "Sin criticidad")}</div>
+      </div>
+
+      <div>${pending(p.analista)}</div>
+      <div>${pending(p.lider)}</div>
+
+      <div>
+        <span class="status">${esc(status)}</span>
+        <div class="meta">${advance}% avance</div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${alertHtml}</div>
+    </article>
+  `;
+}
+
+ function adminControlView(mode, btn){
+  document.querySelectorAll(".admin-tab").forEach(b => b.classList.remove("active"));
+  if(btn) btn.classList.add("active");
+
+  const target = $("adminControlContent");
+  if(target){
+    target.innerHTML = renderAdminControlRows(mode);
+  }
+
+  adminApplyFilters();
+}
+
+function adminApplyFilters(){
+  const q = String($("adminControlSearch")?.value || "").trim().toLowerCase();
+  const week = String($("adminControlWeek")?.value || "").trim();
+  const analyst = String($("adminControlAnalyst")?.value || "").trim().toLowerCase();
+  const alert = String($("adminControlAlert")?.value || "").trim();
+
+  document.querySelectorAll(".admin-control-item").forEach(row => {
+    const matchesSearch = !q || row.dataset.search.includes(q);
+
+    const matchesWeek = !week ||
+      String(row.dataset.startWeek) === week ||
+      String(row.dataset.deliveryWeek) === week;
+
+    const matchesAnalyst = !analyst ||
+      String(row.dataset.analyst || "").trim().toLowerCase() === analyst;
+
+    let matchesAlert = true;
+
+    if(alert === "sin_analista"){
+      matchesAlert = row.dataset.alerts.includes("sin analista");
+    }
+
+    if(alert === "sin_semana"){
+      matchesAlert =
+        row.dataset.alerts.includes("sin semana inicio") ||
+        row.dataset.alerts.includes("sin semana entrega");
+    }
+
+    if(alert === "sin_lider"){
+      matchesAlert = row.dataset.alerts.includes("sin líder");
+    }
+
+    row.classList.toggle("hidden", !(matchesSearch && matchesWeek && matchesAnalyst && matchesAlert));
+  });
+} 
+  
 function macroCard(m){
   const procesosMacro = DATA.procesos.filter(p=>p.macro_id===m.macro_id);
   const count = procesosMacro.length;
