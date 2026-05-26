@@ -3577,21 +3577,44 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
         });
       }
 
-      function getPreparationContext(){
-        return {
-          company: document.getElementById("prep_company")?.value?.trim() || "",
-          processName: document.getElementById("prep_processName")?.value?.trim() || "",
-          processCode: document.getElementById("prep_processCode")?.value?.trim() || "",
-          owner: document.getElementById("prep_owner")?.value?.trim() || "",
-          analyst: document.getElementById("prep_analyst")?.value?.trim() || "",
-          industry: document.getElementById("prep_industry")?.value?.trim() || "",
-          processType: document.getElementById("prep_processType")?.value?.trim() || "",
-          activity: document.getElementById("prep_activity")?.value?.trim() || "",
-          purpose: document.getElementById("prep_purpose")?.value?.trim() || "",
-          observation: document.getElementById("ctx_observation")?.value?.trim() || "",
-          globalIndicators: Array.isArray(state?.context?.globalIndicators) ? state.context.globalIndicators : []
-        };
-      }
+function getPreparationIndicatorsForSave(){
+  let indicators = [];
+
+  if (typeof state !== "undefined" && Array.isArray(state.context?.globalIndicators)) {
+    indicators = state.context.globalIndicators.slice();
+  }
+
+  const name = document.getElementById("gi_name_input")?.value?.trim() || "";
+  const description = document.getElementById("gi_desc_input")?.value?.trim() || "";
+
+  if (name) {
+    const exists = indicators.some(item =>
+      String(item?.name || "").trim().toLowerCase() === name.toLowerCase()
+    );
+
+    if (!exists) {
+      indicators.push({ name, description });
+    }
+  }
+
+  return indicators;
+}
+
+function getPreparationContext(){
+  return {
+    company: document.getElementById("prep_company")?.value?.trim() || "",
+    processName: document.getElementById("prep_processName")?.value?.trim() || "",
+    processCode: document.getElementById("prep_processCode")?.value?.trim() || "",
+    owner: document.getElementById("prep_owner")?.value?.trim() || "",
+    analyst: document.getElementById("prep_analyst")?.value?.trim() || "",
+    industry: document.getElementById("prep_industry")?.value?.trim() || "",
+    processType: document.getElementById("prep_processType")?.value?.trim() || "",
+    activity: document.getElementById("prep_activity")?.value?.trim() || "",
+    purpose: document.getElementById("prep_purpose")?.value?.trim() || "",
+    observation: document.getElementById("ctx_observation")?.value?.trim() || "",
+    globalIndicators: getPreparationIndicatorsForSave()
+  };
+}
 
       function savePreparationContext(){
         const context = getPreparationContext();
@@ -3612,6 +3635,12 @@ state.context.globalIndicators = Array.isArray(context.globalIndicators)
   ? context.globalIndicators
   : safeArray(state.context.globalIndicators);
 
+const giNameInput = document.getElementById("gi_name_input");
+const giDescInput = document.getElementById("gi_desc_input");
+
+if (giNameInput) giNameInput.value = "";
+if (giDescInput) giDescInput.value = "";
+        
 state.metadata = state.metadata || {};
 state.metadata.lastSavedAt = new Date().toISOString();
 
@@ -4370,9 +4399,9 @@ ${script}
         prepShowMessage("ok", "HTML de entrevista generado y descargado correctamente.");
       }
 
-      function hydratePreparationFromState(){
-        if (typeof window.state === "undefined" || !window.state.context) return;
-        const c = window.state.context;
+function hydratePreparationFromState(){
+  if (typeof state === "undefined" || !state.context) return;
+  const c = state.context;
         const set = (id, value) => {
           const el = document.getElementById(id);
           if (el) el.value = value || "";
@@ -4418,15 +4447,32 @@ ${script}
         });
       }
 
-      hydratePreparationFromState();
-      const hydratedContext = getPreparationContext();
-      const canGenerate = !!(hydratedContext.company && hydratedContext.processName && hydratedContext.analyst && hydratedContext.processType);
-      if (canGenerate) {
-        prepPreviewContext(hydratedContext);
-        prepSetGeneratedEnabled(true);
-      } else {
-        prepSetGeneratedEnabled(false);
-      }
+function initializePreparationState(){
+  hydratePreparationFromState();
+
+  const hydratedContext = getPreparationContext();
+  const canGenerate = !!(
+    hydratedContext.company &&
+    hydratedContext.processName &&
+    hydratedContext.analyst &&
+    hydratedContext.processType
+  );
+
+  if (canGenerate) {
+    prepPreviewContext(hydratedContext);
+    prepSetGeneratedEnabled(true);
+  } else {
+    prepSetGeneratedEnabled(false);
+  }
+}
+
+if (typeof state !== "undefined") {
+  initializePreparationState();
+} else {
+  document.addEventListener("DOMContentLoaded", function(){
+    setTimeout(initializePreparationState, 0);
+  });
+}
 
       window.getPreparationContext = getPreparationContext;
 window.savePreparationContext = savePreparationContext;
