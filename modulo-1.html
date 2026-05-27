@@ -4496,15 +4496,15 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card half">
-<h3>Consolidar archivos</h3>
-<p>Unifica los JSON cargados en una estructura base para generar el Brief.</p>
+<h3>Entrada temporal para Prompt A</h3>
+<p>Prepara un JSON temporal con contexto e insumos cargados. Este JSON solo sirve para construir el Prompt A; no alimenta directamente el AS-IS.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
-<button class="btn" id="btnBuildMaster" onclick="buildMaster()" type="button">Consolidar archivos</button>
+<button class="btn" id="btnBuildPromptAInput" onclick="previewPromptAInput()" type="button">Preparar entrada Prompt A</button>
 <button class="btn-ghost" id="btnCopyMaster" onclick="copyMasterJson()" type="button">Copiar consolidado</button>
 </div>
 </div>
-<textarea id="masterEditor" placeholder="Aquí aparecerá la consolidación de archivos." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<textarea id="masterEditor" placeholder="Aquí aparecerá la entrada temporal para Prompt A. No es fuente AS-IS." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
 <article class="card half">
@@ -6871,42 +6871,51 @@ function exportBrief(){
 /* =========================
    CARGA Y CONSOLIDACIÓN
 ========================= */
-function buildMaster(){
-  mergeMaster();
-  if(qs('masterEditor')) qs('masterEditor').value = JSON.stringify(state.master, null, 2);
-  previewJson('masterPreview', state.master);
+function previewPromptAInput(){
+  const payload = buildPromptAInputPayload();
+
+  state.promptAInput = payload;
+
+  // Limpieza explícita: el master viejo no debe usarse como fuente funcional.
+  state.master = null;
+
+  if(qs('masterEditor')){
+    qs('masterEditor').value = JSON.stringify(payload, null, 2);
+  }
+
+  updateTopStatus();
   refreshCargaFlowState();
-  showMsg('cargaMsg','ok','Archivos consolidados correctamente.');
+
+  showMsg(
+    'cargaMsg',
+    'ok',
+    'Entrada temporal para Prompt A generada. No se cargó AS-IS desde este JSON.'
+  );
+
+  return payload;
+}
+
+// Compatibilidad temporal: si algún botón viejo llama buildMaster, redirige sin usar master.
+function buildMaster(){
+  return previewPromptAInput();
 }
 
 function saveMasterAndContinue(){
   try{
-    if(qs('masterEditor') && qs('masterEditor').value.trim()){
-      state.master = JSON.parse(qs('masterEditor').value);
-    } else {
-      mergeMaster();
-    }
-    if(!(state.briefReview && state.briefReview.approved)){
-      showMsg('cargaMsg','warn','Debes aprobar primero el Brief antes de continuar.');
+    if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
+      showMsg(
+        'cargaMsg',
+        'warn',
+        'Primero procesa y aprueba el JSON generado por Prompt A. El AS-IS solo puede cargarse desde as_is_process.'
+      );
       return;
     }
-    if(!(state.analysis && state.analysis.raw)){
-      showMsg('cargaMsg','warn','Debes procesar el análisis maestro antes de continuar.');
-      return;
-    }
-    const analysisIssues = renderAnalysisValidation();
-    if(analysisIssues.length){
-      showMsg('cargaMsg','warn','No puedes cerrar esta etapa mientras el análisis permanezca incompleto.');
-      return;
-    }
-    hydrateAsIsFromMaster();
+
     goToNext('carga');
   }catch(error){
-    showMsg('cargaMsg','err',`El JSON maestro no es válido. Detalle: ${error.message}`);
+    showMsg('cargaMsg','err',`No fue posible continuar. Detalle: ${error.message}`);
   }
 }
-
-
 
 /* =========================
    AS IS · BUILDER EDITABLE
@@ -10583,182 +10592,96 @@ function renderBriefDraft(){
 }
 
 function buildBriefPrompt(master){
-  const c = master.context || {};
-  const docs = safeArray(master.notes?.additionalDocuments).map(d => `DOCUMENTO: ${d.name}\n${d.content || d.preview || ''}`).join('\n\n----------------\n\n') || '[Sin documentos adicionales]';
-  const prePack = JSON.stringify(safeArray(master.preInterview || master.pre || []), null, 2);
-  const interviewPack = JSON.stringify(safeArray(master.interview || []), null, 2);
+  const inputPayload = master || buildPromptAInputPayload();
+  const inputText = JSON.stringify(inputPayload, null, 2);
 
-  const sourceActivities = sgmpCanonicalizeActivityList(master.activities || []);
-  const dynamicSection = `FUENTE ESTRUCTURAL OBLIGATORIA DE ACTIVIDADES DEL PROCESO:
-${JSON.stringify({ source_activity_count: sourceActivities.length, source_activities: sourceActivities }, null, 2)}
+  let promptFromSheets = '';
 
-ENTRADA CONSOLIDADA COMPLETA (NO RESUMIR PREMATURAMENTE):
-${JSON.stringify(master, null, 2)}
-
-EVIDENCIA DE PREENTREVISTAS (PRESERVAR MATICES, DIFERENCIAS Y CONTRADICCIONES):
-${prePack}
-
-EVIDENCIA DE ENTREVISTAS (PRESERVAR EXCEPCIONES, REGLAS IMPLÍCITAS, CONTROLES NO DOCUMENTADOS Y DECISIONES REALES):
-${interviewPack}
-
-DOCUMENTOS ADICIONALES:
-${docs}`;
-
-  const hardening = `
-
-REGLAS CRÍTICAS DE PRESERVACIÓN DE EVIDENCIA:
-- FUENTE ESTRUCTURAL OBLIGATORIA: si existe source_activities, debes copiar TODAS esas actividades en activities_preliminary y as_is.activities.
-- PROHIBIDO devolver activities_preliminary vacío si source_activity_count es mayor que 0.
-- PROHIBIDO devolver as_is.activities vacío si source_activity_count es mayor que 0.
-- PROHIBIDO reconstruir el flujo solo desde flowSummary o sipoc_preliminary.process cuando source_activities exista.
-- Si source_activity_count es mayor a 10, la salida debe contener al menos esa misma cantidad de actividades en activities_preliminary y as_is.activities.
-- Conserva id, name, actor, type, document, previous, next, is_start, is_end y note de cada actividad fuente.
-- flowSummary debe ser resumen ejecutivo; NO sustituye el flujo operativo.
-- NO resumas demasiado pronto.
-- NO sustituyas diferencias entre entrevistados por una sola versión armonizada si hay contradicción relevante.
-- PRESERVA explícitamente excepciones, handoffs, controles manuales, aprobaciones informales, retrabajos, demoras, dependencias de personas y reglas implícitas.
-- DISTINGUE entre: hecho declarado, inferencia razonable, supuesto y vacío de información.
-- SI detectas contradicciones, repórtalas en lugar de ocultarlas.
-- SI una conclusión depende de una sola fuente, indícalo.
-- NO conviertas el brief en texto bonito; conviértelo en una base consultiva defendible.
-- NO confundas áreas o departamentos con procesos reales.
-- NO aceptes definiciones vagas del tipo “gestionar”, “coordinar”, “dar seguimiento” sin concretar qué ocurre realmente.
-- INCLUYE lo que todavía debe validarse antes del análisis profundo.
-
-DEBES ENTREGAR ADEMÁS:
-- flowSummary
-- contradictionsDetected
-- openQuestions
-- visibleRisks
-- processCriticality
-- hiddenControls
-- manualDependencies
-- suspectedConstraints
-- evidenceHighlights
-
-JSON OBLIGATORIO DEL BRIEF:
-{
-  "brief": {
-    "executiveSummary": "",
-    "processPurpose": "",
-    "scope": "",
-    "actors": [],
-    "sipoc_preliminary": {"suppliers": [], "inputs": [], "process": [], "outputs": [], "customers": []},
-    "flowSummary": [],
-    "mainPainPoints": [],
-    "preliminaryRestrictions": [],
-    "preliminaryQuickWins": [],
-    "mentionedIndicators": [],
-    "informationGaps": [],
-    "assumptions": [],
-    "contradictionsDetected": [],
-    "openQuestions": [],
-    "visibleRisks": [],
-    "processCriticality": "",
-    "hiddenControls": [],
-    "manualDependencies": [],
-    "suspectedConstraints": [],
-    "evidenceHighlights": [],
-    "activities_preliminary": [
-      {"id":"", "name":"", "type":"operation", "actor":"", "document":"", "previous":[], "next":[], "is_start":false, "is_end":false, "note":""}
-    ],
-    "as_is": {
-      "activities": [
-        {"id":"", "name":"", "type":"operation", "actor":"", "document":"", "previous":[], "next":[], "is_start":false, "is_end":false, "note":""}
-      ]
-    },
-    "validation": {
-      "sourceActivityCount": 0,
-      "briefActivityCount": 0,
-      "canProceedToAnalysis": false,
-      "blockingGaps": [],
-      "warnings": []
-    }
-  }
-}`;
-
-  const staticBase = sgmpPrompt('prompt_brief', null);
-  if (staticBase) {
-    return staticBase
-      .replace('{{industry}}', c.industry || '[INDUSTRIA]')
-      .replace('{{activity}}', c.activity || '[ACTIVIDAD]')
-      .replace('{{processType}}', c.processType || '[TIPO_PROCESO]')
-      + hardening + '\n\n' + dynamicSection;
+  if(typeof sgmpPrompt === 'function'){
+    promptFromSheets = sgmpPrompt('prompt_brief', null) || '';
   }
 
-  return `ACTÚA COMO:
-
-1. Consultor senior en procesos, Lean, Six Sigma y TOC
-2. Experto en la industria: ${c.industry || '[INDUSTRIA]'}
-3. Especialista en la actividad de negocio: ${c.activity || '[ACTIVIDAD]'}
-4. Experto en el tipo de proceso: ${c.processType || '[TIPO_PROCESO]'}
-
-OBJETIVO GENERAL:
-Analizar la información proveniente de preentrevistas múltiples, entrevista principal y archivos adicionales relevantes para construir el BRIEF FORMAL DEL PROCESO como consolidado consultivo estructurado, no como resumen superficial.
-
-${hardening}
-
-${dynamicSection}`;
-}
-
-async function generateBriefPromptFromMaster(){
-  const btn = qs('btnGenerateBriefPrompt');
-
-  try{
-    if(btn) btn.disabled = true;
-
-    showLoader('Generando Brief con IA...', 'Etapa A · Conectando con el backend SGMP y procesando la respuesta.');
-
-    if(typeof sgmpLoadRuntimeConfig === 'function'){
-      await sgmpLoadRuntimeConfig();
-    }
-
-    const master = state.master || mergeMaster();
-    const prompt = buildBriefPrompt(master);
-
-    // En flujo automático NO se muestra prompt manual
-    if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
-
-    console.log('[LMP Brief] API global:', sgmpGlobalApiEnabled());
-    console.log('[LMP Brief] Stage API:', sgmpStageUseApi('lmp_brief'));
-    console.log('[LMP Brief] Ejecutando stage:', 'lmp_brief');
-
-    showMsg('cargaMsg','ok','Ejecutando IA para Brief...');
-
-    const result = await sgmpCallAI('lmp_brief', prompt);
-    const text = sgmpAIResultText(result);
-
-    console.log('[LMP Brief] Resultado API:', result);
-    console.log('[LMP Brief] Texto recibido:', text);
-
-    if(!text || !String(text).trim()){
-      throw new Error('La API respondió vacío para lmp_brief.');
-    }
-
-    if(qs('briefResponseEditor')){
-      qs('briefResponseEditor').value = text;
-    }
-
-    processBriefResponse();
-    refreshCargaFlowState();
-
-    showMsg('cargaMsg','ok','Brief generado y procesado automáticamente.');
-
-  }catch(error){
-    console.error('[LMP Brief] Error flujo automático:', error);
-    refreshCargaFlowState();
-
-    // Cero fallback manual
-    if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
-
+  if(!String(promptFromSheets || '').trim()){
     showMsg(
       'cargaMsg',
       'err',
-      'No se ejecutó el flujo automático del Brief. Detalle: ' + error.message
+      'No se encontró prompt_brief activo desde Google Sheets/API. No se usará prompt embebido en código.'
     );
-  }finally{
-    hideLoader();
-    if(btn) btn.disabled = false;
+    return '';
+  }
+
+  if(promptFromSheets.includes('{{MASTER_JSON}}')){
+    return promptFromSheets.replaceAll('{{MASTER_JSON}}', inputText);
+  }
+
+  return `${promptFromSheets.trim()}
+
+ENTRADA A PROCESAR:
+${inputText}`;
+}
+
+function buildPromptAInputPayload(){
+  const route = state.metadata?.route === 'doc'
+    ? 'existing_documented_process'
+    : 'new_process';
+
+  const context = {
+    company: state.context?.company || '',
+    processName: state.context?.processName || '',
+    processCode: state.context?.processCode || '',
+    owner: state.context?.owner || '',
+    analyst: state.context?.analyst || '',
+    industry: state.context?.industry || '',
+    processType: state.context?.processType || '',
+    activity: state.context?.activity || '',
+    purpose: state.context?.purpose || '',
+    observation: state.context?.observation || '',
+    globalIndicators: Array.isArray(state.context?.globalIndicators)
+      ? state.context.globalIndicators
+      : []
+  };
+
+  const payload = {
+    source_route: route,
+    primary_source_type: route === 'existing_documented_process'
+      ? 'extractor_json'
+      : 'leader_interview_and_transcript',
+    generated_at: new Date().toISOString(),
+    context,
+    input_data: {
+      leader_interview_json: safeArray(state.loads?.interview),
+      leader_interview_transcript: safeArray(state.loads?.interviewTranscript),
+      questionnaires: safeArray(state.loads?.pre),
+      extractor_json: safeArray(state.loads?.sipoc),
+      documented_process_status_interview: safeArray(state.loads?.statusInterview),
+      additional_txt_files: safeArray(state.loads?.docs)
+    }
+  };
+
+  return payload;
+}
+  
+function generateBriefPromptFromMaster(){
+  try{
+    const payload = buildPromptAInputPayload();
+    state.promptAInput = payload;
+    state.master = null;
+
+    if(qs('masterEditor')){
+      qs('masterEditor').value = JSON.stringify(payload, null, 2);
+    }
+
+    const prompt = buildBriefPrompt(payload);
+
+    if(qs('briefPromptEditor')){
+      qs('briefPromptEditor').value = prompt;
+    }
+
+    showMsg('cargaMsg','ok','Prompt A generado desde Google Sheets/API usando la entrada temporal actual.');
+    return prompt;
+  }catch(error){
+    showMsg('cargaMsg','err',`No fue posible generar Prompt A. Detalle: ${error.message}`);
+    return '';
   }
 }
 
