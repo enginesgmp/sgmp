@@ -11693,43 +11693,138 @@ function updateLoadKpis(){
 
 function refreshCargaFlowState(){
   const route = state.metadata?.route;
-  const isDocRoute = route === 'doc';
-  const isNewRoute = route === 'new';
-  const hasLoads = (state.loads.pre || []).length || (state.loads.interview || []).length || (state.loads.docs || []).length;
-  const hasMaster = !!state.master || !!(qs('masterEditor')?.value || '').trim();
-  const hasBriefPrompt = !!(qs('briefPromptEditor')?.value || '').trim();
-  const hasBriefResponse = !!(qs('briefResponseEditor')?.value || '').trim();
-  const hasBrief = !!(qs('briefEditor')?.value || '').trim();
-  const briefApproved = !!(state.briefReview && state.briefReview.approved && state.briefReview.raw);
-  const hasAnalysisPrompt = !!(qs('analysisPromptEditor')?.value || '').trim();
-  const hasAnalysisResponse = !!(qs('iaResponseEditor')?.value || '').trim();
-  const hasSbContractPrompt = !!(qs('sbContractPromptEditor')?.value || '').trim();
-  const hasSbContractResponse = !!(qs('sbContractResponseEditor')?.value || '').trim();
-  const hasApprovedSbContract = !!state.sb_contract;
 
-  qs('newProcessLoadPanel')?.classList.toggle('locked', isDocRoute);
-  qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewRoute);
+  const preCount = safeArray(state.loads?.pre).length;
+  const interviewCount = safeArray(state.loads?.interview).length;
+  const transcriptCount = safeArray(state.loads?.interviewTranscript).length;
+  const sipocCount = safeArray(state.loads?.sipoc).length;
+  const statusInterviewCount = safeArray(state.loads?.statusInterview).length;
+  const docsCount = safeArray(state.loads?.docs).length;
 
-  const disabledMap = {
-    btnBuildMaster: !hasLoads,
-    btnCopyMaster: !hasMaster,
-    btnGenerateBriefPrompt: !hasMaster,
-    btnCopyBriefPrompt: !hasBriefPrompt,
-    btnProcessBrief: !hasBriefResponse,
-    btnApproveBrief: !hasBrief,
-    btnGenerateAnalysisPrompt: !briefApproved,
-    btnCopyAnalysisPrompt: !hasAnalysisPrompt,
-    btnProcessAnalysisStage: !hasAnalysisResponse || !briefApproved,
-    btnGenerateSbContractPrompt: !(state.analysis || state.analysisRun?.raw || state.asis?.activities?.length || state.master),
-    btnCopySbContractPrompt: !hasSbContractPrompt,
-    btnValidateSbContract: !hasSbContractResponse,
-    btnApproveSbContract: !(state.sbContractBuilder && state.sbContractBuilder.raw && state.sbContractBuilder.validation && !state.sbContractBuilder.validation.errors.length),
-    btnDownloadSbContractBuilder: !hasApprovedSbContract
-  };
-  Object.keys(disabledMap).forEach(id => {
-    const el = qs(id);
-    if(el) el.disabled = !!disabledMap[id];
+  const isNewProcess = route !== 'doc';
+  const isDocumentedProcess = route === 'doc';
+
+  const hasNewProcessInputs =
+    interviewCount > 0 ||
+    transcriptCount > 0 ||
+    preCount > 0 ||
+    docsCount > 0;
+
+  const hasDocumentedProcessInputs =
+    sipocCount > 0 ||
+    statusInterviewCount > 0 ||
+    docsCount > 0;
+
+  const hasLoads = isDocumentedProcess
+    ? hasDocumentedProcessInputs
+    : hasNewProcessInputs;
+
+  const hasPromptAInput = !!(
+    state.promptAInput ||
+    (qs('masterEditor') && qs('masterEditor').value.trim())
+  );
+
+  const hasPromptA = !!(
+    qs('briefPromptEditor') &&
+    qs('briefPromptEditor').value.trim()
+  );
+
+  const hasAsIsProcess = !!(
+    state.asIsProcess &&
+    state.asIsProcess.as_is_process
+  );
+
+  const asIsApproved = !!state.asIsProcessApproved;
+
+  const btnBuildPromptAInput = qs('btnBuildPromptAInput');
+  const btnGenerateBriefPrompt = qs('btnGenerateBriefPrompt');
+  const btnCopyMaster = qs('btnCopyMaster');
+  const btnCopyBriefPrompt = qs('btnCopyBriefPrompt');
+  const btnProcessBrief = qs('btnProcessBrief');
+  const btnApproveBrief = qs('btnApproveBrief');
+
+  if(btnBuildPromptAInput){
+    btnBuildPromptAInput.disabled = !hasLoads;
+    btnBuildPromptAInput.title = hasLoads
+      ? ''
+      : 'Primero carga al menos un insumo.';
+  }
+
+  if(btnCopyMaster){
+    btnCopyMaster.disabled = !hasPromptAInput;
+  }
+
+  if(btnGenerateBriefPrompt){
+    btnGenerateBriefPrompt.disabled = !hasLoads;
+    btnGenerateBriefPrompt.title = hasLoads
+      ? ''
+      : 'Primero carga insumos para generar la entrada de Prompt A.';
+  }
+
+  if(btnCopyBriefPrompt){
+    btnCopyBriefPrompt.disabled = !hasPromptA;
+  }
+
+  if(btnProcessBrief){
+    const hasResponse = !!(
+      qs('briefResponseEditor') &&
+      qs('briefResponseEditor').value.trim()
+    );
+
+    btnProcessBrief.disabled = !hasResponse;
+    btnProcessBrief.title = hasResponse
+      ? ''
+      : 'Pega primero el JSON as_is_process generado por Prompt A.';
+  }
+
+  if(btnApproveBrief){
+    btnApproveBrief.disabled = !hasAsIsProcess;
+    btnApproveBrief.title = hasAsIsProcess
+      ? ''
+      : 'Primero procesa un as_is_process válido.';
+  }
+
+  const continueButtons = document.querySelectorAll('button[onclick="saveMasterAndContinue()"]');
+  continueButtons.forEach(btn => {
+    btn.disabled = !hasAsIsProcess;
+    btn.title = hasAsIsProcess
+      ? ''
+      : 'Primero procesa y aprueba el as_is_process desde Prompt A.';
   });
+
+  const routeLabel = isDocumentedProcess
+    ? 'Proceso documentado'
+    : 'Proceso nuevo';
+
+  const statusPieces = [
+    `Ruta: ${routeLabel}`,
+    `Cuestionarios: ${preCount}`,
+    `Entrevista guía: ${interviewCount}`,
+    `Transcripción: ${transcriptCount}`,
+    `Extractor/SIPOC: ${sipocCount}`,
+    `Entrevista status: ${statusInterviewCount}`,
+    `TXT adicionales: ${docsCount}`,
+    `as_is_process: ${hasAsIsProcess ? 'procesado' : 'pendiente'}`,
+    `Aprobado: ${asIsApproved ? 'sí' : 'no'}`
+  ];
+
+  if(qs('sumMaster')){
+    qs('sumMaster').textContent = hasAsIsProcess
+      ? 'as_is_process generado'
+      : hasLoads
+        ? 'Insumos cargados'
+        : 'No generado';
+  }
+
+  return {
+    route,
+    hasLoads,
+    hasPromptAInput,
+    hasPromptA,
+    hasAsIsProcess,
+    asIsApproved,
+    status: statusPieces.join(' · ')
+  };
 }
 
 function initDropZones(){
