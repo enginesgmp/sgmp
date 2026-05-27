@@ -4737,33 +4737,38 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card">
-  <h3>Prompt A · Consolidado con IA</h3>
-  <p>Genera el Prompt A desde Google Sheets/API usando el contexto de preparación y todos los insumos cargados. El consolidado temporal no alimenta directamente el AS-IS.</p>
+  <h3>Consolidado de insumos</h3>
+  <p>Consolida preparación, contexto y archivos cargados en una entrada temporal para Prompt A. Este consolidado no alimenta directamente el AS-IS.</p>
 
   <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
     <div class="actions-left">
-      <button class="btn" id="btnGenerateBriefPrompt" onclick="generateBriefPromptFromMaster()" type="button">Generar Prompt A de consolidado</button>
-      <button class="btn-ghost" id="btnCopyBriefPrompt" onclick="copyTextFromId('briefPromptEditor','cargaMsg','Prompt A copiado correctamente.')" type="button">Copiar prompt</button>
+      <button class="btn" id="btnBuildPromptAInput" onclick="preparePromptAConsolidatedInput()" type="button">Consolidar insumos</button>
     </div>
   </div>
 
-  <textarea id="briefPromptEditor" placeholder="Aquí aparecerá el Prompt A generado desde Google Sheets/API." style="width:100%;min-height:260px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+  <div class="box" id="promptAConsolidatedStatus" style="margin-top:14px;min-height:110px">
+    Aún no se ha consolidado la información.
+  </div>
 
   <textarea id="masterEditor" class="hidden" aria-hidden="true"></textarea>
+  <textarea id="briefPromptEditor" class="hidden" aria-hidden="true"></textarea>
 </article>
 
 <article class="card">
   <h3>JSON estructurado generado por IA</h3>
-  <p>Pega aquí el JSON generado por la IA a partir del Prompt A. Este JSON debe contener toda la estructura AS-IS consolidada.</p>
+  <p>Ejecuta Prompt A con la API. La respuesta se mostrará como JSON de solo lectura y luego podrá validarse antes de aplicarse al LMP.</p>
 
-  <textarea id="briefResponseEditor" placeholder="Pega aquí el JSON generado por Prompt A..." style="width:100%;min-height:360px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
-
-  <div class="actions">
+  <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
     <div class="actions-left">
+      <button class="btn-ok" id="btnRunPromptA" onclick="runPromptAWithAI()" type="button">Generar JSON AS-IS con IA</button>
       <button class="btn-warn" id="btnProcessBrief" onclick="processBriefResponse()" type="button">Validar JSON</button>
       <button class="btn-ghost" onclick="formatBriefJson()" type="button">Formatear JSON</button>
     </div>
   </div>
+
+  <div class="pre" id="briefResponsePreview" style="margin-top:14px;min-height:360px">Sin JSON generado.</div>
+
+  <textarea id="briefResponseEditor" class="hidden" aria-hidden="true"></textarea>
 
   <div class="msg" id="briefIaMsg"></div>
 </article>
@@ -4872,10 +4877,6 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </div>
 <div class="pre" id="iaDetectedPreview" style="margin-top:14px;min-height:240px"></div>
 </article>
-</div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('carga')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="saveMasterAndContinue()" type="button">Guardar y continuar</button></div>
 </div>
 </section>
 <!-- AS IS -->
@@ -10967,9 +10968,10 @@ function buildPromptAInputPayload(){
   return payload;
 }
   
-function generateBriefPromptFromMaster(){
+function preparePromptAConsolidatedInput(){
   try{
     const payload = buildPromptAInputPayload();
+
     state.promptAInput = payload;
     state.master = null;
 
@@ -10977,18 +10979,148 @@ function generateBriefPromptFromMaster(){
       qs('masterEditor').value = JSON.stringify(payload, null, 2);
     }
 
-    const prompt = buildBriefPrompt(payload);
+    if(qs('promptAConsolidatedStatus')){
+      const counts = {
+        cuestionarios: safeArray(payload.input_data?.questionnaires).length,
+        entrevista_guia: safeArray(payload.input_data?.leader_interview_json).length,
+        transcripciones: safeArray(payload.input_data?.leader_interview_transcript).length,
+        extractor_sipoc: safeArray(payload.input_data?.extractor_json).length,
+        entrevista_status: safeArray(payload.input_data?.documented_process_status_interview).length,
+        txt_adicionales: safeArray(payload.input_data?.additional_txt_files).length
+      };
 
-    if(qs('briefPromptEditor')){
-      qs('briefPromptEditor').value = prompt;
+      qs('promptAConsolidatedStatus').textContent = JSON.stringify({
+        estado: 'consolidado_temporal_generado',
+        ruta: payload.source_route,
+        fuente_principal: payload.primary_source_type,
+        proceso: payload.context?.processName || '',
+        codigo: payload.context?.processCode || '',
+        insumos: counts
+      }, null, 2);
     }
 
-    showMsg('cargaMsg','ok','Prompt A generado desde Google Sheets/API usando la entrada temporal actual.');
-    return prompt;
+    refreshCargaFlowState();
+
+    showMsg(
+      'cargaMsg',
+      'ok',
+      'Insumos consolidados correctamente. Ya puedes ejecutar Prompt A con IA.'
+    );
+
+    return payload;
+
   }catch(error){
-    showMsg('cargaMsg','err',`No fue posible generar Prompt A. Detalle: ${error.message}`);
-    return '';
+    showMsg(
+      'cargaMsg',
+      'err',
+      'No fue posible consolidar los insumos. Detalle: ' + error.message
+    );
+    return null;
   }
+}
+
+async function runPromptAWithAI(){
+  const btn = qs('btnRunPromptA');
+
+  try{
+    if(btn) btn.disabled = true;
+
+    let payload = state.promptAInput;
+
+    if(!payload){
+      payload = preparePromptAConsolidatedInput();
+    }
+
+    if(!payload){
+      throw new Error('No existe consolidado temporal para ejecutar Prompt A.');
+    }
+
+    if(typeof sgmpLoadRuntimeConfig === 'function'){
+      await sgmpLoadRuntimeConfig();
+    }
+
+    const prompt = buildBriefPrompt(payload);
+
+    if(!prompt || !String(prompt).trim()){
+      throw new Error('No se pudo construir Prompt A desde Google Sheets/API.');
+    }
+
+    // El prompt no se muestra en pantalla.
+    if(qs('briefPromptEditor')){
+      qs('briefPromptEditor').value = '';
+    }
+
+    if(qs('briefResponsePreview')){
+      qs('briefResponsePreview').textContent = 'Procesando IA...';
+    }
+
+    showMsg(
+      'cargaMsg',
+      'ok',
+      'Ejecutando Prompt A con IA. Espera la respuesta estructurada.'
+    );
+
+    if(typeof showLoader === 'function'){
+      showLoader(
+        'Generando JSON AS-IS con IA...',
+        'Prompt A está procesando el consolidado de insumos mediante la API SGMP.'
+      );
+    }
+
+    const result = await sgmpCallAI('lmp_brief', prompt);
+    const text = sgmpAIResultText(result);
+
+    if(!text || !String(text).trim()){
+      throw new Error('La API respondió vacío para Prompt A.');
+    }
+
+    const parsed = extractJsonFromText(text);
+    const formatted = JSON.stringify(parsed, null, 2);
+
+    if(qs('briefResponseEditor')){
+      qs('briefResponseEditor').value = formatted;
+    }
+
+    if(qs('briefResponsePreview')){
+      qs('briefResponsePreview').textContent = formatted;
+    }
+
+    processBriefResponse();
+    refreshCargaFlowState();
+
+    showMsg(
+      'cargaMsg',
+      'ok',
+      'JSON AS-IS generado por IA y validado estructuralmente.'
+    );
+
+    return parsed;
+
+  }catch(error){
+    if(qs('briefResponsePreview')){
+      qs('briefResponsePreview').textContent = 'No se generó JSON. Revisa el mensaje de error.';
+    }
+
+    showMsg(
+      'cargaMsg',
+      'err',
+      'No fue posible generar el JSON AS-IS con IA. Detalle: ' + error.message
+    );
+
+    return null;
+
+  }finally{
+    if(typeof hideLoader === 'function'){
+      hideLoader();
+    }
+
+    if(btn) btn.disabled = false;
+  }
+}
+
+// Compatibilidad temporal: si algún botón viejo llama esta función, ejecuta el flujo nuevo.
+function generateBriefPromptFromMaster(){
+  return runPromptAWithAI();
 }
 
 function normalizePromptAType(value){
@@ -11194,7 +11326,7 @@ function formatBriefJson(){
   const editor = qs('briefResponseEditor');
 
   if(!editor){
-    showMsg('briefIaMsg','err','No se encontró el cuadro de JSON generado por IA.');
+    showMsg('briefIaMsg','err','No se encontró el JSON generado por IA.');
     return;
   }
 
@@ -11207,9 +11339,17 @@ function formatBriefJson(){
 
   try{
     const parsed = extractJsonFromText(raw);
-    editor.value = JSON.stringify(parsed, null, 2);
+    const formatted = JSON.stringify(parsed, null, 2);
+
+    editor.value = formatted;
+
+    if(qs('briefResponsePreview')){
+      qs('briefResponsePreview').textContent = formatted;
+    }
+
     showMsg('briefIaMsg','ok','JSON formateado correctamente.');
     refreshCargaFlowState();
+
   }catch(error){
     showMsg('briefIaMsg','err','No fue posible formatear el JSON. Detalle: ' + error.message);
   }
@@ -11235,7 +11375,19 @@ function processBriefResponse(){
 
     applyPromptAAsIsProcess(normalized);
 
-    renderBriefValidation();
+state.asIsProcessApproved = issues.length === 0;
+state.briefReview = {
+  raw: normalized,
+  approved: issues.length === 0,
+  type: 'as_is_process',
+  issues
+};
+
+if(qs('briefResponsePreview')){
+  qs('briefResponsePreview').textContent = JSON.stringify(normalized, null, 2);
+}
+
+renderBriefValidation();
 
     showMsg(
       'briefIaMsg',
@@ -12233,24 +12385,24 @@ function refreshCargaFlowState(){
   qs('newProcessLoadPanel')?.classList.toggle('locked', isDocumentedProcess);
   qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewProcess);
 
-  const btnGenerateBriefPrompt = qs('btnGenerateBriefPrompt');
-  const btnCopyBriefPrompt = qs('btnCopyBriefPrompt');
-  const btnProcessBrief = qs('btnProcessBrief');
-  const btnApplyBrief = qs('btnApplyBrief');
+const btnBuildPromptAInput = qs('btnBuildPromptAInput');
+const btnRunPromptA = qs('btnRunPromptA');
+const btnProcessBrief = qs('btnProcessBrief');
+const btnApplyBrief = qs('btnApplyBrief');
 
-  if(btnGenerateBriefPrompt){
-    btnGenerateBriefPrompt.disabled = !hasLoads;
-    btnGenerateBriefPrompt.title = hasLoads
-      ? ''
-      : 'Primero carga insumos para generar el Prompt A.';
-  }
+if(btnBuildPromptAInput){
+  btnBuildPromptAInput.disabled = !hasLoads;
+  btnBuildPromptAInput.title = hasLoads
+    ? ''
+    : 'Primero carga insumos.';
+}
 
-  if(btnCopyBriefPrompt){
-    btnCopyBriefPrompt.disabled = !hasPromptA;
-    btnCopyBriefPrompt.title = hasPromptA
-      ? ''
-      : 'Primero genera el Prompt A.';
-  }
+if(btnRunPromptA){
+  btnRunPromptA.disabled = !hasLoads;
+  btnRunPromptA.title = hasLoads
+    ? ''
+    : 'Primero carga y consolida insumos.';
+}
 
   if(btnProcessBrief){
     btnProcessBrief.disabled = !hasPromptAResponse;
