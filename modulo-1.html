@@ -4508,8 +4508,8 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card half">
-<h3>Prompt A · Estructura de Brief</h3>
-<p>Genera el prompt para construir el Brief oficial a partir de la consolidación.</p>
+<h3>Prompt A · Estructura AS-IS</h3>
+<p>Genera el prompt desde Google Sheets/API para transformar los insumos cargados en un as_is_process estándar.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
 <div class="actions-left">
 <button class="btn" id="btnGenerateBriefPrompt" onclick="generateBriefPromptFromMaster()" type="button">Generar Prompt A</button>
@@ -4520,9 +4520,9 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card two-third">
-<h3>JSON de Brief generado por IA</h3>
-<p>Pega aquí la respuesta IA del Prompt A. El sistema construirá el brief editable y no habilitará el análisis hasta aprobarlo.</p>
-<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON de Brief generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
+<h3>JSON as_is_process generado por IA</h3>
+<p>Pega aquí la respuesta IA del Prompt A. El sistema cargará el as_is_process al AS-IS editable.</p>
+<textarea id="briefResponseEditor" placeholder="Pega aquí el JSON as_is_process generado por la IA..." style="width:100%;min-height:220px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 <div class="actions">
 <div class="actions-left"><button class="btn-ok" id="btnProcessBrief" onclick="processBriefResponse()" type="button">Procesar Brief</button></div>
 <div class="actions-right"><button class="btn" id="btnApproveBrief" onclick="approveBriefAndUnlockAnalysis()" type="button">Aprobar Brief</button></div>
@@ -4531,7 +4531,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card third">
-<h3>Estado del Brief</h3>
+<h3>Estado del as_is_process</h3>
 <div class="kpi-wrap">
 <div class="kpi-card"><h4>Estado</h4><div class="big" id="briefApprovedKpi">No</div><small>aprobado</small></div>
 <div class="kpi-card"><h4>Vacíos</h4><div class="big" id="briefGapsKpi">0</div><small>detectados</small></div>
@@ -4541,8 +4541,8 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 </article>
 
 <article class="card">
-<h3>Brief oficial editable</h3>
-<p>Revisa, ajusta y valida el brief oficial. Este brief aprobado es el único insumo permitido para el análisis.</p>
+<h3>as_is_process editable</h3>
+<p>Revisa, ajusta y valida la estructura AS-IS oficial. Este as_is_process aprobado alimentará AS-IS, análisis y contrato SB,IP,ED.</p>
 <textarea id="briefEditor" placeholder="Aquí aparecerá el Brief estructurado y editable." style="width:100%;min-height:240px;background:#0d1b2a;color:#d6e7f7;border:1px solid #17355b;border-radius:14px;padding:14px;font-family:Consolas, monospace;"></textarea>
 </article>
 
@@ -10552,24 +10552,69 @@ function evaluateBriefCompleteness(normalizedBrief){
 }
 
 function renderBriefValidation(){
-  const brief = getBriefPayload();
-  const issues = evaluateBriefCompleteness(brief);
-  const warnings = safeArray(brief?.validation?.warnings || []);
-  const detectedGaps = safeArray(brief?.informationGaps || brief?.infoGaps || []);
-  const gapList = [...issues, ...warnings, ...detectedGaps];
-  const msgId = 'briefValidationMsg';
-  if(qs('briefGapsList')){
-    qs('briefGapsList').innerHTML = gapList.length
-      ? '<ul style="margin:0;padding-left:18px">' + gapList.map(item => '<li>' + escapeHtml(typeof item === 'string' ? item : JSON.stringify(item)) + '</li>').join('') + '</ul>'
-      : 'Sin vacíos detectados.';
+  const kpiApproved = qs('briefApprovedKpi');
+  const kpiGaps = qs('briefGapsKpi');
+  const list = qs('briefGapsList');
+  const msg = qs('briefValidationMsg');
+
+  const payload = state.asIsProcess || state.briefReview?.raw || state.brief;
+
+  if(!(payload && payload.as_is_process)){
+    if(kpiApproved) kpiApproved.textContent = 'No';
+    if(kpiGaps) kpiGaps.textContent = '0';
+    if(list) list.textContent = 'Aún no se ha procesado un as_is_process desde Prompt A.';
+
+    if(msg){
+      msg.className = 'msg show warn';
+      msg.textContent = 'Procesa primero el JSON generado por Prompt A.';
+    }
+
+    return;
   }
-  if(qs('briefGapsKpi')) qs('briefGapsKpi').textContent = gapList.length;
-  if(!brief){ showMsg(msgId,'warn','Estado: brief incompleto. Aún no existe un brief utilizable.'); refreshCargaFlowState(); return issues; }
-  if(issues.length){ showMsg(msgId,'warn','Estado: brief incompleto. Revisa antes de aprobar:\n- ' + issues.join('\n- ')); }
-  else if(warnings.length){ showMsg(msgId,'warn','Estado: brief aprobable con advertencias:\n- ' + warnings.join('\n- ')); }
-  else { showMsg(msgId,'ok','Estado: brief completo. Puede aprobarse para habilitar el análisis.'); }
+
+  const issues = validatePromptAAsIsProcess(payload);
+  const approved = issues.length === 0;
+
+  state.briefReview = {
+    raw: payload,
+    approved,
+    type: 'as_is_process',
+    issues
+  };
+
+  state.asIsProcessApproved = approved;
+
+  if(kpiApproved) kpiApproved.textContent = approved ? 'Sí' : 'No';
+  if(kpiGaps) kpiGaps.textContent = String(issues.length);
+
+  if(list){
+    if(!issues.length){
+      list.innerHTML = '<div class="brief-empty-state">as_is_process sin vacíos estructurales detectados.</div>';
+    }else{
+      list.innerHTML = `
+        <div class="brief-gap-list">
+          ${issues.map((issue, index) => `
+            <div class="brief-gap-row">
+              <div class="brief-gap-num">${index + 1}</div>
+              <div class="brief-gap-body">
+                <div class="brief-gap-title">Vacío estructural</div>
+                <div class="brief-gap-path">${escapeHtml(issue)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  if(msg){
+    msg.className = 'msg show ' + (approved ? 'ok' : 'warn');
+    msg.textContent = approved
+      ? 'as_is_process validado correctamente.'
+      : 'as_is_process tiene vacíos estructurales que deben revisarse en AS-IS.';
+  }
+
   refreshCargaFlowState();
-  return issues;
 }
 
 function evaluateAnalysisCompleteness(data){
