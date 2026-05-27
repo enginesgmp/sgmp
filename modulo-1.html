@@ -4634,8 +4634,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <p>La IA propone una estructura inicial desde el Brief, entrevista o análisis. El usuario valida, corrige y ordena antes de continuar.</p>
 <div class="actions" style="border-top:none;padding-top:0;margin-top:12px">
 <div class="actions-left">
-<button class="btn" onclick="seedAsIsBuilderFromBrief(true)" type="button">Cargar desde Brief</button>
-<button class="btn" onclick="hydrateAsIsFromMaster()" type="button">Cargar desde análisis/master</button>
+<button class="btn" onclick="loadAsIsFromApprovedProcess()" type="button">Cargar desde as_is_process</button>
 <button class="btn-ghost" onclick="addAsisActivity()" type="button">Agregar actividad</button>
 </div>
 </div>
@@ -6920,10 +6919,33 @@ function saveMasterAndContinue(){
 /* =========================
    AS IS · BUILDER EDITABLE
 ========================= */
+
+function loadAsIsFromApprovedProcess(){
+  if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
+    showMsg(
+      'asisBuilderMsg',
+      'warn',
+      'No existe as_is_process procesado desde Prompt A. Primero procesa y aprueba la respuesta en Carga y consolidación.'
+    );
+    return;
+  }
+
+  applyPromptAAsIsProcess(state.asIsProcess);
+
+  showMsg(
+    'asisBuilderMsg',
+    'ok',
+    'AS-IS cargado desde as_is_process.'
+  );
+}
+  
 function asisActivityTemplate(data = {}, index = 0){
   const safe = normalizeActivity(data || {});
-  const id = safe.id || data.id || ('A' + (index + 1));
-  const isDecision = /decision|decisi[oó]n/i.test(safe.type || '');
+  safe.type = normalizePromptAType(safe.type || data.type || 'actividad');
+
+  const id = safe.id || data.id || ('ACT-' + String(index + 1).padStart(3, '0'));
+  const isDecision = safe.type === 'decision';
+
   return `
     <details class="activity-item asis-row asis-activity-accordion" data-index="${index}">
       <summary class="activity-top asis-activity-summary">
@@ -6931,7 +6953,7 @@ function asisActivityTemplate(data = {}, index = 0){
           <strong>${index + 1}. ${escapeHtml(safe.name || 'Actividad sin nombre')}</strong>
           <small>Actor: ${escapeHtml(safe.actor || 'Sin actor')}</small>
         </div>
-        <span class="status-badge ${isDecision ? 'is-decision' : ''}">${escapeHtml(safe.type || 'operation')}</span>
+        <span class="status-badge ${isDecision ? 'is-decision' : ''}">${escapeHtml(safe.type || 'actividad')}</span>
       </summary>
       <div class="asis-activity-body">
         <div class="asis-activity-actions">
@@ -6939,46 +6961,91 @@ function asisActivityTemplate(data = {}, index = 0){
           <button class="btn-ghost" type="button" onclick="moveAsisActivity(${index}, 1)">↓ Bajar</button>
           <button class="btn-danger" type="button" onclick="deleteAsisActivity(${index})">Eliminar</button>
         </div>
-      <div class="field-grid asis-activity-grid">
-        <div class="field w-3"><label>ID</label><input class="a_id" value="${escapeHtml(id)}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-5"><label>Nombre de la actividad</label><input class="a_name" value="${escapeHtml(safe.name || '')}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-4"><label>Actor / rol</label><input class="a_actor" value="${escapeHtml(safe.actor || '')}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-3"><label>Tipo</label>
-          <select class="a_type" onchange="syncAsisRow(${index})">
-            <option value="operation" ${safe.type==='operation'?'selected':''}>Operación</option>
-            <option value="decision" ${safe.type==='decision'?'selected':''}>Decisión</option>
-            <option value="control" ${safe.type==='control'?'selected':''}>Control</option>
-            <option value="document" ${safe.type==='document'?'selected':''}>Documento</option>
-            <option value="end" ${safe.type==='end'?'selected':''}>Fin</option>
-          </select>
+
+        <div class="field-grid asis-activity-grid">
+          <div class="field w-3">
+            <label>ID</label>
+            <input class="a_id" value="${escapeHtml(id)}" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-5">
+            <label>Nombre de la actividad</label>
+            <input class="a_name" value="${escapeHtml(safe.name || '')}" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-4">
+            <label>Actor / rol</label>
+            <input class="a_actor" value="${escapeHtml(safe.actor || '')}" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-3">
+            <label>Tipo</label>
+            <select class="a_type" onchange="syncAsisRow(${index})">
+              <option value="actividad" ${safe.type === 'actividad' ? 'selected' : ''}>Actividad</option>
+              <option value="decision" ${safe.type === 'decision' ? 'selected' : ''}>Decisión</option>
+            </select>
+          </div>
+
+          <div class="field w-3">
+            <label>Tiempo estimado</label>
+            <input class="a_time" value="${escapeHtml(safe.time || '')}" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-3">
+            <label>AVA</label>
+            <select class="a_ava" onchange="syncAsisRow(${index})">
+              <option value="VA" ${safe.ava === 'VA' ? 'selected' : ''}>VA</option>
+              <option value="NNVA" ${safe.ava === 'NNVA' ? 'selected' : ''}>NNVA</option>
+              <option value="NVA" ${safe.ava === 'NVA' ? 'selected' : ''}>NVA</option>
+            </select>
+          </div>
+
+          <div class="field w-3">
+            <label>Quick win</label>
+            <select class="a_qw" onchange="syncAsisRow(${index})">
+              <option value="No" ${safe.quickWin === 'No' ? 'selected' : ''}>No</option>
+              <option value="Sí" ${safe.quickWin === 'Sí' ? 'selected' : ''}>Sí</option>
+            </select>
+          </div>
+
+          <div class="field w-3">
+            <label>Restricción</label>
+            <select class="a_res" onchange="syncAsisRow(${index})">
+              <option value="No" ${safe.constraint === 'No' ? 'selected' : ''}>No</option>
+              <option value="Sí" ${safe.constraint === 'Sí' ? 'selected' : ''}>Sí</option>
+            </select>
+          </div>
+
+          <div class="field w-6">
+            <label>Documento / sistema</label>
+            <input class="a_document" value="${escapeHtml(safe.document || '')}" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-6">
+            <label>Actividad previa</label>
+            <textarea class="a_previous" oninput="syncAsisRow(${index})">${escapeHtml(safe.previous?.join('\\n') || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Actividad siguiente</label>
+            <textarea class="a_next" oninput="syncAsisRow(${index})">${escapeHtml(safe.next?.join('\\n') || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Problemas / restricciones</label>
+            <textarea class="a_problems" oninput="syncAsisRow(${index})">${escapeHtml(safe.problems || '')}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Desperdicios observados</label>
+            <textarea class="a_wastes" oninput="syncAsisRow(${index})">${escapeHtml(safe.wastes || '')}</textarea>
+          </div>
+
+          <div class="field w-12">
+            <label>Observaciones / notas</label>
+            <textarea class="a_note" oninput="syncAsisRow(${index})">${escapeHtml(safe.note || safe.observations || '')}</textarea>
+          </div>
         </div>
-        <div class="field w-3"><label>Tiempo estimado</label><input class="a_time" value="${escapeHtml(safe.time || '')}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-3"><label>AVA</label>
-          <select class="a_ava" onchange="syncAsisRow(${index})">
-            <option value="VA" ${safe.ava==='VA'?'selected':''}>VA</option>
-            <option value="NNVA" ${safe.ava==='NNVA'?'selected':''}>NNVA</option>
-            <option value="NVA" ${safe.ava==='NVA'?'selected':''}>NVA</option>
-          </select>
-        </div>
-        <div class="field w-3"><label>Quick win</label>
-          <select class="a_qw" onchange="syncAsisRow(${index})">
-            <option value="No" ${safe.quickWin==='No'?'selected':''}>No</option>
-            <option value="Sí" ${safe.quickWin==='Sí'?'selected':''}>Sí</option>
-          </select>
-        </div>
-        <div class="field w-3"><label>Restricción</label>
-          <select class="a_res" onchange="syncAsisRow(${index})">
-            <option value="No" ${safe.constraint==='No'?'selected':''}>No</option>
-            <option value="Sí" ${safe.constraint==='Sí'?'selected':''}>Sí</option>
-          </select>
-        </div>
-        <div class="field w-6"><label>Documento / sistema</label><input class="a_document" value="${escapeHtml(safe.document || '')}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-3"><label>Anterior</label><input class="a_previous" value="${escapeHtml((safe.previous || []).join(', '))}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-3"><label>Siguiente</label><input class="a_next" value="${escapeHtml((safe.next || []).join(', '))}" oninput="syncAsisRow(${index})" /></div>
-        <div class="field w-6"><label>Problemas</label><textarea class="a_problems" oninput="syncAsisRow(${index})">${escapeHtml(safe.problems || '')}</textarea></div>
-        <div class="field w-6"><label>Desperdicios</label><textarea class="a_wastes" oninput="syncAsisRow(${index})">${escapeHtml(safe.wastes || '')}</textarea></div>
-        <div class="field w-12"><label>Nota / evidencia / regla operativa</label><textarea class="a_note" oninput="syncAsisRow(${index})">${escapeHtml(safe.note || '')}</textarea></div>
-      </div>
       </div>
     </details>
   `;
@@ -6995,7 +7062,7 @@ function readAsisRow(item){
     id: get('.a_id'),
     name: get('.a_name'),
     actor: get('.a_actor'),
-    type: get('.a_type') || 'operation',
+    type: normalizePromptAType(get('.a_type') || 'actividad'),
     document: get('.a_document'),
     previous: splitItems(get('.a_previous')),
     next: splitItems(get('.a_next')),
@@ -7028,7 +7095,7 @@ function renderAsIsActivities(){
   container.innerHTML = '';
   const activities = state.asis.activities || [];
   if(!activities.length){
-    container.innerHTML = '<div class="note">No hay actividades cargadas. Usa “Cargar desde Brief”, “Cargar desde análisis/master” o “Agregar actividad”.</div>';
+    container.innerHTML = '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
     updateAsIsPreview();
     return;
   }
@@ -7043,7 +7110,7 @@ function addAsisActivity(data = {}){
     id: 'A' + (state.asis.activities.length + 1),
     name: '',
     actor: '',
-    type: 'operation',
+    type: 'actividad',
     ava: 'NNVA',
     quickWin: 'No',
     constraint: 'No'
@@ -7089,7 +7156,7 @@ function refreshAsIsActivitySummary(item, index){
   const badge = item.querySelector('.activity-top .status-badge');
   const name = item.querySelector('.a_name')?.value?.trim() || '';
   const actor = item.querySelector('.a_actor')?.value?.trim() || '';
-  const type = item.querySelector('.a_type')?.value?.trim() || 'operation';
+  const type = normalizePromptAType(item.querySelector('.a_type')?.value?.trim() || 'actividad');
   if(strong) strong.textContent = `${index + 1}. ${name || 'Actividad sin nombre'}`;
   if(small) small.textContent = `Actor: ${actor || 'Sin actor'}`;
   if(badge){
