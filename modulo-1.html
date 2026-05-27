@@ -8337,10 +8337,26 @@ function validateSipocContract(sp){
   return { errors, warnings };
 }
 
+function isValidCachedSbContract(contract){
+  const activities = contract?.sipoc_input?.activities;
+  if(!Array.isArray(activities) || !activities.length) return false;
+
+  return activities.every(act =>
+    act &&
+    typeof act === 'object' &&
+    normalizeContractString(act.name || act.activity || act.activity_name || '')
+  );
+}
+
 function buildSBJson(){
-  if(state.sb_contract){
+  // Si existe contrato viejo o mal formado en el respaldo, NO usarlo.
+  if(state.sb_contract && isValidCachedSbContract(state.sb_contract)){
     return state.sb_contract;
   }
+
+  // Limpia contrato viejo para forzar reconstrucción desde Proceso AS-IS.
+  state.sb_contract = null;
+
   return buildSipocContract();
 }
 
@@ -8547,8 +8563,62 @@ function buildImplementationHtml(){
     ${rejectedHtml}
   `;
 }
+function repairLoadedLegacyStateBeforeResults(){
+  state.asis = state.asis || {};
 
+  const currentActivities = safeArray(state.asis.activities);
+
+  if(!currentActivities.length){
+    const recovered =
+      safeArray(state.brief?.as_is?.activities).length ? safeArray(state.brief.as_is.activities) :
+      safeArray(state.brief?.activities_preliminary).length ? safeArray(state.brief.activities_preliminary) :
+      safeArray(state.master?.as_is?.activities).length ? safeArray(state.master.as_is.activities) :
+      [];
+
+    if(recovered.length){
+      state.asis.activities = recovered;
+    }
+  }
+
+  if(state.sb_contract && !isValidCachedSbContract(state.sb_contract)){
+    state.sb_contract = null;
+  }
+
+  state.asis.activities = safeArray(state.asis.activities)
+    .map((activity, index) => {
+      if(typeof activity === 'string'){
+        return {
+          id: 'ACT-' + String(index + 1).padStart(3, '0'),
+          name: activity,
+          type: 'actividad',
+          actor: 'pendiente_validacion',
+          document: '',
+          previous: [],
+          next: [],
+          inputs_used: [],
+          outputs_generated: [],
+          observations: '',
+          editable: true
+        };
+      }
+
+      return {
+        ...activity,
+        id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
+        name: activity.name || activity.activity || activity.activity_name || activity.title || '',
+        type: normalizePromptAType(activity.type || activity.tipo || ''),
+        actor: activity.actor || activity.owner || activity.responsable || 'pendiente_validacion',
+        previous: normalizePromptAList(activity.previous),
+        next: normalizePromptAList(activity.next),
+        inputs_used: normalizePromptAList(activity.inputs_used || activity.inputsUsed || activity.ext_inputs),
+        outputs_generated: normalizePromptAList(activity.outputs_generated || activity.outputsGenerated || activity.ext_outputs),
+        observations: activity.observations || activity.note || ''
+      };
+    })
+    .filter(activity => normalizeContractString(activity.name || ''));
+}
 function generateResults(){
+  repairLoadedLegacyStateBeforeResults();
   syncVisibleStage();
     if(state.tobe && Array.isArray(state.tobe.improvements)){
     collectImprovements();
@@ -11540,6 +11610,142 @@ function formatBriefJson(){
     showMsg('briefIaMsg','err','No fue posible formatear el JSON. Detalle: ' + error.message);
   }
 }
+
+function coerceAnyPayloadToAsIsProcess(payload){
+  if(payload?.as_is_process){
+    return payload;
+  }
+
+  const p = payload || {};
+
+  const candidateActivities =
+    safeArray(p.activities).length ? safeArray(p.activities) :
+    safeArray(p.as_is?.activities).length ? safeArray(p.as_is.activities) :
+    safeArray(p.brief?.as_is?.activities).length ? safeArray(p.brief.as_is.activities) :
+    safeArray(p.brief?.activities_preliminary).length ? safeArray(p.brief.activities_preliminary) :
+    safeArray(p.sipoc_input?.activities).length ? safeArray(p.sipoc_input.activities) :
+    [];
+
+  if(!candidateActivities.length){
+    throw new Error('La respuesta no contiene as_is_process ni actividades recuperables.');
+  }
+
+  const activities = candidateActivities.map((item, index) => {
+    if(typeof item === 'string'){
+      return {
+        id: 'ACT-' + String(index + 1).padStart(3, '0'),
+        name: item,
+        type: 'actividad',
+        actor: 'pendiente_validacion',
+        document: '',
+        previous: [],
+        next: [],
+        inputs_used: [],
+        outputs_generated: [],
+        observations: '',
+        clarifying_notes: ['Actividad recuperada desde contrato antiguo como texto plano.'],
+        editable: true
+      };
+    }
+
+    const rawType = item?.type || item?.tipo || '';
+    const type = normalizePromptAType(rawType);
+
+    return {
+      id: String(item?.id || 'ACT-' + String(index + 1).padStart(3, '0')).trim(),
+      name: String(
+        item?.name ||
+        item?.activity ||
+        item?.activity_name ||
+        item?.nombre ||
+        item?.title ||
+        ''
+      ).trim(),
+      type,
+      actor: String(item?.actor || item?.owner || item?.responsable || 'pendiente_validacion').trim(),
+      document: String(item?.document || item?.documento || item?.documents || '').trim(),
+
+      previous: normalizePromptAList(item?.previous || item?.prev || item?.predecessors),
+      next: normalizePromptAList(item?.next || item?.successors),
+
+      inputs_used: normalizePromptAList(
+        item?.inputs_used ||
+        item?.inputsUsed ||
+        item?.ext_inputs ||
+        item?.inputs ||
+        []
+      ),
+
+      outputs_generated: normalizePromptAList(
+        item?.outputs_generated ||
+        item?.outputsGenerated ||
+        item?.ext_outputs ||
+        item?.outputs ||
+        []
+      ),
+
+      ext_suppliers: normalizePromptAList(item?.ext_suppliers || item?.suppliers || []),
+      ext_customers: normalizePromptAList(item?.ext_customers || item?.customers || []),
+
+      observations: String(
+        item?.observations ||
+        item?.observation ||
+        item?.note ||
+        item?.notes ||
+        item?.description ||
+        ''
+      ).trim(),
+
+      clarifying_notes: normalizePromptAList(item?.clarifying_notes || item?.warnings || []),
+      editable: true,
+
+      // Compatibilidad visual AS-IS
+      note: String(item?.note || item?.observations || '').trim(),
+      problems: String(item?.problems || '').trim(),
+      wastes: String(item?.wastes || '').trim(),
+      ava: item?.ava || 'NNVA',
+      quickWin: item?.quickWin || 'No',
+      constraint: item?.constraint || 'No'
+    };
+  }).filter(a => a.name);
+
+  const suppliersInputs =
+    safeArray(p.as_is_process?.suppliers_inputs).length ? safeArray(p.as_is_process.suppliers_inputs) :
+    safeArray(p.suppliers_inputs).length ? safeArray(p.suppliers_inputs) :
+    safeArray(p.sipoc_input?.suppliers_inputs).length ? safeArray(p.sipoc_input.suppliers_inputs) :
+    [];
+
+  const outputsCustomers =
+    safeArray(p.as_is_process?.outputs_customers).length ? safeArray(p.as_is_process.outputs_customers) :
+    safeArray(p.outputs_customers).length ? safeArray(p.outputs_customers) :
+    safeArray(p.sipoc_input?.outputs_customers).length ? safeArray(p.sipoc_input.outputs_customers) :
+    [];
+
+  return {
+    as_is_process: {
+      source_route: String(
+        p.source_route ||
+        p.metadata?.route ||
+        state?.metadata?.route ||
+        'legacy_or_adapted_payload'
+      ).trim(),
+
+      activities,
+
+      suppliers_inputs: suppliersInputs,
+      outputs_customers: outputsCustomers,
+
+      additional_information: [
+        {
+          title: 'Payload adaptado automáticamente',
+          type: 'compatibility_adapter',
+          content: 'El JSON no contenía raíz as_is_process. El LMP recuperó actividades desde estructura legacy o respaldo anterior.',
+          editable: true
+        }
+      ]
+    }
+  };
+}
   
 function processBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value.trim() || '';
@@ -11552,12 +11758,9 @@ function processBriefResponse(){
   try{
     const parsed = extractJsonFromText(rawText);
 
-    if(!parsed?.as_is_process){
-      throw new Error('La respuesta no contiene la raíz obligatoria as_is_process.');
-    }
-
-    const normalized = normalizePromptAAsIsProcess(parsed);
-    const issues = validatePromptAAsIsProcess(normalized);
+const adapted = coerceAnyPayloadToAsIsProcess(parsed);
+const normalized = normalizePromptAAsIsProcess(adapted);
+const issues = validatePromptAAsIsProcess(normalized);
 
     applyPromptAAsIsProcess(normalized);
 
