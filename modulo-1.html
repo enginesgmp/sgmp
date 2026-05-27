@@ -10060,9 +10060,32 @@ function renderLoadList(targetId, items, mode){
 }
 
 function refreshLoadViews(){
+  const route = state.metadata?.route;
+
   renderLoadList('preLoadList', state.loads.pre, 'pre');
-  renderLoadList('interviewLoadList', state.loads.interview, 'interview');
+
+  if(route === 'doc'){
+    renderLoadList(
+      'interviewLoadList',
+      [
+        ...(state.loads.sipoc || []),
+        ...(state.loads.statusInterview || [])
+      ],
+      'interview'
+    );
+  } else {
+    renderLoadList(
+      'interviewLoadList',
+      [
+        ...(state.loads.interview || []),
+        ...(state.loads.interviewTranscript || [])
+      ],
+      'interview'
+    );
+  }
+
   renderLoadList('docLoadList', state.loads.docs, 'docs');
+
   refreshCargaFlowState();
 }
 
@@ -10083,9 +10106,12 @@ function clearLoadsGroup(type){
 
 function clearAllLoads(){
   state.loads.pre = [];
-  state.loads.interview = [];
-  state.loads.docs = [];
-  state.loads.brief = [];
+state.loads.interview = [];
+state.loads.interviewTranscript = [];
+state.loads.sipoc = [];
+state.loads.statusInterview = [];
+state.loads.docs = [];
+state.loads.brief = [];
   state.master = null;
   state.briefReview = { raw:null, approved:false };
   state.brief = null;
@@ -11216,26 +11242,69 @@ function normalizeSipocJsonAsInterview(parsed){
 }
 
 async function loadInstrumentFiles(type){
-  const inputMap = { pre:qs('filePre'), interview:qs('fileInterview'), sipoc:qs('fileSipoc') };
+  const inputMap = {
+    pre: qs('filePre'),
+    interview: qs('fileInterview'),
+    sipoc: qs('fileSipoc'),
+    statusInterview: qs('fileStatusInterview')
+  };
+
   const input = inputMap[type];
   const files = Array.from((input?.files || []));
+
   if(!files.length) return [];
+
   try{
     const loaded = [];
+    let extractorSummary = '';
+
     for(const file of files){
       let parsed = JSON.parse(await file.text());
-      if(type === 'sipoc') parsed = normalizeSipocJsonAsInterview(parsed);
+
+      if(!parsed || typeof parsed !== 'object' || Array.isArray(parsed)){
+        throw new Error('El archivo ' + file.name + ' no contiene un JSON objeto válido.');
+      }
+
+      if(type === 'sipoc' && isExtractorSipocJson(parsed)){
+        const result = importFromExtractorJson(parsed);
+        const model = result?.model || state.asIsModel || createEmptyAsIsModel('existing_process_extractor');
+
+        extractorSummary = formatExtractorImportSummary(model);
+
+        loaded.push({
+          instrument: 'sgmp_sipoc_image_segmented_extractor',
+          source_type: 'existing_process_extractor',
+          extractor_json: parsed,
+          asIsModel: result.model,
+          __isExtractorImport: true,
+          __fileName: file.name,
+          __loadedAt: new Date().toISOString()
+        });
+
+        continue;
+      }
+
       if(parsed && typeof parsed === 'object'){
         parsed.__fileName = file.name;
         parsed.__loadedAt = new Date().toISOString();
+
+        if(type === 'statusInterview'){
+          parsed.source_type = parsed.source_type || 'documented_process_status_interview';
+          parsed.instrument = parsed.instrument || 'documented_process_status_interview';
+        }
+
         loaded.push(parsed);
       }
     }
-    const targetType = type === 'sipoc' ? 'interview' : type;
-    state.loads[targetType] = [...(state.loads[targetType] || []), ...loaded];
+
+    state.loads = state.loads || {};
+    state.loads[type] = [...(state.loads[type] || []), ...loaded];
+
     updateLoadKpis();
     refreshLoadViews();
-    showMsg('cargaMsg','ok',`Se agregaron ${loaded.length} archivo(s).`);
+
+    showMsg('cargaMsg','ok', extractorSummary || `Se agregaron ${loaded.length} archivo(s) en ${type}.`);
+
     return loaded;
   }catch(error){
     showMsg('cargaMsg','err',`No fue posible cargar archivo(s) en ${type}. Detalle: ${error.message}`);
@@ -11243,48 +11312,121 @@ async function loadInstrumentFiles(type){
   }
 }
 
+async function loadTxtInputFiles(inputId, targetType, fixedType){
+  const input = qs(inputId);
+  const files = Array.from((input?.files || []));
+
+  if(!files.length) return [];
+
+  const loaded = [];
+  const rejected = [];
+
+  for(const file of files){
+    const isTxt = /\.txt$/i.test(file.name) || (file.type || '') === 'text/plain';
+
+    if(!isTxt){
+      rejected.push(file.name);
+      continue;
+    }
+
+    let content = '';
+
+    try{
+      content = await file.text();
+    }catch(error){
+      rejected.push(file.name);
+      continue;
+    }
+
+    const sizeKb = Math.round((file.size || 0) / 1024);
+
+    loaded.push({
+      title: file.name.replace(/\.txt$/i, ''),
+      type: fixedType,
+      content,
+      name: file.name,
+      __fileName: file.name,
+      __loadedAt: new Date().toISOString(),
+      __summary: `Archivo TXT cargado (${content.length} caracteres)`,
+      __sizeLabel: `${sizeKb} KB`,
+      size: file.size || 0,
+      mime_type: file.type || 'text/plain',
+      editable: true
+    });
+  }
+
+  state.loads = state.loads || {};
+  state.loads[targetType] = [...(state.loads[targetType] || []), ...loaded];
+
+  if(rejected.length){
+    showMsg(
+      'cargaMsg',
+      'warn',
+      `Solo se permiten archivos .txt. No se cargaron: ${rejected.join(', ')}`
+    );
+  }
+
+  return loaded;
+}
+
 async function loadAllInputs(){
   const route = state.metadata?.route;
+
+  state.loads = state.loads || {};
+  state.loads.pre = state.loads.pre || [];
+  state.loads.interview = state.loads.interview || [];
+  state.loads.interviewTranscript = state.loads.interviewTranscript || [];
+  state.loads.sipoc = state.loads.sipoc || [];
+  state.loads.statusInterview = state.loads.statusInterview || [];
+  state.loads.docs = state.loads.docs || [];
+
   if(route === 'doc'){
     await loadInstrumentFiles('sipoc');
+    await loadInstrumentFiles('statusInterview');
   } else {
-    await loadInstrumentFiles('pre');
     await loadInstrumentFiles('interview');
+    await loadInstrumentFiles('pre');
+    await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista');
   }
-  const docs = Array.from((qs('docFiles')?.files || []));
-  const additions = [];
-  for(const file of docs){
-    const sizeKb = Math.round((file.size || 0) / 1024);
-    let preview = '';
-    if((file.type || '').startsWith('text/') || /\.(txt|md|json|csv|xml|html|js|css)$/i.test(file.name)){
-      try{ preview = (await file.text()).slice(0, 4000); }catch(e){ preview = ''; }
-    }
-    additions.push({ name:file.name, preview, __summary: preview ? `Vista previa disponible (${Math.min(preview.length,4000)} chars)` : 'Solo metadatos para evitar saturación', __sizeLabel: `${sizeKb} KB`, size:file.size || 0, type:file.type || '' });
-  }
-  if(additions.length){
-    state.loads.docs = [...(state.loads.docs || []), ...additions];
-  }
+
+  await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional');
+
   updateLoadKpis();
   refreshLoadViews();
-  if((state.loads.docs || []).length >= 10){
-    showMsg('cargaMsg','warn','Se cargó un volumen alto de archivos adicionales. El sistema conserva metadatos y vista previa para evitar saturación.');
-  } else if(additions.length) {
-    showMsg('cargaMsg','ok',`Se agregaron ${additions.length} archivo(s) adicionales sin reemplazar la carga previa.`);
-  }
-  ['filePre','fileInterview','fileSipoc','docFiles'].forEach(id => {
+
+  const inputsToClear = [
+    'filePre',
+    'fileInterview',
+    'fileInterviewTranscript',
+    'fileSipoc',
+    'fileStatusInterview',
+    'docFiles'
+  ];
+
+  inputsToClear.forEach(id => {
     const input = qs(id);
     if(input) input.value = '';
   });
+
   renderBriefValidation();
   renderAnalysisValidation();
   refreshCargaFlowState();
+
+  showMsg('cargaMsg','ok','Insumos cargados correctamente según la ruta seleccionada.');
 }
 
-
 function updateLoadKpis(){
-  if(qs('kpiPreLoads')) qs('kpiPreLoads').textContent = (state.loads.pre || []).length;
-  if(qs('kpiInterviewLoads')) qs('kpiInterviewLoads').textContent = (state.loads.interview || []).length;
-  if(qs('kpiDocLoads')) qs('kpiDocLoads').textContent = (state.loads.docs || []).length;
+  const preCount = (state.loads.pre || []).length;
+  const interviewCount = (state.loads.interview || []).length;
+  const transcriptCount = (state.loads.interviewTranscript || []).length;
+  const sipocCount = (state.loads.sipoc || []).length;
+  const statusCount = (state.loads.statusInterview || []).length;
+  const docCount = (state.loads.docs || []).length;
+
+  if(qs('kpiPreLoads')) qs('kpiPreLoads').textContent = preCount;
+  if(qs('kpiInterviewLoads')) qs('kpiInterviewLoads').textContent = interviewCount + transcriptCount + sipocCount + statusCount;
+  if(qs('kpiDocLoads')) qs('kpiDocLoads').textContent = docCount;
+
   refreshCargaFlowState();
 }
 
