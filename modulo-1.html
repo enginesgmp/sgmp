@@ -3507,7 +3507,7 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
     <button class="btn-ok" id="prep_generate_pre_btn" type="button">Generar cuestionario actores internos</button>
 
     <button class="btn" id="prep_open_extractor_btn" onclick="openSipocExtractorModule()" type="button" style="display:none">
-      Abrir Extractor SIPOC/PDF
+      Abrir Extractor SIPOC
     </button>
 
     <button class="btn-ok" id="prep_generate_interview_btn" type="button">Generar entrevista</button>
@@ -4571,18 +4571,20 @@ function updatePreparationArtifactsByRoute(){
     if(extractorBtn){
       extractorBtn.style.display = "";
       extractorBtn.disabled = false;
-      extractorBtn.title = "Abre el Extractor SIPOC/PDF para convertir documentación existente en JSON estructurado.";
+      extractorBtn.textContent = "Abrir Extractor SIPOC";
+      extractorBtn.title = "Abre el Extractor SIPOC para convertir documentación existente en JSON estructurado.";
     }
 
     if(intBtn){
       intBtn.style.display = "";
-      intBtn.textContent = "Generar entrevista status actual";
+      intBtn.disabled = false;
+      intBtn.textContent = "Generar entrevista de status actual";
       intBtn.title = "Genera una entrevista breve para validar el estado actual del proceso documentado.";
     }
 
     const note = document.querySelector("#prep_generation_card .note");
     if(note){
-      note.innerHTML = 'Para proceso documentado, primero usa el <strong>Extractor SIPOC/PDF</strong> y luego genera la <strong>entrevista status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.';
+      note.innerHTML = 'Para proceso documentado, usa el <strong>Extractor SIPOC</strong> y genera la <strong>entrevista de status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.';
     }
 
     return;
@@ -4591,6 +4593,7 @@ function updatePreparationArtifactsByRoute(){
   if(preBtn){
     preBtn.style.display = "";
     preBtn.disabled = false;
+    preBtn.textContent = "Generar cuestionario actores internos";
   }
 
   if(extractorBtn){
@@ -4600,13 +4603,14 @@ function updatePreparationArtifactsByRoute(){
 
   if(intBtn){
     intBtn.style.display = "";
+    intBtn.disabled = false;
     intBtn.textContent = "Generar entrevista guía";
     intBtn.title = "Genera la entrevista guía para levantamiento de proceso nuevo.";
   }
 
   const note = document.querySelector("#prep_generation_card .note");
   if(note){
-    note.innerHTML = 'Después de usar los instrumentos, vuelve al LMP y carga los JSON en la etapa <strong>Carga y consolidación</strong>.';
+    note.innerHTML = 'Para proceso nuevo, genera el <strong>cuestionario de actores internos</strong> y la <strong>entrevista guía</strong>. Después carga los JSON y la transcripción TXT en <strong>Carga y consolidación</strong>.';
   }
 }
       
@@ -4704,20 +4708,11 @@ window.hydratePreparationFromState = hydratePreparationFromState;
       <strong>Proceso documentado</strong>
       <span class="status-badge">Extractor + status del proceso</span>
     </div>
-<div class="note">
-  Usa el Extractor SIPOC/PDF para convertir el proceso documentado en JSON estructurado. Luego carga ese JSON en el campo correspondiente.
-</div>
-
-<div class="actions" style="border-top:none;padding-top:0;margin-top:12px">
-  <div class="actions-left">
-    <button class="btn" onclick="openSipocExtractorModule()" type="button">Abrir Extractor SIPOC</button>
-  </div>
-</div>
     <div class="field-grid">
       <div class="field w-12">
         <label>JSON de SIPOC / flujo estructurado desde Extractor</label>
         <div class="drop-zone" data-input="fileSipoc">
-          Arrastra el JSON generado por el Extractor SIPOC/PDF o elige archivo
+          Arrastra el JSON generado por el Extractor SIPOC o elige archivo
           <input accept=".json" id="fileSipoc" multiple type="file"/>
         </div>
       </div>
@@ -4764,11 +4759,12 @@ window.hydratePreparationFromState = hydratePreparationFromState;
   <h3>Consolidado de insumos</h3>
   <p>Consolida preparación, contexto y archivos cargados en una entrada temporal para Prompt A. Este consolidado no alimenta directamente el AS-IS.</p>
 
-  <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-    <div class="actions-left">
-      <button class="btn" id="btnBuildPromptAInput" onclick="preparePromptAConsolidatedInput()" type="button">Consolidar insumos</button>
-    </div>
+<div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+  <div class="actions-left">
+    <button class="btn" id="btnBuildPromptAInput" onclick="preparePromptAConsolidatedInput()" type="button">Consolidar insumos</button>
+    <button class="btn-ghost" id="btnCopyPromptAInput" onclick="copyPromptAConsolidatedInput()" type="button">Copiar</button>
   </div>
+</div>
 
   <div class="box" id="promptAConsolidatedStatus" style="margin-top:14px;min-height:110px">
     Aún no se ha consolidado la información.
@@ -11142,6 +11138,42 @@ async function runPromptAWithAI(){
   }
 }
 
+
+function copyPromptAConsolidatedInput(){
+  try{
+    let text = '';
+
+    if(qs('masterEditor') && qs('masterEditor').value.trim()){
+      text = qs('masterEditor').value.trim();
+    }else if(state.promptAInput){
+      text = JSON.stringify(state.promptAInput, null, 2);
+    }
+
+    if(!text){
+      showMsg('cargaMsg','warn','Primero consolida los insumos.');
+      return;
+    }
+
+    navigator.clipboard.writeText(text)
+      .then(function(){
+        showMsg('cargaMsg','ok','Consolidado copiado correctamente.');
+      })
+      .catch(function(){
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        temp.remove();
+        showMsg('cargaMsg','ok','Consolidado copiado correctamente.');
+      });
+
+  }catch(error){
+    showMsg('cargaMsg','err','No fue posible copiar el consolidado. Detalle: ' + error.message);
+  }
+}  
+
+  
 // Compatibilidad temporal: si algún botón viejo llama esta función, ejecuta el flujo nuevo.
 function generateBriefPromptFromMaster(){
   return runPromptAWithAI();
