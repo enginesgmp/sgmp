@@ -6920,17 +6920,30 @@ function buildMaster(){
 function saveMasterAndContinue(){
   try{
     if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
+      const rawText = qs('briefResponseEditor')?.value.trim() || '';
+
+      if(rawText){
+        processBriefResponse();
+      }
+    }
+
+    if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
       showMsg(
         'cargaMsg',
         'warn',
-        'Primero procesa y aprueba el JSON generado por Prompt A. El AS-IS solo puede cargarse desde as_is_process.'
+        'Primero pega, valida y aplica el JSON generado por Prompt A. El AS-IS solo puede cargarse desde as_is_process.'
       );
       return;
     }
 
-    goToNext('carga');
+    applyBriefToLmp();
+
   }catch(error){
-    showMsg('cargaMsg','err',`No fue posible continuar. Detalle: ${error.message}`);
+    showMsg(
+      'cargaMsg',
+      'err',
+      'No fue posible continuar hacia AS-IS. Detalle: ' + error.message
+    );
   }
 }
 
@@ -7753,31 +7766,69 @@ function asArray(value){
 
 function canonicalActivityType(value){
   const raw = normalizeContractString(value).toLowerCase();
-  if(['operation','decision','control','document','end'].includes(raw)) return raw;
+
+  if(raw === 'decision') return 'decision';
+  if(raw === 'decisión') return 'decision';
   if(raw.includes('decis')) return 'decision';
-  if(raw.includes('control') || raw.includes('valid')) return 'control';
-  if(raw.includes('document')) return 'document';
-  if(raw.includes('end') || raw.includes('fin')) return 'end';
-  return 'operation';
+
+  return 'actividad';
 }
 
 function buildSipocActivities(){
-  const source = safeArray(state.asis?.activities || []).map(normalizeActivity).filter(a => a.name);
-  return source.map((a, idx, arr) => ({
-    name: normalizeContractString(a.name || a.title || ''),
-    type: canonicalActivityType(a.type),
-    actor: normalizeCatalogValue(a.actor || a.owner || ''),
-    document: normalizeCatalogValue(a.document || ''),
-    previous: a.previous?.length ? a.previous.map(normalizeContractString).filter(Boolean) : (idx === 0 ? [] : [normalizeContractString(arr[idx - 1].name || arr[idx - 1].title || '')].filter(Boolean)),
-    next: a.next?.length ? a.next.map(normalizeContractString).filter(Boolean) : (idx === arr.length - 1 ? [] : [normalizeContractString(arr[idx + 1].name || arr[idx + 1].title || '')].filter(Boolean)),
-    ext_suppliers: dedupeCatalog(a.ext_suppliers || []),
-    ext_inputs: dedupeCatalog(a.ext_inputs || []),
-    ext_outputs: dedupeCatalog(a.ext_outputs || []),
-    ext_customers: dedupeCatalog(a.ext_customers || []),
-    is_start: a.is_start || idx === 0,
-    is_end: a.is_end || idx === arr.length - 1,
-    note: normalizeContractString(a.note || a.problems || '')
-  }));
+  const source = safeArray(state.asis?.activities || [])
+    .map(normalizeActivity)
+    .filter(a => a.name);
+
+  return source.map((a) => {
+    const previous = safeArray(a.previous)
+      .map(normalizeContractString)
+      .filter(Boolean);
+
+    const next = safeArray(a.next)
+      .map(normalizeContractString)
+      .filter(Boolean);
+
+    const inputsUsed = dedupeCatalog(
+      a.inputs_used ||
+      a.inputsUsed ||
+      a.ext_inputs ||
+      []
+    );
+
+    const outputsGenerated = dedupeCatalog(
+      a.outputs_generated ||
+      a.outputsGenerated ||
+      a.ext_outputs ||
+      []
+    );
+
+    return {
+      id: normalizeContractString(a.id || ''),
+      name: normalizeContractString(a.name || a.title || ''),
+      type: canonicalActivityType(a.type),
+      actor: normalizeCatalogValue(a.actor || a.owner || ''),
+      document: normalizeCatalogValue(a.document || ''),
+
+      previous,
+      next,
+
+      inputs_used: inputsUsed,
+      outputs_generated: outputsGenerated,
+
+      observations: normalizeContractString(
+        a.observations ||
+        a.note ||
+        a.problems ||
+        ''
+      ),
+
+      clarifying_notes: safeArray(a.clarifying_notes || a.clarifyingNotes)
+        .map(normalizeContractString)
+        .filter(Boolean),
+
+      editable: a.editable !== false
+    };
+  });
 }
 
 function buildSipocNotes(){
@@ -11374,45 +11425,46 @@ ${JSON.stringify(tobe, null, 2)}`;
 
 
 function buildSbContractBuilderInput(){
-  const master = state.master || {};
-  const analysis = state.analysis || {};
   return {
     context: state.context || {},
-    brief: state.briefReview?.raw || state.brief || null,
-    master,
-    analysis,
-    asis: { activities: safeArray(state.asis?.activities) },
-    sipoc: master.sipoc || {},
-    master_activities: safeArray(master.activities),
-    analysis_activities: safeArray(analysis.activities || analysis.raw?.as_is?.activities),
-    existing_sb_contract: master.sb_contract || analysis.sbContract || analysis.raw?.sb_contract || null
+    as_is_process: state.asIsProcess?.as_is_process || null,
+    asis: {
+      activities: safeArray(state.asis?.activities),
+      suppliers_inputs: safeArray(state.asis?.suppliers_inputs),
+      outputs_customers: safeArray(state.asis?.outputs_customers),
+      additional_information: safeArray(state.asis?.additional_information)
+    },
+    analysis: state.analysis || {},
+    existing_sb_contract: state.sbContract || null
   };
 }
-
+  
 function buildSbContractBuilderPrompt(){
   const input = buildSbContractBuilderInput();
+
   const fallback = [
-    'ACTUA COMO builder contractual final LMP -> SIPOC Builder.',
+    'ACTÚA COMO builder contractual final LMP -> SIPOC Builder.',
     '',
     'OBJETIVO:',
-    'Construir exactamente el JSON que consume SIPOC Builder, sin cambiar el contrato y sin omitir informacion operacional disponible.',
+    'Construir exactamente el JSON que consume SIPOC Builder usando el AS-IS validado del LMP.',
     '',
-    'REGLAS CRITICAS:',
-    '- Devuelve SOLO JSON valido.',
-    '- La raiz debe ser { "sipoc_input": { ... } }.',
+    'REGLAS CRÍTICAS:',
+    '- Devuelve SOLO JSON válido.',
+    '- La raíz debe ser { "sipoc_input": { ... } }.',
     '- Debe existir al menos una actividad.',
-    '- Debe existir exactamente un is_start = true.',
-    '- Debe existir exactamente un is_end = true.',
-    '- actors debe construirse desde activities.actor.',
-    '- suppliers debe construirse desde activities.ext_suppliers.',
-    '- inputs debe construirse desde activities.ext_inputs.',
-    '- outputs debe construirse desde activities.ext_outputs.',
-    '- customers debe construirse desde activities.ext_customers.',
-    '- No dejes listas vacias si existe informacion en actividades.',
-    '- previous y next deben referenciar nombres reales de actividades.',
-    '- Cada actividad debe incluir: name, type, actor, document, previous, next, ext_suppliers, ext_inputs, ext_outputs, ext_customers, is_start, is_end, note.',
-    '- type debe ser uno de: operation, decision, control, document, end.',
-    '- No agregues campos fuera de sipoc_input.',
+    '- No generes start_event.',
+    '- No generes end_event.',
+    '- No generes is_start.',
+    '- No generes is_end.',
+    '- No generes order.',
+    '- No inventes una actividad inicial o final.',
+    '- Este es un SIPOC híbrido: puede tener varias entradas y varias salidas.',
+    '- previous y next deben referenciar nombres reales de actividades existentes.',
+    '- inputs_used debe contener entradas/documentos/sistemas usados por la actividad.',
+    '- outputs_generated debe contener salidas/documentos/reportes/resultados generados por la actividad.',
+    '- type solo puede ser "actividad" o "decision".',
+    '- No uses operation, control, document, end, start, inicio ni fin como tipo.',
+    '- No agregues campos fuera de sipoc_input salvo que el contrato oficial del SB lo requiera.',
     '',
     'CONTRATO ESPERADO:',
     '{',
@@ -11420,8 +11472,6 @@ function buildSbContractBuilderPrompt(){
     '    "process_code": "",',
     '    "process_name": "",',
     '    "purpose": "",',
-    '    "start_event": "",',
-    '    "end_event": "",',
     '    "notes": "",',
     '    "suppliers": [],',
     '    "inputs": [],',
@@ -11433,10 +11483,12 @@ function buildSbContractBuilderPrompt(){
     '  }',
     '}'
   ].join('\n');
+
   const staticBase = sgmpPrompt('prompt_sb_contract_builder', fallback);
+
   return staticBase + '\n\nINSUMOS LMP PARA CONSTRUIR EL CONTRATO FINAL:\n' + JSON.stringify(input, null, 2);
 }
-
+  
 async function generateSbContractBuilderPrompt(){
   const prompt = buildSbContractBuilderPrompt();
   if(sgmpGlobalApiEnabled() && sgmpStageUseApi('lmp_sb_contract')){
@@ -11467,47 +11519,115 @@ async function generateSbContractBuilderPrompt(){
 
 function normalizeSbContractBuilderPayload(parsed){
   const source = parsed || {};
-  const sipocInput = firstObject(source.sipoc_input, source.sb_contract?.sipoc_input, source.sbContract?.sipoc_input, source.sipoc_builder_ready?.sipoc_input, source.sipocBuilderReady?.sipoc_input, source);
-  const rawActivities = safeArray(sipocInput.activities).map(normalizeActivity).filter(a => a.name);
-  const names = rawActivities.map(a => a.name);
-  const nameSet = new Set(names.map(n => n.toLowerCase()));
-  const activities = rawActivities.map((activity, index, arr) => {
-    const previous = normalizeRelationList(activity.previous).filter(name => nameSet.has(name.toLowerCase()));
-    const next = normalizeRelationList(activity.next).filter(name => nameSet.has(name.toLowerCase()));
+
+  const sipocInput = firstObject(
+    source.sipoc_input,
+    source.sb_contract?.sipoc_input,
+    source.sbContract?.sipoc_input,
+    source.sipoc_builder_ready?.sipoc_input,
+    source.sipocBuilderReady?.sipoc_input,
+    source
+  );
+
+  const rawActivities = safeArray(sipocInput.activities)
+    .map(normalizeActivity)
+    .filter(a => a.name);
+
+  const nameSet = new Set(
+    rawActivities
+      .map(a => normalizeContractString(a.name).toLowerCase())
+      .filter(Boolean)
+  );
+
+  const activities = rawActivities.map((activity) => {
+    const previous = normalizeRelationList(activity.previous)
+      .filter(name => nameSet.has(name.toLowerCase()));
+
+    const next = normalizeRelationList(activity.next)
+      .filter(name => nameSet.has(name.toLowerCase()));
+
+    const inputsUsed = dedupeCatalog(
+      activity.inputs_used ||
+      activity.inputsUsed ||
+      activity.ext_inputs ||
+      []
+    );
+
+    const outputsGenerated = dedupeCatalog(
+      activity.outputs_generated ||
+      activity.outputsGenerated ||
+      activity.ext_outputs ||
+      []
+    );
+
     return {
+      id: normalizeContractString(activity.id || ''),
       name: normalizeContractString(activity.name),
       type: canonicalActivityType(activity.type),
       actor: normalizeCatalogValue(activity.actor),
       document: normalizeCatalogValue(activity.document),
-      previous: previous.length ? previous : (index === 0 ? [] : [arr[index - 1].name]),
-      next: next.length ? next : (index === arr.length - 1 ? [] : [arr[index + 1].name]),
-      ext_suppliers: dedupeCatalog(activity.ext_suppliers),
-      ext_inputs: dedupeCatalog(activity.ext_inputs),
-      ext_outputs: dedupeCatalog(activity.ext_outputs),
-      ext_customers: dedupeCatalog(activity.ext_customers),
-      is_start: !!activity.is_start,
-      is_end: !!activity.is_end,
-      note: normalizeContractString(activity.note)
+
+      previous,
+      next,
+
+      inputs_used: inputsUsed,
+      outputs_generated: outputsGenerated,
+
+      observations: normalizeContractString(
+        activity.observations ||
+        activity.note ||
+        activity.problems ||
+        ''
+      ),
+
+      clarifying_notes: safeArray(activity.clarifying_notes || activity.clarifyingNotes)
+        .map(normalizeContractString)
+        .filter(Boolean),
+
+      editable: activity.editable !== false
     };
   });
+
+  const suppliersInputs = safeArray(state.asis?.suppliers_inputs);
+  const outputsCustomers = safeArray(state.asis?.outputs_customers);
+
   const activityActors = dedupeCatalog(activities.map(a => a.actor));
-  const activitySuppliers = dedupeCatalog(activities.flatMap(a => a.ext_suppliers));
-  const activityInputs = dedupeCatalog(activities.flatMap(a => a.ext_inputs));
-  const activityOutputs = dedupeCatalog(activities.flatMap(a => a.ext_outputs));
-  const activityCustomers = dedupeCatalog(activities.flatMap(a => a.ext_customers));
+  const activityInputs = dedupeCatalog(activities.flatMap(a => a.inputs_used));
+  const activityOutputs = dedupeCatalog(activities.flatMap(a => a.outputs_generated));
   const activityDocuments = dedupeCatalog(activities.map(a => a.document));
+
+  const suppliers = dedupeCatalog([
+    ...safeArray(sipocInput.suppliers),
+    ...suppliersInputs.map(row => row?.supplier)
+  ]);
+
+  const inputs = dedupeCatalog([
+    ...safeArray(sipocInput.inputs),
+    ...suppliersInputs.flatMap(row => safeArray(row?.inputs)),
+    ...activityInputs
+  ]);
+
+  const outputs = dedupeCatalog([
+    ...safeArray(sipocInput.outputs),
+    ...outputsCustomers.map(row => row?.output),
+    ...activityOutputs
+  ]);
+
+  const customers = dedupeCatalog([
+    ...safeArray(sipocInput.customers),
+    ...outputsCustomers.flatMap(row => safeArray(row?.customers))
+  ]);
+
   return {
     sipoc_input: {
       process_code: normalizeContractString(sipocInput.process_code || state.context?.processCode || ''),
       process_name: normalizeContractString(sipocInput.process_name || state.context?.processName || ''),
       purpose: normalizeContractString(sipocInput.purpose || state.context?.purpose || ''),
-      start_event: normalizeContractString(sipocInput.start_event || sipocInput.startEvent || (activities[0] ? 'Inicio en: ' + activities[0].name : '')),
-      end_event: normalizeContractString(sipocInput.end_event || sipocInput.endEvent || (activities[activities.length - 1] ? 'Cierre en: ' + activities[activities.length - 1].name : '')),
       notes: normalizeContractString(sipocInput.notes || ''),
-      suppliers: activitySuppliers.length ? activitySuppliers : dedupeCatalog(sipocInput.suppliers),
-      inputs: activityInputs.length ? activityInputs : dedupeCatalog(sipocInput.inputs),
-      outputs: activityOutputs.length ? activityOutputs : dedupeCatalog(sipocInput.outputs),
-      customers: activityCustomers.length ? activityCustomers : dedupeCatalog(sipocInput.customers),
+      suppliers,
+      inputs,
+      outputs,
+      customers,
       actors: activityActors.length ? activityActors : dedupeCatalog(sipocInput.actors),
       documents: activityDocuments.length ? activityDocuments : dedupeCatalog(sipocInput.documents),
       activities
@@ -11833,14 +11953,14 @@ function refreshCargaFlowState(){
     ? hasDocumentedProcessInputs
     : hasNewProcessInputs;
 
-  const hasPromptAInput = !!(
-    state.promptAInput ||
-    (qs('masterEditor') && qs('masterEditor').value.trim())
-  );
-
   const hasPromptA = !!(
     qs('briefPromptEditor') &&
     qs('briefPromptEditor').value.trim()
+  );
+
+  const hasPromptAResponse = !!(
+    qs('briefResponseEditor') &&
+    qs('briefResponseEditor').value.trim()
   );
 
   const hasAsIsProcess = !!(
@@ -11850,77 +11970,50 @@ function refreshCargaFlowState(){
 
   const asIsApproved = !!state.asIsProcessApproved;
 
-  const btnBuildPromptAInput = qs('btnBuildPromptAInput');
+  // Bloqueo visual por ruta
+  qs('newProcessLoadPanel')?.classList.toggle('locked', isDocumentedProcess);
+  qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewProcess);
+
   const btnGenerateBriefPrompt = qs('btnGenerateBriefPrompt');
-  const btnCopyMaster = qs('btnCopyMaster');
   const btnCopyBriefPrompt = qs('btnCopyBriefPrompt');
   const btnProcessBrief = qs('btnProcessBrief');
-  const btnApproveBrief = qs('btnApproveBrief');
-
-  if(btnBuildPromptAInput){
-    btnBuildPromptAInput.disabled = !hasLoads;
-    btnBuildPromptAInput.title = hasLoads
-      ? ''
-      : 'Primero carga al menos un insumo.';
-  }
-
-  if(btnCopyMaster){
-    btnCopyMaster.disabled = !hasPromptAInput;
-  }
+  const btnApplyBrief = qs('btnApplyBrief');
 
   if(btnGenerateBriefPrompt){
     btnGenerateBriefPrompt.disabled = !hasLoads;
     btnGenerateBriefPrompt.title = hasLoads
       ? ''
-      : 'Primero carga insumos para generar la entrada de Prompt A.';
+      : 'Primero carga insumos para generar el Prompt A.';
   }
 
   if(btnCopyBriefPrompt){
     btnCopyBriefPrompt.disabled = !hasPromptA;
+    btnCopyBriefPrompt.title = hasPromptA
+      ? ''
+      : 'Primero genera el Prompt A.';
   }
 
   if(btnProcessBrief){
-    const hasResponse = !!(
-      qs('briefResponseEditor') &&
-      qs('briefResponseEditor').value.trim()
-    );
-
-    btnProcessBrief.disabled = !hasResponse;
-    btnProcessBrief.title = hasResponse
+    btnProcessBrief.disabled = !hasPromptAResponse;
+    btnProcessBrief.title = hasPromptAResponse
       ? ''
-      : 'Pega primero el JSON as_is_process generado por Prompt A.';
+      : 'Pega primero el JSON generado por Prompt A.';
   }
 
-  if(btnApproveBrief){
-    btnApproveBrief.disabled = !hasAsIsProcess;
-    btnApproveBrief.title = hasAsIsProcess
+  if(btnApplyBrief){
+    btnApplyBrief.disabled = !hasAsIsProcess && !hasPromptAResponse;
+    btnApplyBrief.title = hasAsIsProcess || hasPromptAResponse
       ? ''
-      : 'Primero procesa un as_is_process válido.';
+      : 'Primero pega y valida el JSON generado por Prompt A.';
   }
 
   const continueButtons = document.querySelectorAll('button[onclick="saveMasterAndContinue()"]');
   continueButtons.forEach(btn => {
-    btn.disabled = !hasAsIsProcess;
-    btn.title = hasAsIsProcess
+    btn.disabled = !hasAsIsProcess && !hasPromptAResponse;
+    btn.title = hasAsIsProcess || hasPromptAResponse
       ? ''
-      : 'Primero procesa y aprueba el as_is_process desde Prompt A.';
+      : 'Primero pega y valida el JSON generado por Prompt A.';
   });
-
-  const routeLabel = isDocumentedProcess
-    ? 'Proceso documentado'
-    : 'Proceso nuevo';
-
-  const statusPieces = [
-    `Ruta: ${routeLabel}`,
-    `Cuestionarios: ${preCount}`,
-    `Entrevista guía: ${interviewCount}`,
-    `Transcripción: ${transcriptCount}`,
-    `Extractor/SIPOC: ${sipocCount}`,
-    `Entrevista status: ${statusInterviewCount}`,
-    `TXT adicionales: ${docsCount}`,
-    `as_is_process: ${hasAsIsProcess ? 'procesado' : 'pendiente'}`,
-    `Aprobado: ${asIsApproved ? 'sí' : 'no'}`
-  ];
 
   if(qs('sumMaster')){
     qs('sumMaster').textContent = hasAsIsProcess
@@ -11933,11 +12026,18 @@ function refreshCargaFlowState(){
   return {
     route,
     hasLoads,
-    hasPromptAInput,
     hasPromptA,
+    hasPromptAResponse,
     hasAsIsProcess,
     asIsApproved,
-    status: statusPieces.join(' · ')
+    counts: {
+      questionnaires: preCount,
+      interview: interviewCount,
+      transcript: transcriptCount,
+      sipoc: sipocCount,
+      statusInterview: statusInterviewCount,
+      docs: docsCount
+    }
   };
 }
 
