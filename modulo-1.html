@@ -3502,10 +3502,17 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
 <h3>Generación de instrumentos</h3>
 <p>Cada botón genera un HTML externo independiente, con contexto precargado, listo para descargarse y usarse fuera del LMP.</p>
 <div class="pill-row"><span class="pill">HTML externos</span><span class="pill">Retorno vía JSON</span></div>
-<div class="actions" style="margin-top:16px;"><div class="actions-left">
-<button class="btn-ok" id="prep_generate_pre_btn" type="button">Generar cuestionario actores internos</button>
-<button class="btn-ok" id="prep_generate_interview_btn" type="button">Generar entrevista</button>
-</div></div>
+<div class="actions" style="margin-top:16px;">
+  <div class="actions-left">
+    <button class="btn-ok" id="prep_generate_pre_btn" type="button">Generar cuestionario actores internos</button>
+
+    <button class="btn" id="prep_open_extractor_btn" onclick="openSipocExtractorModule()" type="button" style="display:none">
+      Abrir Extractor SIPOC/PDF
+    </button>
+
+    <button class="btn-ok" id="prep_generate_interview_btn" type="button">Generar entrevista</button>
+  </div>
+</div>
 <div class="note">Después de usar los instrumentos, vuelve al LMP y carga los JSON en la etapa <strong>Carga y consolidación</strong>.</div>
 </article>
 <article class="card" id="prep_summary_card" style="display:none">
@@ -4486,8 +4493,8 @@ function generateInterviewFromPreparation(){
 
   if(route === 'doc'){
     const html = buildDocumentedStatusInterviewHTML(context);
-    prepDownloadGeneratedHtml("lmp_entrevista_status_proceso_documentado.html", html);
-    prepShowMessage("ok", "HTML de entrevista breve de status generado y descargado correctamente.");
+prepDownloadGeneratedHtml("lmp_entrevista_status_actual_proceso_documentado.html", html);
+prepShowMessage("ok", "HTML de entrevista status actual generado y descargado correctamente.");
     return;
   }
 
@@ -4514,8 +4521,12 @@ function hydratePreparationFromState(){
         set("prep_purpose", c.purpose);
         set("ctx_observation", c.observation);
         if (typeof window.renderIndicatorsChips === "function") window.renderIndicatorsChips();
-        prepPreviewContext(getPreparationContext());
-      }
+prepPreviewContext(getPreparationContext());
+
+if(typeof updatePreparationArtifactsByRoute === "function"){
+  updatePreparationArtifactsByRoute();
+}
+}
 
       const saveBtn = document.getElementById("prep_save_btn");
       const preBtn = document.getElementById("prep_generate_pre_btn");
@@ -4548,6 +4559,7 @@ function updatePreparationArtifactsByRoute(){
   const route = state?.metadata?.route || 'new';
 
   const preBtn = document.getElementById("prep_generate_pre_btn");
+  const extractorBtn = document.getElementById("prep_open_extractor_btn");
   const intBtn = document.getElementById("prep_generate_interview_btn");
 
   if(route === 'doc'){
@@ -4556,15 +4568,21 @@ function updatePreparationArtifactsByRoute(){
       preBtn.disabled = true;
     }
 
+    if(extractorBtn){
+      extractorBtn.style.display = "";
+      extractorBtn.disabled = false;
+      extractorBtn.title = "Abre el Extractor SIPOC/PDF para convertir documentación existente en JSON estructurado.";
+    }
+
     if(intBtn){
       intBtn.style.display = "";
-      intBtn.textContent = "Generar entrevista breve de status del proceso";
-      intBtn.title = "Genera una entrevista breve para validar estado actual, problemas, desperdicios y oportunidades del proceso documentado.";
+      intBtn.textContent = "Generar entrevista status actual";
+      intBtn.title = "Genera una entrevista breve para validar el estado actual del proceso documentado.";
     }
 
     const note = document.querySelector("#prep_generation_card .note");
     if(note){
-      note.innerHTML = 'Para proceso documentado, usa el Extractor SIPOC desde <strong>Carga y consolidación</strong> y genera aquí la entrevista breve de status del proceso.';
+      note.innerHTML = 'Para proceso documentado, primero usa el <strong>Extractor SIPOC/PDF</strong> y luego genera la <strong>entrevista status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.';
     }
 
     return;
@@ -4575,9 +4593,14 @@ function updatePreparationArtifactsByRoute(){
     preBtn.disabled = false;
   }
 
+  if(extractorBtn){
+    extractorBtn.style.display = "none";
+    extractorBtn.disabled = true;
+  }
+
   if(intBtn){
     intBtn.style.display = "";
-    intBtn.textContent = "Generar entrevista";
+    intBtn.textContent = "Generar entrevista guía";
     intBtn.title = "Genera la entrevista guía para levantamiento de proceso nuevo.";
   }
 
@@ -4604,6 +4627,7 @@ function initializePreparationState(){
   } else {
     prepSetGeneratedEnabled(false);
   }
+  updatePreparationArtifactsByRoute();
 }
 updatePreparationArtifactsByRoute();
 if (typeof state !== "undefined") {
