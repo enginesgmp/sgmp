@@ -10947,6 +10947,129 @@ ENTRADA A PROCESAR:
 ${inputText}`;
 }
 
+function isLegacyDetailedInterviewJson(payload){
+  return !!(
+    payload &&
+    typeof payload === 'object' &&
+    (
+      payload.instrument === 'interview' ||
+      payload.legacyInstrument === 'interview'
+    ) &&
+    (
+      Array.isArray(payload.activities) ||
+      Array.isArray(payload.lmpSipocDraft?.activities)
+    )
+  );
+}
+
+function cleanLegacyRelationName(value){
+  return normalizeContractString(value)
+    .replace(/^ACT\.\s*(IN|OUT|SI|NO)\s*/i, '')
+    .replace(/^ACT\.\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeLegacyInterviewToAsIsSeed(payload){
+  const source = payload || {};
+  const draft = source.lmpSipocDraft || {};
+  const sipocStructured = source.sipocStructured || {};
+
+  const rawActivities = safeArray(
+    source.activities && source.activities.length
+      ? source.activities
+      : draft.activities
+  );
+
+  const activities = rawActivities
+    .map((activity, index) => {
+      const name = normalizeContractString(activity.name || activity.activity || '');
+      if(!name) return null;
+
+      return {
+        id: normalizeContractString(activity.id || ('ACT-' + String(index + 1).padStart(3, '0'))),
+        name,
+        type: canonicalActivityType(activity.type),
+        actor: normalizeCatalogValue(activity.actor || 'pendiente_validacion'),
+        document: normalizeCatalogValue(activity.document || ''),
+
+        previous: safeArray(activity.previous)
+          .map(cleanLegacyRelationName)
+          .filter(Boolean),
+
+        next: safeArray(activity.next)
+          .map(cleanLegacyRelationName)
+          .filter(Boolean),
+
+        inputs_used: dedupeCatalog(
+          activity.inputs_used ||
+          activity.inputsUsed ||
+          activity.ext_inputs ||
+          []
+        ),
+
+        outputs_generated: dedupeCatalog(
+          activity.outputs_generated ||
+          activity.outputsGenerated ||
+          activity.ext_outputs ||
+          []
+        ),
+
+        observations: normalizeContractString(
+          activity.observations ||
+          activity.note ||
+          ''
+        ),
+
+        clarifying_notes: [],
+        editable: true
+      };
+    })
+    .filter(Boolean);
+
+  const suppliersInputs = safeArray(sipocStructured.suppliers)
+    .map(row => ({
+      supplier: normalizeCatalogValue(row?.name || row?.supplier || ''),
+      inputs: dedupeCatalog([row?.input, ...(safeArray(row?.inputs))]),
+      source: 'legacy_interview',
+      editable: true
+    }))
+    .filter(row => row.supplier || row.inputs.length);
+
+  const outputsCustomers = safeArray(sipocStructured.customers)
+    .map(row => ({
+      output: normalizeCatalogValue(row?.output || ''),
+      customers: dedupeCatalog([row?.name, ...(safeArray(row?.customers))]),
+      source: 'legacy_interview',
+      editable: true
+    }))
+    .filter(row => row.output || row.customers.length);
+
+  return {
+    source_type: 'legacy_detailed_interview',
+    context: source.context || {},
+    as_is_process: {
+      source_route: 'legacy_detailed_interview',
+      activities,
+      suppliers_inputs: suppliersInputs,
+      outputs_customers: outputsCustomers,
+      additional_information: [
+        {
+          title: 'Contexto de entrevista antigua',
+          type: 'legacy_interview_context',
+          content: normalizeContractString(
+            source.analystObservations?.notes ||
+            source.interviewContext?.scope ||
+            ''
+          ),
+          editable: true
+        }
+      ]
+    },
+    legacy_original: source
+  };
+}
+  
 function buildPromptAInputPayload(){
   const route = state.metadata?.route === 'doc'
     ? 'existing_documented_process'
@@ -10967,7 +11090,12 @@ function buildPromptAInputPayload(){
       ? state.context.globalIndicators
       : []
   };
-
+const legacyInterviewSeeds = [
+  ...safeArray(state.loads?.interview),
+  ...safeArray(state.loads?.sipoc)
+]
+  .filter(isLegacyDetailedInterviewJson)
+  .map(normalizeLegacyInterviewToAsIsSeed);
   const payload = {
     source_route: route,
     primary_source_type: route === 'existing_documented_process'
@@ -10981,6 +11109,7 @@ function buildPromptAInputPayload(){
       questionnaires: safeArray(state.loads?.pre),
       extractor_json: safeArray(state.loads?.sipoc),
       documented_process_status_interview: safeArray(state.loads?.statusInterview),
+      legacy_detailed_interview_seed: legacyInterviewSeeds,
       additional_txt_files: safeArray(state.loads?.docs)
     }
   };
@@ -11006,6 +11135,7 @@ function preparePromptAConsolidatedInput(){
         transcripciones: safeArray(payload.input_data?.leader_interview_transcript).length,
         extractor_sipoc: safeArray(payload.input_data?.extractor_json).length,
         entrevista_status: safeArray(payload.input_data?.documented_process_status_interview).length,
+        entrevistas_legacy_detalladas: safeArray(payload.input_data?.legacy_detailed_interview_seed).length,
         txt_adicionales: safeArray(payload.input_data?.additional_txt_files).length
       };
 
