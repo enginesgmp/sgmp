@@ -4495,7 +4495,6 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="msg" id="cargaMsg"></div>
 </article>
 
-<article class="card half">
 <article class="card">
   <h3>Prompt A · Consolidado con IA</h3>
   <p>Genera el Prompt A desde Google Sheets/API usando el contexto de preparación y todos los insumos cargados. El consolidado temporal no alimenta directamente el AS-IS.</p>
@@ -11103,6 +11102,102 @@ function approveBriefAndUnlockAnalysis(){
   }
 }
 
+function applyBriefToLmp(){
+  try{
+    let payload = state.asIsProcess;
+
+    // Si todavía no se ha procesado el JSON, intenta procesarlo primero desde el cuadro de respuesta.
+    if(!(payload && payload.as_is_process)){
+      const rawText = qs('briefResponseEditor')?.value.trim() || '';
+
+      if(!rawText){
+        showMsg(
+          'briefIaMsg',
+          'warn',
+          'Primero pega el JSON generado por Prompt A y presiona Validar JSON.'
+        );
+        return;
+      }
+
+      processBriefResponse();
+      payload = state.asIsProcess;
+    }
+
+    if(!(payload && payload.as_is_process)){
+      showMsg(
+        'briefIaMsg',
+        'err',
+        'No fue posible aplicar al LMP porque no existe un as_is_process válido.'
+      );
+      return;
+    }
+
+    const normalized = normalizePromptAAsIsProcess(payload);
+    const issues = validatePromptAAsIsProcess(normalized);
+
+    applyPromptAAsIsProcess(normalized);
+
+    state.asIsProcessApproved = issues.length === 0;
+    state.briefReview = {
+      raw: normalized,
+      approved: issues.length === 0,
+      type: 'as_is_process',
+      issues
+    };
+
+    renderBriefValidation();
+
+    const loader = qs('briefApplyLoader');
+    if(loader) loader.classList.remove('hidden');
+
+    setTimeout(function(){
+      if(loader) loader.classList.add('hidden');
+
+      showMsg(
+        'briefIaMsg',
+        issues.length ? 'warn' : 'ok',
+        issues.length
+          ? 'JSON aplicado al LMP con vacíos estructurales. Revisa y corrige en Proceso AS-IS.'
+          : 'JSON aplicado correctamente al LMP. Proceso AS-IS listo para revisión.'
+      );
+
+      showSection('asis');
+
+      if(typeof renderAsIsActivities === 'function'){
+        renderAsIsActivities();
+      }
+
+      if(typeof updateAsIsPreview === 'function'){
+        updateAsIsPreview();
+      }
+
+      if(typeof refreshCargaFlowState === 'function'){
+        refreshCargaFlowState();
+      }
+
+      if(typeof updateTopStatus === 'function'){
+        updateTopStatus();
+      }
+
+      showMsg(
+        'asisBuilderMsg',
+        issues.length ? 'warn' : 'ok',
+        issues.length
+          ? 'as_is_process aplicado con vacíos estructurales. Revisa el panel de validación AS-IS.'
+          : 'as_is_process aplicado correctamente al constructor AS-IS.'
+      );
+
+    }, 450);
+
+  }catch(error){
+    showMsg(
+      'briefIaMsg',
+      'err',
+      'No fue posible aplicar el JSON al LMP. Detalle: ' + error.message
+    );
+  }
+}
+  
 async function generateAnalysisPromptFromApprovedBrief(){
   if(!(state.briefReview && state.briefReview.raw)){ showMsg('cargaMsg','warn','Debes procesar y aprobar primero el Brief.'); return; }
   const brief = normalizeBriefPayload(state.briefReview.raw);
