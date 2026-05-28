@@ -13346,26 +13346,30 @@ async function loadInstrumentFiles(type){
 
   try{
     const loaded = [];
-    let extractorSummary = '';
 
     for(const file of files){
-      let parsed = JSON.parse(await file.text());
+      const parsed = JSON.parse(await file.text());
 
       if(!parsed || typeof parsed !== 'object' || Array.isArray(parsed)){
         throw new Error('El archivo ' + file.name + ' no contiene un JSON objeto válido.');
       }
 
-      if(type === 'sipoc' && isExtractorSipocJson(parsed)){
-        const result = importFromExtractorJson(parsed);
-        const model = result?.model || state.asIsModel || createEmptyAsIsModel('existing_process_extractor');
+      if(type === 'sipoc'){
+        const validation = validateSipocExtractorContract(parsed);
 
-        extractorSummary = formatExtractorImportSummary(model);
+        if(!validation.ok){
+          throw new Error(validation.errors.join(' | '));
+        }
+
+        const normalizedContract = validation.normalized || ensureSipocExtractorContract(parsed);
+        const normalized = normalizeSipocExtractorToLmpInstrument(normalizedContract);
 
         loaded.push({
+          ...normalized,
           instrument: 'sgmp_sipoc_image_segmented_extractor',
           source_type: 'existing_process_extractor',
           extractor_json: parsed,
-          asIsModel: result.model,
+          normalized_contract: normalizedContract,
           __isExtractorImport: true,
           __fileName: file.name,
           __loadedAt: new Date().toISOString()
@@ -13374,26 +13378,24 @@ async function loadInstrumentFiles(type){
         continue;
       }
 
-      if(parsed && typeof parsed === 'object'){
-        parsed.__fileName = file.name;
-        parsed.__loadedAt = new Date().toISOString();
+      parsed.__fileName = file.name;
+      parsed.__loadedAt = new Date().toISOString();
 
-        if(type === 'statusInterview'){
-          parsed.source_type = parsed.source_type || 'documented_process_status_interview';
-          parsed.instrument = parsed.instrument || 'documented_process_status_interview';
-        }
-
-        loaded.push(parsed);
+      if(type === 'statusInterview'){
+        parsed.source_type = parsed.source_type || 'documented_process_status_interview';
+        parsed.instrument = parsed.instrument || 'documented_process_status_interview';
       }
+
+      loaded.push(parsed);
     }
 
     state.loads = state.loads || {};
-    state.loads[type] = [...(state.loads[type] || []), ...loaded];
+    state.loads[type] = [...safeArray(state.loads[type]), ...loaded];
 
     updateLoadKpis();
     refreshLoadViews();
 
-    showMsg('cargaMsg','ok', extractorSummary || `Se agregaron ${loaded.length} archivo(s) en ${type}.`);
+    showMsg('cargaMsg','ok', `Se agregaron ${loaded.length} archivo(s) en ${type}.`);
 
     return loaded;
   }catch(error){
@@ -13488,16 +13490,7 @@ async function loadAllInputs(){
   updateLoadKpis();
   refreshLoadViews();
 
-  const inputsToClear = [
-    'filePre',
-    'fileInterview',
-    'fileInterviewTranscript',
-    'fileSipoc',
-    'fileStatusInterview',
-    'docFiles'
-  ];
-
-  inputsToClear.forEach(id => {
+  ['filePre','fileInterview','fileInterviewTranscript','fileSipoc','fileStatusInterview','docFiles'].forEach(id => {
     const input = qs(id);
     if(input) input.value = '';
   });
@@ -13513,19 +13506,11 @@ async function loadAllInputs(){
   refreshCargaFlowState();
 
   if(!totalLoaded){
-    showMsg(
-      'cargaMsg',
-      'warn',
-      'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
-    );
+    showMsg('cargaMsg','warn','No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.');
     return;
   }
 
-  showMsg(
-    'cargaMsg',
-    'ok',
-    `Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`
-  );
+  showMsg('cargaMsg','ok',`Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`);
 }
 
 function updateLoadKpis(){
