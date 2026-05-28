@@ -7355,6 +7355,194 @@ function asisActivityTemplate(a, index){
     </details>
   `;
 }
+  
+function normalizeActivityConnectionList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        activity: normalizeContractString(item),
+        connector: ''
+      };
+    }
+
+    return {
+      activity: normalizeContractString(item?.activity || item?.name || item?.target_activity || ''),
+      connector: normalizeContractString(item?.connector || '')
+    };
+  }).filter(row => row.activity);
+}
+
+function normalizeActivityInputList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        input: normalizeContractString(item),
+        supplier: 'pendiente_validacion'
+      };
+    }
+
+    return {
+      input: normalizeContractString(item?.input || item?.name || item?.entrada || ''),
+      supplier: normalizeContractString(item?.supplier || item?.provider || item?.proveedor || 'pendiente_validacion')
+    };
+  }).filter(row => row.input);
+}
+
+function normalizeActivityOutputList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        output: normalizeContractString(item),
+        customer: 'pendiente_validacion'
+      };
+    }
+
+    return {
+      output: normalizeContractString(item?.output || item?.name || item?.salida || ''),
+      customer: normalizeContractString(item?.customer || item?.client || item?.cliente || 'pendiente_validacion')
+    };
+  }).filter(row => row.output);
+}
+
+function renderActivityConnectionsRows(list, classPrefix, index, mode){
+  const rows = normalizeActivityConnectionList(list);
+
+  if(!rows.length){
+    rows.push({ activity: '', connector: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-8">
+          <label>Actividad ${mode === 'previous' ? 'previa' : 'siguiente'}</label>
+          <input class="${classPrefix}_activity" value="${escapeHtml(row.activity || '')}" placeholder="Nombre exacto de la actividad" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-4">
+          <label>Conector</label>
+          <select class="${classPrefix}_connector" onchange="syncAsisRow(${index})">
+            <option value="" ${!row.connector ? 'selected' : ''}>Sin conector</option>
+            <option value="SI" ${row.connector === 'SI' ? 'selected' : ''}>SI</option>
+            <option value="NO" ${row.connector === 'NO' ? 'selected' : ''}>NO</option>
+            <option value="OTRO" ${row.connector === 'OTRO' ? 'selected' : ''}>OTRO</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar conexión</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderActivityInputRows(list, index){
+  const rows = normalizeActivityInputList(list);
+
+  if(!rows.length){
+    rows.push({ input: '', supplier: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Entrada usada</label>
+          <input class="a_input_name" value="${escapeHtml(row.input || '')}" placeholder="Entrada recibida/usada" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-6">
+          <label>Proveedor de la entrada</label>
+          <input class="a_input_supplier" value="${escapeHtml(row.supplier || '')}" placeholder="Proveedor, área, actor o sistema" oninput="syncAsisRow(${index})" />
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar entrada</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderActivityOutputRows(list, index){
+  const rows = normalizeActivityOutputList(list);
+
+  if(!rows.length){
+    rows.push({ output: '', customer: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Salida generada</label>
+          <input class="a_output_name" value="${escapeHtml(row.output || '')}" placeholder="Salida generada/entregada" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-6">
+          <label>Cliente de la salida</label>
+          <input class="a_output_customer" value="${escapeHtml(row.customer || '')}" placeholder="Cliente, área, actor o receptor" oninput="syncAsisRow(${index})" />
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar salida</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function readActivityConnectionsFromRow(item, classPrefix){
+  return qsa('.' + classPrefix + '_row', item).map(row => ({
+    activity: row.querySelector('.' + classPrefix + '_activity')?.value?.trim() || '',
+    connector: row.querySelector('.' + classPrefix + '_connector')?.value?.trim() || ''
+  })).filter(row => row.activity);
+}
+
+function readActivityInputsFromRow(item){
+  return qsa('.a_input_row', item).map(row => ({
+    input: row.querySelector('.a_input_name')?.value?.trim() || '',
+    supplier: row.querySelector('.a_input_supplier')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.input);
+}
+
+function readActivityOutputsFromRow(item){
+  return qsa('.a_output_row', item).map(row => ({
+    output: row.querySelector('.a_output_name')?.value?.trim() || '',
+    customer: row.querySelector('.a_output_customer')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.output);
+}
+
+function addAsisDynamicRow(index, kind){
+  const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
+  if(!item) return;
+
+  const target = item.querySelector(`[data-dynamic-list="${kind}"]`);
+  if(!target) return;
+
+  let html = '';
+
+  if(kind === 'previous'){
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_previous', index, 'previous');
+  }
+
+  if(kind === 'next'){
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_next', index, 'next');
+  }
+
+  if(kind === 'inputs'){
+    html = renderActivityInputRows([{ input: '', supplier: '' }], index);
+  }
+
+  if(kind === 'outputs'){
+    html = renderActivityOutputRows([{ output: '', customer: '' }], index);
+  }
+
+  target.insertAdjacentHTML('beforeend', html);
+  syncAsisRow(index);
+}
+
+function removeAsisDynamicRow(button, index){
+  const row = button?.closest('.asis-dynamic-row');
+  if(row) row.remove();
+  syncAsisRow(index);
+}
+
 function normalizeActivityConnectionList(value){
   return safeArray(value).map(item => {
     if(typeof item === 'string'){
@@ -7571,18 +7759,6 @@ function readAsisRow(item){
   return activity.name ? activity : null;
 }
 
-function collectAsisActivities(){
-  state.asis = state.asis || {};
-  state.asis.activities = qsa('#asisActivities .activity-item').map(readAsisRow).filter(Boolean);
-  state.asis.additional_information = readAdditionalInformationRows();
-
-  renumberAsIsSequence(false);
-  updateAsIsPreview();
-  updateTopStatus();
-
-  return state.asis.activities;
-}
-
 function renderAdditionalInformationRows(){
   const container = qs('asisAdditionalInfo');
   if(!container) return;
@@ -7699,42 +7875,80 @@ function deleteAdditionalInformationRow(index){
   renderAdditionalInformationRows();
   updateAsIsPreview();
 }
+
+function collectAsisActivities(){
+  state.asis = state.asis || {};
+
+  state.asis.activities = qsa('#asisActivities .activity-item')
+    .map(readAsisRow)
+    .filter(Boolean);
+
+  if(typeof readAdditionalInformationRows === 'function'){
+    state.asis.additional_information = readAdditionalInformationRows();
+  }
+
+  renumberAsIsSequence(false);
+  updateAsIsPreview();
+  updateTopStatus();
+
+  return state.asis.activities;
+}
   
 function renderAsIsActivities(){
   const container = qs('asisActivities');
   if(!container) return;
+
+  state.asis = state.asis || {};
   container.innerHTML = '';
-  const activities = state.asis.activities || [];
+
+  const activities = safeArray(state.asis.activities);
+
   if(!activities.length){
     container.innerHTML = '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
-    renderAdditionalInformationRows();
+
+    if(typeof renderAdditionalInformationRows === 'function'){
+      renderAdditionalInformationRows();
+    }
+
     updateAsIsPreview();
     return;
   }
-  activities.forEach((a, index) => container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index)));
-  qsa('#asisActivities .activity-item').forEach((item, index) => refreshAsIsActivitySummary(item, index));
-  renderAdditionalInformationRows();
+
+  activities.forEach((a, index) => {
+    container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index));
+  });
+
+  qsa('#asisActivities .activity-item').forEach((item, index) => {
+    refreshAsIsActivitySummary(item, index);
+  });
+
+  if(typeof renderAdditionalInformationRows === 'function'){
+    renderAdditionalInformationRows();
+  }
+
   updateAsIsPreview();
 }
 
 function addAsisActivity(data = {}){
   collectAsisActivities();
-state.asis.activities.push(Object.assign({
-  id: 'A' + (state.asis.activities.length + 1),
-  name: '',
-  actor: '',
-  type: 'actividad',
-  document: '',
-  estimated_time: '',
-  previous: [],
-  next: [],
-  inputs_used: [],
-  outputs_generated: [],
-  clarifying_notes: [],
-  observations: '',
-  source: sourceRouteLabel(),
-  editable: true
-}, data || {}));
+
+  state.asis.activities.push(Object.assign({
+    id: 'A' + (state.asis.activities.length + 1),
+    name: '',
+    actor: '',
+    type: 'actividad',
+    document: '',
+    estimated_time: '',
+    previous: [],
+    next: [],
+    inputs_used: [],
+    outputs_generated: [],
+    clarifying_notes: [],
+    observations: '',
+    source: sourceRouteLabel(),
+    editable: true
+  }, data || {}));
+
   renumberAsIsSequence(false);
   renderAsIsActivities();
   openAsIsActivity(state.asis.activities.length - 1);
