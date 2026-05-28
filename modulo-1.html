@@ -4904,7 +4904,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="section-head">
 <div>
 <h2>AS IS · Constructor editable</h2>
-<p>Revisa y ajusta la secuencia AS IS interpretada por la IA. Puedes mover actividades hacia arriba o abajo, editar actores, tipos, tiempos, AVA, problemas, desperdicios y notas antes del análisis.</p>
+<p>Revisa y ajusta la secuencia AS IS interpretada por la IA. Revisa y ajusta la estructura AS-IS interpretada por la IA. Puedes editar actividades, actores, conexiones, entradas, salidas, tiempos estimados, notas aclaratorias, observaciones y más información levantada antes del análisis.</p>
 </div>
 <div class="step-pill">Paso 4</div>
 </div>
@@ -7793,15 +7793,30 @@ function openAsIsActivity(index){
 }
 
 function renumberAsIsSequence(showMessage = true){
-  const acts = state.asis.activities || [];
+  const acts = safeArray(state.asis?.activities);
+
   acts.forEach((a, idx) => {
-    a.id = 'A' + (idx + 1);
-    a.previous = idx === 0 ? [] : [acts[idx - 1].name || ('A' + idx)];
-    a.next = idx === acts.length - 1 ? [] : [acts[idx + 1].name || ('A' + (idx + 2))];
-    a.is_start = idx === 0;
-    a.is_end = idx === acts.length - 1;
+    if(!a.id){
+      a.id = 'A' + (idx + 1);
+    }
+
+    a.previous = normalizeActivityConnectionList(a.previous);
+    a.next = normalizeActivityConnectionList(a.next);
+    a.inputs_used = normalizeActivityInputList(a.inputs_used);
+    a.outputs_generated = normalizeActivityOutputList(a.outputs_generated);
+
+    delete a.is_start;
+    delete a.is_end;
+    delete a.start_event;
+    delete a.end_event;
+    delete a.order;
   });
-  if(showMessage) showMsg('asisBuilderMsg','ok','Secuencia AS IS recalculada.');
+
+  state.asis.activities = acts;
+
+  if(showMessage){
+    showMsg('asisBuilderMsg','ok','Actividades normalizadas sin alterar conexiones.');
+  }
 }
 
 function updateAsIsPreview(){
@@ -8364,60 +8379,32 @@ function canonicalActivityType(value){
 }
 
 function buildSipocActivities(){
-  const source = safeArray(state.asis?.activities || [])
-    .map(normalizeActivity)
-    .filter(a => a.name);
+  const activities = safeArray(state.asis?.activities);
 
-  return source.map((a) => {
-    const previous = safeArray(a.previous)
-      .map(normalizeContractString)
-      .filter(Boolean);
+  return activities
+    .map((activity, index) => {
+      const normalized = normalizeActivity(activity, index);
 
-    const next = safeArray(a.next)
-      .map(normalizeContractString)
-      .filter(Boolean);
+      return {
+        id: normalized.id,
+        name: normalized.name,
+        type: normalized.type,
+        actor: normalized.actor,
+        document: normalized.document,
+        estimated_time: normalized.estimated_time,
 
-    const inputsUsed = dedupeCatalog(
-      a.inputs_used ||
-      a.inputsUsed ||
-      a.ext_inputs ||
-      []
-    );
+        previous: normalizeActivityConnectionList(normalized.previous),
+        next: normalizeActivityConnectionList(normalized.next),
 
-    const outputsGenerated = dedupeCatalog(
-      a.outputs_generated ||
-      a.outputsGenerated ||
-      a.ext_outputs ||
-      []
-    );
+        inputs_used: normalizeActivityInputList(normalized.inputs_used),
+        outputs_generated: normalizeActivityOutputList(normalized.outputs_generated),
 
-    return {
-      id: normalizeContractString(a.id || ''),
-      name: normalizeContractString(a.name || a.title || ''),
-      type: canonicalActivityType(a.type),
-      actor: normalizeCatalogValue(a.actor || a.owner || ''),
-      document: normalizeCatalogValue(a.document || ''),
-
-      previous,
-      next,
-
-      inputs_used: inputsUsed,
-      outputs_generated: outputsGenerated,
-
-      observations: normalizeContractString(
-        a.observations ||
-        a.note ||
-        a.problems ||
-        ''
-      ),
-
-      clarifying_notes: safeArray(a.clarifying_notes || a.clarifyingNotes)
-        .map(normalizeContractString)
-        .filter(Boolean),
-
-      editable: a.editable !== false
-    };
-  });
+        observations: normalized.observations,
+        clarifying_notes: normalizePromptAList(normalized.clarifying_notes),
+        editable: normalized.editable !== false
+      };
+    })
+    .filter(activity => activity.name);
 }
 
 function buildSipocNotes(){
@@ -8550,39 +8537,98 @@ masterContext.observation ||
 state.context = Object.assign({}, current, resolved);
 return state.context;
 }
+
+function mergeSuppliersInputs(rows){
+  const map = new Map();
+
+  safeArray(rows).forEach(row => {
+    const supplier = normalizeCatalogValue(row?.supplier || 'pendiente_validacion');
+    const inputs = dedupeCatalog(row?.inputs || row?.input || []);
+
+    const key = supplier.toLowerCase();
+
+    if(!map.has(key)){
+      map.set(key, {
+        supplier,
+        inputs: [],
+        source: normalizeContractString(row?.source || 'asis'),
+        editable: row?.editable !== false
+      });
+    }
+
+    const current = map.get(key);
+    current.inputs = dedupeCatalog([...current.inputs, ...inputs]);
+  });
+
+  return Array.from(map.values()).filter(row => row.supplier || row.inputs.length);
+}
+
+function mergeOutputsCustomers(rows){
+  const map = new Map();
+
+  safeArray(rows).forEach(row => {
+    const output = normalizeCatalogValue(row?.output || 'pendiente_validacion');
+    const customers = dedupeCatalog(row?.customers || row?.customer || []);
+
+    const key = output.toLowerCase();
+
+    if(!map.has(key)){
+      map.set(key, {
+        output,
+        customers: [],
+        source: normalizeContractString(row?.source || 'asis'),
+        editable: row?.editable !== false
+      });
+    }
+
+    const current = map.get(key);
+    current.customers = dedupeCatalog([...current.customers, ...customers]);
+  });
+
+  return Array.from(map.values()).filter(row => row.output || row.customers.length);
+}
   
 function buildSipocContract(){
   const ctx = state.context || {};
   const activities = buildSipocActivities();
 
-  const suppliersInputs = safeArray(state.asis?.suppliers_inputs);
-  const outputsCustomers = safeArray(state.asis?.outputs_customers);
+  const suppliersInputsFromAsis = safeArray(state.asis?.suppliers_inputs);
+  const outputsCustomersFromAsis = safeArray(state.asis?.outputs_customers);
 
-  const suppliers = dedupeCatalog(
-    suppliersInputs.map(row => row?.supplier)
+  const suppliersInputsFromActivities = activities.flatMap(activity =>
+    normalizeActivityInputList(activity.inputs_used).map(row => ({
+      supplier: normalizeCatalogValue(row.supplier || 'pendiente_validacion'),
+      inputs: [normalizeCatalogValue(row.input || 'pendiente_validacion')],
+      source: 'activity_inputs',
+      editable: true
+    }))
   );
 
-  const inputs = dedupeCatalog([
-    ...suppliersInputs.flatMap(row => safeArray(row?.inputs)),
-    ...activities.flatMap(activity => safeArray(activity.inputs_used))
+  const outputsCustomersFromActivities = activities.flatMap(activity =>
+    normalizeActivityOutputList(activity.outputs_generated).map(row => ({
+      output: normalizeCatalogValue(row.output || 'pendiente_validacion'),
+      customers: [normalizeCatalogValue(row.customer || 'pendiente_validacion')],
+      source: 'activity_outputs',
+      editable: true
+    }))
+  );
+
+  const suppliersInputs = mergeSuppliersInputs([
+    ...suppliersInputsFromAsis,
+    ...suppliersInputsFromActivities
   ]);
 
-  const outputs = dedupeCatalog([
-    ...outputsCustomers.map(row => row?.output),
-    ...activities.flatMap(activity => safeArray(activity.outputs_generated))
+  const outputsCustomers = mergeOutputsCustomers([
+    ...outputsCustomersFromAsis,
+    ...outputsCustomersFromActivities
   ]);
 
-  const customers = dedupeCatalog(
-    outputsCustomers.flatMap(row => safeArray(row?.customers))
-  );
-
-  const actors = dedupeCatalog(
-    activities.map(activity => activity.actor)
-  );
-
-  const documents = dedupeCatalog(
-    activities.map(activity => activity.document)
-  );
+  const suppliers = dedupeCatalog(suppliersInputs.map(row => row.supplier));
+  const inputs = dedupeCatalog(suppliersInputs.flatMap(row => safeArray(row.inputs)));
+  const outputs = dedupeCatalog(outputsCustomers.map(row => row.output));
+  const customers = dedupeCatalog(outputsCustomers.flatMap(row => safeArray(row.customers)));
+  const actors = dedupeCatalog(activities.map(activity => activity.actor));
+  const documents = dedupeCatalog(activities.map(activity => activity.document));
 
   const artifacts = typeof buildFinalArtifacts === 'function'
     ? buildFinalArtifacts()
@@ -8607,16 +8653,8 @@ function buildSipocContract(){
       actors,
       documents,
 
-      suppliers_inputs: suppliersInputs.map(row => ({
-        supplier: normalizeCatalogValue(row?.supplier || ''),
-        inputs: dedupeCatalog(row?.inputs || [])
-      })).filter(row => row.supplier || row.inputs.length),
-
-      outputs_customers: outputsCustomers.map(row => ({
-        output: normalizeCatalogValue(row?.output || ''),
-        customers: dedupeCatalog(row?.customers || [])
-      })).filter(row => row.output || row.customers.length),
-
+      suppliers_inputs,
+      outputs_customers,
       activities
     },
 
@@ -8891,6 +8929,7 @@ function buildImplementationHtml(){
     ${rejectedHtml}
   `;
 }
+  
 function repairLoadedLegacyStateBeforeResults(){
   state.asis = state.asis || {};
 
@@ -8915,36 +8954,29 @@ function repairLoadedLegacyStateBeforeResults(){
   state.asis.activities = safeArray(state.asis.activities)
     .map((activity, index) => {
       if(typeof activity === 'string'){
-        return {
+        return normalizeActivity({
           id: 'ACT-' + String(index + 1).padStart(3, '0'),
           name: activity,
           type: 'actividad',
           actor: 'pendiente_validacion',
           document: '',
+          estimated_time: '',
           previous: [],
           next: [],
           inputs_used: [],
           outputs_generated: [],
           observations: '',
+          clarifying_notes: [],
+          source: 'legacy_repair',
           editable: true
-        };
+        }, index);
       }
 
-      return {
-        ...activity,
-        id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
-        name: activity.name || activity.activity || activity.activity_name || activity.title || '',
-        type: normalizePromptAType(activity.type || activity.tipo || ''),
-        actor: activity.actor || activity.owner || activity.responsable || 'pendiente_validacion',
-        previous: normalizePromptAList(activity.previous),
-        next: normalizePromptAList(activity.next),
-        inputs_used: normalizePromptAList(activity.inputs_used || activity.inputsUsed || activity.ext_inputs),
-        outputs_generated: normalizePromptAList(activity.outputs_generated || activity.outputsGenerated || activity.ext_outputs),
-        observations: activity.observations || activity.note || ''
-      };
+      return normalizeActivity(activity, index);
     })
     .filter(activity => normalizeContractString(activity.name || ''));
 }
+  
 function generateResults(){
   repairLoadedLegacyStateBeforeResults();
   syncVisibleStage();
@@ -11740,43 +11772,41 @@ function normalizePromptAActivity(activity, index){
   const a = activity || {};
   const type = normalizePromptAType(a.type);
 
-  const inputsUsed = normalizePromptAList(a.inputs_used || a.inputsUsed || a.ext_inputs);
-  const outputsGenerated = normalizePromptAList(a.outputs_generated || a.outputsGenerated || a.ext_outputs);
-
   return {
     id: String(a.id || (type === 'decision'
       ? 'DEC-' + String(index + 1).padStart(3, '0')
       : 'ACT-' + String(index + 1).padStart(3, '0')
     )).trim(),
-    name: String(a.name || a.title || '').trim(),
-    actor: String(a.actor || a.owner || 'pendiente_validacion').trim(),
+
+    name: String(a.name || a.activity || a.activity_name || a.title || '').trim(),
+    actor: String(a.actor || a.owner || a.responsable || 'pendiente_validacion').trim(),
     type,
-    document: String(a.document || '').trim(),
+    document: String(a.document || a.documento || '').trim(),
+    estimated_time: String(a.estimated_time || a.time || a.tiempo || '').trim(),
 
-    previous: normalizePromptAList(a.previous),
-    next: normalizePromptAList(a.next),
+    previous: normalizeActivityConnectionList(a.previous || a.prev || a.predecessors),
+    next: normalizeActivityConnectionList(a.next || a.successors),
 
-    inputs_used: inputsUsed,
-    outputs_generated: outputsGenerated,
+    inputs_used: normalizeActivityInputList(
+      a.inputs_used ||
+      a.inputsUsed ||
+      a.ext_inputs ||
+      a.inputs ||
+      []
+    ),
 
-    // Compatibilidad temporal con funciones AS-IS actuales y SB antiguo
-    ext_inputs: inputsUsed,
-    ext_outputs: outputsGenerated,
-    ext_suppliers: normalizePromptAList(a.ext_suppliers),
-    ext_customers: normalizePromptAList(a.ext_customers),
+    outputs_generated: normalizeActivityOutputList(
+      a.outputs_generated ||
+      a.outputsGenerated ||
+      a.ext_outputs ||
+      a.outputs ||
+      []
+    ),
 
-    observations: String(a.observations || a.observation || '').trim(),
+    observations: String(a.observations || a.observation || a.note || '').trim(),
     clarifying_notes: normalizePromptAList(a.clarifying_notes || a.clarifyingNotes),
     source: String(a.source || 'prompt_a').trim(),
-    editable: a.editable !== false,
-
-    // Compatibilidad visual actual
-    note: String(a.note || a.observations || a.observation || '').trim(),
-    problems: String(a.problems || '').trim(),
-    wastes: String(a.wastes || '').trim(),
-    ava: a.ava || 'NNVA',
-    quickWin: a.quickWin || 'No',
-    constraint: a.constraint || 'No'
+    editable: a.editable !== false
   };
 }
 
@@ -11803,11 +11833,13 @@ function normalizePromptAAsIsProcess(payload){
         editable: row?.editable !== false
       })),
       additional_information: safeArray(p.additional_information || p.additionalInformation).map(item => ({
-        title: String(item?.title || 'Información adicional').trim(),
-        type: String(item?.type || 'archivo_adicional').trim(),
-        content: String(item?.content || '').trim(),
-        editable: item?.editable !== false
-      }))
+  title: String(item?.title || 'Información adicional').trim(),
+  type: String(item?.type || 'nota_contextual').trim(),
+  related_activity: String(item?.related_activity || item?.relatedActivity || '').trim(),
+  content: String(item?.content || '').trim(),
+  source: String(item?.source || 'pendiente_validacion').trim(),
+  editable: item?.editable !== false
+}))
     }
   };
 }
@@ -11837,22 +11869,86 @@ function validatePromptAAsIsProcess(asIsPayload){
     issues.push('as_is_process.additional_information debe ser un arreglo.');
   }
 
-  safeArray(p.activities).forEach((activity, index) => {
-    const ref = 'Actividad #' + (index + 1);
+  const activityNames = new Set(
+    safeArray(p.activities)
+      .map(a => normalizeContractString(a?.name).toLowerCase())
+      .filter(Boolean)
+  );
 
-    if(!activity.name) issues.push(ref + ': falta name.');
-    if(!activity.actor) issues.push(ref + ': falta actor.');
-    if(!['actividad', 'decision'].includes(activity.type)){
+  safeArray(p.activities).forEach((activity, index) => {
+    const ref = activity?.name || ('Actividad #' + (index + 1));
+
+    if(!normalizeContractString(activity?.name)){
+      issues.push(ref + ': falta name.');
+    }
+
+    if(!normalizeContractString(activity?.actor)){
+      issues.push(ref + ': falta actor.');
+    }
+
+    if(!['actividad', 'decision'].includes(activity?.type)){
       issues.push(ref + ': type debe ser actividad o decision.');
     }
 
+    if(!Array.isArray(activity.previous)){
+      issues.push(ref + ': previous debe ser un arreglo.');
+    }
+
+    if(!Array.isArray(activity.next)){
+      issues.push(ref + ': next debe ser un arreglo.');
+    }
+
+    if(!Array.isArray(activity.inputs_used)){
+      issues.push(ref + ': inputs_used debe ser un arreglo.');
+    }
+
+    if(!Array.isArray(activity.outputs_generated)){
+      issues.push(ref + ': outputs_generated debe ser un arreglo.');
+    }
+
+    normalizeActivityConnectionList(activity.previous).forEach(conn => {
+      if(conn.activity && conn.activity !== 'pendiente_validacion' && !activityNames.has(conn.activity.toLowerCase())){
+        issues.push(ref + ': previous referencia una actividad inexistente: ' + conn.activity);
+      }
+      if(conn.connector && !['SI','NO','OTRO'].includes(conn.connector)){
+        issues.push(ref + ': previous tiene conector inválido: ' + conn.connector);
+      }
+    });
+
+    normalizeActivityConnectionList(activity.next).forEach(conn => {
+      if(conn.activity && conn.activity !== 'pendiente_validacion' && !activityNames.has(conn.activity.toLowerCase())){
+        issues.push(ref + ': next referencia una actividad inexistente: ' + conn.activity);
+      }
+      if(conn.connector && !['SI','NO','OTRO'].includes(conn.connector)){
+        issues.push(ref + ': next tiene conector inválido: ' + conn.connector);
+      }
+    });
+
+    normalizeActivityInputList(activity.inputs_used).forEach(row => {
+      if(!row.input){
+        issues.push(ref + ': existe una entrada sin input.');
+      }
+      if(!row.supplier){
+        issues.push(ref + ': existe una entrada sin supplier.');
+      }
+    });
+
+    normalizeActivityOutputList(activity.outputs_generated).forEach(row => {
+      if(!row.output){
+        issues.push(ref + ': existe una salida sin output.');
+      }
+      if(!row.customer){
+        issues.push(ref + ': existe una salida sin customer.');
+      }
+    });
+
     const hasInputConnection =
-      safeArray(activity.previous).length ||
-      safeArray(activity.inputs_used).length;
+      normalizeActivityConnectionList(activity.previous).length ||
+      normalizeActivityInputList(activity.inputs_used).length;
 
     const hasOutputConnection =
-      safeArray(activity.next).length ||
-      safeArray(activity.outputs_generated).length;
+      normalizeActivityConnectionList(activity.next).length ||
+      normalizeActivityOutputList(activity.outputs_generated).length;
 
     if(!hasInputConnection){
       issues.push(ref + ': falta conexión de entrada en previous[] o inputs_used[].');
@@ -11861,6 +11957,12 @@ function validatePromptAAsIsProcess(asIsPayload){
     if(!hasOutputConnection){
       issues.push(ref + ': falta conexión de salida en next[] o outputs_generated[].');
     }
+
+    ['ava','quickWin','constraint','problems','wastes','is_start','is_end','order','description','decision_outputs'].forEach(field => {
+      if(Object.prototype.hasOwnProperty.call(activity, field)){
+        issues.push(ref + ': no debe incluir el campo ' + field + '.');
+      }
+    });
   });
 
   return issues;
@@ -11966,75 +12068,19 @@ function coerceAnyPayloadToAsIsProcess(payload){
         type: 'actividad',
         actor: 'pendiente_validacion',
         document: '',
+        estimated_time: '',
         previous: [],
         next: [],
         inputs_used: [],
         outputs_generated: [],
         observations: '',
         clarifying_notes: ['Actividad recuperada desde contrato antiguo como texto plano.'],
+        source: 'compatibility_adapter',
         editable: true
       };
     }
 
-    const rawType = item?.type || item?.tipo || '';
-    const type = normalizePromptAType(rawType);
-
-    return {
-      id: String(item?.id || 'ACT-' + String(index + 1).padStart(3, '0')).trim(),
-      name: String(
-        item?.name ||
-        item?.activity ||
-        item?.activity_name ||
-        item?.nombre ||
-        item?.title ||
-        ''
-      ).trim(),
-      type,
-      actor: String(item?.actor || item?.owner || item?.responsable || 'pendiente_validacion').trim(),
-      document: String(item?.document || item?.documento || item?.documents || '').trim(),
-
-      previous: normalizePromptAList(item?.previous || item?.prev || item?.predecessors),
-      next: normalizePromptAList(item?.next || item?.successors),
-
-      inputs_used: normalizePromptAList(
-        item?.inputs_used ||
-        item?.inputsUsed ||
-        item?.ext_inputs ||
-        item?.inputs ||
-        []
-      ),
-
-      outputs_generated: normalizePromptAList(
-        item?.outputs_generated ||
-        item?.outputsGenerated ||
-        item?.ext_outputs ||
-        item?.outputs ||
-        []
-      ),
-
-      ext_suppliers: normalizePromptAList(item?.ext_suppliers || item?.suppliers || []),
-      ext_customers: normalizePromptAList(item?.ext_customers || item?.customers || []),
-
-      observations: String(
-        item?.observations ||
-        item?.observation ||
-        item?.note ||
-        item?.notes ||
-        item?.description ||
-        ''
-      ).trim(),
-
-      clarifying_notes: normalizePromptAList(item?.clarifying_notes || item?.warnings || []),
-      editable: true,
-
-      // Compatibilidad visual AS-IS
-      note: String(item?.note || item?.observations || '').trim(),
-      problems: String(item?.problems || '').trim(),
-      wastes: String(item?.wastes || '').trim(),
-      ava: item?.ava || 'NNVA',
-      quickWin: item?.quickWin || 'No',
-      constraint: item?.constraint || 'No'
-    };
+    return normalizePromptAActivity(item, index);
   }).filter(a => a.name);
 
   const suppliersInputs =
@@ -12066,8 +12112,10 @@ function coerceAnyPayloadToAsIsProcess(payload){
       additional_information: [
         {
           title: 'Payload adaptado automáticamente',
-          type: 'compatibility_adapter',
+          type: 'nota_contextual',
+          related_activity: '',
           content: 'El JSON no contenía raíz as_is_process. El LMP recuperó actividades desde estructura legacy o respaldo anterior.',
+          source: 'pendiente_validacion',
           editable: true
         }
       ]
@@ -13604,46 +13652,28 @@ function normalizeRelationList(value){
   return dedupeCatalog(value).map(x => normalizeContractString(x)).filter(Boolean);
 }
   
-function normalizeActivity(item){
-  item = item || {};
-  const id = item.id || item.codigo || item.code || item.activity_id || '';
-  const name = item.name || item.activity || item.activity_name || item.nombre || item.step || item.stage || item.title || '';
-  const actor = item.actor || item.role || item.responsable || item.owner || item.executor || item.area || '';
-  const documentName = item.document || item.documento || item.documentos || item.documents || item.record || item.form || item.formato || '';
-  const previous = normalizeRelationList(item.previous || item.prev || item.predecessors || item.before);
-  const next = normalizeRelationList(item.next || item.successors || item.after);
-  const controls = safeArray(item.controls || item.controles).join('; ');
-  const handoff = item.handoff || item.handoffs || item.transfer || item.entrega || '';
-  const exceptions = safeArray(item.exceptions || item.excepciones || item.exception_criteria || item.criterios_excepcion).join('; ');
-  const description = item.note || item.notes || item.description || item.descripcion || item.detail || item.detalle || '';
-  const problems = item.problems || item.problemas || item.issue || item.issues || '';
-  const wastes = item.wastes || item.desperdicios || item.waste || '';
-  const quickRaw = item.quickWin || item.quick_win || item.quickwin || item.quick_win_candidate || item.quickWinCandidate || 'No';
-  const resRaw = item.constraint || item.restriction || item.restriccion || item.is_constraint || 'No';
+function normalizeActivity(activity, index = 0){
+  const a = activity || {};
+  const type = normalizePromptAType(a.type || 'actividad');
+
   return {
-    id: normalizeContractString(id),
-    name: normalizeContractString(name),
-    actor: normalizeCatalogValue(actor),
-    type: canonicalActivityType(item.type || item.tipo || item.activity_type || ''),
-    document: dedupeCatalog(documentName).join('; ') || normalizeCatalogValue(documentName),
-    previous,
-    next,
-    time:item.time || item.tiempo || item.duration || item.tiempo_estimado_horas || '',
-    ava:item.ava || item.tipo_ava || item.classification || item.clasificacion || item.value_classification || 'NNVA',
-    problems: normalizeContractString(problems),
-    wastes: normalizeContractString(wastes),
-    quickWin: (String(quickRaw).toLowerCase().includes('s') || quickRaw === true) ? 'Sí' : (quickRaw === true ? 'Sí' : 'No'),
-    constraint: (String(resRaw).toLowerCase().includes('s') || resRaw === true) ? 'Sí' : 'No',
-    controls: normalizeContractString(controls),
-    handoff: normalizeContractString(handoff),
-    exceptions: normalizeContractString(exceptions),
-    ext_suppliers: dedupeCatalog(item.ext_suppliers || item.external_suppliers || item.proveedores || item.suppliers || []),
-    ext_inputs: dedupeCatalog(item.ext_inputs || item.external_inputs || item.entradas || item.inputs || []),
-    ext_outputs: dedupeCatalog(item.ext_outputs || item.external_outputs || item.salidas || item.outputs || []),
-    ext_customers: dedupeCatalog(item.ext_customers || item.external_customers || item.clientes || item.customers || []),
-    is_start: !!(item.is_start || item.start || item.isStart),
-    is_end: !!(item.is_end || item.end || item.isEnd),
-    note: normalizeContractString([description, controls ? 'Controles: ' + controls : '', handoff ? 'Handoff: ' + handoff : '', exceptions ? 'Criterios/excepciones: ' + exceptions : ''].filter(Boolean).join(' | '))
+    id: String(a.id || 'ACT-' + String(index + 1).padStart(3, '0')).trim(),
+    name: normalizeContractString(a.name || a.activity || a.activity_name || ''),
+    actor: normalizeContractString(a.actor || a.owner || a.responsable || 'pendiente_validacion'),
+    type,
+    document: normalizeContractString(a.document || a.documento || ''),
+    estimated_time: normalizeContractString(a.estimated_time || a.time || ''),
+
+    previous: normalizeActivityConnectionList(a.previous),
+    next: normalizeActivityConnectionList(a.next),
+
+    inputs_used: normalizeActivityInputList(a.inputs_used || a.inputsUsed || a.ext_inputs),
+    outputs_generated: normalizeActivityOutputList(a.outputs_generated || a.outputsGenerated || a.ext_outputs),
+
+    observations: normalizeContractString(a.observations || a.observation || a.note || ''),
+    clarifying_notes: normalizePromptAList(a.clarifying_notes || a.clarifyingNotes),
+    source: normalizeContractString(a.source || sourceRouteLabel()),
+    editable: a.editable !== false
   };
 }
 
