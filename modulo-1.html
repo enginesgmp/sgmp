@@ -11980,6 +11980,36 @@ function normalizeLegacyInterviewToAsIsSeed(payload){
     legacy_original: source
   };
 }
+
+function extractRealExtractorPayloadForPromptA(item){
+  if(!item || typeof item !== 'object') return item;
+
+  if(item.source_type === 'existing_process_extractor' && item.as_is_flow){
+    return item;
+  }
+
+  if(item.extractor_json && typeof item.extractor_json === 'object'){
+    return item.extractor_json;
+  }
+
+  if(item.raw_extractor_payload && typeof item.raw_extractor_payload === 'object'){
+    return item.raw_extractor_payload;
+  }
+
+  if(item.normalized_contract?.raw_extractor_payload && typeof item.normalized_contract.raw_extractor_payload === 'object'){
+    return item.normalized_contract.raw_extractor_payload;
+  }
+
+  if(item.normalized_contract?.extractor_json && typeof item.normalized_contract.extractor_json === 'object'){
+    return item.normalized_contract.extractor_json;
+  }
+
+  if(item.normalized_contract && item.normalized_contract.as_is_flow){
+    return item.normalized_contract;
+  }
+
+  return item;
+}
   
 function buildPromptAInputPayload(){
   const route = state.metadata?.route === 'doc'
@@ -12007,6 +12037,18 @@ const legacyInterviewSeeds = [
 ]
   .filter(isLegacyDetailedInterviewJson)
   .map(normalizeLegacyInterviewToAsIsSeed);
+const extractorPayloads = safeArray(state.loads?.sipoc)
+  .map(extractRealExtractorPayloadForPromptA)
+  .filter(item => item && typeof item === 'object');
+
+const extractorSummary = extractorPayloads.map((item, index) => ({
+  index: index + 1,
+  source_type: item.source_type || '',
+  has_catalogs: !!item.catalogs,
+  activities_count: safeArray(item.as_is_flow?.activities).length,
+  decisions_count: safeArray(item.as_is_flow?.decisions).length,
+  relations_count: safeArray(item.as_is_flow?.relations).length
+}));
   const payload = {
     source_route: route,
     primary_source_type: route === 'existing_documented_process'
@@ -12018,7 +12060,7 @@ const legacyInterviewSeeds = [
       leader_interview_json: safeArray(state.loads?.interview),
       leader_interview_transcript: safeArray(state.loads?.interviewTranscript),
       questionnaires: safeArray(state.loads?.pre),
-      extractor_json: safeArray(state.loads?.sipoc),
+      extractor_json: safeArray(state.loads?.sipoc)   .map(extractRealExtractorPayloadForPromptA)   .filter(item => item && typeof item === 'object'),
       documented_process_status_interview: safeArray(state.loads?.statusInterview),
       legacy_detailed_interview_seed: legacyInterviewSeeds,
       additional_txt_files: safeArray(state.loads?.docs)
