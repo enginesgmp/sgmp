@@ -4947,6 +4947,20 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="asis-operational-message blocked" id="asisStructuralStateMsg">Sin validación estructural ejecutada.</div>
 <div id="asisStructuralIssuesList">Sin vacíos detectados.</div>
 </article>
+
+<article class="card">
+  <h3>Más información levantada</h3>
+  <p>Información explícita capturada durante el levantamiento que no forma parte del flujo estructural: problemas, desperdicios, restricciones, quick wins, AVA, riesgos, excepciones, controles críticos, automatización, digitalización o notas contextuales.</p>
+
+  <div class="actions" style="border-top:none;padding-top:0;margin-top:12px">
+    <div class="actions-left">
+      <button class="btn-ghost" onclick="addAdditionalInformationRow()" type="button">Agregar información</button>
+    </div>
+  </div>
+
+  <div class="list" id="asisAdditionalInfo"></div>
+</article>
+
 <article class="card two-third">
 <h3>JSON AS IS validado</h3>
 <p>Vista técnica del AS IS que alimentará análisis y contrato hacia SB.</p>
@@ -4958,6 +4972,7 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 <div class="actions-right"><button class="btn" onclick="saveAsIsAndContinue()" type="button">Guardar y continuar</button></div>
 </div>
 </section>
+  
 <!-- ANALISIS POR ETAPAS -->
 <!-- ANALISIS B1 -->
 <section class="section analysis-stage-section" id="analisis_b1" data-analysis-stage="B1">
@@ -7225,156 +7240,466 @@ function loadAsIsFromApprovedProcess(){
   );
 }
   
-function asisActivityTemplate(data = {}, index = 0){
-  const safe = normalizeActivity(data || {});
-  safe.type = normalizePromptAType(safe.type || data.type || 'actividad');
+function asisActivityTemplate(a, index){
+  const safe = a || {};
+  const type = normalizePromptAType(safe.type || 'actividad');
 
-  const id = safe.id || data.id || ('ACT-' + String(index + 1).padStart(3, '0'));
-  const isDecision = safe.type === 'decision';
+  const observationsText = normalizeContractString(
+    safe.observations ||
+    safe.note ||
+    ''
+  );
+
+  const clarifyingNotesText = safeArray(safe.clarifying_notes || safe.clarifyingNotes)
+    .map(normalizeContractString)
+    .filter(Boolean)
+    .join('\n');
 
   return `
-    <details class="activity-item asis-row asis-activity-accordion" data-index="${index}">
+    <details class="activity-item asis-activity-accordion" data-index="${index}" open>
       <summary class="activity-top asis-activity-summary">
         <div>
           <strong>${index + 1}. ${escapeHtml(safe.name || 'Actividad sin nombre')}</strong>
           <small>Actor: ${escapeHtml(safe.actor || 'Sin actor')}</small>
         </div>
-        <span class="status-badge ${isDecision ? 'is-decision' : ''}">${escapeHtml(safe.type || 'actividad')}</span>
+        <span class="status-badge ${type === 'decision' ? 'is-decision' : ''}">${escapeHtml(type)}</span>
       </summary>
+
       <div class="asis-activity-body">
         <div class="asis-activity-actions">
-          <button class="btn-ghost" type="button" onclick="moveAsisActivity(${index}, -1)">↑ Subir</button>
-          <button class="btn-ghost" type="button" onclick="moveAsisActivity(${index}, 1)">↓ Bajar</button>
-          <button class="btn-danger" type="button" onclick="deleteAsisActivity(${index})">Eliminar</button>
+          <button class="btn-ok" onclick="syncAsisRow(${index})" type="button">Guardar actividad</button>
+          <button class="btn-ghost" onclick="moveAsisActivity(${index}, -1)" type="button">↑ Subir</button>
+          <button class="btn-ghost" onclick="moveAsisActivity(${index}, 1)" type="button">↓ Bajar</button>
+          <button class="btn-danger" onclick="deleteAsisActivity(${index})" type="button">Eliminar</button>
         </div>
 
         <div class="field-grid asis-activity-grid">
           <div class="field w-3">
             <label>ID</label>
-            <input class="a_id" value="${escapeHtml(id)}" oninput="syncAsisRow(${index})" />
+            <input class="a_id" value="${escapeHtml(safe.id || '')}" oninput="syncAsisRow(${index})" />
           </div>
 
-          <div class="field w-5">
+          <div class="field w-6">
             <label>Nombre de la actividad</label>
-            <input class="a_name" value="${escapeHtml(safe.name || '')}" oninput="syncAsisRow(${index})" />
-          </div>
-
-          <div class="field w-4">
-            <label>Actor / rol</label>
-            <input class="a_actor" value="${escapeHtml(safe.actor || '')}" oninput="syncAsisRow(${index})" />
+            <input class="a_name" value="${escapeHtml(safe.name || '')}" placeholder="Ej. Revisar solicitud" oninput="syncAsisRow(${index})" />
           </div>
 
           <div class="field w-3">
             <label>Tipo</label>
             <select class="a_type" onchange="syncAsisRow(${index})">
-              <option value="actividad" ${safe.type === 'actividad' ? 'selected' : ''}>Actividad</option>
-              <option value="decision" ${safe.type === 'decision' ? 'selected' : ''}>Decisión</option>
+              <option value="actividad" ${type === 'actividad' ? 'selected' : ''}>Actividad</option>
+              <option value="decision" ${type === 'decision' ? 'selected' : ''}>Decisión</option>
             </select>
           </div>
 
-          <div class="field w-3">
+          <div class="field w-6">
+            <label>Actor / rol</label>
+            <input class="a_actor" value="${escapeHtml(safe.actor || '')}" placeholder="Área, cargo o responsable" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-6">
+            <label>Documento / sistema si aplica</label>
+            <input class="a_document" value="${escapeHtml(safe.document || '')}" placeholder="Documento, sistema, formato o evidencia" oninput="syncAsisRow(${index})" />
+          </div>
+
+          <div class="field w-4">
             <label>Tiempo estimado</label>
-            <input class="a_time" value="${escapeHtml(safe.time || '')}" oninput="syncAsisRow(${index})" />
-          </div>
-
-          <div class="field w-3">
-            <label>AVA</label>
-            <select class="a_ava" onchange="syncAsisRow(${index})">
-              <option value="VA" ${safe.ava === 'VA' ? 'selected' : ''}>VA</option>
-              <option value="NNVA" ${safe.ava === 'NNVA' ? 'selected' : ''}>NNVA</option>
-              <option value="NVA" ${safe.ava === 'NVA' ? 'selected' : ''}>NVA</option>
-            </select>
-          </div>
-
-          <div class="field w-3">
-            <label>Quick win</label>
-            <select class="a_qw" onchange="syncAsisRow(${index})">
-              <option value="No" ${safe.quickWin === 'No' ? 'selected' : ''}>No</option>
-              <option value="Sí" ${safe.quickWin === 'Sí' ? 'selected' : ''}>Sí</option>
-            </select>
-          </div>
-
-          <div class="field w-3">
-            <label>Restricción</label>
-            <select class="a_res" onchange="syncAsisRow(${index})">
-              <option value="No" ${safe.constraint === 'No' ? 'selected' : ''}>No</option>
-              <option value="Sí" ${safe.constraint === 'Sí' ? 'selected' : ''}>Sí</option>
-            </select>
-          </div>
-
-          <div class="field w-6">
-            <label>Documento / sistema</label>
-            <input class="a_document" value="${escapeHtml(safe.document || '')}" oninput="syncAsisRow(${index})" />
-          </div>
-
-          <div class="field w-6">
-            <label>Actividad previa</label>
-            <textarea class="a_previous" oninput="syncAsisRow(${index})">${escapeHtml(safe.previous?.join('\\n') || '')}</textarea>
-          </div>
-
-          <div class="field w-6">
-            <label>Actividad siguiente</label>
-            <textarea class="a_next" oninput="syncAsisRow(${index})">${escapeHtml(safe.next?.join('\\n') || '')}</textarea>
-          </div>
-
-          <div class="field w-6">
-            <label>Problemas / restricciones</label>
-            <textarea class="a_problems" oninput="syncAsisRow(${index})">${escapeHtml(safe.problems || '')}</textarea>
-          </div>
-
-          <div class="field w-6">
-            <label>Desperdicios observados</label>
-            <textarea class="a_wastes" oninput="syncAsisRow(${index})">${escapeHtml(safe.wastes || '')}</textarea>
+            <input class="a_estimated_time" value="${escapeHtml(safe.estimated_time || safe.time || '')}" placeholder="Ej. 10 min, 2 horas, 1 día" oninput="syncAsisRow(${index})" />
           </div>
 
           <div class="field w-12">
-            <label>Observaciones / notas</label>
-            <textarea class="a_note" oninput="syncAsisRow(${index})">${escapeHtml(safe.note || safe.observations || '')}</textarea>
+            <label>Actividades previas</label>
+            <div class="list" data-dynamic-list="previous">
+              ${renderActivityConnectionsRows(safe.previous || [], 'a_previous', index, 'previous')}
+            </div>
+            <button class="btn-ghost" type="button" onclick="addAsisDynamicRow(${index}, 'previous')">Agregar previa</button>
           </div>
+
+          <div class="field w-12">
+            <label>Actividades siguientes</label>
+            <div class="list" data-dynamic-list="next">
+              ${renderActivityConnectionsRows(safe.next || [], 'a_next', index, 'next')}
+            </div>
+            <button class="btn-ghost" type="button" onclick="addAsisDynamicRow(${index}, 'next')">Agregar siguiente</button>
+          </div>
+
+          <div class="field w-12">
+            <label>Entradas recibidas/usadas</label>
+            <div class="list" data-dynamic-list="inputs">
+              ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
+            </div>
+            <button class="btn-ghost" type="button" onclick="addAsisDynamicRow(${index}, 'inputs')">Agregar entrada</button>
+          </div>
+
+          <div class="field w-12">
+            <label>Salidas generadas/entregadas</label>
+            <div class="list" data-dynamic-list="outputs">
+              ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
+            </div>
+            <button class="btn-ghost" type="button" onclick="addAsisDynamicRow(${index}, 'outputs')">Agregar salida</button>
+          </div>
+
+          <div class="field w-6">
+            <label>Nota aclaratoria</label>
+            <textarea class="a_clarifying_notes" placeholder="Una nota por línea" oninput="syncAsisRow(${index})">${escapeHtml(clarifyingNotesText)}</textarea>
+          </div>
+
+          <div class="field w-6">
+            <label>Observaciones</label>
+            <textarea class="a_observations" placeholder="Observaciones técnicas del levantamiento" oninput="syncAsisRow(${index})">${escapeHtml(observationsText)}</textarea>
+          </div>
+
+          <input class="a_source hidden" value="${escapeHtml(safe.source || sourceRouteLabel())}" />
         </div>
       </div>
     </details>
   `;
 }
+function normalizeActivityConnectionList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        activity: normalizeContractString(item),
+        connector: ''
+      };
+    }
 
+    return {
+      activity: normalizeContractString(item?.activity || item?.name || item?.target_activity || ''),
+      connector: normalizeContractString(item?.connector || '')
+    };
+  }).filter(row => row.activity);
+}
+
+function normalizeActivityInputList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        input: normalizeContractString(item),
+        supplier: 'pendiente_validacion'
+      };
+    }
+
+    return {
+      input: normalizeContractString(item?.input || item?.name || item?.entrada || ''),
+      supplier: normalizeContractString(item?.supplier || item?.provider || item?.proveedor || 'pendiente_validacion')
+    };
+  }).filter(row => row.input);
+}
+
+function normalizeActivityOutputList(value){
+  return safeArray(value).map(item => {
+    if(typeof item === 'string'){
+      return {
+        output: normalizeContractString(item),
+        customer: 'pendiente_validacion'
+      };
+    }
+
+    return {
+      output: normalizeContractString(item?.output || item?.name || item?.salida || ''),
+      customer: normalizeContractString(item?.customer || item?.client || item?.cliente || 'pendiente_validacion')
+    };
+  }).filter(row => row.output);
+}
+
+function renderActivityConnectionsRows(list, classPrefix, index, mode){
+  const rows = normalizeActivityConnectionList(list);
+
+  if(!rows.length){
+    rows.push({ activity: '', connector: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-8">
+          <label>Actividad ${mode === 'previous' ? 'previa' : 'siguiente'}</label>
+          <input class="${classPrefix}_activity" value="${escapeHtml(row.activity || '')}" placeholder="Nombre exacto de la actividad" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-4">
+          <label>Conector</label>
+          <select class="${classPrefix}_connector" onchange="syncAsisRow(${index})">
+            <option value="" ${!row.connector ? 'selected' : ''}>Sin conector</option>
+            <option value="SI" ${row.connector === 'SI' ? 'selected' : ''}>SI</option>
+            <option value="NO" ${row.connector === 'NO' ? 'selected' : ''}>NO</option>
+            <option value="OTRO" ${row.connector === 'OTRO' ? 'selected' : ''}>OTRO</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar conexión</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderActivityInputRows(list, index){
+  const rows = normalizeActivityInputList(list);
+
+  if(!rows.length){
+    rows.push({ input: '', supplier: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Entrada usada</label>
+          <input class="a_input_name" value="${escapeHtml(row.input || '')}" placeholder="Entrada recibida/usada" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-6">
+          <label>Proveedor de la entrada</label>
+          <input class="a_input_supplier" value="${escapeHtml(row.supplier || '')}" placeholder="Proveedor, área, actor o sistema" oninput="syncAsisRow(${index})" />
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar entrada</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderActivityOutputRows(list, index){
+  const rows = normalizeActivityOutputList(list);
+
+  if(!rows.length){
+    rows.push({ output: '', customer: '' });
+  }
+
+  return rows.map((row, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Salida generada</label>
+          <input class="a_output_name" value="${escapeHtml(row.output || '')}" placeholder="Salida generada/entregada" oninput="syncAsisRow(${index})" />
+        </div>
+        <div class="field w-6">
+          <label>Cliente de la salida</label>
+          <input class="a_output_customer" value="${escapeHtml(row.customer || '')}" placeholder="Cliente, área, actor o receptor" oninput="syncAsisRow(${index})" />
+        </div>
+      </div>
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn-danger" type="button" onclick="removeAsisDynamicRow(this, ${index})">Eliminar salida</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function readActivityConnectionsFromRow(item, classPrefix){
+  return qsa('.' + classPrefix + '_row', item).map(row => ({
+    activity: row.querySelector('.' + classPrefix + '_activity')?.value?.trim() || '',
+    connector: row.querySelector('.' + classPrefix + '_connector')?.value?.trim() || ''
+  })).filter(row => row.activity);
+}
+
+function readActivityInputsFromRow(item){
+  return qsa('.a_input_row', item).map(row => ({
+    input: row.querySelector('.a_input_name')?.value?.trim() || '',
+    supplier: row.querySelector('.a_input_supplier')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.input);
+}
+
+function readActivityOutputsFromRow(item){
+  return qsa('.a_output_row', item).map(row => ({
+    output: row.querySelector('.a_output_name')?.value?.trim() || '',
+    customer: row.querySelector('.a_output_customer')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.output);
+}
+
+function addAsisDynamicRow(index, kind){
+  const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
+  if(!item) return;
+
+  const target = item.querySelector(`[data-dynamic-list="${kind}"]`);
+  if(!target) return;
+
+  let html = '';
+
+  if(kind === 'previous'){
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_previous', index, 'previous');
+  }
+
+  if(kind === 'next'){
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_next', index, 'next');
+  }
+
+  if(kind === 'inputs'){
+    html = renderActivityInputRows([{ input: '', supplier: '' }], index);
+  }
+
+  if(kind === 'outputs'){
+    html = renderActivityOutputRows([{ output: '', customer: '' }], index);
+  }
+
+  target.insertAdjacentHTML('beforeend', html);
+  syncAsisRow(index);
+}
+
+function removeAsisDynamicRow(button, index){
+  const row = button?.closest('.asis-dynamic-row');
+  if(row) row.remove();
+  syncAsisRow(index);
+}
+  
 function readAsisRow(item){
   if(!item) return null;
+
   const get = (sel) => item.querySelector(sel)?.value?.trim() || '';
-  const index = Number(item.dataset?.index);
-  const prior = Number.isFinite(index) ? (state.asis?.activities?.[index] || {}) : {};
-  const extInputs = dedupeCatalog(prior.ext_inputs || prior.inputs_used || []);
-  const extOutputs = dedupeCatalog(prior.ext_outputs || prior.outputs_generated || []);
+
   const activity = {
     id: get('.a_id'),
     name: get('.a_name'),
     actor: get('.a_actor'),
     type: normalizePromptAType(get('.a_type') || 'actividad'),
     document: get('.a_document'),
-    previous: splitItems(get('.a_previous')),
-    next: splitItems(get('.a_next')),
-    ext_inputs: extInputs,
-    ext_outputs: extOutputs,
-    inputs_used: extInputs,
-    outputs_generated: extOutputs,
-    time: get('.a_time'),
-    ava: get('.a_ava') || 'NNVA',
-    problems: get('.a_problems'),
-    wastes: get('.a_wastes'),
-    quickWin: get('.a_qw') || 'No',
-    constraint: get('.a_res') || 'No',
-    note: get('.a_note')
+    estimated_time: get('.a_estimated_time'),
+
+    previous: readActivityConnectionsFromRow(item, 'a_previous'),
+    next: readActivityConnectionsFromRow(item, 'a_next'),
+
+    inputs_used: readActivityInputsFromRow(item),
+    outputs_generated: readActivityOutputsFromRow(item),
+
+    clarifying_notes: splitItems(get('.a_clarifying_notes')),
+    observations: get('.a_observations'),
+
+    source: get('.a_source') || sourceRouteLabel(),
+    editable: true
   };
+
   return activity.name ? activity : null;
 }
 
 function collectAsisActivities(){
+  state.asis = state.asis || {};
   state.asis.activities = qsa('#asisActivities .activity-item').map(readAsisRow).filter(Boolean);
+  state.asis.additional_information = readAdditionalInformationRows();
+
   renumberAsIsSequence(false);
   updateAsIsPreview();
   updateTopStatus();
+
   return state.asis.activities;
 }
 
+function renderAdditionalInformationRows(){
+  const container = qs('asisAdditionalInfo');
+  if(!container) return;
+
+  state.asis = state.asis || {};
+  state.asis.additional_information = safeArray(state.asis.additional_information);
+
+  if(!state.asis.additional_information.length){
+    container.innerHTML = '<div class="note">No hay información adicional levantada.</div>';
+    return;
+  }
+
+  container.innerHTML = state.asis.additional_information.map((item, index) => `
+    <div class="repeat-item additional-info-item" data-index="${index}">
+      <div class="field-grid">
+        <div class="field w-4">
+          <label>Título</label>
+          <input class="ai_title" value="${escapeHtml(item.title || '')}" oninput="syncAdditionalInformationRows()" />
+        </div>
+
+        <div class="field w-4">
+          <label>Tipo</label>
+          <select class="ai_type" onchange="syncAdditionalInformationRows()">
+            ${[
+              'entrevista_guia',
+              'transcripcion_entrevista',
+              'cuestionario_preentrevista',
+              'archivo_adicional',
+              'problema',
+              'desperdicio',
+              'restriccion',
+              'quick_win',
+              'oportunidad_mejora',
+              'ava',
+              'riesgo',
+              'excepcion',
+              'control_critico',
+              'automatizacion',
+              'digitalizacion',
+              'nota_contextual'
+            ].map(type => `<option value="${type}" ${item.type === type ? 'selected' : ''}>${type}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="field w-4">
+          <label>Actividad relacionada</label>
+          <input class="ai_related_activity" value="${escapeHtml(item.related_activity || '')}" placeholder="Nombre exacto de actividad, si aplica" oninput="syncAdditionalInformationRows()" />
+        </div>
+
+        <div class="field w-4">
+          <label>Fuente</label>
+          <select class="ai_source" onchange="syncAdditionalInformationRows()">
+            ${[
+              'entrevista',
+              'transcripcion',
+              'extractor',
+              'cuestionario',
+              'archivo_adicional',
+              'pendiente_validacion'
+            ].map(source => `<option value="${source}" ${item.source === source ? 'selected' : ''}>${source}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="field w-8">
+          <label>Contenido</label>
+          <textarea class="ai_content" oninput="syncAdditionalInformationRows()">${escapeHtml(item.content || '')}</textarea>
+        </div>
+      </div>
+
+      <div class="actions" style="justify-content:flex-end">
+        <button class="btn-danger" onclick="deleteAdditionalInformationRow(${index})" type="button">Eliminar</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function readAdditionalInformationRows(){
+  return qsa('#asisAdditionalInfo .additional-info-item').map(item => ({
+    title: item.querySelector('.ai_title')?.value?.trim() || '',
+    type: item.querySelector('.ai_type')?.value?.trim() || 'nota_contextual',
+    related_activity: item.querySelector('.ai_related_activity')?.value?.trim() || '',
+    content: item.querySelector('.ai_content')?.value?.trim() || '',
+    source: item.querySelector('.ai_source')?.value?.trim() || 'pendiente_validacion',
+    editable: true
+  })).filter(item => item.title || item.content);
+}
+
+function syncAdditionalInformationRows(){
+  state.asis = state.asis || {};
+  state.asis.additional_information = readAdditionalInformationRows();
+  updateAsIsPreview();
+  updateTopStatus();
+}
+
+function addAdditionalInformationRow(){
+  state.asis = state.asis || {};
+  state.asis.additional_information = safeArray(state.asis.additional_information);
+  state.asis.additional_information.push({
+    title: '',
+    type: 'nota_contextual',
+    related_activity: '',
+    content: '',
+    source: 'pendiente_validacion',
+    editable: true
+  });
+  renderAdditionalInformationRows();
+  updateAsIsPreview();
+}
+
+function deleteAdditionalInformationRow(index){
+  state.asis = state.asis || {};
+  state.asis.additional_information = safeArray(state.asis.additional_information);
+  state.asis.additional_information.splice(index, 1);
+  renderAdditionalInformationRows();
+  updateAsIsPreview();
+}
+  
 function renderAsIsActivities(){
   const container = qs('asisActivities');
   if(!container) return;
@@ -7382,25 +7707,34 @@ function renderAsIsActivities(){
   const activities = state.asis.activities || [];
   if(!activities.length){
     container.innerHTML = '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
+    renderAdditionalInformationRows();
     updateAsIsPreview();
     return;
   }
   activities.forEach((a, index) => container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index)));
   qsa('#asisActivities .activity-item').forEach((item, index) => refreshAsIsActivitySummary(item, index));
+  renderAdditionalInformationRows();
   updateAsIsPreview();
 }
 
 function addAsisActivity(data = {}){
   collectAsisActivities();
-  state.asis.activities.push(Object.assign({
-    id: 'A' + (state.asis.activities.length + 1),
-    name: '',
-    actor: '',
-    type: 'actividad',
-    ava: 'NNVA',
-    quickWin: 'No',
-    constraint: 'No'
-  }, data || {}));
+state.asis.activities.push(Object.assign({
+  id: 'A' + (state.asis.activities.length + 1),
+  name: '',
+  actor: '',
+  type: 'actividad',
+  document: '',
+  estimated_time: '',
+  previous: [],
+  next: [],
+  inputs_used: [],
+  outputs_generated: [],
+  clarifying_notes: [],
+  observations: '',
+  source: sourceRouteLabel(),
+  editable: true
+}, data || {}));
   renumberAsIsSequence(false);
   renderAsIsActivities();
   openAsIsActivity(state.asis.activities.length - 1);
