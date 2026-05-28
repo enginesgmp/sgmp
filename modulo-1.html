@@ -11248,9 +11248,17 @@ function renderLoadList(targetId, items, mode){
       'insumo_cargado'
     );
 
+    const activitiesCount = safeArray(
+      item.activities ||
+      item.lmpSipocDraft?.activities ||
+      item.normalized_contract?.sipoc_extraction?.activities
+    ).length;
+
+    const extra = activitiesCount ? ` · ${activitiesCount} actividades` : '';
+
     const meta = mode === 'docs'
       ? `${escapeHtml(item.__sizeLabel || '')} · ${escapeHtml(item.__summary || 'Archivo TXT cargado')}`
-      : `${kind}`;
+      : `${kind}${extra}`;
 
     return `
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)">
@@ -13355,13 +13363,13 @@ async function loadInstrumentFiles(type){
       }
 
       if(type === 'sipoc'){
+        const normalizedContract = ensureSipocExtractorContract(parsed);
         const validation = validateSipocExtractorContract(parsed);
 
         if(!validation.ok){
           throw new Error(validation.errors.join(' | '));
         }
 
-        const normalizedContract = validation.normalized || ensureSipocExtractorContract(parsed);
         const normalized = normalizeSipocExtractorToLmpInstrument(normalizedContract);
 
         loaded.push({
@@ -13395,11 +13403,11 @@ async function loadInstrumentFiles(type){
     updateLoadKpis();
     refreshLoadViews();
 
-    showMsg('cargaMsg','ok', `Se agregaron ${loaded.length} archivo(s) en ${type}.`);
-
     return loaded;
+
   }catch(error){
-    showMsg('cargaMsg','err',`No fue posible cargar archivo(s) en ${type}. Detalle: ${error.message}`);
+    window.__LMP_LAST_LOAD_ERROR__ =
+      `No fue posible cargar archivo(s) en ${type}. Detalle: ${error.message}`;
     return [];
   }
 }
@@ -13470,6 +13478,8 @@ async function loadAllInputs(){
   state.loads.statusInterview = state.loads.statusInterview || [];
   state.loads.docs = state.loads.docs || [];
 
+  window.__LMP_LAST_LOAD_ERROR__ = '';
+
   const loaded = {
     interview: await loadInstrumentFiles('interview'),
     pre: await loadInstrumentFiles('pre'),
@@ -13506,11 +13516,24 @@ async function loadAllInputs(){
   refreshCargaFlowState();
 
   if(!totalLoaded){
-    showMsg('cargaMsg','warn','No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.');
+    if(window.__LMP_LAST_LOAD_ERROR__){
+      showMsg('cargaMsg','err', window.__LMP_LAST_LOAD_ERROR__);
+      return;
+    }
+
+    showMsg(
+      'cargaMsg',
+      'warn',
+      'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
+    );
     return;
   }
 
-  showMsg('cargaMsg','ok',`Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`);
+  showMsg(
+    'cargaMsg',
+    'ok',
+    `Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`
+  );
 }
 
 function updateLoadKpis(){
@@ -13538,23 +13561,15 @@ function refreshCargaFlowState(){
   const statusInterviewCount = safeArray(state.loads?.statusInterview).length;
   const docsCount = safeArray(state.loads?.docs).length;
 
-  const isNewProcess = route !== 'doc';
-  const isDocumentedProcess = route === 'doc';
+  const totalLoads =
+    preCount +
+    interviewCount +
+    transcriptCount +
+    sipocCount +
+    statusInterviewCount +
+    docsCount;
 
-  const hasNewProcessInputs =
-    interviewCount > 0 ||
-    transcriptCount > 0 ||
-    preCount > 0 ||
-    docsCount > 0;
-
-  const hasDocumentedProcessInputs =
-    sipocCount > 0 ||
-    statusInterviewCount > 0 ||
-    docsCount > 0;
-
-  const hasLoads = isDocumentedProcess
-    ? hasDocumentedProcessInputs
-    : hasNewProcessInputs;
+  const hasLoads = totalLoads > 0;
 
   const hasPromptA = !!(
     qs('briefPromptEditor') &&
@@ -13573,28 +13588,24 @@ function refreshCargaFlowState(){
 
   const asIsApproved = !!state.asIsProcessApproved;
 
-  // Bloqueo visual por ruta
-  qs('newProcessLoadPanel')?.classList.toggle('locked', isDocumentedProcess);
-  qs('existingProcessLoadPanel')?.classList.toggle('locked', isNewProcess);
+  // No bloquear paneles por ruta. Ambos pueden recibir archivos.
+  qs('newProcessLoadPanel')?.classList.remove('locked');
+  qs('existingProcessLoadPanel')?.classList.remove('locked');
 
-const btnBuildPromptAInput = qs('btnBuildPromptAInput');
-const btnRunPromptA = qs('btnRunPromptA');
-const btnProcessBrief = qs('btnProcessBrief');
-const btnApplyBrief = qs('btnApplyBrief');
+  const btnBuildPromptAInput = qs('btnBuildPromptAInput');
+  const btnRunPromptA = qs('btnRunPromptA');
+  const btnProcessBrief = qs('btnProcessBrief');
+  const btnApplyBrief = qs('btnApplyBrief');
 
-if(btnBuildPromptAInput){
-  btnBuildPromptAInput.disabled = !hasLoads;
-  btnBuildPromptAInput.title = hasLoads
-    ? ''
-    : 'Primero carga insumos.';
-}
+  if(btnBuildPromptAInput){
+    btnBuildPromptAInput.disabled = !hasLoads;
+    btnBuildPromptAInput.title = hasLoads ? '' : 'Primero carga insumos.';
+  }
 
-if(btnRunPromptA){
-  btnRunPromptA.disabled = !hasLoads;
-  btnRunPromptA.title = hasLoads
-    ? ''
-    : 'Primero carga y consolida insumos.';
-}
+  if(btnRunPromptA){
+    btnRunPromptA.disabled = !hasLoads;
+    btnRunPromptA.title = hasLoads ? '' : 'Primero carga y consolida insumos.';
+  }
 
   if(btnProcessBrief){
     btnProcessBrief.disabled = !hasPromptAResponse;
