@@ -7607,16 +7607,12 @@ function normalizeActivityOutputList(value){
 
 function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
-
-  if(!rows.length){
-    rows.push({ activity: '', connector: '' });
-  }
-
+  
   return rows.map((row, rowIndex) => `
     <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
       <div class="field-grid">
         <div class="field w-8">
-          <label>Actividad ${mode === 'previous' ? 'previa' : 'siguiente'}</label>
+          <label style="display:none">Actividad</label>
           <input class="${classPrefix}_activity" value="${escapeHtml(row.activity || '')}" placeholder="Nombre exacto de la actividad" oninput="syncAsisRow(${index})" />
         </div>
 
@@ -7640,16 +7636,12 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 
 function renderActivityInputRows(list, index){
   const rows = normalizeActivityInputList(list);
-
-  if(!rows.length){
-    rows.push({ input: '', supplier: '' });
-  }
-
+  
   return rows.map((row, rowIndex) => `
     <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
       <div class="field-grid">
         <div class="field w-5">
-          <label>Entrada usada</label>
+          <label>Entrada</label>
           <input class="a_input_name" value="${escapeHtml(row.input || '')}" placeholder="Entrada recibida/usada" oninput="syncAsisRow(${index})" />
         </div>
 
@@ -7669,15 +7661,11 @@ function renderActivityInputRows(list, index){
 function renderActivityOutputRows(list, index){
   const rows = normalizeActivityOutputList(list);
 
-  if(!rows.length){
-    rows.push({ output: '', customer: '' });
-  }
-
   return rows.map((row, rowIndex) => `
     <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
       <div class="field-grid">
         <div class="field w-5">
-          <label>Salida generada</label>
+          <label>Salida</label>
           <input class="a_output_name" value="${escapeHtml(row.output || '')}" placeholder="Salida generada/entregada" oninput="syncAsisRow(${index})" />
         </div>
 
@@ -7994,21 +7982,22 @@ function moveAsisActivity(index, direction){
 
 function syncAsisRow(index){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
-  refreshAsIsActivitySummary(item, index);
+  if(!item) return;
 
-  const data = readAsisRow(item);
+  const row = readAsisRow(item);
+  if(!row) return;
 
-  if(data){
-    state.asis = state.asis || {};
-    state.asis.activities = safeArray(state.asis.activities);
-    state.asis.activities[index] = data;
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities);
+  state.asis.activities[index] = row;
 
-    if(typeof readAdditionalInformationRows === 'function'){
-      state.asis.additional_information = readAdditionalInformationRows();
-    }
+  updateAsIsPreview();
+  updateTopStatus();
 
-    updateAsIsPreview();
-    updateTopStatus();
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
   }
 }
 
@@ -10872,43 +10861,55 @@ function normalizeTextForSearch(value){
 }
 
 function focusLmpB1Issue(index){
-  const issue = safeArray(window.__LMP_B1_STRUCTURAL_ISSUES__)[Number(index)];
-  if(!issue){
-    showMsg('asisBuilderMsg','warn','No se encontró el vacío seleccionado. Actualiza la validación estructural.');
-    return;
+  const issues = safeArray(window.__LMP_B1_STRUCTURAL_ISSUES__);
+  const issue = issues[index];
+
+  if(!issue) return;
+
+  const field = String(issue.field || '');
+  const activityMatch = field.match(/activities\[(\d+)\]/);
+  const activityIndex = activityMatch ? Number(activityMatch[1]) : -1;
+
+  if(activityIndex < 0) return;
+
+  const activityCard = qs('asisActivities')?.querySelector(`.activity-item[data-index="${activityIndex}"]`);
+  if(!activityCard) return;
+
+  activityCard.open = true;
+
+  let targetSelector = '';
+
+  if(field.includes('.name')) targetSelector = '.a_name';
+  else if(field.includes('.actor')) targetSelector = '.a_actor';
+  else if(field.includes('.previous')) targetSelector = '[data-dynamic-list="previous"]';
+  else if(field.includes('.next')) targetSelector = '[data-dynamic-list="next"]';
+  else if(field.includes('.inputs_used') && field.includes('.supplier')) targetSelector = '.a_input_supplier';
+  else if(field.includes('.inputs_used')) targetSelector = '[data-dynamic-list="inputs"]';
+  else if(field.includes('.outputs_generated') && field.includes('.customer')) targetSelector = '.a_output_customer';
+  else if(field.includes('.outputs_generated')) targetSelector = '[data-dynamic-list="outputs"]';
+
+  const target = targetSelector
+    ? activityCard.querySelector(targetSelector)
+    : activityCard;
+
+  if(target){
+    const nestedDetails = target.closest('details.asis-mini-accordion');
+    if(nestedDetails) nestedDetails.open = true;
+
+    setTimeout(() => {
+      target.scrollIntoView({ behavior:'smooth', block:'center' });
+      target.classList.add('asis-field-focus');
+
+      if(typeof target.focus === 'function'){
+        target.focus();
+      }
+
+      setTimeout(() => {
+        target.classList.remove('asis-field-focus');
+      }, 1800);
+    }, 120);
   }
-
-  if(typeof showSection === 'function') showSection('asis');
-
-  setTimeout(() => {
-    const target = lmpB1FindIssueTarget(issue);
-    if(!target.container){
-      showMsg('asisBuilderMsg','warn','No se encontró el bloque visual para corregir este vacío.');
-      return;
-    }
-
-    const accordion = target.container.closest('details.asis-accordion');
-    if(accordion) accordion.setAttribute('open', 'open');
-    if(target.row?.tagName && target.row.tagName.toLowerCase() === 'details') target.row.setAttribute('open', 'open');
-
-    document.querySelectorAll('.asis-focus-highlight,.asis-field-focus').forEach(el => {
-      el.classList.remove('asis-focus-highlight');
-      el.classList.remove('asis-field-focus');
-    });
-
-    target.row?.classList?.add('asis-focus-highlight');
-    if(target.field){
-      target.field.classList.add('asis-field-focus');
-      target.field.focus?.({ preventScroll:true });
-      if(typeof target.field.select === 'function' && ['INPUT','TEXTAREA'].includes(target.field.tagName)) target.field.select();
-    }
-
-    const scrollTarget = target.field || target.row || target.container;
-    scrollTarget.scrollIntoView({ behavior:'smooth', block:'center' });
-    showMsg('asisBuilderMsg','warn', issue.correction_hint || issue.suggestion || 'Vacío localizado. Revisa el elemento resaltado.');
-  }, 180);
 }
-window.focusLmpB1Issue = focusLmpB1Issue;
 
 function lmpRemoveArrayValue(items, value){
   const key = lmpStructuralKey(value);
