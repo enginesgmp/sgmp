@@ -4556,7 +4556,9 @@ if(typeof updatePreparationArtifactsByRoute === "function"){
       }
 
 function updatePreparationArtifactsByRoute(){
-  const route = state?.metadata?.route || 'new';
+  const route = (typeof state !== 'undefined' && state?.metadata?.route)
+    ? state.metadata.route
+    : 'new';
 
   const preBtn = document.getElementById("prep_generate_pre_btn");
   const extractorBtn = document.getElementById("prep_open_extractor_btn");
@@ -4633,7 +4635,6 @@ function initializePreparationState(){
   }
   updatePreparationArtifactsByRoute();
 }
-updatePreparationArtifactsByRoute();
 if (typeof state !== "undefined") {
   initializePreparationState();
 } else {
@@ -6620,7 +6621,8 @@ async function loadRouteJson(mode){
     showMsg('inicioMsg','err',`No fue posible leer el JSON. Detalle: ${error.message}`);
   }
 }
-
+window.loadRouteJson = loadRouteJson;
+  
 /* =========================
    DOCUMENTACIÓN EXISTENTE
 ========================= */
@@ -8737,76 +8739,6 @@ function buildSipocContract(){
 
       suppliers_inputs: suppliersInputs,
       outputs_customers: outputsCustomers,
-      activities
-    },
-
-    analysis_metrics: typeof buildAnalysisMetrics === 'function'
-      ? buildAnalysisMetrics()
-      : {},
-
-    to_be_package: {
-      mode_a: artifacts.modeA || null,
-      mode_b: artifacts.modeB || null,
-      document_proposal: artifacts.documentProposal || null,
-      integration_input: artifacts.integrationInput || null,
-      integration_analysis_base: artifacts.integrationAnalysisBase || null
-    },
-
-    integration_input: artifacts.integrationInput || {}
-  };
-}
-
-  const outputsCustomersFromActivities = activities.flatMap(activity =>
-    normalizeActivityOutputList(activity.outputs_generated).map(row => ({
-      output: normalizeCatalogValue(row.output || 'pendiente_validacion'),
-      customers: [normalizeCatalogValue(row.customer || 'pendiente_validacion')],
-      source: 'activity_outputs',
-      editable: true
-    }))
-  );
-
-  const suppliersInputs = mergeSuppliersInputs([
-    ...suppliersInputsFromAsis,
-    ...suppliersInputsFromActivities
-  ]);
-
-  const outputsCustomers = mergeOutputsCustomers([
-    ...outputsCustomersFromAsis,
-    ...outputsCustomersFromActivities
-  ]);
-
-  const suppliers = dedupeCatalog(suppliersInputs.map(row => row.supplier));
-  const inputs = dedupeCatalog(suppliersInputs.flatMap(row => safeArray(row.inputs)));
-  const outputs = dedupeCatalog(outputsCustomers.map(row => row.output));
-  const customers = dedupeCatalog(outputsCustomers.flatMap(row => safeArray(row.customers)));
-  const actors = dedupeCatalog(activities.map(activity => activity.actor));
-  const documents = dedupeCatalog(activities.map(activity => activity.document));
-
-  const artifacts = typeof buildFinalArtifacts === 'function'
-    ? buildFinalArtifacts()
-    : {};
-
-  return {
-    contract_version: '2.0',
-    source_module: 'lmp',
-    target_module: 'sipoc_builder',
-    generated_at: new Date().toISOString(),
-
-    sipoc_input: {
-      process_code: normalizeContractString(ctx.processCode || ''),
-      process_name: normalizeContractString(ctx.processName || ''),
-      purpose: normalizeContractString(ctx.purpose || ''),
-      notes: typeof buildSipocNotes === 'function' ? buildSipocNotes() : '',
-
-      suppliers,
-      inputs,
-      outputs,
-      customers,
-      actors,
-      documents,
-
-      suppliers_inputs,
-      outputs_customers,
       activities
     },
 
