@@ -4961,15 +4961,6 @@ window.hydratePreparationFromState = hydratePreparationFromState;
         </div>
       </div>
 
-      <div class="asis-operational-grid">
-        <div class="asis-operational-kpi"><small>Lifecycle</small><strong id="asisStructuralLifecycleKpi">blocked</strong></div>
-        <div class="asis-operational-kpi"><small>Score</small><strong id="asisStructuralScoreKpi">0%</strong></div>
-        <div class="asis-operational-kpi"><small>Bloqueos</small><strong id="asisStructuralBlockingKpi">0</strong></div>
-        <div class="asis-operational-kpi"><small>Warnings</small><strong id="asisStructuralWarningsKpi">0</strong></div>
-        <div class="asis-operational-kpi"><small>Continuidad</small><strong id="asisStructuralProceedKpi">No</strong></div>
-      </div>
-
-      <div class="asis-operational-message blocked" id="asisStructuralStateMsg">Sin validación estructural ejecutada.</div>
       <div id="asisStructuralIssuesList">Sin vacíos detectados.</div>
     </article>
 
@@ -11045,66 +11036,79 @@ function lmpB1CurrentGateResult(){
 
 function lmpB1CanProceedToB2(showFeedback = true){
   const gate = lmpB1CurrentGateResult();
-  if(gate.can_proceed_to_b2) return true;
-  const message = `B1 bloqueado: ${gate.reason || 'corrige los vacíos críticos antes de avanzar a B2.'}`;
-  if(showFeedback && typeof showMsg === 'function'){
-    showMsg('analysisMsg_B1','warn', message);
-    showMsg('asisBuilderMsg','warn', message);
-  }
-  if(gate.deterministic && typeof renderLmpB1OperationalState === 'function'){
+
+  if(gate.deterministic && typeof renderLmpB1StructuralStatus === 'function'){
     window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
     renderLmpB1StructuralStatus();
   }
-  return false;
+
+  if(showFeedback && gate.blocking_count > 0 && typeof showMsg === 'function'){
+    showMsg(
+      'asisBuilderMsg',
+      'warn',
+      `Hay ${gate.blocking_count} vacío(s) estructural(es). Puedes continuar, pero conviene revisarlos antes de generar entregables finales.`
+    );
+  }
+
+  return true;
 }
+
 window.lmpB1CanProceedToB2 = lmpB1CanProceedToB2;
 
 function renderLmpB1StructuralStatus(){
   if(typeof qs !== 'function') return null;
+
   const list = qs('asisStructuralIssuesList');
   const kpi = qs('asisStructuralIssuesKpi');
+
   if(!list && !kpi) return null;
 
   const result = lmpStructuralValidator(lmpBuildB1StructuralInput());
   const issues = safeArray(result.validation?.gaps || result.gaps);
+
   window.__LMP_B1_STRUCTURAL_ISSUES__ = issues;
+
   const signature = JSON.stringify({
-    lifecycle: result.lifecycle,
-    score: result.completeness.score,
-    blocking: result.completeness.blocking_count,
-    warnings: result.completeness.warning_count,
-    canProceed: result.operational_state?.can_proceed_to_b2,
-    issues: issues.map(issue => [issue.type, issue.level, issue.field, issue.message, issue.affectedValue || ''])
+    issues: issues.map(issue => [
+      issue.type,
+      issue.field,
+      issue.message,
+      issue.searchHint || '',
+      issue.affectedValue || ''
+    ])
   });
 
   if(window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ === signature) return result;
   window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = signature;
 
   if(kpi) kpi.textContent = issues.length;
-  renderLmpB1OperationalState(result, issues);
+
   if(list){
     if(!issues.length){
       list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
     }else{
       list.innerHTML = '<div class="asis-issue-list">' + issues.map((issue, index) => {
-        const target = issue.affectedValue || issue.searchHint || '';
-        const autoFixButton = issue.autoFix ? `
-          <button type="button" class="brief-mini-btn" onclick="applyLmpB1AutoFix(${index})">
-            Aplicar ajuste
-          </button>
-        ` : '';
+        const activityName = normalizeContractString(
+          issue.searchHint ||
+          issue.activityName ||
+          issue.activity_name ||
+          ''
+        );
+
+        const message = normalizeContractString(issue.message || 'Vacío estructural');
+        const splitMessage = message.includes(':') ? message.split(':') : [];
+        const gapName = splitMessage.length ? splitMessage[0].trim() : message;
+        const inferredActivity = activityName || (splitMessage.length > 1 ? splitMessage.slice(1).join(':').trim() : '');
+
         return `
           <div class="asis-issue-row">
             <div class="asis-issue-index">${index + 1}</div>
             <div class="asis-issue-content">
-              <strong>${escapeHtml(issue.message || 'Vacío estructural')}</strong>
-              ${target ? `<span><b>Elemento afectado:</b> ${escapeHtml(target)}</span>` : ''}
-              <span><b>Ubicación:</b> ${escapeHtml(issue.where || issue.field || 'AS IS')}</span>
-              <span><b>Sugerencia:</b> ${escapeHtml(issue.suggestion || 'Revisar estructura AS IS.')}</span>
+              <strong>${escapeHtml(gapName)}</strong>
+              ${inferredActivity ? `<span>Actividad afectada: <b>${escapeHtml(inferredActivity)}</b></span>` : ''}
             </div>
             <div class="asis-issue-action">
-              ${autoFixButton}
-              <button type="button" class="brief-mini-btn primary" onclick="focusLmpB1Issue(${index})">
+              <button type="button" class="brief-mini-btn" onclick="focusLmpB1Issue(${index})">
                 Corregir vacío
               </button>
             </div>
@@ -11113,6 +11117,7 @@ function renderLmpB1StructuralStatus(){
       }).join('') + '</div>';
     }
   }
+
   return result;
 }
 
