@@ -8445,32 +8445,26 @@ function canonicalActivityType(value){
 }
 
 function buildSipocActivities(){
-  const activities = safeArray(state.asis?.activities);
+  return safeArray(state.asis?.activities)
+    .map((a, index) => ({
+      id: normalizeContractString(a.id || 'ACT-' + String(index + 1).padStart(3, '0')),
+      name: normalizeContractString(a.name || a.activity || a.activity_name || ''),
+      type: normalizePromptAType(a.type || 'actividad'),
+      actor: normalizeCatalogValue(a.actor || a.owner || a.responsable || 'pendiente_validacion'),
+      document: normalizeCatalogValue(a.document || ''),
+      estimated_time: normalizeContractString(a.estimated_time || a.time || ''),
 
-  return activities
-    .map((activity, index) => {
-      const normalized = normalizeActivity(activity, index);
+      previous: normalizeActivityConnectionList(a.previous),
+      next: normalizeActivityConnectionList(a.next),
 
-      return {
-        id: normalized.id,
-        name: normalized.name,
-        type: normalized.type,
-        actor: normalized.actor,
-        document: normalized.document,
-        estimated_time: normalized.estimated_time,
+      inputs_used: normalizeActivityInputList(a.inputs_used || a.inputsUsed || a.ext_inputs),
+      outputs_generated: normalizeActivityOutputList(a.outputs_generated || a.outputsGenerated || a.ext_outputs),
 
-        previous: normalizeActivityConnectionList(normalized.previous),
-        next: normalizeActivityConnectionList(normalized.next),
-
-        inputs_used: normalizeActivityInputList(normalized.inputs_used),
-        outputs_generated: normalizeActivityOutputList(normalized.outputs_generated),
-
-        observations: normalized.observations,
-        clarifying_notes: normalizePromptAList(normalized.clarifying_notes),
-        editable: normalized.editable !== false
-      };
-    })
-    .filter(activity => activity.name);
+      observations: normalizeContractString(a.observations || a.note || ''),
+      clarifying_notes: normalizePromptAList(a.clarifying_notes || a.clarifyingNotes),
+      editable: a.editable !== false
+    }))
+    .filter(a => a.name);
 }
 
 function buildSipocNotes(){
@@ -8653,13 +8647,35 @@ function mergeOutputsCustomers(rows){
 
   return Array.from(map.values()).filter(row => row.output || row.customers.length);
 }
+
+function mergeOutputsCustomers(rows){
+  const map = new Map();
+
+  safeArray(rows).forEach(row => {
+    const output = normalizeCatalogValue(row?.output || 'pendiente_validacion');
+    const customers = dedupeCatalog(row?.customers || row?.customer || []);
+
+    const key = output.toLowerCase();
+
+    if(!map.has(key)){
+      map.set(key, {
+        output,
+        customers: [],
+        source: normalizeContractString(row?.source || 'asis'),
+        editable: row?.editable !== false
+      });
+    }
+
+    const current = map.get(key);
+    current.customers = dedupeCatalog([...current.customers, ...customers]);
+  });
+
+  return Array.from(map.values()).filter(row => row.output || row.customers.length);
+}
   
 function buildSipocContract(){
   const ctx = state.context || {};
   const activities = buildSipocActivities();
-
-  const suppliersInputsFromAsis = safeArray(state.asis?.suppliers_inputs);
-  const outputsCustomersFromAsis = safeArray(state.asis?.outputs_customers);
 
   const suppliersInputsFromActivities = activities.flatMap(activity =>
     normalizeActivityInputList(activity.inputs_used).map(row => ({
@@ -8669,6 +8685,76 @@ function buildSipocContract(){
       editable: true
     }))
   );
+
+  const outputsCustomersFromActivities = activities.flatMap(activity =>
+    normalizeActivityOutputList(activity.outputs_generated).map(row => ({
+      output: normalizeCatalogValue(row.output || 'pendiente_validacion'),
+      customers: [normalizeCatalogValue(row.customer || 'pendiente_validacion')],
+      source: 'activity_outputs',
+      editable: true
+    }))
+  );
+
+  const suppliersInputs = mergeSuppliersInputs([
+    ...safeArray(state.asis?.suppliers_inputs),
+    ...suppliersInputsFromActivities
+  ]);
+
+  const outputsCustomers = mergeOutputsCustomers([
+    ...safeArray(state.asis?.outputs_customers),
+    ...outputsCustomersFromActivities
+  ]);
+
+  const suppliers = dedupeCatalog(suppliersInputs.map(row => row.supplier));
+  const inputs = dedupeCatalog(suppliersInputs.flatMap(row => safeArray(row.inputs)));
+  const outputs = dedupeCatalog(outputsCustomers.map(row => row.output));
+  const customers = dedupeCatalog(outputsCustomers.flatMap(row => safeArray(row.customers)));
+  const actors = dedupeCatalog(activities.map(activity => activity.actor));
+  const documents = dedupeCatalog(activities.map(activity => activity.document));
+
+  const artifacts = typeof buildFinalArtifacts === 'function'
+    ? buildFinalArtifacts()
+    : {};
+
+  return {
+    contract_version: '2.0',
+    source_module: 'lmp',
+    target_module: 'sipoc_builder',
+    generated_at: new Date().toISOString(),
+
+    sipoc_input: {
+      process_code: normalizeContractString(ctx.processCode || ''),
+      process_name: normalizeContractString(ctx.processName || ''),
+      purpose: normalizeContractString(ctx.purpose || ''),
+      notes: typeof buildSipocNotes === 'function' ? buildSipocNotes() : '',
+
+      suppliers,
+      inputs,
+      outputs,
+      customers,
+      actors,
+      documents,
+
+      suppliers_inputs: suppliersInputs,
+      outputs_customers: outputsCustomers,
+      activities
+    },
+
+    analysis_metrics: typeof buildAnalysisMetrics === 'function'
+      ? buildAnalysisMetrics()
+      : {},
+
+    to_be_package: {
+      mode_a: artifacts.modeA || null,
+      mode_b: artifacts.modeB || null,
+      document_proposal: artifacts.documentProposal || null,
+      integration_input: artifacts.integrationInput || null,
+      integration_analysis_base: artifacts.integrationAnalysisBase || null
+    },
+
+    integration_input: artifacts.integrationInput || {}
+  };
+}
 
   const outputsCustomersFromActivities = activities.flatMap(activity =>
     normalizeActivityOutputList(activity.outputs_generated).map(row => ({
@@ -9044,6 +9130,10 @@ function repairLoadedLegacyStateBeforeResults(){
 }
   
 function generateResults(){
+  state.results = state.results || {};
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities);
+
   repairLoadedLegacyStateBeforeResults();
   syncVisibleStage();
     if(state.tobe && Array.isArray(state.tobe.improvements)){
