@@ -11222,42 +11222,62 @@ function getBriefPayload(){
 function renderLoadList(targetId, items, mode){
   const el = qs(targetId);
   if(!el) return;
-  if(!items || !items.length){ el.innerHTML = 'Sin archivos cargados.'; return; }
-  el.innerHTML = items.map((item, idx) => {
-    const name = escapeHtml(item.__fileName || item.name || item.context?.processName || `${mode||'archivo'} ${idx+1}`);
+
+  const list = safeArray(items);
+
+  if(!list.length){
+    el.innerHTML = 'Sin archivos cargados.';
+    return;
+  }
+
+  el.innerHTML = list.map((item, idx) => {
+    const name = escapeHtml(
+      item.__fileName ||
+      item.name ||
+      item.title ||
+      item.context?.processName ||
+      item.instrument ||
+      `${mode || 'archivo'} ${idx + 1}`
+    );
+
+    const kind = escapeHtml(
+      item.source_type ||
+      item.instrument ||
+      item.type ||
+      item.__summary ||
+      'insumo_cargado'
+    );
+
     const meta = mode === 'docs'
-      ? `${escapeHtml(item.__sizeLabel || '')} · ${escapeHtml(item.__summary || 'Sin resumen')}`
-      : `${escapeHtml(item.context?.owner || item.context?.analyst || '')}`;
-    return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)"><div><strong>${name}</strong><br><small>${meta}</small></div><button class="btn-danger" type="button" onclick="removeLoadedItem('${mode}',${idx})">Quitar</button></div>`;
+      ? `${escapeHtml(item.__sizeLabel || '')} · ${escapeHtml(item.__summary || 'Archivo TXT cargado')}`
+      : `${kind}`;
+
+    return `
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)">
+        <div>
+          <strong>${name}</strong><br>
+          <small>${meta}</small>
+        </div>
+      </div>
+    `;
   }).join('');
 }
 
 function refreshLoadViews(){
-  const route = state.metadata?.route;
+  renderLoadList('preLoadList', safeArray(state.loads?.pre), 'pre');
 
-  renderLoadList('preLoadList', state.loads.pre, 'pre');
+  renderLoadList(
+    'interviewLoadList',
+    [
+      ...safeArray(state.loads?.interview),
+      ...safeArray(state.loads?.interviewTranscript),
+      ...safeArray(state.loads?.sipoc),
+      ...safeArray(state.loads?.statusInterview)
+    ],
+    'mixed_inputs'
+  );
 
-  if(route === 'doc'){
-    renderLoadList(
-      'interviewLoadList',
-      [
-        ...(state.loads.sipoc || []),
-        ...(state.loads.statusInterview || [])
-      ],
-      'interview'
-    );
-  } else {
-    renderLoadList(
-      'interviewLoadList',
-      [
-        ...(state.loads.interview || []),
-        ...(state.loads.interviewTranscript || [])
-      ],
-      'interview'
-    );
-  }
-
-  renderLoadList('docLoadList', state.loads.docs, 'docs');
+  renderLoadList('docLoadList', safeArray(state.loads?.docs), 'docs');
 
   refreshCargaFlowState();
 }
@@ -13440,8 +13460,6 @@ async function loadTxtInputFiles(inputId, targetType, fixedType){
 }
 
 async function loadAllInputs(){
-  const route = state.metadata?.route;
-
   state.loads = state.loads || {};
   state.loads.pre = state.loads.pre || [];
   state.loads.interview = state.loads.interview || [];
@@ -13450,16 +13468,22 @@ async function loadAllInputs(){
   state.loads.statusInterview = state.loads.statusInterview || [];
   state.loads.docs = state.loads.docs || [];
 
-  if(route === 'doc'){
-    await loadInstrumentFiles('sipoc');
-    await loadInstrumentFiles('statusInterview');
-  } else {
-    await loadInstrumentFiles('interview');
-    await loadInstrumentFiles('pre');
-    await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista');
-  }
+  const loaded = {
+    interview: await loadInstrumentFiles('interview'),
+    pre: await loadInstrumentFiles('pre'),
+    transcript: await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista'),
+    sipoc: await loadInstrumentFiles('sipoc'),
+    status: await loadInstrumentFiles('statusInterview'),
+    docs: await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional')
+  };
 
-  await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional');
+  const totalLoaded =
+    safeArray(loaded.interview).length +
+    safeArray(loaded.pre).length +
+    safeArray(loaded.transcript).length +
+    safeArray(loaded.sipoc).length +
+    safeArray(loaded.status).length +
+    safeArray(loaded.docs).length;
 
   updateLoadKpis();
   refreshLoadViews();
@@ -13478,11 +13502,30 @@ async function loadAllInputs(){
     if(input) input.value = '';
   });
 
+  state.promptAInput = null;
+
+  if(qs('promptAConsolidatedStatus')){
+    qs('promptAConsolidatedStatus').textContent = 'Aún no se ha consolidado la información.';
+  }
+
   renderBriefValidation();
   renderAnalysisValidation();
   refreshCargaFlowState();
 
-  showMsg('cargaMsg','ok','Insumos cargados correctamente según la ruta seleccionada.');
+  if(!totalLoaded){
+    showMsg(
+      'cargaMsg',
+      'warn',
+      'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
+    );
+    return;
+  }
+
+  showMsg(
+    'cargaMsg',
+    'ok',
+    `Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`
+  );
 }
 
 function updateLoadKpis(){
