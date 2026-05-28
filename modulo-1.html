@@ -2272,6 +2272,38 @@ color:#A93226;
   justify-content:center !important;
 }
 
+.asis-choice-line{
+  display:flex !important;
+  align-items:flex-start !important;
+  gap:10px !important;
+  padding:9px 11px !important;
+  border-radius:12px !important;
+  border:1px solid rgba(11,46,89,.10) !important;
+  background:#FFFFFF !important;
+  color:#0B2E59 !important;
+  cursor:pointer !important;
+}
+
+.asis-choice-line input{
+  width:auto !important;
+  min-height:auto !important;
+  margin-top:3px !important;
+}
+
+.asis-choice-line strong{
+  display:block !important;
+  color:#0B2E59 !important;
+  font-size:.86rem !important;
+  font-weight:900 !important;
+}
+
+.asis-choice-line small{
+  display:block !important;
+  color:#5B6F8A !important;
+  font-size:.76rem !important;
+  margin-top:2px !important;
+}
+  
 .asis-add-inline-btn{
   width:auto !important;
   min-width:170px !important;
@@ -5040,6 +5072,37 @@ window.hydratePreparationFromState = hydratePreparationFromState;
 
     <div class="asis-accordion-layout" style="grid-column:span 12;">
 
+<details class="asis-accordion asis-secondary-accordion" open>
+  <summary>
+    <div class="asis-summary-main">
+      <span>Catálogos SIPOC editables</span>
+      <small>Define aquí entradas/proveedores y salidas/clientes. Las actividades solo seleccionan estos elementos.</small>
+    </div>
+  </summary>
+
+  <article class="card">
+    <div class="split2">
+      <div>
+        <h3>Entradas / proveedores</h3>
+        <p>Lista global editable de entradas del proceso y quién las provee.</p>
+        <div class="list" id="asisGlobalInputs"></div>
+        <div class="actions" style="border-top:none;padding-top:8px;margin-top:8px">
+          <button class="btn-ok asis-add-inline-btn" onclick="addAsIsGlobalInputRow()" type="button">+ Agregar entrada</button>
+        </div>
+      </div>
+
+      <div>
+        <h3>Salidas / clientes</h3>
+        <p>Lista global editable de salidas del proceso y quién las recibe.</p>
+        <div class="list" id="asisGlobalOutputs"></div>
+        <div class="actions" style="border-top:none;padding-top:8px;margin-top:8px">
+          <button class="btn-ok asis-add-inline-btn" onclick="addAsIsGlobalOutputRow()" type="button">+ Agregar salida</button>
+        </div>
+      </div>
+    </div>
+  </article>
+</details>
+      
       <details class="asis-accordion asis-main-accordion" open>
         <summary>
           <div class="asis-summary-main">
@@ -7491,11 +7554,10 @@ function asisActivityTemplate(a, index){
               </div>
 
               <div class="field w-12">
-                <label>Entradas SIPOC + proveedor</label>
+                <label>Entradas usadas desde catálogo</label>
                 <div class="list" data-dynamic-list="inputs">
                   ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
                 </div>
-                <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'inputs')">+ Agregar entrada</button>
               </div>
             </div>
           </div>
@@ -7520,11 +7582,10 @@ function asisActivityTemplate(a, index){
               </div>
 
               <div class="field w-12">
-                <label>Salidas SIPOC + cliente</label>
+                <label>Salidas generadas desde catálogo</label>
                 <div class="list" data-dynamic-list="outputs">
                   ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
                 </div>
-                <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'outputs')">+ Agregar salida</button>
               </div>
             </div>
           </div>
@@ -7590,21 +7651,111 @@ function normalizeActivityInputList(value){
 }
 
 function normalizeActivityOutputList(value){
-  return safeArray(value).map(item => {
-    if(typeof item === 'string'){
-      return {
-        output: normalizeContractString(item),
-        customer: 'pendiente_validacion'
-      };
-    }
+  const map = new Map();
 
-    return {
-      output: normalizeContractString(item?.output || item?.name || item?.salida || ''),
-      customer: normalizeContractString(item?.customer || item?.client || item?.cliente || 'pendiente_validacion')
-    };
-  }).filter(row => row.output);
+  safeArray(value).forEach(item => {
+    const output = typeof item === 'string'
+      ? normalizeContractString(item)
+      : normalizeContractString(item?.output || item?.name || item?.salida || '');
+
+    if(!output) return;
+
+    const key = output.toLowerCase();
+    if(!map.has(key)){
+      map.set(key, output);
+    }
+  });
+
+  return Array.from(map.values());
 }
 
+function normalizeSuppliersInputsCatalog(rows){
+  const map = new Map();
+
+  safeArray(rows).forEach(row => {
+    const supplier = normalizeContractString(row?.supplier || 'pendiente_validacion') || 'pendiente_validacion';
+    const inputs = safeArray(row?.inputs).map(normalizeContractString).filter(Boolean);
+
+    if(!inputs.length){
+      inputs.push('pendiente_validacion');
+    }
+
+    const key = supplier.toLowerCase();
+
+    if(!map.has(key)){
+      map.set(key, {
+        supplier,
+        inputs: [],
+        source: row?.source || 'pendiente_validacion',
+        editable: true
+      });
+    }
+
+    const target = map.get(key);
+
+    inputs.forEach(input => {
+      if(!target.inputs.some(x => x.toLowerCase() === input.toLowerCase())){
+        target.inputs.push(input);
+      }
+    });
+  });
+
+  return Array.from(map.values());
+}
+
+function normalizeOutputsCustomersCatalog(rows){
+  const map = new Map();
+
+  safeArray(rows).forEach(row => {
+    const output = normalizeContractString(row?.output || 'pendiente_validacion') || 'pendiente_validacion';
+    const customers = safeArray(row?.customers).map(normalizeContractString).filter(Boolean);
+
+    if(!customers.length){
+      customers.push('pendiente_validacion');
+    }
+
+    const key = output.toLowerCase();
+
+    if(!map.has(key)){
+      map.set(key, {
+        output,
+        customers: [],
+        source: row?.source || 'pendiente_validacion',
+        editable: true
+      });
+    }
+
+    const target = map.get(key);
+
+    customers.forEach(customer => {
+      if(!target.customers.some(x => x.toLowerCase() === customer.toLowerCase())){
+        target.customers.push(customer);
+      }
+    });
+  });
+
+  return Array.from(map.values());
+}
+
+function flattenSuppliersInputsCatalog(){
+  return safeArray(state.asis?.suppliers_inputs).flatMap(row =>
+    safeArray(row.inputs).map(input => ({
+      supplier: normalizeContractString(row.supplier || 'pendiente_validacion'),
+      input: normalizeContractString(input || '')
+    }))
+  ).filter(row => row.input);
+}
+
+function flattenOutputsCustomersCatalog(){
+  return safeArray(state.asis?.outputs_customers).flatMap(row =>
+    safeArray(row.customers).map(customer => ({
+      output: normalizeContractString(row.output || ''),
+      customer: normalizeContractString(customer || 'pendiente_validacion')
+    }))
+  ).filter(row => row.output);
+}
+
+  
 function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
   
@@ -7635,53 +7786,57 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 }
 
 function renderActivityInputRows(list, index){
-  const rows = normalizeActivityInputList(list);
-  
-  return rows.map((row, rowIndex) => `
-    <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
-      <div class="field-grid">
-        <div class="field w-5">
-          <label>Entrada</label>
-          <input class="a_input_name" value="${escapeHtml(row.input || '')}" placeholder="Entrada recibida/usada" oninput="syncAsisRow(${index})" />
-        </div>
+  const selected = new Set(
+    normalizeActivityInputList(list).map(x => x.toLowerCase())
+  );
 
-        <div class="field w-6">
-          <label>Proveedor de la entrada</label>
-          <input class="a_input_supplier" value="${escapeHtml(row.supplier || '')}" placeholder="Proveedor, área, actor o sistema" oninput="syncAsisRow(${index})" />
-        </div>
+  const catalog = flattenSuppliersInputsCatalog();
 
-        <div class="field w-1 asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar entrada" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  if(!catalog.length){
+    return '<div class="note">No hay entradas globales registradas. Agrega entradas/proveedores en el catálogo superior.</div>';
+  }
+
+  return catalog.map((row, rowIndex) => {
+    const checked = selected.has(row.input.toLowerCase()) ? 'checked' : '';
+
+    return `
+      <label class="asis-choice-line">
+        <input class="a_input_choice" type="checkbox" value="${escapeHtml(row.input)}" ${checked} onchange="syncAsisRow(${index})" />
+        <span>
+          <strong>${escapeHtml(row.input)}</strong>
+          <small>Proveedor: ${escapeHtml(row.supplier || 'pendiente_validacion')}</small>
+        </span>
+      </label>
+    `;
+  }).join('');
 }
 
 function renderActivityOutputRows(list, index){
-  const rows = normalizeActivityOutputList(list);
+  const selected = new Set(
+    normalizeActivityOutputList(list).map(x => x.toLowerCase())
+  );
 
-  return rows.map((row, rowIndex) => `
-    <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
-      <div class="field-grid">
-        <div class="field w-5">
-          <label>Salida</label>
-          <input class="a_output_name" value="${escapeHtml(row.output || '')}" placeholder="Salida generada/entregada" oninput="syncAsisRow(${index})" />
-        </div>
+  const catalog = flattenOutputsCustomersCatalog();
 
-        <div class="field w-6">
-          <label>Cliente de la salida</label>
-          <input class="a_output_customer" value="${escapeHtml(row.customer || '')}" placeholder="Cliente, área, actor o receptor" oninput="syncAsisRow(${index})" />
-        </div>
+  if(!catalog.length){
+    return '<div class="note">No hay salidas globales registradas. Agrega salidas/clientes en el catálogo superior.</div>';
+  }
 
-        <div class="field w-1 asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar salida" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  return catalog.map((row, rowIndex) => {
+    const checked = selected.has(row.output.toLowerCase()) ? 'checked' : '';
+
+    return `
+      <label class="asis-choice-line">
+        <input class="a_output_choice" type="checkbox" value="${escapeHtml(row.output)}" ${checked} onchange="syncAsisRow(${index})" />
+        <span>
+          <strong>${escapeHtml(row.output)}</strong>
+          <small>Cliente: ${escapeHtml(row.customer || 'pendiente_validacion')}</small>
+        </span>
+      </label>
+    `;
+  }).join('');
 }
-
+  
 function readActivityConnectionsFromRow(item, classPrefix){
   return qsa('.' + classPrefix + '_row', item).map(row => ({
     activity: row.querySelector('.' + classPrefix + '_activity')?.value?.trim() || '',
@@ -7690,17 +7845,15 @@ function readActivityConnectionsFromRow(item, classPrefix){
 }
 
 function readActivityInputsFromRow(item){
-  return qsa('.a_input_row', item).map(row => ({
-    input: row.querySelector('.a_input_name')?.value?.trim() || '',
-    supplier: row.querySelector('.a_input_supplier')?.value?.trim() || 'pendiente_validacion'
-  })).filter(row => row.input);
+  return qsa('.a_input_choice:checked', item)
+    .map(input => input.value.trim())
+    .filter(Boolean);
 }
 
 function readActivityOutputsFromRow(item){
-  return qsa('.a_output_row', item).map(row => ({
-    output: row.querySelector('.a_output_name')?.value?.trim() || '',
-    customer: row.querySelector('.a_output_customer')?.value?.trim() || 'pendiente_validacion'
-  })).filter(row => row.output);
+  return qsa('.a_output_choice:checked', item)
+    .map(input => input.value.trim())
+    .filter(Boolean);
 }
 
 function addAsisDynamicRow(index, kind){
@@ -7886,8 +8039,9 @@ function deleteAdditionalInformationRow(index){
 
 function collectAsisActivities(){
   state.asis = state.asis || {};
+  syncAsIsGlobalCatalogs(false);
 
-  state.asis.activities = qsa('#asisActivities .activity-item')
+  state.asis.activities = qsa('#asisActivities .activity-item').map(readAsisRow).filter(Boolean);
     .map(readAsisRow)
     .filter(Boolean);
 
@@ -7901,15 +8055,201 @@ function collectAsisActivities(){
 
   return state.asis.activities;
 }
+
+function renderAsIsGlobalCatalogs(){
+  renderAsIsGlobalInputs();
+  renderAsIsGlobalOutputs();
+}
+
+function renderAsIsGlobalInputs(){
+  const container = qs('asisGlobalInputs');
+  if(!container) return;
+
+  const rows = flattenSuppliersInputsCatalog();
+
+  if(!rows.length){
+    container.innerHTML = '<div class="note">No hay entradas/proveedores registrados.</div>';
+    return;
+  }
+
+  container.innerHTML = rows.map((row, index) => `
+    <div class="repeat-item asis-catalog-row asis-global-input-row" data-index="${index}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Entrada</label>
+          <input class="global_input_name" value="${escapeHtml(row.input || '')}" oninput="syncAsIsGlobalCatalogs(false)" />
+        </div>
+        <div class="field w-5">
+          <label>Proveedor</label>
+          <input class="global_input_supplier" value="${escapeHtml(row.supplier || '')}" oninput="syncAsIsGlobalCatalogs(false)" />
+        </div>
+        <div class="field w-1 asis-row-delete-wrap">
+          <button class="btn-danger asis-row-delete-btn" type="button" onclick="deleteAsIsGlobalInputRow(this)">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderAsIsGlobalOutputs(){
+  const container = qs('asisGlobalOutputs');
+  if(!container) return;
+
+  const rows = flattenOutputsCustomersCatalog();
+
+  if(!rows.length){
+    container.innerHTML = '<div class="note">No hay salidas/clientes registrados.</div>';
+    return;
+  }
+
+  container.innerHTML = rows.map((row, index) => `
+    <div class="repeat-item asis-catalog-row asis-global-output-row" data-index="${index}">
+      <div class="field-grid">
+        <div class="field w-6">
+          <label>Salida</label>
+          <input class="global_output_name" value="${escapeHtml(row.output || '')}" oninput="syncAsIsGlobalCatalogs(false)" />
+        </div>
+        <div class="field w-5">
+          <label>Cliente</label>
+          <input class="global_output_customer" value="${escapeHtml(row.customer || '')}" oninput="syncAsIsGlobalCatalogs(false)" />
+        </div>
+        <div class="field w-1 asis-row-delete-wrap">
+          <button class="btn-danger asis-row-delete-btn" type="button" onclick="deleteAsIsGlobalOutputRow(this)">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function syncAsIsGlobalCatalogs(rerenderActivities = false){
+  state.asis = state.asis || {};
+
+  const inputPairs = qsa('#asisGlobalInputs .asis-global-input-row').map(row => ({
+    input: row.querySelector('.global_input_name')?.value?.trim() || '',
+    supplier: row.querySelector('.global_input_supplier')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.input);
+
+  const inputMap = new Map();
+
+  inputPairs.forEach(row => {
+    const supplier = row.supplier || 'pendiente_validacion';
+    const key = supplier.toLowerCase();
+
+    if(!inputMap.has(key)){
+      inputMap.set(key, {
+        supplier,
+        inputs: [],
+        source: 'manual_lmp',
+        editable: true
+      });
+    }
+
+    const target = inputMap.get(key);
+
+    if(!target.inputs.some(x => x.toLowerCase() === row.input.toLowerCase())){
+      target.inputs.push(row.input);
+    }
+  });
+
+  state.asis.suppliers_inputs = Array.from(inputMap.values());
+
+  const outputPairs = qsa('#asisGlobalOutputs .asis-global-output-row').map(row => ({
+    output: row.querySelector('.global_output_name')?.value?.trim() || '',
+    customer: row.querySelector('.global_output_customer')?.value?.trim() || 'pendiente_validacion'
+  })).filter(row => row.output);
+
+  const outputMap = new Map();
+
+  outputPairs.forEach(row => {
+    const output = row.output || 'pendiente_validacion';
+    const key = output.toLowerCase();
+
+    if(!outputMap.has(key)){
+      outputMap.set(key, {
+        output,
+        customers: [],
+        source: 'manual_lmp',
+        editable: true
+      });
+    }
+
+    const target = outputMap.get(key);
+
+    if(!target.customers.some(x => x.toLowerCase() === row.customer.toLowerCase())){
+      target.customers.push(row.customer || 'pendiente_validacion');
+    }
+  });
+
+  state.asis.outputs_customers = Array.from(outputMap.values());
+
+  updateAsIsPreview();
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+    renderLmpB1StructuralStatus();
+  }
+
+  if(rerenderActivities){
+    renderAsIsActivities();
+  }
+}
+
+function addAsIsGlobalInputRow(){
+  syncAsIsGlobalCatalogs(false);
+
+  state.asis = state.asis || {};
+  state.asis.suppliers_inputs = safeArray(state.asis.suppliers_inputs);
+
+  state.asis.suppliers_inputs.push({
+    supplier: 'pendiente_validacion',
+    inputs: [''],
+    source: 'manual_lmp',
+    editable: true
+  });
+
+  renderAsIsGlobalCatalogs();
+  renderAsIsActivities();
+}
+
+function addAsIsGlobalOutputRow(){
+  syncAsIsGlobalCatalogs(false);
+
+  state.asis = state.asis || {};
+  state.asis.outputs_customers = safeArray(state.asis.outputs_customers);
+
+  state.asis.outputs_customers.push({
+    output: '',
+    customers: ['pendiente_validacion'],
+    source: 'manual_lmp',
+    editable: true
+  });
+
+  renderAsIsGlobalCatalogs();
+  renderAsIsActivities();
+}
+
+function deleteAsIsGlobalInputRow(button){
+  const row = button?.closest('.asis-global-input-row');
+  if(row) row.remove();
+
+  syncAsIsGlobalCatalogs(true);
+}
+
+function deleteAsIsGlobalOutputRow(button){
+  const row = button?.closest('.asis-global-output-row');
+  if(row) row.remove();
+
+  syncAsIsGlobalCatalogs(true);
+}
   
 function renderAsIsActivities(){
   const container = qs('asisActivities');
   if(!container) return;
 
-  state.asis = state.asis || {};
-  container.innerHTML = '';
+  renderAsIsGlobalCatalogs();
 
-  const activities = safeArray(state.asis.activities);
+  container.innerHTML = '';
+  const activities = state.asis.activities || [];
 
   if(!activities.length){
     container.innerHTML = '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
@@ -12376,24 +12716,69 @@ function validatePromptAAsIsProcess(asIsPayload){
     return issues;
   }
 
+  if(!Array.isArray(p.suppliers_inputs)){
+    issues.push('as_is_process.suppliers_inputs debe ser un arreglo.');
+  }
+
+  if(!Array.isArray(p.outputs_customers)){
+    issues.push('as_is_process.outputs_customers debe ser un arreglo.');
+  }
+
   if(!Array.isArray(p.activities)){
     issues.push('as_is_process.activities debe ser un arreglo.');
     return issues;
   }
 
+  const inputCatalog = new Set(
+    safeArray(p.suppliers_inputs)
+      .flatMap(row => safeArray(row.inputs))
+      .map(x => normalizeContractString(x).toLowerCase())
+      .filter(Boolean)
+  );
+
+  const outputCatalog = new Set(
+    safeArray(p.outputs_customers)
+      .map(row => normalizeContractString(row.output).toLowerCase())
+      .filter(Boolean)
+  );
+
+  const activityNames = new Set(
+    safeArray(p.activities)
+      .map(row => normalizeContractString(row.name || row.activity || row.activity_name).toLowerCase())
+      .filter(Boolean)
+  );
+
+  safeArray(p.suppliers_inputs).forEach((row, index) => {
+    if(!normalizeContractString(row.supplier || '')){
+      issues.push(`Proveedor/entrada #${index + 1}: falta supplier.`);
+    }
+
+    if(!Array.isArray(row.inputs) || !row.inputs.length){
+      issues.push(`Proveedor/entrada #${index + 1}: inputs debe ser un arreglo con al menos una entrada.`);
+    }
+  });
+
+  safeArray(p.outputs_customers).forEach((row, index) => {
+    if(!normalizeContractString(row.output || '')){
+      issues.push(`Salida/cliente #${index + 1}: falta output.`);
+    }
+
+    if(!Array.isArray(row.customers) || !row.customers.length){
+      issues.push(`Salida/cliente #${index + 1}: customers debe ser un arreglo con al menos un cliente.`);
+    }
+  });
+
   safeArray(p.activities).forEach((activity, index) => {
     const ref = activity?.name || ('Actividad #' + (index + 1));
 
-    const name = normalizeContractString(activity?.name || '');
+    const name = normalizeContractString(activity?.name || activity?.activity || activity?.activity_name || '');
     const actor = normalizeContractString(activity?.actor || '');
+    const type = normalizePromptAType(activity?.type || '');
 
     const previous = normalizeActivityConnectionList(activity?.previous);
     const next = normalizeActivityConnectionList(activity?.next);
     const inputs = normalizeActivityInputList(activity?.inputs_used || activity?.inputsUsed || activity?.ext_inputs);
     const outputs = normalizeActivityOutputList(activity?.outputs_generated || activity?.outputsGenerated || activity?.ext_outputs);
-
-    const hasInputConnection = previous.length > 0 || inputs.length > 0;
-    const hasOutputConnection = next.length > 0 || outputs.length > 0;
 
     if(!name){
       issues.push(ref + ': falta nombre de actividad.');
@@ -12403,50 +12788,95 @@ function validatePromptAAsIsProcess(asIsPayload){
       issues.push(ref + ': falta cargo, actor o rol responsable.');
     }
 
+    if(type !== 'actividad' && type !== 'decision'){
+      issues.push(ref + ': type debe ser actividad o decision.');
+    }
+
+    if(!Array.isArray(activity.inputs_used)){
+      issues.push(ref + ': inputs_used debe ser un arreglo de strings.');
+    }
+
+    if(!Array.isArray(activity.outputs_generated)){
+      issues.push(ref + ': outputs_generated debe ser un arreglo de strings.');
+    }
+
+    safeArray(activity.inputs_used).forEach((item, itemIndex) => {
+      if(item && typeof item === 'object'){
+        issues.push(ref + ': inputs_used #' + (itemIndex + 1) + ' no debe ser objeto; debe ser string.');
+      }
+    });
+
+    safeArray(activity.outputs_generated).forEach((item, itemIndex) => {
+      if(item && typeof item === 'object'){
+        issues.push(ref + ': outputs_generated #' + (itemIndex + 1) + ' no debe ser objeto; debe ser string.');
+      }
+    });
+
+    inputs.forEach(input => {
+      if(input !== 'pendiente_validacion' && !inputCatalog.has(input.toLowerCase())){
+        issues.push(ref + ': entrada usada no existe en suppliers_inputs: ' + input);
+      }
+    });
+
+    outputs.forEach(output => {
+      if(output !== 'pendiente_validacion' && !outputCatalog.has(output.toLowerCase())){
+        issues.push(ref + ': salida generada no existe en outputs_customers: ' + output);
+      }
+    });
+
+    previous.forEach(row => {
+      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activity.toLowerCase())){
+        issues.push(ref + ': previous apunta a actividad inexistente: ' + row.activity);
+      }
+    });
+
+    next.forEach(row => {
+      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activity.toLowerCase())){
+        issues.push(ref + ': next apunta a actividad inexistente: ' + row.activity);
+      }
+    });
+
+    const hasInputConnection = previous.length > 0 || inputs.length > 0;
+    const hasOutputConnection = next.length > 0 || outputs.length > 0;
+
     if(!hasInputConnection){
-      issues.push(ref + ': falta conexión de entrada. Debe tener actividad previa o entrada SIPOC.');
+      issues.push(ref + ': falta conexión de entrada. Debe tener actividad previa o entrada usada.');
     }
 
     if(!hasOutputConnection){
-      issues.push(ref + ': falta conexión de salida. Debe tener actividad siguiente o salida SIPOC.');
+      issues.push(ref + ': falta conexión de salida. Debe tener actividad siguiente o salida generada.');
     }
-
-    inputs.forEach((row, rowIndex) => {
-      if(!row.input || lmpStructuralIsPending(row.input)){
-        issues.push(ref + ': entrada #' + (rowIndex + 1) + ' sin nombre de entrada.');
-      }
-
-      if(!row.supplier || lmpStructuralIsPending(row.supplier)){
-        issues.push(ref + ': entrada #' + (rowIndex + 1) + ' sin proveedor.');
-      }
-    });
-
-    outputs.forEach((row, rowIndex) => {
-      if(!row.output || lmpStructuralIsPending(row.output)){
-        issues.push(ref + ': salida #' + (rowIndex + 1) + ' sin nombre de salida.');
-      }
-
-      if(!row.customer || lmpStructuralIsPending(row.customer)){
-        issues.push(ref + ': salida #' + (rowIndex + 1) + ' sin cliente.');
-      }
-    });
   });
 
   return issues;
 }
-
 function applyPromptAAsIsProcess(asIsPayload){
   const p = asIsPayload.as_is_process;
 
   state.asIsProcess = asIsPayload;
 
   state.asis = state.asis || {};
-  state.asis.activities = safeArray(p.activities);
-  state.asis.suppliers_inputs = safeArray(p.suppliers_inputs);
-  state.asis.outputs_customers = safeArray(p.outputs_customers);
+  state.asis.suppliers_inputs = normalizeSuppliersInputsCatalog(p.suppliers_inputs);
+  state.asis.outputs_customers = normalizeOutputsCustomersCatalog(p.outputs_customers);
   state.asis.additional_information = safeArray(p.additional_information);
 
-  // Compatibilidad temporal mientras se terminan de limpiar funciones viejas.
+  state.asis.activities = safeArray(p.activities).map((activity, index) => ({
+    id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
+    name: activity.name || activity.activity || activity.activity_name || '',
+    actor: activity.actor || activity.owner || activity.responsable || 'pendiente_validacion',
+    type: normalizePromptAType(activity.type || 'actividad'),
+    document: activity.document || '',
+    estimated_time: activity.estimated_time || activity.time || '',
+    inputs_used: normalizeActivityInputList(activity.inputs_used || activity.inputsUsed || activity.ext_inputs),
+    outputs_generated: normalizeActivityOutputList(activity.outputs_generated || activity.outputsGenerated || activity.ext_outputs),
+    previous: normalizeActivityConnectionList(activity.previous),
+    next: normalizeActivityConnectionList(activity.next),
+    observations: activity.observations || activity.note || '',
+    clarifying_notes: normalizePromptAList(activity.clarifying_notes || activity.clarifyingNotes),
+    source: activity.source || p.source_route || sourceRouteLabel(),
+    editable: activity.editable !== false
+  })).filter(activity => normalizeContractString(activity.name || ''));
+
   state.brief = asIsPayload;
   state.briefReview = {
     raw: asIsPayload,
@@ -12458,17 +12888,9 @@ function applyPromptAAsIsProcess(asIsPayload){
     qs('briefEditor').value = JSON.stringify(asIsPayload, null, 2);
   }
 
-  if(typeof renderAsIsActivities === 'function'){
-    renderAsIsActivities();
-  }
-
-  if(typeof updateAsIsPreview === 'function'){
-    updateAsIsPreview();
-  }
-
-  if(typeof updateTopStatus === 'function'){
-    updateTopStatus();
-  }
+  renderAsIsActivities();
+  updateAsIsPreview();
+  updateTopStatus();
 
   if(typeof refreshCargaFlowState === 'function'){
     refreshCargaFlowState();
