@@ -3701,7 +3701,7 @@ function getPreparationIndicatorsForSave(){
 
   if (name) {
     const exists = indicators.some(item =>
-      String(item?.name || "").trim().toLowerCase() === name.toLowerCase()
+      String(item?.name || "").trim()lmpLower(x) === namelmpLower(x)
     );
 
     if (!exists) {
@@ -6382,7 +6382,7 @@ function isSipocExtractorContract(parsed){
   if(!parsed || typeof parsed !== 'object') return false;
   const contract = String(parsed.contract || parsed.contract_code || '').trim().toUpperCase();
   const sourceModule = String(parsed.source_module || parsed.sourceModule || '').trim().toUpperCase();
-  const sourceType = String(parsed.source_type || parsed.sourceType || '').trim().toLowerCase();
+  const sourceType = String(parsed.source_type || parsed.sourceType || '').trim()lmpLower(x);
 
   return contract === 'SIPOC_EXTRACTOR_TO_LMP'
     || sourceModule === 'SIPOC_EXTRACTOR'
@@ -6519,7 +6519,7 @@ function convertExistingProcessExtractorToContract(parsed){
 
 function ensureSipocExtractorContract(parsed){
   if(!parsed || typeof parsed !== 'object') return parsed;
-  const sourceType = String(parsed.source_type || parsed.sourceType || '').trim().toLowerCase();
+  const sourceType = String(parsed.source_type || parsed.sourceType || '').trim()lmpLower(x);
   if(sourceType === 'existing_process_extractor' || (parsed.catalogs && parsed.as_is_flow && parsed.validation)){
     return convertExistingProcessExtractorToContract(parsed);
   }
@@ -6697,7 +6697,7 @@ function detectLmpImportType(parsed){
   const hasExtractorContract = !!(parsed.sipoc_extraction
     || String(parsed.contract || '').trim().toUpperCase() === 'SIPOC_EXTRACTOR_TO_LMP'
     || String(parsed.source_module || '').trim().toUpperCase() === 'SIPOC_EXTRACTOR'
-    || String(parsed.source_type || '').trim().toLowerCase() === 'existing_process_extractor'
+    || String(parsed.source_type || '').trim()lmpLower(x) === 'existing_process_extractor'
     || (parsed.catalogs && parsed.as_is_flow && parsed.validation));
   if(hasExtractorContract) return 'SIPOC_EXTRACTOR_JSON';
 
@@ -6748,9 +6748,9 @@ function normalizeProcessMasterToLmpMaster(parsed){
       keyIssues: dedupeCatalog(actividades.flatMap(a => safeArray(a.problems))),
       delays: [],
       rework: [],
-      constraints: dedupeCatalog(actividades.filter(a => String(a.constraint || '').toLowerCase().includes('s')).map(a => a.name)),
+      constraints: dedupeCatalog(actividades.filter(a => String(a.constraint || '')lmpLower(x).includes('s')).map(a => a.name)),
       frictions: [],
-      quickWins: dedupeCatalog(actividades.filter(a => String(a.quickWin || '').toLowerCase().includes('s')).map(a => a.name)),
+      quickWins: dedupeCatalog(actividades.filter(a => String(a.quickWin || '')lmpLower(x).includes('s')).map(a => a.name)),
       futureVision: [],
       wastes: dedupeCatalog(actividades.flatMap(a => safeArray(a.wastes)))
     },
@@ -7661,7 +7661,7 @@ function normalizeActivityOutputList(value){
 
     if(!output) return;
 
-    const key = output.toLowerCase();
+    const key = outputlmpLower(x);
     if(!map.has(key)){
       map.set(key, output);
     }
@@ -7670,6 +7670,34 @@ function normalizeActivityOutputList(value){
   return Array.from(map.values());
 }
 
+function lmpLower(value){
+  if(value === null || value === undefined) return '';
+
+  if(typeof value === 'string'){
+    return value.trim()lmpLower(x);
+  }
+
+  if(typeof value === 'number' || typeof value === 'boolean'){
+    return String(value).trim()lmpLower(x);
+  }
+
+  if(typeof value === 'object'){
+    const possibleText =
+      value.name ||
+      value.input ||
+      value.output ||
+      value.customer ||
+      value.supplier ||
+      value.activity ||
+      value.value ||
+      '';
+
+    return String(possibleText || '').trim()lmpLower(x);
+  }
+
+  return String(value || '').trim()lmpLower(x);
+}
+  
 function normalizeSuppliersInputsCatalog(rows){
   const map = new Map();
 
@@ -7681,7 +7709,7 @@ function normalizeSuppliersInputsCatalog(rows){
       inputs.push('pendiente_validacion');
     }
 
-    const key = supplier.toLowerCase();
+    const key = supplierlmpLower(x);
 
     if(!map.has(key)){
       map.set(key, {
@@ -7695,7 +7723,7 @@ function normalizeSuppliersInputsCatalog(rows){
     const target = map.get(key);
 
     inputs.forEach(input => {
-      if(!target.inputs.some(x => x.toLowerCase() === input.toLowerCase())){
+      if(!target.inputs.some(x => lmpLower(x) === lmpLower(input))
         target.inputs.push(input);
       }
     });
@@ -7715,7 +7743,7 @@ function normalizeOutputsCustomersCatalog(rows){
       customers.push('pendiente_validacion');
     }
 
-    const key = output.toLowerCase();
+    const key = outputlmpLower(x);
 
     if(!map.has(key)){
       map.set(key, {
@@ -7729,7 +7757,7 @@ function normalizeOutputsCustomersCatalog(rows){
     const target = map.get(key);
 
     customers.forEach(customer => {
-      if(!target.customers.some(x => x.toLowerCase() === customer.toLowerCase())){
+      if(!target.customers.some(x => lmpLower(x) === lmpLower(customer))
         target.customers.push(customer);
       }
     });
@@ -7788,7 +7816,7 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 
 function renderActivityInputRows(list, index){
   const selected = new Set(
-    normalizeActivityInputList(list).map(x => x.toLowerCase())
+    normalizeActivityInputList(list).map(lmpLower)
   );
 
   const catalog = flattenSuppliersInputsCatalog();
@@ -7798,7 +7826,7 @@ function renderActivityInputRows(list, index){
   }
 
   return catalog.map((row, rowIndex) => {
-    const checked = selected.has(row.input.toLowerCase()) ? 'checked' : '';
+    const checked = selected.has(lmpLower(row.input)) ? 'checked' : '';
 
     return `
       <label class="asis-choice-line">
@@ -7814,7 +7842,7 @@ function renderActivityInputRows(list, index){
 
 function renderActivityOutputRows(list, index){
   const selected = new Set(
-    normalizeActivityOutputList(list).map(x => x.toLowerCase())
+    normalizeActivityOutputList(list).map(lmpLower)
   );
 
   const catalog = flattenOutputsCustomersCatalog();
@@ -7824,7 +7852,7 @@ function renderActivityOutputRows(list, index){
   }
 
   return catalog.map((row, rowIndex) => {
-    const checked = selected.has(row.output.toLowerCase()) ? 'checked' : '';
+    const checked = selected.has(lmpLower(row.output)) ? 'checked' : '';
 
     return `
       <label class="asis-choice-line">
@@ -8137,7 +8165,7 @@ function syncAsIsGlobalCatalogs(rerenderActivities = false){
 
   inputPairs.forEach(row => {
     const supplier = row.supplier || 'pendiente_validacion';
-    const key = supplier.toLowerCase();
+    const key = supplierlmpLower(x);
 
     if(!inputMap.has(key)){
       inputMap.set(key, {
@@ -8150,7 +8178,7 @@ function syncAsIsGlobalCatalogs(rerenderActivities = false){
 
     const target = inputMap.get(key);
 
-    if(!target.inputs.some(x => x.toLowerCase() === row.input.toLowerCase())){
+    if(!target.inputs.some(x => xlmpLower(x) === row.inputlmpLower(x))){
       target.inputs.push(row.input);
     }
   });
@@ -8166,7 +8194,7 @@ function syncAsIsGlobalCatalogs(rerenderActivities = false){
 
   outputPairs.forEach(row => {
     const output = row.output || 'pendiente_validacion';
-    const key = output.toLowerCase();
+    const key = outputlmpLower(x);
 
     if(!outputMap.has(key)){
       outputMap.set(key, {
@@ -8179,7 +8207,7 @@ function syncAsIsGlobalCatalogs(rerenderActivities = false){
 
     const target = outputMap.get(key);
 
-    if(!target.customers.some(x => x.toLowerCase() === row.customer.toLowerCase())){
+    if(!target.customers.some(x => xlmpLower(x) === row.customerlmpLower(x))){
       target.customers.push(row.customer || 'pendiente_validacion');
     }
   });
@@ -8402,7 +8430,7 @@ function getUniqueNormalizedValues(values){
     const clean = normalizeContractString(value || '');
     if(!clean || clean === 'pendiente_validacion') return;
 
-    const key = clean.toLowerCase();
+    const key = cleanlmpLower(x);
     if(!map.has(key)){
       map.set(key, clean);
     }
@@ -8463,7 +8491,7 @@ function buildDetectedInputsSuppliers(){
     normalizeActivityInputList(activity.inputs_used).forEach(row => {
       const input = normalizeContractString(row.input || 'pendiente_validacion');
       const supplier = normalizeContractString(row.supplier || 'pendiente_validacion');
-      const key = `${supplier.toLowerCase()}|||${input.toLowerCase()}`;
+      const key = `${supplierlmpLower(x)}|||${inputlmpLower(x)}`;
 
       if(!map.has(key)){
         map.set(key, {
@@ -8492,7 +8520,7 @@ function buildDetectedOutputsCustomers(){
     normalizeActivityOutputList(activity.outputs_generated).forEach(row => {
       const output = normalizeContractString(row.output || 'pendiente_validacion');
       const customer = normalizeContractString(row.customer || 'pendiente_validacion');
-      const key = `${output.toLowerCase()}|||${customer.toLowerCase()}`;
+      const key = `${outputlmpLower(x)}|||${customerlmpLower(x)}`;
 
       if(!map.has(key)){
         map.set(key, {
@@ -8962,8 +8990,8 @@ function buildToBeArtifacts(){
 
   selected.forEach((x, i) => {
     const actionText = x.status === 'custom' ? (x.customText || x.proposedState || x.summary || x.problem || '') : (x.proposedState || x.summary || x.problem || '');
-    const justification = `${x.justification || ''} ${x.impact || ''}`.toLowerCase();
-    const current = `${x.currentState || ''} ${x.problem || ''}`.toLowerCase();
+    const justification = `${x.justification || ''} ${x.impact || ''}`lmpLower(x);
+    const current = `${x.currentState || ''} ${x.problem || ''}`lmpLower(x);
     const isStructural =
       x.status === 'custom' ||
       /automat|sistema|digital|erp|flujo|redise|estructura|dependenc|transversal|integr/i.test(justification + ' ' + current) ||
@@ -9111,7 +9139,7 @@ function dedupeCatalog(items){
   safeArray(items).flatMap(explodeCatalogValue).forEach(item => {
     const clean = normalizeCatalogValue(item);
     if(!clean) return;
-    const key = clean.toLowerCase();
+    const key = cleanlmpLower(x);
     if(seen.has(key)) return;
     seen.add(key);
     out.push(clean);
@@ -9127,7 +9155,7 @@ function asArray(value){
 }
 
 function canonicalActivityType(value){
-  const raw = normalizeContractString(value).toLowerCase();
+  const raw = normalizeContractString(value)lmpLower(x);
 
   if(raw === 'decision') return 'decision';
   if(raw === 'decisión') return 'decision';
@@ -9297,7 +9325,7 @@ function mergeSuppliersInputs(rows){
     const supplier = normalizeCatalogValue(row?.supplier || 'pendiente_validacion');
     const inputs = dedupeCatalog(row?.inputs || row?.input || []);
 
-    const key = supplier.toLowerCase();
+    const key = supplierlmpLower(x);
 
     if(!map.has(key)){
       map.set(key, {
@@ -9322,7 +9350,7 @@ function mergeOutputsCustomers(rows){
     const output = normalizeCatalogValue(row?.output || 'pendiente_validacion');
     const customers = dedupeCatalog(row?.customers || row?.customer || []);
 
-    const key = output.toLowerCase();
+    const key = outputlmpLower(x);
 
     if(!map.has(key)){
       map.set(key, {
@@ -10301,8 +10329,8 @@ function sgmpActivityIdentityText(activity){
 }
 
 function sgmpIsWeakQuestionnaireActivity(activity){
-  const name = normalizeContractString(activity?.name || '').toLowerCase();
-  const note = normalizeContractString(activity?.note || '').toLowerCase();
+  const name = normalizeContractString(activity?.name || '')lmpLower(x);
+  const note = normalizeContractString(activity?.note || '')lmpLower(x);
   return /^(rol y responsabilidades|actividades del proceso|problemas y demoras|documentos y herramientas|interacci[oó]n|carga de trabajo|decisiones)$/i.test(name)
     || (name.length < 35 && /pregunta|respuesta|cuestionario/.test(note));
 }
@@ -10311,7 +10339,7 @@ function sgmpIsDocOnlyDuplicate(activity){
   const a = activity || {};
   const id = normalizeContractString(a.id || '').trim();
   const name = normalizeContractString(a.name || '').trim();
-  return !!id && /^document$/i.test(a.type || '') && name.toLowerCase() === id.toLowerCase();
+  return !!id && /^document$/i.test(a.type || '') && namelmpLower(x) === idlmpLower(x);
 }
 
 function sgmpCanonicalizeActivityList(rawList, options = {}){
@@ -10323,7 +10351,7 @@ function sgmpCanonicalizeActivityList(rawList, options = {}){
 
   normalized.forEach((act, idx) => {
     const id = normalizeContractString(act.id || '').trim();
-    const key = id ? id.toLowerCase() : '';
+    const key = id ? idlmpLower(x) : '';
     const cleaned = { ...act };
     cleaned.__idx = idx;
     if(key){
@@ -10367,7 +10395,7 @@ function sgmpCanonicalizeActivityList(rawList, options = {}){
   }
 
   const result = [...withIds, ...noId.filter(a => !sgmpIsWeakQuestionnaireActivity(a))]
-    .filter(a => !sgmpIsDocOnlyDuplicate(a) || !byId.has(String(a.id || '').toLowerCase()));
+    .filter(a => !sgmpIsDocOnlyDuplicate(a) || !byId.has(String(a.id || '')lmpLower(x)));
 
   const cleaned = result.map((a, idx, all) => {
     const item = { ...a };
@@ -10413,7 +10441,7 @@ function sgmpGetStructuralSourceActivities(){
 function lmpStructuralKey(value){
   return String(value ?? '')
     .trim()
-    .toLowerCase()
+    lmpLower(x)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ');
@@ -11147,7 +11175,7 @@ function lmpConsolidateB1WithAi(deterministicResult, aiPayload){
 }
 
 function lmpB1FieldSelector(issue){
-  const field = String(issue?.location?.property || issue?.ui_target?.field_hint || issue?.field || '').toLowerCase();
+  const field = String(issue?.location?.property || issue?.ui_target?.field_hint || issue?.field || '')lmpLower(x);
   const section = issue?.location?.section || '';
   if(section === 'activities'){
     if(field.includes('actor')) return '.a_actor';
@@ -11199,7 +11227,7 @@ function normalizeTextForSearch(value){
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase()
+    lmpLower(x)
     .replace(/\s+/g,' ')
     .trim();
 }
@@ -11829,7 +11857,7 @@ function normalizeBriefPayload(parsed){
   });
 
   const deepFind = (root, aliases) => {
-    const wanted = new Set(aliases.map(alias => String(alias).toLowerCase()));
+    const wanted = new Set(aliases.map(alias => String(alias)lmpLower(x)));
     const seen = new Set();
     const walk = (value) => {
       if(value === undefined || value === null) return undefined;
@@ -11844,7 +11872,7 @@ function normalizeBriefPayload(parsed){
         return undefined;
       }
       for(const key of Object.keys(value)){
-        if(wanted.has(String(key).toLowerCase())){
+        if(wanted.has(String(key)lmpLower(x))){
           const candidate = value[key];
           if(candidate !== undefined && candidate !== null && (!Array.isArray(candidate) || candidate.length) && (typeof candidate === 'object' || String(candidate).trim() !== '')) return candidate;
         }
@@ -12607,7 +12635,7 @@ function generateBriefPromptFromMaster(){
 }
 
 function normalizePromptAType(value){
-  const raw = String(value || '').trim().toLowerCase();
+  const raw = String(value || '').trim()lmpLower(x);
 
   if(raw === 'decision' || raw.includes('decis')) return 'decision';
 
@@ -12736,19 +12764,19 @@ function validatePromptAAsIsProcess(asIsPayload){
   const inputCatalog = new Set(
     safeArray(p.suppliers_inputs)
       .flatMap(row => safeArray(row.inputs))
-      .map(x => normalizeContractString(x).toLowerCase())
+      .map(x => normalizeContractString(x)lmpLower(x))
       .filter(Boolean)
   );
 
   const outputCatalog = new Set(
     safeArray(p.outputs_customers)
-      .map(row => normalizeContractString(row.output).toLowerCase())
+      .map(row => normalizeContractString(row.output)lmpLower(x))
       .filter(Boolean)
   );
 
   const activityNames = new Set(
     safeArray(p.activities)
-      .map(row => normalizeContractString(row.name || row.activity || row.activity_name).toLowerCase())
+      .map(row => normalizeContractString(row.name || row.activity || row.activity_name)lmpLower(x))
       .filter(Boolean)
   );
 
@@ -12817,25 +12845,25 @@ function validatePromptAAsIsProcess(asIsPayload){
     });
 
     inputs.forEach(input => {
-      if(input !== 'pendiente_validacion' && !inputCatalog.has(input.toLowerCase())){
+      if(input !== 'pendiente_validacion' && !inputCatalog.has(inputlmpLower(x))){
         issues.push(ref + ': entrada usada no existe en suppliers_inputs: ' + input);
       }
     });
 
     outputs.forEach(output => {
-      if(output !== 'pendiente_validacion' && !outputCatalog.has(output.toLowerCase())){
+      if(output !== 'pendiente_validacion' && !outputCatalog.has(outputlmpLower(x))){
         issues.push(ref + ': salida generada no existe en outputs_customers: ' + output);
       }
     });
 
     previous.forEach(row => {
-      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activity.toLowerCase())){
+      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activitylmpLower(x))){
         issues.push(ref + ': previous apunta a actividad inexistente: ' + row.activity);
       }
     });
 
     next.forEach(row => {
-      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activity.toLowerCase())){
+      if(row.activity !== 'pendiente_validacion' && !activityNames.has(row.activitylmpLower(x))){
         issues.push(ref + ': next apunta a actividad inexistente: ' + row.activity);
       }
     });
@@ -13498,16 +13526,16 @@ function normalizeSbContractBuilderPayload(parsed){
 
   const nameSet = new Set(
     rawActivities
-      .map(a => normalizeContractString(a.name).toLowerCase())
+      .map(a => normalizeContractString(a.name)lmpLower(x))
       .filter(Boolean)
   );
 
   const activities = rawActivities.map((activity) => {
     const previous = normalizeRelationList(activity.previous)
-      .filter(name => nameSet.has(name.toLowerCase()));
+      .filter(name => nameSet.has(namelmpLower(x)));
 
     const next = normalizeRelationList(activity.next)
-      .filter(name => nameSet.has(name.toLowerCase()));
+      .filter(name => nameSet.has(namelmpLower(x)));
 
     const inputsUsed = dedupeCatalog(
       activity.inputs_used ||
@@ -13638,7 +13666,7 @@ function validateSbContractBuilderContract(contract){
 
   const nameSet = new Set(
     activities
-      .map(activity => normalizeContractString(activity?.name).toLowerCase())
+      .map(activity => normalizeContractString(activity?.name)lmpLower(x))
       .filter(Boolean)
   );
 
@@ -13672,14 +13700,14 @@ function validateSbContractBuilderContract(contract){
 
     previous.forEach(prev => {
       const normalizedPrev = normalizeContractString(prev);
-      if(normalizedPrev && normalizedPrev !== 'pendiente_validacion' && !nameSet.has(normalizedPrev.toLowerCase())){
+      if(normalizedPrev && normalizedPrev !== 'pendiente_validacion' && !nameSet.has(normalizedPrevlmpLower(x))){
         errors.push(ref + ' referencia previous inexistente: ' + prev);
       }
     });
 
     next.forEach(nextName => {
       const normalizedNext = normalizeContractString(nextName);
-      if(normalizedNext && normalizedNext !== 'pendiente_validacion' && !nameSet.has(normalizedNext.toLowerCase())){
+      if(normalizedNext && normalizedNext !== 'pendiente_validacion' && !nameSet.has(normalizedNextlmpLower(x))){
         errors.push(ref + ' referencia next inexistente: ' + nextName);
       }
     });
@@ -14323,7 +14351,7 @@ function sgmpCollectActivitiesFromPayload(payload){
 
 function sgmpActivityKey(activity){
   const a = activity || {};
-  return [a.id, a.name, a.actor, a.type].map(v => normalizeContractString(v).toLowerCase()).join('|');
+  return [a.id, a.name, a.actor, a.type].map(v => normalizeContractString(v)lmpLower(x)).join('|');
 }
 
 function sgmpPushMasterActivity(master, seenAct, rawActivity){
@@ -14794,7 +14822,7 @@ function sgmpUniqueStrings(values){
   const out = [];
   (values || []).forEach(v => {
     const t = sgmpTextOf(v);
-    if(t && !out.some(x => x.toLowerCase() === t.toLowerCase())) out.push(t);
+    if(t && !out.some(x => xlmpLower(x) === tlmpLower(x))) out.push(t);
   });
   return out;
 }
@@ -14850,13 +14878,13 @@ function sgmpFindActivityForFinding(item, text){
     if(direct) return direct;
   }
   const acts = safeArray(state.asis?.activities || state.master?.activities || state.briefReview?.raw?.as_is?.activities);
-  const t = String(text || '').toLowerCase();
-  const hit = acts.find(a => t.includes(String(a.name || '').toLowerCase()) || (a.id && t.includes(String(a.id).toLowerCase())));
+  const t = String(text || '')lmpLower(x);
+  const hit = acts.find(a => t.includes(String(a.name || '')lmpLower(x)) || (a.id && t.includes(String(a.id)lmpLower(x))));
   return hit ? (hit.name || hit.id || '') : '';
 }
 
 function sgmpSolutionForFinding(kind, text, activity){
-  const t = String(text || '').toLowerCase();
+  const t = String(text || '')lmpLower(x);
   if(/cotiz|proveedor|rfq|respuesta/.test(t)){
     return {
       title:'Digitalizar y controlar el ciclo RFQ/cotizaciones',
@@ -14972,8 +15000,8 @@ function sgmpBuildCandidateImprovementsFromFindings(findings, maxItems){
   });
   const unique = [];
   candidates.forEach(c => {
-    const key = String(c.problem || c.linked_finding || c.title || '').toLowerCase().replace(/\s+/g,' ').trim();
-    if(key && !unique.some(u => String(u.problem || u.linked_finding || u.title || '').toLowerCase().replace(/\s+/g,' ').trim() === key)) unique.push(c);
+    const key = String(c.problem || c.linked_finding || c.title || '')lmpLower(x).replace(/\s+/g,' ').trim();
+    if(key && !unique.some(u => String(u.problem || u.linked_finding || u.title || '')lmpLower(x).replace(/\s+/g,' ').trim() === key)) unique.push(c);
   });
   return unique.slice(0, maxItems || 20).map((c,i)=>Object.assign({}, c, { id: c.id || ('IM-' + String(i+1).padStart(2,'0')) }));
 }
@@ -14986,9 +15014,9 @@ function sgmpStrengthenImprovementsFromFindings(data){
   const minExpected = Math.min(12, Math.max(4, Math.ceil(generated.length * 0.65)));
   let merged = [...existing];
   generated.forEach(g => {
-    const gKey = String(g.problem || g.linked_finding || '').toLowerCase();
+    const gKey = String(g.problem || g.linked_finding || '')lmpLower(x);
     const already = merged.some(m => {
-      const mKey = String(m.problem || m.linked_finding || '').toLowerCase();
+      const mKey = String(m.problem || m.linked_finding || '')lmpLower(x);
       return mKey && gKey && (mKey === gKey || mKey.includes(gKey) || gKey.includes(mKey));
     });
     if(!already) merged.push(g);
@@ -15023,7 +15051,7 @@ function sgmpStableText(value){
 }
 
 function sgmpStableKey(value){
-  return sgmpStableText(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  return sgmpStableText(value)lmpLower(x).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 }
 
 function sgmpStableUniqueList(list){
@@ -15079,7 +15107,7 @@ function sgmpBuildRestrictionSupplements(data){
   const base = [];
   acts.forEach(a => {
     const name = a.name || a.activity || a.title || a.id || 'actividad';
-    const constraintFlag = String(a.constraint || a.is_constraint || a.restriction || '').toLowerCase();
+    const constraintFlag = String(a.constraint || a.is_constraint || a.restriction || '')lmpLower(x);
     if(['si','sí','yes','true','1'].includes(constraintFlag)) base.push({ description: 'Restricción declarada en actividad: ' + name, activity: name });
     sgmpToList(a.problems || a.problem || a.issues).forEach(p => {
       const t = sgmpStableText(p);
@@ -15108,13 +15136,13 @@ function sgmpNormalizeAvaDeterministic(data){
     if(!cls) return;
     const item = Object.assign({}, x, { classification: cls, ava_classification: cls });
     if(x.id) byId.set(String(x.id).trim(), item);
-    if(x.name || x.activity) byName.set(String(x.name || x.activity).trim().toLowerCase(), item);
+    if(x.name || x.activity) byName.set(String(x.name || x.activity).trim()lmpLower(x), item);
   });
   let counts = { VA:0, NNVA:0, NVA:0 };
   const normalizedAnalysis = [];
   acts.forEach((a, idx) => {
     const id = String(a.id || '').trim();
-    const nm = String(a.name || a.activity || a.title || '').trim().toLowerCase();
+    const nm = String(a.name || a.activity || a.title || '').trim()lmpLower(x);
     const hit = (id && byId.get(id)) || (nm && byName.get(nm));
     const cls = classify(hit?.classification || hit?.ava_classification || a.ava_classification || a.avaClassification || a.ava || a.classification) || 'NNVA';
     counts[cls] = (counts[cls] || 0) + 1;
@@ -15674,7 +15702,7 @@ function saveCompactContextFromBrief(){
 
 function lmpGetStageResult_(stageKey){
   const results = state?.analysisStages?.results || {};
-  return results[stageKey] || results[String(stageKey || '').toUpperCase()] || results[String(stageKey || '').toLowerCase()] || {};
+  return results[stageKey] || results[String(stageKey || '').toUpperCase()] || results[String(stageKey || '')lmpLower(x)] || {};
 }
 
 function lmpGetBestActivitiesForStage_(stageKey){
@@ -15884,7 +15912,7 @@ function sgmpAssembleStagedAnalysisPayload(){
   const avaActivityAnalysis = safeArray(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
   if(avaActivityAnalysis.length && activities.length){
     activities = activities.map(a => {
-      const hit = avaActivityAnalysis.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase());
+      const hit = avaActivityAnalysis.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim()lmpLower(x) === String(a.name || '').trim()lmpLower(x));
       return hit ? Object.assign({}, a, {
         ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification,
         ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason
@@ -17292,7 +17320,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
       if(!a || typeof a !== 'object' || isBlankActivity(a)) return;
       const id = String(a.id || '').trim();
       const name = String(a.name || a.activity || a.actividad || '').trim();
-      const key = (id || name || ('idx_'+idx)).toLowerCase();
+      const key = (id || name || ('idx_'+idx))lmpLower(x);
       if(seen.has(key)) return;
       seen.add(key);
       out.push(Object.assign({ id: id || ('ACT-' + String(out.length + 1).padStart(2,'0')), name, type: a.type || 'operation', actor: a.actor || '', document: a.document || '', previous: arr(a.previous), next: arr(a.next), is_start: !!a.is_start, is_end: !!a.is_end, note: a.note || a.notes || '' }, a, { id: id || a.id || ('ACT-' + String(out.length + 1).padStart(2,'0')), name }));
@@ -17336,7 +17364,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   window.runAnalysisScreenStage = async function(stageKey){
     const defs = (typeof sgmpGetAnalysisStageDefinitions === 'function') ? sgmpGetAnalysisStageDefinitions() : {};
-    const def = defs[stageKey] || { stageCode:'lmp_analysis_' + String(stageKey).toLowerCase() };
+    const def = defs[stageKey] || { stageCode:'lmp_analysis_' + String(stageKey)lmpLower(x) };
     const msgId = 'analysisMsg_' + stageKey;
     try{
       state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey;
@@ -17358,7 +17386,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
       const prompt = window.generateAnalysisScreenPrompt(stageKey); if(!prompt) return;
       if(typeof showLoader === 'function') showLoader('Ejecutando ' + stageKey + ' con IA...', 'Procesando etapa individual del análisis.');
       if(typeof showMsg === 'function') showMsg(msgId,'ok','Ejecutando IA para ' + stageKey + '...');
-      const result = await sgmpCallAI(def.stageCode || ('lmp_analysis_' + String(stageKey).toLowerCase()), prompt);
+      const result = await sgmpCallAI(def.stageCode || ('lmp_analysis_' + String(stageKey)lmpLower(x)), prompt);
       const text = (typeof sgmpAIResultText === 'function') ? sgmpAIResultText(result) : (result?.text || String(result || ''));
       const responseBox = el('analysisResponse_' + stageKey); if(responseBox) responseBox.value = text;
       window.processAnalysisScreenStage(stageKey);
@@ -17431,7 +17459,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     }
     const avaItems = arr(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
     if(avaItems.length && activities.length){
-      activities = activities.map(a => { const hit = avaItems.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase()); return hit ? Object.assign({}, a, { ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification || a.ava, ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason }) : a; });
+      activities = activities.map(a => { const hit = avaItems.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim()lmpLower(x) === String(a.name || '').trim()lmpLower(x)); return hit ? Object.assign({}, a, { ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification || a.ava, ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason }) : a; });
     }
     const mergedFindings = Object.assign({}, b3.findings || {}, b4.findings || {});
     return (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel({ context: state.context || state.master?.context || {}, as_is: { activities }, ava: b2.ava || {}, findings: mergedFindings, quickWins: b5.quickWins || b5.quick_wins || [], improvements: b5.improvements || [], sb_contract: b6.sipoc_input ? { sipoc_input: b6.sipoc_input } : (b6.sb_contract || {}) }) : { as_is:{ activities }, findings: mergedFindings, improvements:b5.improvements || [] };
