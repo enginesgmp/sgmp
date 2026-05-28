@@ -3701,7 +3701,7 @@ function getPreparationIndicatorsForSave(){
 
   if (name) {
     const exists = indicators.some(item =>
-      String(item?.name || "").trim()lmpLower(x) === namelmpLower(x)
+      lmpLower(item?.name || "") === lmpLower(name)
     );
 
     if (!exists) {
@@ -7636,19 +7636,23 @@ function normalizeActivityConnectionList(value){
 }
 
 function normalizeActivityInputList(value){
-  return safeArray(value).map(item => {
-    if(typeof item === 'string'){
-      return {
-        input: normalizeContractString(item),
-        supplier: 'pendiente_validacion'
-      };
-    }
+  const map = new Map();
 
-    return {
-      input: normalizeContractString(item?.input || item?.name || item?.entrada || ''),
-      supplier: normalizeContractString(item?.supplier || item?.provider || item?.proveedor || 'pendiente_validacion')
-    };
-  }).filter(row => row.input);
+  safeArray(value).forEach(item => {
+    const input = typeof item === 'string'
+      ? normalizeContractString(item)
+      : normalizeContractString(item?.input || item?.name || item?.entrada || '');
+
+    if(!input) return;
+
+    const key = lmpLower(input);
+
+    if(!map.has(key)){
+      map.set(key, input);
+    }
+  });
+
+  return Array.from(map.values());
 }
 
 function normalizeActivityOutputList(value){
@@ -7661,33 +7665,14 @@ function normalizeActivityOutputList(value){
 
     if(!output) return;
 
-    const key = outputlmpLower(x);
+    const key = lmpLower(output);
+
     if(!map.has(key)){
       map.set(key, output);
     }
   });
 
   return Array.from(map.values());
-}
-
-function lmpLower(value){
-  if(value === null || value === undefined) return '';
-
-  if(typeof value === 'object'){
-    const possibleText =
-      value.name ||
-      value.input ||
-      value.output ||
-      value.customer ||
-      value.supplier ||
-      value.activity ||
-      value.value ||
-      '';
-
-    return String(possibleText || '').trim().toLowerCase();
-  }
-
-  return String(value || '').trim().toLowerCase();
 }
   
 function normalizeSuppliersInputsCatalog(rows){
