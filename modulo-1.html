@@ -7495,7 +7495,7 @@ function asisActivityTemplate(a, index){
 
       <div class="asis-activity-body">
         <div class="asis-activity-actions">
-          <button class="btn-ok" onclick="syncAsisRow(${index})" type="button">Guardar</button>
+          <button class="btn-ok" onclick="saveAsisActivity(${index})" type="button">Guardar</button>
           <button class="btn-ghost" onclick="moveAsisActivity(${index}, -1)" type="button">↑ Subir</button>
           <button class="btn-ghost" onclick="moveAsisActivity(${index}, 1)" type="button">↓ Bajar</button>
           <button class="btn-danger" onclick="deleteAsisActivity(${index})" type="button">Eliminar</button>
@@ -8388,7 +8388,109 @@ function moveAsisActivity(index, direction){
   renderAsIsActivities();
 }
 
-function syncAsisRow(index){
+function normalizeAsisRelationRows(list){
+  return safeArray(list)
+    .map(row => {
+      if(typeof row === 'string'){
+        return {
+          activity: normalizeContractString(row),
+          connector: ''
+        };
+      }
+
+      return {
+        activity: normalizeContractString(row?.activity || ''),
+        connector: normalizeContractString(row?.connector || '')
+      };
+    })
+    .filter(row => row.activity);
+}
+
+function asisRelationExists(list, activityName){
+  const name = lmpLower(activityName || '');
+  return normalizeAsisRelationRows(list).some(row => lmpLower(row.activity) === name);
+}
+
+function addAsisRelationIfMissing(activity, field, activityName, connector){
+  if(!activity || !activityName || activityName === 'pendiente_validacion') return;
+
+  activity[field] = normalizeAsisRelationRows(activity[field]);
+
+  if(!asisRelationExists(activity[field], activityName)){
+    activity[field].push({
+      activity: activityName,
+      connector: normalizeContractString(connector || '')
+    });
+  }
+}
+
+function removeAsisRelationByName(activity, field, activityName){
+  if(!activity || !activityName || activityName === 'pendiente_validacion') return;
+
+  const name = lmpLower(activityName || '');
+  activity[field] = normalizeAsisRelationRows(activity[field])
+    .filter(row => lmpLower(row.activity) !== name);
+}
+
+function findAsisActivityByName(activityName){
+  const name = lmpLower(activityName || '');
+  if(!name) return null;
+
+  return safeArray(state.asis?.activities)
+    .find(activity => lmpLower(activity?.name || '') === name) || null;
+}
+
+function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
+  if(!newActivity || !newActivity.name) return;
+
+  const currentName = normalizeContractString(newActivity.name);
+
+  const oldPrevious = normalizeAsisRelationRows(oldActivity?.previous);
+  const oldNext = normalizeAsisRelationRows(oldActivity?.next);
+
+  const newPrevious = normalizeAsisRelationRows(newActivity.previous);
+  const newNext = normalizeAsisRelationRows(newActivity.next);
+
+  oldPrevious.forEach(rel => {
+    if(!asisRelationExists(newPrevious, rel.activity)){
+      const target = findAsisActivityByName(rel.activity);
+      removeAsisRelationByName(target, 'next', currentName);
+    }
+  });
+
+  oldNext.forEach(rel => {
+    if(!asisRelationExists(newNext, rel.activity)){
+      const target = findAsisActivityByName(rel.activity);
+      removeAsisRelationByName(target, 'previous', currentName);
+    }
+  });
+
+  newPrevious.forEach(rel => {
+    const target = findAsisActivityByName(rel.activity);
+    addAsisRelationIfMissing(target, 'next', currentName, rel.connector);
+  });
+
+  newNext.forEach(rel => {
+    const target = findAsisActivityByName(rel.activity);
+    addAsisRelationIfMissing(target, 'previous', currentName, rel.connector);
+  });
+}
+
+function saveAsisActivity(index){
+  syncAsisRow(index, true);
+
+  if(typeof showAsisMessage === 'function'){
+    showAsisMessage('ok', 'Actividad guardada y estructura AS-IS actualizada.');
+  } else {
+    const msg = qs('asisBuilderMsg');
+    if(msg){
+      msg.className = 'msg show ok';
+      msg.textContent = 'Actividad guardada y estructura AS-IS actualizada.';
+    }
+  }
+}
+
+function syncAsisRow(index, fullUpdate = false){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
   if(!item) return;
 
@@ -8397,7 +8499,18 @@ function syncAsisRow(index){
 
   state.asis = state.asis || {};
   state.asis.activities = safeArray(state.asis.activities);
+
+  const oldActivity = JSON.parse(JSON.stringify(state.asis.activities[index] || {}));
+
   state.asis.activities[index] = row;
+
+  if(fullUpdate && typeof syncAsisBidirectionalConnections === 'function'){
+    syncAsisBidirectionalConnections(index, oldActivity, row);
+  }
+
+  if(fullUpdate){
+    collectAsisActivities();
+  }
 
   updateAsIsPreview();
   updateTopStatus();
@@ -8407,8 +8520,13 @@ function syncAsisRow(index){
   if(typeof renderLmpB1StructuralStatus === 'function'){
     renderLmpB1StructuralStatus();
   }
-}
 
+  if(fullUpdate && typeof renderAsIsActivities === 'function'){
+    renderAsIsActivities();
+    openAsIsActivity(index);
+  }
+}
+  
 function refreshAsIsActivitySummary(item, index){
   if(!item) return;
   const strong = item.querySelector('.activity-top strong');
