@@ -31,6 +31,7 @@
     --radiusLG:18px;
     --radiusMD:14px;
     --contentW:min(1540px, calc(100vw - 28px));
+    
   }
 
   *{box-sizing:border-box}
@@ -5865,7 +5866,7 @@ sgmpLoadPrompts('LMP', async function() {
   if(typeof fillFixedDocPrompts === 'function') fillFixedDocPrompts(true);
 });
 
-const stageOrder = ['inicio','preparacion','documentacion_existente','carga','asis','analisis','decision','tobe','resultados'];
+const stageOrder = [   'inicio',   'preparacion',   'documentacion_existente',   'carga',   'asis',   'analisis_b1',   'analisis_b2',   'analisis_b3',   'analisis_b4',   'analisis_b5',   'analisis_b6',   'decision',   'tobe',   'resultados' ];
 
 const preQuestionMap = {
   'Operativo': [
@@ -15848,23 +15849,6 @@ function sgmpBuildAnalysisStagePrompt(stageKey){
   const prompt = `${def.instruction}${stagePolicy}\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n- No repitas el contexto completo en campos narrativos.\n- Limita arrays a los elementos de mayor valor operativo salvo que la etapa exija conservar todas las actividades.\n\nINSUMOS COMPACTADOS POR ETAPA:\n${JSON.stringify(evidencePack, null, 2)}`;
   lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'cargaMsg');
   return prompt;
-}
-
-function generateAnalysisStagePrompt(stageKey){
-  if(!(state.briefReview && state.briefReview.approved)){
-    showMsg('cargaMsg','warn','Debes aprobar primero el Brief.');
-    return;
-  }
-  if(stageKey === 'B2' && typeof lmpB1CanProceedToB2 === 'function' && !lmpB1CanProceedToB2(true)){
-    showMsg('cargaMsg','warn','B1 está bloqueado. Corrige los vacíos críticos antes de generar B2.');
-    return;
-  }
-  state.analysisStages = state.analysisStages || { current:'B1', results:{} };
-  state.analysisStages.current = stageKey || 'B1';
-  const prompt = sgmpBuildAnalysisStagePrompt(state.analysisStages.current);
-  lmpWarnIfPromptTooLarge(state.analysisStages.current, prompt, 'cargaMsg');
-  if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = prompt;
-  showMsg('cargaMsg','ok','Prompt ' + state.analysisStages.current + ' generado correctamente.');
 }
 
 function sgmpAssembleStagedAnalysisPayload(){
