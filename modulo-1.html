@@ -7687,8 +7687,7 @@ function asisActivityTemplate(a, index){
           <details class="asis-mini-accordion" style="margin-top:12px;">
             <summary class="asis-mini-summary">
               <div>
-                <strong>Entradas/proveedores</strong>
-                <small>Entradas usadas desde el catálogo.</small>
+               <strong>Entradas/proveedores</strong>
               </div>
             </summary>
 
@@ -7750,21 +7749,43 @@ function asisActivityTemplate(a, index){
 }
   
 function normalizeActivityConnectionList(value){
-  return safeArray(value).map(item => {
-    if(typeof item === 'string'){
-      return {
-        activity: normalizeContractString(item),
-        connector: ''
-      };
+  const arr = safeArray(value);
+
+  if(!arr.length) return [];
+
+  const map = new Map();
+  const output = [];
+
+  arr.forEach(item => {
+    const activity = typeof item === 'string'
+      ? normalizeContractString(item)
+      : normalizeContractString(item?.activity || item?.name || item?.target_activity || '');
+
+    const connector = typeof item === 'string'
+      ? ''
+      : normalizeContractString(item?.connector || '');
+
+    if(!activity){
+      output.push({
+        activity: '',
+        connector
+      });
+      return;
     }
 
-    return {
-      activity: normalizeContractString(item?.activity || item?.name || item?.target_activity || ''),
-      connector: normalizeContractString(item?.connector || '')
-    };
-  }).filter(row => row.activity);
-}
+    const key = lmpLower(activity);
 
+    if(!map.has(key)){
+      map.set(key, activity);
+      output.push({
+        activity,
+        connector
+      });
+    }
+  });
+
+  return output;
+}
 function normalizeActivityInputList(value){
   const arr = safeArray(value);
 
@@ -8117,7 +8138,7 @@ function addAsisDynamicRow(index, kind){
 }
 
 function removeAsisDynamicRow(button, index){
-  const row = button?.closest('.asis-dynamic-row');
+  const row = button?.closest('.asis-line-row, .asis-dynamic-row');
   if(row) row.remove();
   syncAsisRow(index);
 }
