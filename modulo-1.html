@@ -3574,7 +3574,7 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
 <button class="step-btn" data-target="preparacion">Preparación y contexto<small>Parámetros, indicadores e instrumentos.</small></button>
 <button class="step-btn" data-target="carga">Carga y consolidación<small>Insumos y objeto maestro.</small></button>
 <button class="step-btn" data-target="asis">Proceso AS IS<small>Estructura actual del proceso.</small></button>
-<button class="step-btn" data-target="analisis_b1">B1 · Validación AS IS<small>Prompt y respuesta de validación.</small></button>
+<!-- B1 eliminado: la validación estructural se realiza en Proceso AS-IS -->
 <button class="step-btn" data-target="analisis_b2">B2 · AVA<small>Prompt y respuesta de valor agregado.</small></button>
 <button class="step-btn" data-target="analisis_b3">B3 · Desperdicios<small>Prompt y respuesta de hallazgos Lean.</small></button>
 <button class="step-btn" data-target="analisis_b4">B4 · Restricciones<small>Prompt y respuesta de restricciones TOC.</small></button>
@@ -16495,6 +16495,13 @@ function buildEvidencePackForStage(stageKey){
   const compact = state.compactContext || saveCompactContextFromBrief() || buildCompactContextFromBrief();
   const activities = lmpGetBestActivitiesForStage_(stageKey);
   const b1 = lmpGetStageResult_('B1');
+  const asIsForAnalysis = {
+  activities,
+  suppliers_inputs: safeArray(state.asis?.suppliers_inputs || state.asIsProcess?.as_is_process?.suppliers_inputs),
+  outputs_customers: safeArray(state.asis?.outputs_customers || state.asIsProcess?.as_is_process?.outputs_customers),
+  additional_information: safeArray(state.asis?.additional_information || state.asIsProcess?.as_is_process?.additional_information),
+  source: 'proceso_as_is_editado_guardado'
+};
   const b2 = lmpGetStageResult_('B2');
   const b3 = lmpGetStageResult_('B3');
   const b4 = lmpGetStageResult_('B4');
@@ -16522,7 +16529,7 @@ function buildEvidencePackForStage(stageKey){
     B2: {
       current_stage: 'B2',
       compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(b1, 4, 25),
+      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
       source_activity_count: activities.length,
       source_activities: activities,
       rules: { analyze_ava_only: true, return_only_valid_json: true }
@@ -16530,7 +16537,7 @@ function buildEvidencePackForStage(stageKey){
     B3: {
       current_stage: 'B3',
       compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || {}, 4, 25),
+      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
       ava_result: lmpStageCompactObject_(b2, 4, 25),
       source_activities: activities,
       rules: { identify_wastes_problems_and_root_hypotheses: true, return_only_valid_json: true }
@@ -16538,7 +16545,7 @@ function buildEvidencePackForStage(stageKey){
     B4: {
       current_stage: 'B4',
       compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || {}, 3, 20),
+      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
       ava_result: lmpStageCompactObject_(b2, 3, 20),
       problems_and_wastes: lmpStageCompactObject_(b3, 4, 25),
       suspectedConstraints: compact.suspectedConstraints || [],
@@ -16547,7 +16554,7 @@ function buildEvidencePackForStage(stageKey){
     B5: {
       current_stage: 'B5',
       compactContext: compact,
-      validated_as_is_summary: lmpStageCompactObject_(b1?.validation || b1?.operational_state || b1?.as_is || {}, 3, 20),
+      validated_as_is_summary: lmpStageCompactObject_(asIsForAnalysis, 4, 30),
       ava_result: lmpStageCompactObject_(b2, 3, 20),
       problems_and_wastes: lmpStageCompactObject_(b3, 3, 25),
       restrictions: lmpStageCompactObject_(b4, 4, 25),
@@ -16566,7 +16573,7 @@ function buildEvidencePackForStage(stageKey){
         systems: compact.systems,
         sipoc: compact.sipoc
       },
-      validated_as_is: lmpStageCompactObject_(b1?.as_is || b1?.as_is_process || { activities }, 5, 40),
+      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 50),
       improvements_summary: lmpStageCompactObject_(b5?.improvements || b5?.quickWins || [], 3, 12),
       existing_contract: lmpStageCompactObject_(b6?.sb_contract || state?.sb_contract || {}, 4, 20),
       rules: { build_lmp_to_sb_contract_only: true, return_only_valid_json: true }
@@ -17942,8 +17949,8 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
 </style>
 <script id="sgmp-analysis-screen-flow-override">
 (function(){
-  const ANALYSIS_SCREEN_ORDER = ['inicio','preparacion','documentacion_existente','carga','asis','analisis_b1','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
-  const ANALYSIS_KEY_BY_SECTION = { analisis_b1:'B1', analisis_b2:'B2', analisis_b3:'B3', analisis_b4:'B4', analisis_b5:'B5', analisis_b6:'B6' };
+  const ANALYSIS_SCREEN_ORDER = ['inicio','preparacion','documentacion_existente','carga','asis','analisis_b2','analisis_b3','analisis_b4','analisis_b5','analisis_b6','decision','tobe','resultados'];
+  const ANALYSIS_KEY_BY_SECTION = { analisis_b2:'B2', analisis_b3:'B3', analisis_b4:'B4', analisis_b5:'B5', analisis_b6:'B6' };
   function el(id){ return document.getElementById(id); }
   function arr(v){ return Array.isArray(v) ? v : (v ? [v] : []); }
   function isBlankActivity(a){ return !a || (!String(a.name||'').trim() && !String(a.actor||'').trim() && !String(a.id||'').trim()); }
@@ -17984,8 +17991,8 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     return prompt;
   };
   window.generateAnalysisScreenPrompt = function(stageKey){
-    if(!(state.briefReview && state.briefReview.approved)){ if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey,'warn','Debes aprobar primero el Brief.'); return; }
-    if(stageKey === 'B2' && typeof lmpB1CanProceedToB2 === 'function' && !lmpB1CanProceedToB2(true)){
+    const hasAsIsForAnalysis = !!(   safeArray(state.asis?.activities).length ||   safeArray(state.asIsProcess?.as_is_process?.activities).length ||   safeArray(state.briefReview?.raw?.as_is_process?.activities).length ||   safeArray(state.brief?.as_is_process?.activities).length );  if(!hasAsIsForAnalysis){   if(typeof showMsg === 'function'){     showMsg(       'analysisMsg_' + stageKey,       'warn',       'Primero aplica el JSON al LMP para cargar la estructura AS-IS.'     );   }   return; }
+    // B2 no se bloquea por vacíos de B1. Los vacíos se gestionan en AS-IS/B1, pero no impiden análisis posteriores.
       if(typeof showMsg === 'function') showMsg('analysisMsg_B2','warn','B1 está bloqueado. Corrige los vacíos críticos antes de generar B2.');
       return;
     }
@@ -18128,16 +18135,14 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
   const oldShowSection = window.showSection;
   window.showSection = function(id){
-    if(id === 'analisis') id = 'analisis_b1';
-    if(id === 'analisis_b2' && typeof lmpB1CanProceedToB2 === 'function' && !lmpB1CanProceedToB2(true)){
-      id = 'analisis_b1';
-    }
+    if(id === 'analisis') id = 'analisis_b2';
+// B1 eliminado: no se redirige B2 hacia B1.
     if(typeof oldShowSection === 'function'){ oldShowSection(id); }
     else{ document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id)); document.querySelectorAll('.step-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === id)); }
     const key = ANALYSIS_KEY_BY_SECTION[id];
     if(key){ state.analysisStages = state.analysisStages || { current:key, results:{} }; state.analysisStages.current = key; if(!el('analysisPrompt_' + key)?.value) window.generateAnalysisScreenPrompt(key); window.renderAnalysisScreenAccumulated(key); }
   };
-  window.labelStage = function(id){ return { inicio:'Inicio', documentacion_existente:'Documentación existente', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b1:'B1 · Validación AS IS', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
+  window.labelStage = function(id){ return { inicio:'Inicio', documentacion_existente:'Documentación existente', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
   window.goToNext = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
     if(id === 'carga' && typeof updateCargaInputsByRoute === 'function'){
@@ -18145,8 +18150,8 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
     if(current === 'preparacion'){ showSection('carga'); return; }
     if(current === 'documentacion_existente'){ showSection('carga'); return; }
-    if(current === 'asis'){ showSection('analisis_b1'); return; }
-    if(current === 'analisis_b1' && typeof lmpB1CanProceedToB2 === 'function' && !lmpB1CanProceedToB2(true)){ return; }
+    if(current === 'asis'){ showSection('analisis_b2'); return; }
+    // B1 eliminado: B2 no depende de validación B1.
     if(current === 'analisis_b6'){ showSection('decision'); return; }
     if(current === 'decision'){ if(typeof continueFromDecision === 'function') continueFromDecision(); return; }
     if(current === 'tobe' && state.decision?.route === 'asis'){ showSection('resultados'); return; }
@@ -18156,14 +18161,14 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
     if(current === 'documentacion_existente'){ showSection('preparacion'); return; }
     if(current === 'carga'){ showSection('preparacion'); return; }
-    if(current === 'analisis_b1'){ showSection('asis'); return; }
+    if(current === 'analisis_b2'){ showSection('asis'); return; }
     const idx = ANALYSIS_SCREEN_ORDER.indexOf(current); if(idx > 0) showSection(ANALYSIS_SCREEN_ORDER[idx-1]);
   };
   window.saveAsIsAndContinue = function(){
     if(typeof syncAsIsFromDom === 'function') syncAsIsFromDom();
     const acts = cleanActivities(state.asis?.activities || window.sgmpGetBestAnalysisSourceActivities());
     if(!acts.length){ if(typeof showMsg === 'function') showMsg('asisBuilderMsg','warn','No hay actividades AS IS para continuar.'); return; }
-    state.asis.activities = acts; if(typeof renderAsIsActivities === 'function') renderAsIsActivities(); if(typeof updateTopStatus === 'function') updateTopStatus(); showSection('analisis_b1');
+    state.asis.activities = acts; if(typeof renderAsIsActivities === 'function') renderAsIsActivities(); if(typeof updateTopStatus === 'function') updateTopStatus(); showSection('analisis_b2');
   };
   window.saveAnalysisAndContinue = function(){ showSection('decision'); };
 })();
