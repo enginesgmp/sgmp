@@ -13909,22 +13909,60 @@ function processBriefResponse(){
     const rawText = qs('briefResponseEditor')?.value?.trim() || '';
 
     if(!rawText){
-      showMsg('briefMsg', 'warn', 'Pega primero el JSON generado por Prompt A.');
+      showMsg('briefIaMsg', 'warn', 'Pega primero el JSON generado por Prompt A.');
       return;
     }
 
-    const parsed = JSON.parse(stripFence(rawText));
+    const parsed = extractJsonFromText(rawText);
+    const adapted = coerceAnyPayloadToAsIsProcess(parsed);
 
-    const coverage = validatePromptACoverageAgainstExtractor(parsed);
+    const coverage = validatePromptACoverageAgainstExtractor(adapted);
 
     if(!coverage.ok){
       showMsg('cargaMsg', 'err', coverage.message);
+      showMsg('briefIaMsg', 'err', coverage.message);
       return;
     }
 
-    const normalized = normalizePromptAResponse(parsed);
+    const normalized = normalizePromptAAsIsProcess(adapted);
+    const issues = validatePromptAAsIsProcess(normalized);
 
-    // aquí sigue tu lógica actual de aplicar al AS-IS
+    state.asIsProcess = normalized;
+    state.brief = normalized;
+    state.briefReview = {
+      raw: normalized,
+      approved: issues.length === 0,
+      type: 'as_is_process',
+      issues
+    };
+    state.asIsProcessApproved = issues.length === 0;
+
+    if(qs('briefResponseEditor')){
+      qs('briefResponseEditor').value = JSON.stringify(normalized, null, 2);
+    }
+
+    if(qs('briefResponsePreview')){
+      qs('briefResponsePreview').textContent = JSON.stringify(normalized, null, 2);
+    }
+
+    renderBriefValidation();
+
+    if(typeof refreshCargaFlowState === 'function'){
+      refreshCargaFlowState();
+    }
+
+    showMsg(
+      'briefIaMsg',
+      issues.length ? 'warn' : 'ok',
+      issues.length
+        ? 'JSON validado con vacíos estructurales. Revisa el estado antes de aplicar al LMP.'
+        : 'JSON validado correctamente. Ya puedes aplicarlo al LMP.'
+    );
+
+  }catch(error){
+    showMsg('briefIaMsg', 'err', 'No fue posible procesar el JSON de Prompt A. Detalle: ' + error.message);
+  }
+}
 
 function approveBriefAndUnlockAnalysis(){
   const rawText = qs('briefEditor')?.value.trim() || '';
