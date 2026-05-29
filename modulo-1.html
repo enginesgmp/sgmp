@@ -5192,11 +5192,14 @@ window.hydratePreparationFromState = hydratePreparationFromState;
         </summary>
 
         <article class="card">
-          <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-            <div class="actions-left">
-              <button class="btn-ghost" onclick="addAdditionalInformationRow()" type="button">Agregar información</button>
-            </div>
-          </div>
+   <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
+  <div class="actions-left">
+    <button class="btn-ghost" onclick="addAdditionalInformationRow()" type="button">Agregar información</button>
+  </div>
+  <div class="actions-right">
+    <button class="btn" onclick="saveAdditionalInformation()" type="button">Guardar información</button>
+  </div>
+</div>
 
           <div class="list" id="asisAdditionalInfo"></div>
         </article>
@@ -8090,26 +8093,206 @@ function syncAdditionalInformationRows(){
   updateTopStatus();
 }
 
+function saveAdditionalInformation(){
+  collectAdditionalInformation();
+
+  updateAsIsPreview();
+  updateTopStatus();
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+
+  const msg = qs('asisBuilderMsg');
+  if(msg){
+    msg.className = 'msg show ok';
+    msg.textContent = 'Información adicional guardada y JSON AS-IS actualizado.';
+  }
+}
+
+function collectAdditionalInformation(){
+  state.asis = state.asis || {};
+
+  const container = qs('asisAdditionalInfo');
+  if(!container){
+    state.asis.additional_information = safeArray(state.asis.additional_information);
+    return state.asis.additional_information;
+  }
+
+  state.asis.additional_information = qsa('.additional-info-item', container)
+    .map(item => ({
+      title: normalizeContractString(item.querySelector('.ai_title')?.value || ''),
+      type: normalizeContractString(item.querySelector('.ai_type')?.value || ''),
+      related_activity: normalizeContractString(item.querySelector('.ai_related_activity')?.value || ''),
+      content: normalizeContractString(item.querySelector('.ai_content')?.value || ''),
+      source: normalizeContractString(item.querySelector('.ai_source')?.value || ''),
+      editable: true
+    }))
+    .filter(info =>
+      info.title ||
+      info.type ||
+      info.related_activity ||
+      info.content ||
+      info.source
+    );
+
+  return state.asis.additional_information;
+}
+
+function renderAdditionalInfoSourceOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+
+  const options = [
+    'entrevista',
+    'transcripcion',
+    'extractor',
+    'cuestionario',
+    'archivo_adicional',
+    'pendiente_validacion'
+  ];
+
+  return options.map(option =>
+    `<option value="${escapeHtml(option)}" ${lmpLower(option) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(option)}</option>`
+  ).join('');
+}
+
+function renderAdditionalInfoTypeOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+
+  const options = [
+    'entrevista_guia',
+    'transcripcion_entrevista',
+    'cuestionario_preentrevista',
+    'archivo_adicional',
+    'problema',
+    'desperdicio',
+    'restriccion',
+    'quick_win',
+    'oportunidad_mejora',
+    'ava',
+    'riesgo',
+    'excepcion',
+    'control_critico',
+    'automatizacion',
+    'digitalizacion',
+    'nota_contextual'
+  ];
+
+  return options.map(option =>
+    `<option value="${escapeHtml(option)}" ${lmpLower(option) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(option)}</option>`
+  ).join('');
+}
+
+function renderAdditionalInfoActivityOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+
+  const activities = safeArray(state.asis?.activities)
+    .map(activity => ({
+      id: normalizeContractString(activity?.id || ''),
+      name: normalizeContractString(activity?.name || '')
+    }))
+    .filter(activity => activity.name);
+
+  const options = activities.map(activity => {
+    const label = activity.id
+      ? `${activity.id} · ${activity.name}`
+      : activity.name;
+
+    return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+
+  const customSelected = selected && !activities.some(a => lmpLower(a.name) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
+    : '';
+
+  return `
+    <option value="" ${!selected ? 'selected' : ''}>Sin actividad relacionada</option>
+    ${customSelected}
+    ${options}
+  `;
+}
+  
+function renderAdditionalInformation(){
+  const container = qs('asisAdditionalInfo');
+  if(!container) return;
+
+  const list = safeArray(state.asis?.additional_information);
+
+  if(!list.length){
+    container.innerHTML = '<div class="mini-note">Sin información adicional registrada.</div>';
+    return;
+  }
+
+  container.innerHTML = list.map((info, index) => `
+    <div class="repeat-item additional-info-item" data-index="${index}">
+      <div class="field-grid">
+        <div class="field w-5">
+          <label>Título</label>
+          <input class="ai_title" value="${escapeHtml(info.title || '')}" placeholder="Ej. Problemas en descarga" />
+        </div>
+
+        <div class="field w-3">
+          <label>Fuente</label>
+          <select class="ai_source">
+            ${renderAdditionalInfoSourceOptions(info.source || '')}
+          </select>
+        </div>
+
+        <div class="field w-4">
+          <label>Tipo</label>
+          <select class="ai_type">
+            ${renderAdditionalInfoTypeOptions(info.type || '')}
+          </select>
+        </div>
+
+        <div class="field w-12">
+          <label>Actividad relacionada</label>
+          <select class="ai_related_activity">
+            ${renderAdditionalInfoActivityOptions(info.related_activity || '')}
+          </select>
+        </div>
+
+        <div class="field w-12">
+          <label>Contenido</label>
+          <textarea class="ai_content" placeholder="Contenido explícito levantado.">${escapeHtml(info.content || '')}</textarea>
+        </div>
+      </div>
+
+      <div class="actions" style="border-top:none;padding-top:8px;margin-top:8px">
+        <div class="actions-left">
+          <button class="btn-danger" onclick="deleteAdditionalInformationRow(this)" type="button">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+  
 function addAdditionalInformationRow(){
+  collectAdditionalInformation();
+
   state.asis = state.asis || {};
   state.asis.additional_information = safeArray(state.asis.additional_information);
+
   state.asis.additional_information.push({
-    title: '',
+    title: 'Nueva información',
     type: 'nota_contextual',
     related_activity: '',
     content: '',
     source: 'pendiente_validacion',
     editable: true
   });
-  renderAdditionalInformationRows();
+
+  renderAdditionalInformation();
   updateAsIsPreview();
 }
 
-function deleteAdditionalInformationRow(index){
-  state.asis = state.asis || {};
-  state.asis.additional_information = safeArray(state.asis.additional_information);
-  state.asis.additional_information.splice(index, 1);
-  renderAdditionalInformationRows();
+function deleteAdditionalInformationRow(button){
+  const row = button?.closest('.additional-info-item');
+  if(row) row.remove();
+
+  collectAdditionalInformation();
   updateAsIsPreview();
 }
 
