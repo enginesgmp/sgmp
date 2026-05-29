@@ -17990,22 +17990,52 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     if(typeof lmpWarnIfPromptTooLarge === 'function') lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'analysisMsg_' + stageKey);
     return prompt;
   };
-  window.generateAnalysisScreenPrompt = function(stageKey){
-    const hasAsIsForAnalysis = !!(   safeArray(state.asis?.activities).length ||   safeArray(state.asIsProcess?.as_is_process?.activities).length ||   safeArray(state.briefReview?.raw?.as_is_process?.activities).length ||   safeArray(state.brief?.as_is_process?.activities).length );  if(!hasAsIsForAnalysis){   if(typeof showMsg === 'function'){     showMsg(       'analysisMsg_' + stageKey,       'warn',       'Primero aplica el JSON al LMP para cargar la estructura AS-IS.'     );   }   return; }
-    // B2 no se bloquea por vacíos de B1. Los vacíos se gestionan en AS-IS/B1, pero no impiden análisis posteriores.
-      if(typeof showMsg === 'function') showMsg('analysisMsg_B2','warn','B1 está bloqueado. Corrige los vacíos críticos antes de generar B2.');
-      return;
+ window.generateAnalysisScreenPrompt = function(stageKey){
+  const stage = String(stageKey || '').toUpperCase();
+
+  const hasAsIsForAnalysis = !!(
+    safeArray(state.asis?.activities).length ||
+    safeArray(state.asIsProcess?.as_is_process?.activities).length ||
+    safeArray(state.briefReview?.raw?.as_is_process?.activities).length ||
+    safeArray(state.brief?.as_is_process?.activities).length
+  );
+
+  if(!hasAsIsForAnalysis){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'analysisMsg_' + stage,
+        'warn',
+        'Primero aplica el JSON al LMP para cargar la estructura AS-IS.'
+      );
     }
-    state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey;
-    const prompt = window.sgmpBuildAnalysisStagePrompt(stageKey);
-    const promptBox = el('analysisPrompt_' + stageKey); if(promptBox) promptBox.value = prompt;
-    if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey,'ok','Prompt ' + stageKey + ' generado.');
-    return prompt;
-  };
-  window.runAnalysisScreenStage = async function(stageKey){
+    return '';
+  }
+
+  state.analysisStages = state.analysisStages || { current:'B2', results:{} };
+  state.analysisStages.current = stage;
+
+  const prompt = window.sgmpBuildAnalysisStagePrompt(stage);
+
+  const promptBox = el('analysisPrompt_' + stage);
+  if(promptBox){
+    promptBox.value = prompt;
+  }
+
+  if(typeof showMsg === 'function'){
+    showMsg('analysisMsg_' + stage, 'ok', 'Prompt ' + stage + ' generado.');
+  }
+
+  return prompt;
+};  window.runAnalysisScreenStage = async function(stageKey){
     const defs = (typeof sgmpGetAnalysisStageDefinitions === 'function') ? sgmpGetAnalysisStageDefinitions() : {};
     const def = defs[stageKey] || { stageCode:'lmp_analysis_' + lmpLower(stageKey) };
     const msgId = 'analysisMsg_' + stageKey;
+   let promptBox = el('analysisPrompt_' + stageKey);
+
+if(promptBox && !String(promptBox.value || '').trim()){
+  const generatedPrompt = window.generateAnalysisScreenPrompt(stageKey);
+  if(!generatedPrompt) return;
+}
     try{
       state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey;
       if(String(stageKey || '').toUpperCase() === 'B1' && typeof lmpResolveB1DeterministicIfValid === 'function'){
