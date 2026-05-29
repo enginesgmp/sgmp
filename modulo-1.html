@@ -12028,15 +12028,22 @@ function renderLmpB1StructuralStatus(){
   if(!list && !kpi) return null;
 
   const result = lmpStructuralValidator(lmpBuildB1StructuralInput());
-  const issues = safeArray(result.validation?.gaps || result.gaps);
+
+  const issues = safeArray(
+    result.issues ||
+    result.blocking_issues ||
+    result.validation?.gaps ||
+    result.gaps
+  );
 
   window.__LMP_B1_STRUCTURAL_ISSUES__ = issues;
 
   const signature = JSON.stringify({
     issues: issues.map(issue => [
-      issue.type,
-      issue.field,
-      issue.message,
+      issue.code || issue.type || '',
+      issue.path || issue.field || '',
+      issue.title || issue.message || '',
+      issue.where || '',
       issue.searchHint || '',
       issue.affectedValue || ''
     ])
@@ -12051,32 +12058,18 @@ function renderLmpB1StructuralStatus(){
     if(!issues.length){
       list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
     }else{
-      list.innerHTML = '<div class="asis-issue-list">' + issues.map((issue, index) => {
-        const activityName = normalizeContractString(
-          issue.searchHint ||
-          issue.activityName ||
-          issue.activity_name ||
-          ''
-        );
-
-        const message = normalizeContractString(issue.message || 'Vacío estructural');
-        const splitMessage = message.includes(':') ? message.split(':') : [];
-        const gapName = splitMessage.length ? splitMessage[0].trim() : message;
-        const inferredActivity = activityName || (splitMessage.length > 1 ? splitMessage.slice(1).join(':').trim() : '');
-
-        return `
-const rowsHtml = result.issues.map((issue, index) => `
-  <div class="asis-issue-row">
-    <div class="asis-issue-index">${index + 1}</div>
-    <div class="asis-issue-content">
-      <strong>Vacío: ${escapeHtml(issue.title || 'Vacío estructural')}</strong>
-      <span><b>Dónde:</b> ${escapeHtml(issue.where || issue.path || 'pendiente_validacion')}</span>
-    </div>
-    <div class="asis-issue-action">
-      <button class="brief-mini-btn" type="button" onclick="focusAsisStructuralIssue('${escapeHtml(issue.searchHint || '')}')">Corregir</button>
-    </div>
-  </div>
-`).join('');
+      list.innerHTML = '<div class="asis-issue-list">' + issues.map((issue, index) => `
+        <div class="asis-issue-row">
+          <div class="asis-issue-index">${index + 1}</div>
+          <div class="asis-issue-content">
+            <strong>Vacío: ${escapeHtml(issue.title || issue.message || 'Vacío estructural')}</strong>
+            <span><b>Dónde:</b> ${escapeHtml(issue.where || issue.path || issue.field || 'pendiente_validacion')}</span>
+          </div>
+          <div class="asis-issue-action">
+            <button class="brief-mini-btn" type="button" onclick="focusAsisStructuralIssue('${escapeHtml(issue.searchHint || issue.affectedValue || issue.where || '')}')">Corregir</button>
+          </div>
+        </div>
+      `).join('') + '</div>';
     }
   }
 
