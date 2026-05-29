@@ -13184,7 +13184,7 @@ const extractorSummary = extractorPayloads.map((item, index) => ({
       leader_interview_json: safeArray(state.loads?.interview),
       leader_interview_transcript: safeArray(state.loads?.interviewTranscript),
       questionnaires: safeArray(state.loads?.pre),
-      extractor_json: safeArray(state.loads?.sipoc)   .map(extractRealExtractorPayloadForPromptA)   .filter(item => item && typeof item === 'object'),
+      extractor_json: extractorPayloads,
       documented_process_status_interview: safeArray(state.loads?.statusInterview),
       legacy_detailed_interview_seed: legacyInterviewSeeds,
       additional_txt_files: safeArray(state.loads?.docs)
@@ -13903,59 +13903,28 @@ function validatePromptACoverageAgainstExtractor(promptAResult){
       missingCustomers.length + ' clientes. Revisa el JSON devuelto por IA o vuelve a ejecutar Prompt A.'
   };
 }  
+  
 function processBriefResponse(){
-  const rawText = qs('briefResponseEditor')?.value.trim() || '';
-
-  if(!rawText){
-    showMsg('briefIaMsg','warn','Pega primero el JSON generado por Prompt A.');
-    return;
-  }
-
   try{
-    const parsed = extractJsonFromText(rawText);
+    const rawText = qs('briefResponseEditor')?.value?.trim() || '';
 
-const adapted = coerceAnyPayloadToAsIsProcess(parsed);
-const normalized = normalizePromptAAsIsProcess(adapted);
-const issues = validatePromptAAsIsProcess(normalized);
+    if(!rawText){
+      showMsg('briefMsg', 'warn', 'Pega primero el JSON generado por Prompt A.');
+      return;
+    }
 
-    applyPromptAAsIsProcess(normalized);
+    const parsed = JSON.parse(stripFence(rawText));
 
-state.asIsProcessApproved = issues.length === 0;
-state.briefReview = {
-  raw: normalized,
-  approved: issues.length === 0,
-  type: 'as_is_process',
-  issues
-};
+    const coverage = validatePromptACoverageAgainstExtractor(parsed);
 
-if(qs('briefResponsePreview')){
-  qs('briefResponsePreview').textContent = JSON.stringify(normalized, null, 2);
-}
+    if(!coverage.ok){
+      showMsg('cargaMsg', 'err', coverage.message);
+      return;
+    }
 
-renderBriefValidation();
+    const normalized = normalizePromptAResponse(parsed);
 
-    showMsg(
-      'briefIaMsg',
-      issues.length ? 'warn' : 'ok',
-      issues.length
-        ? 'as_is_process procesado con vacíos estructurales. Revisa el AS-IS editable antes de aprobar.'
-        : 'as_is_process procesado correctamente y cargado al AS-IS editable.'
-    );
-
-  }catch(error){
-    showMsg('briefIaMsg','err','No fue posible procesar el JSON de Prompt A. Detalle: ' + error.message);
-  }
-  const parsed = JSON.parse(...);
-
-const validation = validatePromptACoverageAgainstExtractor(parsed);
-
-if(!validation.ok){
-  showMsg('cargaMsg', 'err', validation.message);
-  return;
-}
-
-// recién ahí aplicar al AS-IS
-}
+    // aquí sigue tu lógica actual de aplicar al AS-IS
 
 function approveBriefAndUnlockAnalysis(){
   const rawText = qs('briefEditor')?.value.trim() || '';
