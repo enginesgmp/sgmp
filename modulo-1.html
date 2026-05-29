@@ -11113,25 +11113,18 @@ function lmpB1CorrectionHint(issue, location){
   return issue?.suggestion || 'Revisar la estructura AS IS.';
 }
 
-function lmpStructuralIssue(type, level, field, message, suggestion, extra){
-  const taxonomyCategory = lmpB1TaxonomyCategory(type);
-  const location = lmpB1ParseIssueLocation(field);
-  const baseIssue = {
-    type,
+function lmpStructuralIssue(code, level, path, title, suggestion, extra = {}){
+  return {
+    code,
     level,
-    field,
-    where: field,
-    location,
-    ui_target: location.ui_target,
-    message,
-    suggestion: suggestion || 'Revisar y completar el dato en AS IS.',
-    stage: 'B1',
-    category: taxonomyCategory,
-    taxonomy_category: taxonomyCategory
+    path,
+    title: normalizeContractString(title || ''),
+    suggestion: '',
+    where: normalizeContractString(extra.where || path || ''),
+    searchHint: normalizeContractString(extra.searchHint || extra.affectedValue || ''),
+    affectedValue: normalizeContractString(extra.affectedValue || ''),
+    data: extra || {}
   };
-  return Object.assign({
-    correction_hint: lmpB1CorrectionHint(baseIssue, location)
-  }, baseIssue, extra || {});
 }
 
 function lmpStructuralLifecycle(blockingCount, warningCount, score){
@@ -11305,6 +11298,54 @@ method: structuralContract.method,
   };
 }
 
+function getAsisGlobalSuppliersInputs(source){
+  const process = source?.as_is_process || {};
+  return mergeSuppliersInputs(
+    safeArray(
+      process.suppliers_inputs ||
+      source?.asis?.suppliers_inputs ||
+      state?.asis?.suppliers_inputs
+    )
+  );
+}
+
+function getAsisGlobalOutputsCustomers(source){
+  const process = source?.as_is_process || {};
+  return mergeOutputsCustomers(
+    safeArray(
+      process.outputs_customers ||
+      source?.asis?.outputs_customers ||
+      state?.asis?.outputs_customers
+    )
+  );
+}
+
+function getAsisUsedInputsSet(activities){
+  const set = new Set();
+
+  safeArray(activities).forEach(activity => {
+    safeArray(activity.inputs_used).forEach(input => {
+      const value = normalizeContractString(input);
+      if(value) set.add(lmpLower(value));
+    });
+  });
+
+  return set;
+}
+
+function getAsisGeneratedOutputsSet(activities){
+  const set = new Set();
+
+  safeArray(activities).forEach(activity => {
+    safeArray(activity.outputs_generated).forEach(output => {
+      const value = normalizeContractString(output);
+      if(value) set.add(lmpLower(value));
+    });
+  });
+
+  return set;
+}
+  
 function lmpStructuralValidator(input, options = {}){
   const source = input || {};
   const process = source.as_is_process || {};
@@ -11316,6 +11357,12 @@ function lmpStructuralValidator(input, options = {}){
     state?.asis?.activities
   ).map((activity, index) => normalizeActivity(activity, index));
 
+  const suppliersInputs = getAsisGlobalSuppliersInputs(source);
+  const outputsCustomers = getAsisGlobalOutputsCustomers(source);
+
+  const usedInputs = getAsisUsedInputsSet(activities);
+  const generatedOutputs = getAsisGeneratedOutputsSet(activities);
+
   const issues = [];
 
   if(!activities.length){
@@ -11324,18 +11371,29 @@ function lmpStructuralValidator(input, options = {}){
       'critical',
       'as_is_process.activities',
       'No se detectaron actividades AS-IS.',
-      'Carga o agrega actividades antes de continuar.'
+      '',
+      { where: 'Actividades del flujo' }
     ));
   }
 
   activities.forEach((activity, index) => {
     const base = `as_is_process.activities[${index}]`;
-    const nameLabel = activity.name ? `: ${activity.name}` : '';
+    const label = activity.name || activity.id || `Actividad ${index + 1}`;
+    const typeLabel = normalizePromptAType(activity.type) === 'decision' ? 'Decisión' : 'Actividad';
 
-    const previous = normalizeActivityConnectionList(activity.previous);
-    const next = normalizeActivityConnectionList(activity.next);
-    const inputs = normalizeActivityInputList(activity.inputs_used || activity.ext_inputs);
-    const outputs = normalizeActivityOutputList(activity.outputs_generated || activity.ext_outputs);
+    const previous = normalizeActivityConnectionList(activity.previous)
+      .filter(row => normalizeContractString(row.activity));
+
+    const next = normalizeActivityConnectionList(activity.next)
+      .filter(row => normalizeContractString(row.activity));
+
+    const inputs = safeArray(activity.inputs_used)
+      .map(normalizeContractString)
+      .filter(Boolean);
+
+    const outputs = safeArray(activity.outputs_generated)
+      .map(normalizeContractString)
+      .filter(Boolean);
 
     const hasInputConnection = previous.length > 0 || inputs.length > 0;
     const hasOutputConnection = next.length > 0 || outputs.length > 0;
@@ -11345,9 +11403,9 @@ function lmpStructuralValidator(input, options = {}){
         'activity_without_name',
         'critical',
         `${base}.name`,
-        'Actividad sin nombre.',
-        'Completa el nombre de la actividad.',
-        { searchHint: activity.id || '' }
+        `${typeLabel} sin nombre`,
+        '',
+        { where: label, searchHint: activity.id || '' }
       ));
     }
 
@@ -11356,9 +11414,9 @@ function lmpStructuralValidator(input, options = {}){
         'activity_without_actor',
         'critical',
         `${base}.actor`,
-        `Actividad sin cargo, actor o rol${nameLabel}`,
-        'Completa el cargo, actor o rol responsable.',
-        { searchHint: activity.name || activity.id || '' }
+        `${typeLabel} sin actor`,
+        '',
+        { where: label, searchHint: activity.name || activity.id || '' }
       ));
     }
 
@@ -11367,9 +11425,9 @@ function lmpStructuralValidator(input, options = {}){
         'activity_without_input_connection',
         'critical',
         `${base}.previous / ${base}.inputs_used`,
-        `Actividad sin conexión de entrada${nameLabel}`,
-        'Debe tener al menos una actividad previa o una entrada SIPOC con proveedor.',
-        { searchHint: activity.name || activity.id || '' }
+        `${typeLabel} sin entrada funcional`,
+        '',
+        { where: label, searchHint: activity.name || activity.id || '' }
       ));
     }
 
@@ -11378,90 +11436,109 @@ function lmpStructuralValidator(input, options = {}){
         'activity_without_output_connection',
         'critical',
         `${base}.next / ${base}.outputs_generated`,
-        `Actividad sin conexión de salida${nameLabel}`,
-        'Debe tener al menos una actividad siguiente o una salida SIPOC con cliente.',
-        { searchHint: activity.name || activity.id || '' }
+        `${typeLabel} sin salida funcional`,
+        '',
+        { where: label, searchHint: activity.name || activity.id || '' }
       ));
     }
 
-    inputs.forEach((row, inputIndex) => {
-      if(lmpStructuralIsPending(row.input)){
+    if(!hasInputConnection && !hasOutputConnection){
+      issues.push(lmpStructuralIssue(
+        'activity_isolated',
+        'critical',
+        `${base}.previous / ${base}.next`,
+        `${typeLabel} aislada`,
+        '',
+        { where: label, searchHint: activity.name || activity.id || '' }
+      ));
+    }
+  });
+
+  suppliersInputs.forEach((row, index) => {
+    const supplier = normalizeContractString(row.supplier || '');
+    const inputs = safeArray(row.inputs).map(normalizeContractString).filter(Boolean);
+
+    if(inputs.some(input => lmpStructuralIsPending(input)) || !inputs.length){
+      issues.push(lmpStructuralIssue(
+        'supplier_without_input',
+        'critical',
+        `as_is_process.suppliers_inputs[${index}].inputs`,
+        'Proveedor sin entrada',
+        '',
+        { where: supplier || `Proveedor ${index + 1}`, searchHint: supplier }
+      ));
+    }
+
+    inputs.forEach(input => {
+      if(lmpStructuralIsPending(supplier)){
         issues.push(lmpStructuralIssue(
-          'activity_input_without_name',
+          'input_without_supplier',
           'critical',
-          `${base}.inputs_used[${inputIndex}].input`,
-          `Entrada sin nombre${nameLabel}`,
-          'Completa el nombre de la entrada usada por la actividad.',
-          { searchHint: activity.name || activity.id || '' }
+          `as_is_process.suppliers_inputs[${index}].supplier`,
+          'Entrada sin proveedor',
+          '',
+          { where: input || `Entrada ${index + 1}`, searchHint: input }
         ));
       }
 
-      if(lmpStructuralIsPending(row.supplier)){
+      if(!lmpStructuralIsPending(input) && !usedInputs.has(lmpLower(input))){
         issues.push(lmpStructuralIssue(
-          'activity_input_without_supplier',
+          'input_without_receiving_activity',
           'critical',
-          `${base}.inputs_used[${inputIndex}].supplier`,
-          `Entrada sin proveedor${nameLabel}`,
-          'Completa el proveedor asociado a la entrada.',
-          { affectedValue: row.input || '', searchHint: activity.name || activity.id || '' }
-        ));
-      }
-    });
-
-    outputs.forEach((row, outputIndex) => {
-      if(lmpStructuralIsPending(row.output)){
-        issues.push(lmpStructuralIssue(
-          'activity_output_without_name',
-          'critical',
-          `${base}.outputs_generated[${outputIndex}].output`,
-          `Salida sin nombre${nameLabel}`,
-          'Completa el nombre de la salida generada por la actividad.',
-          { searchHint: activity.name || activity.id || '' }
-        ));
-      }
-
-      if(lmpStructuralIsPending(row.customer)){
-        issues.push(lmpStructuralIssue(
-          'activity_output_without_customer',
-          'critical',
-          `${base}.outputs_generated[${outputIndex}].customer`,
-          `Salida sin cliente${nameLabel}`,
-          'Completa el cliente o receptor asociado a la salida.',
-          { affectedValue: row.output || '', searchHint: activity.name || activity.id || '' }
+          `as_is_process.suppliers_inputs[${index}].inputs`,
+          'Entrada sin actividad receptora',
+          '',
+          { where: input, searchHint: input }
         ));
       }
     });
   });
 
+  outputsCustomers.forEach((row, index) => {
+    const output = normalizeContractString(row.output || '');
+    const customers = safeArray(row.customers).map(normalizeContractString).filter(Boolean);
+
+    if(lmpStructuralIsPending(output)){
+      issues.push(lmpStructuralIssue(
+        'customer_without_output',
+        'critical',
+        `as_is_process.outputs_customers[${index}].output`,
+        'Cliente sin salida',
+        '',
+        { where: customers.join(', ') || `Cliente ${index + 1}`, searchHint: customers.join(' ') }
+      ));
+    }
+
+    if(customers.some(customer => lmpStructuralIsPending(customer)) || !customers.length){
+      issues.push(lmpStructuralIssue(
+        'output_without_customer',
+        'critical',
+        `as_is_process.outputs_customers[${index}].customers`,
+        'Salida sin cliente',
+        '',
+        { where: output || `Salida ${index + 1}`, searchHint: output }
+      ));
+    }
+
+    if(output && !lmpStructuralIsPending(output) && !generatedOutputs.has(lmpLower(output))){
+      issues.push(lmpStructuralIssue(
+        'output_without_generating_activity',
+        'critical',
+        `as_is_process.outputs_customers[${index}].output`,
+        'Salida sin actividad generadora',
+        '',
+        { where: output, searchHint: output }
+      ));
+    }
+  });
+
   const blockingIssues = issues.filter(issue => issue.level === 'critical');
   const warnings = issues.filter(issue => issue.level !== 'critical');
 
-  const totalChecks = Math.max(1, activities.length * 6);
+  const totalChecks = Math.max(1, activities.length * 5 + suppliersInputs.length * 3 + outputsCustomers.length * 3);
   const penalty = blockingIssues.length * 12 + warnings.length * 4;
   const score = Math.max(0, Math.min(100, Math.round(((totalChecks * 10 - penalty) / (totalChecks * 10)) * 100)));
   const lifecycle = lmpStructuralLifecycle(blockingIssues.length, warnings.length, score);
-
-  const suppliersInputs = mergeSuppliersInputs(
-    activities.flatMap(activity =>
-      normalizeActivityInputList(activity.inputs_used || activity.ext_inputs).map(row => ({
-        supplier: row.supplier,
-        inputs: [row.input],
-        source: 'activity_inputs',
-        editable: true
-      }))
-    )
-  );
-
-  const outputsCustomers = mergeOutputsCustomers(
-    activities.flatMap(activity =>
-      normalizeActivityOutputList(activity.outputs_generated || activity.ext_outputs).map(row => ({
-        output: row.output,
-        customers: [row.customer],
-        source: 'activity_outputs',
-        editable: true
-      }))
-    )
-  );
 
   const model = {
     activities,
@@ -11478,9 +11555,9 @@ function lmpStructuralValidator(input, options = {}){
     }
   };
 
-  const result = {
+  return {
     engine: 'lmp_b1_structural_validator',
-    version: '2.0.0',
+    version: '2.1.0',
     stage: 'B1',
     valid: blockingIssues.length === 0,
     lifecycle,
@@ -11493,41 +11570,39 @@ function lmpStructuralValidator(input, options = {}){
       supplier_input_count: suppliersInputs.length,
       output_customer_count: outputsCustomers.length
     },
-    taxonomy: lmpB1TaxonomySummary(issues),
-    gaps: issues,
-    blockingIssues,
+    issues,
+    blocking_issues: blockingIssues,
     warnings,
-    normalized: {
-      as_is: { activities },
-      as_is_process: {
-        activities,
-        suppliers_inputs: suppliersInputs,
-        outputs_customers: outputsCustomers,
-        additional_information: model.additional_information
-      },
-      sipoc: model.sipoc
+    model,
+    validation_rules: {
+      activities_and_decisions: [
+        'sin_nombre',
+        'sin_actor',
+        'sin_entrada_funcional',
+        'sin_salida_funcional',
+        'aislada'
+      ],
+      suppliers_inputs: [
+        'entrada_sin_proveedor',
+        'proveedor_sin_entrada',
+        'entrada_sin_actividad_receptora'
+      ],
+      outputs_customers: [
+        'salida_sin_cliente',
+        'cliente_sin_salida',
+        'salida_sin_actividad_generadora'
+      ]
     },
     traceability: {
-      parser: 'activity_based_structural_validator',
       deterministic: true,
       side_effect_free: true,
-      source_activity_count: safeArray(source?.source_activities).length,
-      normalized_activity_count: activities.length,
-      audit_trail: safeArray(source?.validation?.b1_audit_log || source?.traceability?.audit_trail)
+      parser: 'lmpStructuralValidator',
+      source_activity_count: activities.length,
+      normalized_activity_count: activities.length
     }
   };
-
-  const contract = lmpBuildB1StructuralContract(result, null, activities);
-
-  return Object.assign({}, contract, result, {
-    operational_state: contract.operational_state,
-    validation: contract.validation,
-    as_is: contract.as_is,
-    as_is_process: contract.as_is_process,
-    sipoc: contract.sipoc,
-    contextual_enrichment: contract.contextual_enrichment
-  });
 }
+  
 function lmpConsolidateB1WithAi(deterministicResult, aiPayload){
   const det = deterministicResult || lmpStructuralValidator({});
   const ai = (aiPayload && typeof aiPayload === 'object') ? JSON.parse(JSON.stringify(aiPayload)) : {};
@@ -11924,20 +11999,18 @@ function renderLmpB1StructuralStatus(){
         const inferredActivity = activityName || (splitMessage.length > 1 ? splitMessage.slice(1).join(':').trim() : '');
 
         return `
-          <div class="asis-issue-row">
-            <div class="asis-issue-index">${index + 1}</div>
-            <div class="asis-issue-content">
-              <strong>${escapeHtml(gapName)}</strong>
-              ${inferredActivity ? `<span>Actividad afectada: <b>${escapeHtml(inferredActivity)}</b></span>` : ''}
-            </div>
-            <div class="asis-issue-action">
-              <button type="button" class="brief-mini-btn" onclick="focusLmpB1Issue(${index})">
-                Corregir vacío
-              </button>
-            </div>
-          </div>
-        `;
-      }).join('') + '</div>';
+const rowsHtml = result.issues.map((issue, index) => `
+  <div class="asis-issue-row">
+    <div class="asis-issue-index">${index + 1}</div>
+    <div class="asis-issue-content">
+      <strong>Vacío: ${escapeHtml(issue.title || 'Vacío estructural')}</strong>
+      <span><b>Dónde:</b> ${escapeHtml(issue.where || issue.path || 'pendiente_validacion')}</span>
+    </div>
+    <div class="asis-issue-action">
+      <button class="brief-mini-btn" type="button" onclick="focusAsisStructuralIssue('${escapeHtml(issue.searchHint || '')}')">Corregir</button>
+    </div>
+  </div>
+`).join('');
     }
   }
 
