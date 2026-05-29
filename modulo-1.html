@@ -13795,7 +13795,114 @@ function coerceAnyPayloadToAsIsProcess(payload){
     }
   };
 }
-  
+function flattenPromptAInputs(asIsProcess){
+  return safeArray(asIsProcess?.suppliers_inputs)
+    .flatMap(row => safeArray(row.inputs))
+    .map(normalizeContractString)
+    .filter(Boolean);
+}
+
+function flattenPromptAOutputs(asIsProcess){
+  return safeArray(asIsProcess?.outputs_customers)
+    .map(row => normalizeContractString(row.output))
+    .filter(Boolean);
+}
+
+function flattenPromptACustomers(asIsProcess){
+  return safeArray(asIsProcess?.outputs_customers)
+    .flatMap(row => safeArray(row.customers))
+    .map(normalizeContractString)
+    .filter(Boolean);
+}
+
+function validatePromptACoverageAgainstExtractor(promptAResult){
+  const payload = buildPromptAInputPayload?.();
+
+  const extractor = safeArray(payload?.input_data?.extractor_json)
+    .find(item => item?.source_type === 'existing_process_extractor' && item?.as_is_flow);
+
+  if(!extractor){
+    return { ok:true, message:'' };
+  }
+
+  const asIs = promptAResult?.as_is_process || {};
+
+  const expectedActivities = safeArray(extractor.as_is_flow?.activities)
+    .map(x => normalizeContractString(x.name))
+    .filter(Boolean);
+
+  const expectedDecisions = safeArray(extractor.as_is_flow?.decisions)
+    .map(x => normalizeContractString(x.name))
+    .filter(Boolean);
+
+  const expectedInputs = safeArray(extractor.catalogs?.inputs)
+    .map(x => normalizeContractString(x.name || x.input))
+    .filter(Boolean);
+
+  const expectedOutputs = safeArray(extractor.catalogs?.outputs)
+    .map(x => normalizeContractString(x.name || x.output))
+    .filter(Boolean);
+
+  const expectedCustomers = safeArray(extractor.catalogs?.outputs)
+    .map(x => normalizeContractString(x.received_by || x.customer))
+    .filter(Boolean);
+
+  const actualActivities = safeArray(asIs.activities)
+    .filter(x => x.type === 'actividad')
+    .map(x => normalizeContractString(x.name))
+    .filter(Boolean);
+
+  const actualDecisions = safeArray(asIs.activities)
+    .filter(x => x.type === 'decision')
+    .map(x => normalizeContractString(x.name))
+    .filter(Boolean);
+
+  const actualInputs = flattenPromptAInputs(asIs);
+  const actualOutputs = flattenPromptAOutputs(asIs);
+  const actualCustomers = flattenPromptACustomers(asIs);
+
+  const missingActivities = expectedActivities.filter(x =>
+    !actualActivities.some(y => lmpLower(y) === lmpLower(x))
+  );
+
+  const missingDecisions = expectedDecisions.filter(x =>
+    !actualDecisions.some(y => lmpLower(y) === lmpLower(x))
+  );
+
+  const missingInputs = expectedInputs.filter(x =>
+    !actualInputs.some(y => lmpLower(y) === lmpLower(x))
+  );
+
+  const missingOutputs = expectedOutputs.filter(x =>
+    !actualOutputs.some(y => lmpLower(y) === lmpLower(x))
+  );
+
+  const missingCustomers = expectedCustomers.filter(x =>
+    !actualCustomers.some(y => lmpLower(y) === lmpLower(x))
+  );
+
+  const totalMissing =
+    missingActivities.length +
+    missingDecisions.length +
+    missingInputs.length +
+    missingOutputs.length +
+    missingCustomers.length;
+
+  if(!totalMissing){
+    return { ok:true, message:'' };
+  }
+
+  return {
+    ok:false,
+    message:
+      'Prompt A incompleto. No se aplicó al AS-IS. Faltan: ' +
+      missingActivities.length + ' actividades, ' +
+      missingDecisions.length + ' decisiones, ' +
+      missingInputs.length + ' entradas, ' +
+      missingOutputs.length + ' salidas y ' +
+      missingCustomers.length + ' clientes. Revisa el JSON devuelto por IA o vuelve a ejecutar Prompt A.'
+  };
+}  
 function processBriefResponse(){
   const rawText = qs('briefResponseEditor')?.value.trim() || '';
 
@@ -13838,6 +13945,16 @@ renderBriefValidation();
   }catch(error){
     showMsg('briefIaMsg','err','No fue posible procesar el JSON de Prompt A. Detalle: ' + error.message);
   }
+  const parsed = JSON.parse(...);
+
+const validation = validatePromptACoverageAgainstExtractor(parsed);
+
+if(!validation.ok){
+  showMsg('cargaMsg', 'err', validation.message);
+  return;
+}
+
+// recién ahí aplicar al AS-IS
 }
 
 function approveBriefAndUnlockAnalysis(){
