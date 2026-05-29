@@ -1464,15 +1464,6 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
 }
 </style>
 
-
-<style id="sgmp-hide-legacy-carga-analysis-ui">
-  /* Oculta visualmente la UI antigua de análisis dentro de Carga sin eliminar IDs ni funciones JS. */
-  .legacy-carga-analysis-ui{
-    display:none !important;
-  }
-</style>
-
-
 <!-- ========================================================= -->
 <!-- CAPA VISUAL COMPLEMENTARIA MIGRADA DESDE TEST · SIN JS -->
 <!-- ========================================================= -->
@@ -1702,45 +1693,6 @@ body .app .layout > aside.sidebar .step-list::-webkit-scrollbar-thumb:hover{
   font-weight:850 !important;
   color:#5A7896 !important;
   margin-right:4px !important;
-}
-
-/* AS-IS · Información adicional como lista de solo lectura */
-.asis-additional-readonly-list{
-  display:flex !important;
-  flex-direction:column !important;
-  gap:10px !important;
-}
-
-.additional-info-readonly-item{
-  display:flex !important;
-  justify-content:space-between !important;
-  align-items:center !important;
-  gap:12px !important;
-  padding:13px 15px !important;
-  border-radius:16px !important;
-  background:linear-gradient(135deg,#FFFFFF,#F5FAFF) !important;
-  border:1px solid rgba(11,46,89,.10) !important;
-  border-left:5px solid #00C2FF !important;
-  box-shadow:0 8px 18px rgba(11,46,89,.045) !important;
-}
-
-.additional-info-readonly-item strong{
-  display:block !important;
-  color:#0B2E59 !important;
-  font-weight:950 !important;
-  font-size:.94rem !important;
-  margin-bottom:4px !important;
-}
-
-.additional-info-readonly-item small{
-  display:inline-flex !important;
-  border-radius:999px !important;
-  padding:5px 9px !important;
-  background:rgba(0,194,255,.10) !important;
-  border:1px solid rgba(0,194,255,.20) !important;
-  color:#0B2E59 !important;
-  font-size:.74rem !important;
-  font-weight:850 !important;
 }
 
 @media(max-width:900px){
@@ -8772,103 +8724,6 @@ function renderAsIsQuickDashboard(){
   set('asisDashOutputs', summary.outputs);
 }
 
-function buildDetectedInputsSuppliers(){
-  const map = new Map();
-
-  safeArray(state.asis?.activities).forEach(activity => {
-    const activityName = normalizeContractString(activity.name || 'Actividad sin nombre');
-
-    normalizeActivityInputList(activity.inputs_used).forEach(row => {
-      const input = normalizeContractString(row.input || 'pendiente_validacion');
-      const supplier = normalizeContractString(row.supplier || 'pendiente_validacion');
-      const key = `${lmpLower(supplier)}|||${lmpLower(input)}`;
-
-      if(!map.has(key)){
-        map.set(key, {
-          supplier,
-          input,
-          used_by: []
-        });
-      }
-
-      map.get(key).used_by.push(activityName);
-    });
-  });
-
-  return Array.from(map.values()).map(row => ({
-    ...row,
-    used_by: getUniqueNormalizedValues(row.used_by)
-  }));
-}
-
-function buildDetectedOutputsCustomers(){
-  const map = new Map();
-
-  safeArray(state.asis?.activities).forEach(activity => {
-    const activityName = normalizeContractString(activity.name || 'Actividad sin nombre');
-
-    normalizeActivityOutputList(activity.outputs_generated).forEach(row => {
-      const output = normalizeContractString(row.output || 'pendiente_validacion');
-      const customer = normalizeContractString(row.customer || 'pendiente_validacion');
-      const key = `${lmpLower(output)}|||${lmpLower(customer)}`;
-
-      if(!map.has(key)){
-        map.set(key, {
-          output,
-          customer,
-          generated_by: []
-        });
-      }
-
-      map.get(key).generated_by.push(activityName);
-    });
-  });
-
-  return Array.from(map.values()).map(row => ({
-    ...row,
-    generated_by: getUniqueNormalizedValues(row.generated_by)
-  }));
-}
-
-function renderAsIsDetectedSipoc(){
-  const inputsContainer = qs('asisDetectedInputsSuppliers');
-  const outputsContainer = qs('asisDetectedOutputsCustomers');
-
-  if(inputsContainer){
-    const rows = buildDetectedInputsSuppliers();
-
-    inputsContainer.innerHTML = rows.length
-      ? rows.map(row => `
-          <div class="repeat-item">
-            <div class="repeat-head">
-              <strong>${escapeHtml(row.input)}</strong>
-              <span class="status-badge">Entrada</span>
-            </div>
-            <p><strong>Proveedor:</strong> ${escapeHtml(row.supplier)}</p>
-            <p><strong>Usada en:</strong> ${escapeHtml(row.used_by.join(', ') || 'pendiente_validacion')}</p>
-          </div>
-        `).join('')
-      : '<div class="note">No hay entradas detectadas desde las actividades.</div>';
-  }
-
-  if(outputsContainer){
-    const rows = buildDetectedOutputsCustomers();
-
-    outputsContainer.innerHTML = rows.length
-      ? rows.map(row => `
-          <div class="repeat-item">
-            <div class="repeat-head">
-              <strong>${escapeHtml(row.output)}</strong>
-              <span class="status-badge">Salida</span>
-            </div>
-            <p><strong>Cliente:</strong> ${escapeHtml(row.customer)}</p>
-            <p><strong>Generada por:</strong> ${escapeHtml(row.generated_by.join(', ') || 'pendiente_validacion')}</p>
-          </div>
-        `).join('')
-      : '<div class="note">No hay salidas detectadas desde las actividades.</div>';
-  }
-}
-
 function buildAsIsProcessContract(){
   state.asis = state.asis || {};
 
@@ -8948,10 +8803,6 @@ function updateAsIsPreview(){
 
   renderAsIsQuickDashboard();
 
-  if(typeof renderAsIsDetectedSipoc === 'function'){
-    renderAsIsDetectedSipoc();
-  }
-
   if(qs('asisJsonPreview')){
     qs('asisJsonPreview').textContent = JSON.stringify(asIsContract, null, 2);
   }
@@ -8961,56 +8812,6 @@ function updateAsIsPreview(){
   }
 
   return asIsContract;
-}
-
-function extractAsIsFromBriefPayload(briefPayload){
-  const b = briefPayload?.brief || briefPayload || {};
-  const candidates = [
-    b.as_is?.activities,
-    b.asIs?.activities,
-    b.activities,
-    b.flowSummary,
-    b.flow_summary,
-    b.sipoc_preliminary?.process,
-    b.sipocPreliminary?.process,
-    b.sipoc?.process
-  ];
-  for(const candidate of candidates){
-    const arr = safeArray(candidate).map((item, idx) => {
-      if(typeof item === 'string'){
-        return normalizeActivity({ name: item, type: 'operation', actor: 'Responsable pendiente de validación', note: 'Derivado del Brief' });
-      }
-      return normalizeActivity(Object.assign({ actor: 'Responsable pendiente de validación' }, item || {}));
-    }).filter(a => a.name);
-    if(arr.length){
-      return arr.map((a, idx, all) => ({
-        ...a,
-        id: 'A' + (idx + 1),
-        previous: idx === 0 ? [] : [all[idx - 1].name],
-        next: idx === all.length - 1 ? [] : [all[idx + 1].name],
-        is_start: idx === 0,
-        is_end: idx === all.length - 1
-      }));
-    }
-  }
-  return [];
-}
-
-function seedAsIsBuilderFromBrief(force = false){
-  if(!force && state.asis.activities && state.asis.activities.length) return false;
-  const brief = state.briefReview?.raw || state.brief || state.master?.brief || null;
-  const acts = extractAsIsFromBriefPayload(brief);
-  if(!acts.length){
-    if(force) showMsg('asisBuilderMsg','warn','El Brief no contiene actividades claras para precargar el AS IS.');
-    updateAsIsPreview();
-    return false;
-  }
-  state.asis.activities = acts;
-  renumberAsIsSequence(false);
-  renderAsIsActivities();
-  if(force) showMsg('asisBuilderMsg','ok','AS IS cargado desde el Brief. Revisa actores y secuencia antes de continuar.');
-  updateTopStatus();
-  return true;
 }
 
 function saveAsIsAndContinue(){
@@ -18106,9 +17907,6 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   setTimeout(enableInstrumentButtons, 300);
 })();
 </script>
-
-
-
 
 </body>
 </html>
