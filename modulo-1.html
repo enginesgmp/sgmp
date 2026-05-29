@@ -3471,6 +3471,35 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
     justify-content:flex-start;
   }
 }
+  .load-disabled{
+  opacity:.42 !important;
+  filter:grayscale(.35) !important;
+  cursor:not-allowed !important;
+  pointer-events:none !important;
+}
+
+.load-disabled input{
+  cursor:not-allowed !important;
+}
+
+.load-panel-inactive{
+  opacity:.62 !important;
+  border-style:dashed !important;
+  background:#F7F9FC !important;
+}
+
+.load-panel-inactive::after{
+  content:"Bloqueado por la ruta seleccionada";
+  display:block;
+  margin-top:10px;
+  padding:8px 10px;
+  border-radius:12px;
+  background:rgba(192,57,43,.08);
+  border:1px solid rgba(192,57,43,.18);
+  color:#8A2E23;
+  font-size:.78rem;
+  font-weight:850;
+}
 </style>
 </head>
 <body>
@@ -6070,12 +6099,15 @@ const state = {
   brief: null,
   compactContext: null,
   briefReview: { raw:null, approved:false },
-  loads: {
-    pre: [],
-    interview: [],
-    brief: [],
-    docs: []
-  },
+loads: {
+  pre: [],
+  interview: [],
+  interviewTranscript: [],
+  sipoc: [],
+  statusInterview: [],
+  brief: [],
+  docs: []
+},
   master: null,
   asis: {
     activities: []
@@ -6450,6 +6482,9 @@ function selectRoute(route){
   if(cardId && qs(cardId)) qs(cardId).classList.add('active');
 
   updateTopStatus();
+  if(typeof updateCargaInputsByRoute === 'function'){
+  updateCargaInputsByRoute();
+}
 
 if(route === 'new'){
   showMsg('inicioMsg','ok','Ruta seleccionada: proceso nuevo desde cero. Redirigiendo a Preparación.');
@@ -6653,9 +6688,13 @@ function convertExistingProcessExtractorToContract(parsed){
   };
 
   // Deduplicación defensiva sin alterar objetos de actividades
-  ['suppliers','inputs','actors','outputs','customers','documents','connectors','notes'].forEach(function(key){
-    converted.sipoc_extraction[key] = dedupeCatalog(converted.sipoc_extraction[key]);
-  });
+['suppliers','inputs','actors','outputs','customers'].forEach(function(key){
+  converted.sipoc_extraction[key] = safeArray(converted.sipoc_extraction[key]);
+});
+
+['documents','connectors','notes'].forEach(function(key){
+  converted.sipoc_extraction[key] = dedupeCatalog(converted.sipoc_extraction[key]);
+});
 
   return converted;
 }
@@ -6777,7 +6816,16 @@ function applySipocExtractorJson(parsed){
   state.metadata.route = 'doc';
   state.metadata.currentStage = 'carga';
   state.loads = state.loads || { pre:[], interview:[], brief:[], docs:[] };
-  state.loads.interview = [...(state.loads.interview || []), normalized];
+  state.loads.sipoc = [
+  ...(state.loads.sipoc || []),
+  {
+    source_type: 'existing_process_extractor',
+    extractor_json: parsed,
+    raw_extractor_payload: parsed,
+    normalized_contract: normalizedContract,
+    normalized_lmp: normalized
+  }
+];
 
   state.extractorSipoc = {
     source: 'external_module',
@@ -13106,7 +13154,7 @@ const legacyInterviewSeeds = [
 ]
   .filter(isLegacyDetailedInterviewJson)
   .map(normalizeLegacyInterviewToAsIsSeed);
-const extractorPayloads = safeArray(state.loads?.sipoc)
+const extractorPayloads = [   ...safeArray(state.loads?.sipoc),   ...safeArray(state.loads?.interview) ]   .map(extractRealExtractorPayloadForPromptA)   .filter(item => item && typeof item === 'object' && item.source_type === 'existing_process_extractor');
   .map(extractRealExtractorPayloadForPromptA)
   .filter(item => item && typeof item === 'object');
 
@@ -14491,14 +14539,36 @@ async function loadAllInputs(){
 
   window.__LMP_LAST_LOAD_ERROR__ = '';
 
-  const loaded = {
-    interview: await loadInstrumentFiles('interview'),
-    pre: await loadInstrumentFiles('pre'),
-    transcript: await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista'),
-    sipoc: await loadInstrumentFiles('sipoc'),
-    status: await loadInstrumentFiles('statusInterview'),
-    docs: await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional')
-  };
+updateCargaInputsByRoute();
+
+const isEnabled = (id) => {
+  const input = qs(id);
+  return !!input && !input.disabled;
+};
+
+const loaded = {
+  interview: isEnabled('fileInterview')
+    ? await loadInstrumentFiles('interview')
+    : [],
+
+  pre: isEnabled('filePre')
+    ? await loadInstrumentFiles('pre')
+    : [],
+
+  transcript: isEnabled('fileInterviewTranscript')
+    ? await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista')
+    : [],
+
+  sipoc: isEnabled('fileSipoc')
+    ? await loadInstrumentFiles('sipoc')
+    : [],
+
+  status: isEnabled('fileStatusInterview')
+    ? await loadInstrumentFiles('statusInterview')
+    : [],
+
+  docs: await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional')
+};
 
   const totalLoaded =
     safeArray(loaded.interview).length +
@@ -14562,6 +14632,66 @@ function updateLoadKpis(){
   refreshCargaFlowState();
 }
 
+function setLoadInputEnabled(inputId, enabled){
+  const input = qs(inputId);
+  if(!input) return;
+
+  const dropZone = input.closest('.drop-zone');
+  const field = input.closest('.field');
+
+  input.disabled = !enabled;
+
+  if(!enabled){
+    input.value = '';
+  }
+
+  [dropZone, field].forEach(el => {
+    if(!el) return;
+    el.classList.toggle('load-disabled', !enabled);
+    el.setAttribute('aria-disabled', String(!enabled));
+  });
+}
+
+function updateCargaInputsByRoute(){
+  const route = state?.metadata?.route || '';
+
+  const newProcessInputs = [
+    'fileInterview',
+    'filePre',
+    'fileInterviewTranscript'
+  ];
+
+  const documentedInputs = [
+    'fileSipoc',
+    'fileStatusInterview'
+  ];
+
+  if(route === 'new'){
+    newProcessInputs.forEach(id => setLoadInputEnabled(id, true));
+    documentedInputs.forEach(id => setLoadInputEnabled(id, false));
+  }else if(route === 'doc'){
+    newProcessInputs.forEach(id => setLoadInputEnabled(id, false));
+    documentedInputs.forEach(id => setLoadInputEnabled(id, true));
+  }else{
+    newProcessInputs.forEach(id => setLoadInputEnabled(id, true));
+    documentedInputs.forEach(id => setLoadInputEnabled(id, true));
+  }
+
+  // Archivos adicionales siempre habilitados.
+  setLoadInputEnabled('docFiles', true);
+
+  const newPanel = qs('newProcessLoadPanel');
+  const docPanel = qs('existingProcessLoadPanel');
+
+  if(newPanel){
+    newPanel.classList.toggle('load-panel-inactive', route === 'doc');
+  }
+
+  if(docPanel){
+    docPanel.classList.toggle('load-panel-inactive', route === 'new');
+  }
+}
+  
 function refreshCargaFlowState(){
   const route = state.metadata?.route;
 
@@ -17879,6 +18009,9 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
   window.labelStage = function(id){ return { inicio:'Inicio', documentacion_existente:'Documentación existente', preparacion:'Preparación y contexto', carga:'Carga y consolidación', asis:'AS IS', analisis:'Análisis', analisis_b1:'B1 · Validación AS IS', analisis_b2:'B2 · AVA', analisis_b3:'B3 · Desperdicios', analisis_b4:'B4 · Restricciones', analisis_b5:'B5 · Mejoras', analisis_b6:'B6 · Builder SB', decision:'Decisión', tobe:'TO BE', resultados:'Resultados' }[id] || id; };
   window.goToNext = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
+    if(id === 'carga' && typeof updateCargaInputsByRoute === 'function'){
+  updateCargaInputsByRoute();
+}
     if(current === 'preparacion'){ showSection('carga'); return; }
     if(current === 'documentacion_existente'){ showSection('carga'); return; }
     if(current === 'asis'){ showSection('analisis_b1'); return; }
