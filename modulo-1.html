@@ -3697,7 +3697,7 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
   <div class="actions-left">
     <button class="btn-ok" id="prep_generate_pre_btn" type="button">Generar cuestionario actores internos</button>
 
-    <button class="btn" id="prep_open_extractor_btn" onclick="openSipocExtractorModule()" type="button" style="display:none">
+    <button class="btn hidden" id="prep_open_extractor_btn" onclick="openSipocExtractorModule()" type="button">
       Abrir Extractor SIPOC
     </button>
 
@@ -4713,18 +4713,19 @@ function updatePreparationArtifactsByRoute(){
   const intBtn = document.getElementById("prep_generate_interview_btn");
   const note = document.querySelector("#prep_generation_card .note");
 
-  const showBtn = (el, show) => {
-    if (!el) return;
-    el.classList.toggle("hidden", !show);
-    el.style.display = show ? "" : "none";
-    el.disabled = !show;
-    el.setAttribute("aria-hidden", show ? "false" : "true");
-  };
+  function setVisible(el, visible){
+    if(!el) return;
+
+    el.classList.toggle("hidden", !visible);
+    el.style.setProperty("display", visible ? "inline-flex" : "none", "important");
+    el.disabled = !visible;
+    el.setAttribute("aria-hidden", visible ? "false" : "true");
+  }
 
   if(route === 'doc'){
-    showBtn(preBtn, false);
-    showBtn(extractorBtn, true);
-    showBtn(intBtn, true);
+    setVisible(preBtn, false);
+    setVisible(extractorBtn, true);
+    setVisible(intBtn, true);
 
     if(extractorBtn){
       extractorBtn.textContent = "Abrir Extractor SIPOC";
@@ -4743,9 +4744,9 @@ function updatePreparationArtifactsByRoute(){
     return;
   }
 
-  showBtn(preBtn, true);
-  showBtn(extractorBtn, false);
-  showBtn(intBtn, true);
+  setVisible(preBtn, true);
+  setVisible(extractorBtn, false);
+  setVisible(intBtn, true);
 
   if(preBtn){
     preBtn.textContent = "Generar cuestionario actores internos";
@@ -4789,7 +4790,7 @@ if (typeof state !== "undefined") {
   });
 }
 
-      window.getPreparationContext = getPreparationContext;
+window.getPreparationContext = getPreparationContext;
 window.savePreparationContext = savePreparationContext;
 window.generatePreInterviewFromPreparation = generatePreInterviewFromPreparation;
 window.generateInterviewFromPreparation = generateInterviewFromPreparation;
@@ -4798,8 +4799,9 @@ window.buildInterviewHTML = buildInterviewHTML;
 window.buildDocumentedStatusInterviewHTML = buildDocumentedStatusInterviewHTML;
 window.downloadGeneratedHtml = prepDownloadGeneratedHtml;
 
-// Permite que la carga de respaldos rellene visualmente los campos de Preparación
+// Permite que navegación, respaldo y cambio de ruta actualicen Preparación
 window.hydratePreparationFromState = hydratePreparationFromState;
+window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
       
     })();
   </script>
@@ -5981,6 +5983,13 @@ function refreshStageAccess(){
 }
 
 function showSection(id){
+  if(id === 'preparacion'){
+  setTimeout(() => {
+    if(typeof window.updatePreparationArtifactsByRoute === 'function'){
+      window.updatePreparationArtifactsByRoute();
+    }
+  }, 0);
+}
   if(!canAccessStage(id)){
     showMsg('inicioMsg','warn','Documentacion existente no aplica para levantamiento de proceso nuevo.');
     id = 'preparacion';
@@ -6285,15 +6294,29 @@ function selectRoute(route){
 
   updateTopStatus();
 
-  if(route === 'new'){
-    showMsg('inicioMsg','ok','Ruta seleccionada: proceso nuevo desde cero. Redirigiendo a Preparación.');
-    showSection('preparacion');
-    return;
-  }
+if(route === 'new'){
+  showMsg('inicioMsg','ok','Ruta seleccionada: proceso nuevo desde cero. Redirigiendo a Preparación.');
+  showSection('preparacion');
+
+  setTimeout(() => {
+    if(typeof window.updatePreparationArtifactsByRoute === 'function'){
+      window.updatePreparationArtifactsByRoute();
+    }
+  }, 0);
+
+  return;
+}
 
 if(route === 'doc'){
   showMsg('inicioMsg','ok','Ruta seleccionada: proceso existente o documentado. Redirigiendo a Preparación y contexto.');
   showSection('preparacion');
+
+  setTimeout(() => {
+    if(typeof window.updatePreparationArtifactsByRoute === 'function'){
+      window.updatePreparationArtifactsByRoute();
+    }
+  }, 0);
+
   return;
 }
 
