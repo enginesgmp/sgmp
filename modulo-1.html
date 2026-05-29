@@ -8608,6 +8608,7 @@ function saveAsIsGlobalCatalogs(){
   if(msg){
     msg.className = 'msg show ok';
     msg.textContent = 'Catálogos AS-IS guardados y estructura actualizada.';
+    closeAllAsIsActivities();
   }
 }
   
@@ -8746,11 +8747,17 @@ function addAsisActivity(data = {}){
     console.warn('No se pudo renumerar AS-IS después de agregar actividad.', err);
   }
 
-  renderAsIsActivities();
+renderAsIsActivities();
+closeAllAsIsActivities();
 
-  setTimeout(() => {
-    openAsIsActivity(state.asis.activities.length - 1);
-  }, 80);
+updateAsIsPreview();
+updateTopStatus();
+
+window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+if(typeof renderLmpB1StructuralStatus === 'function'){
+  renderLmpB1StructuralStatus();
+}
 }
 
 function deleteAsisActivity(index){
@@ -8758,6 +8765,16 @@ function deleteAsisActivity(index){
   state.asis.activities.splice(index, 1);
   renumberAsIsSequence(false);
   renderAsIsActivities();
+  closeAllAsIsActivities();
+
+updateAsIsPreview();
+updateTopStatus();
+
+window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+if(typeof renderLmpB1StructuralStatus === 'function'){
+  renderLmpB1StructuralStatus();
+}
 }
 
 function moveAsisActivity(index, direction){
@@ -8769,24 +8786,47 @@ function moveAsisActivity(index, direction){
   state.asis.activities[target] = tmp;
   renumberAsIsSequence(false);
   renderAsIsActivities();
+  closeAllAsIsActivities();
+
+updateAsIsPreview();
+updateTopStatus();
+
+window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+if(typeof renderLmpB1StructuralStatus === 'function'){
+  renderLmpB1StructuralStatus();
+}
 }
 
 function normalizeAsisRelationRows(list){
-  return safeArray(list)
-    .map(row => {
-      if(typeof row === 'string'){
-        return {
-          activity: normalizeContractString(row),
-          connector: ''
-        };
-      }
+  const output = [];
+  const seen = new Set();
 
-      return {
-        activity: normalizeContractString(row?.activity || ''),
-        connector: normalizeContractString(row?.connector || '')
-      };
-    })
-    .filter(row => row.activity);
+  safeArray(list).forEach(row => {
+    const activity = typeof row === 'string'
+      ? normalizeContractString(row)
+      : normalizeContractString(row?.activity || row?.name || row?.target_activity || '');
+
+    const connector = typeof row === 'string'
+      ? ''
+      : normalizeContractString(row?.connector || '');
+
+    if(!activity) return;
+    if(activity === 'pendiente_validacion') return;
+
+    const key = lmpLower(activity);
+
+    if(seen.has(key)) return;
+
+    seen.add(key);
+
+    output.push({
+      activity,
+      connector
+    });
+  });
+
+  return output;
 }
 
 function asisRelationExists(list, activityName){
@@ -8824,15 +8864,19 @@ function findAsisActivityByName(activityName){
 }
 
 function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
-  if(!newActivity || !newActivity.name) return;
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities);
 
-  const currentName = normalizeContractString(newActivity.name);
+  const activities = state.asis.activities;
+  const currentName = normalizeContractString(newActivity?.name || '');
 
-  const oldPrevious = normalizeAsisRelationRows(oldActivity?.previous);
-  const oldNext = normalizeAsisRelationRows(oldActivity?.next);
+  if(!currentName) return;
 
-  const newPrevious = normalizeAsisRelationRows(newActivity.previous);
-  const newNext = normalizeAsisRelationRows(newActivity.next);
+  const oldPrevious = normalizeAsisRelationRows(oldActivity?.previous || []);
+  const oldNext = normalizeAsisRelationRows(oldActivity?.next || []);
+
+  const newPrevious = normalizeAsisRelationRows(newActivity?.previous || []);
+  const newNext = normalizeAsisRelationRows(newActivity?.next || []);
 
   oldPrevious.forEach(rel => {
     if(!asisRelationExists(newPrevious, rel.activity)){
@@ -8849,13 +8893,24 @@ function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
   });
 
   newPrevious.forEach(rel => {
+    if(!rel.activity) return;
+    if(lmpLower(rel.activity) === lmpLower(currentName)) return;
+
     const target = findAsisActivityByName(rel.activity);
     addAsisRelationIfMissing(target, 'next', currentName, rel.connector);
   });
 
   newNext.forEach(rel => {
+    if(!rel.activity) return;
+    if(lmpLower(rel.activity) === lmpLower(currentName)) return;
+
     const target = findAsisActivityByName(rel.activity);
     addAsisRelationIfMissing(target, 'previous', currentName, rel.connector);
+  });
+
+  activities.forEach(activity => {
+    activity.previous = normalizeAsisRelationRows(activity.previous || []);
+    activity.next = normalizeAsisRelationRows(activity.next || []);
   });
 }
 
@@ -8904,10 +8959,10 @@ function syncAsisRow(index, fullUpdate = false){
     renderLmpB1StructuralStatus();
   }
 
-  if(fullUpdate && typeof renderAsIsActivities === 'function'){
-    renderAsIsActivities();
-    openAsIsActivity(index);
-  }
+if(fullUpdate && typeof renderAsIsActivities === 'function'){
+  renderAsIsActivities();
+  closeAllAsIsActivities();
+}
 }
   
 function refreshAsIsActivitySummary(item, index){
@@ -8924,6 +8979,12 @@ function refreshAsIsActivitySummary(item, index){
     badge.textContent = type;
     badge.classList.toggle('is-decision', /decision|decisi[oó]n/i.test(type));
   }
+}
+  
+function closeAllAsIsActivities(){
+  qsa('#asisActivities details.activity-item').forEach(item => {
+    item.removeAttribute('open');
+  });
 }
 
 function openAsIsActivity(index){
