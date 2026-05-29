@@ -8288,6 +8288,21 @@ function addAdditionalInformationRow(){
   updateAsIsPreview();
 }
 
+function downloadAsIsJson(){
+  const contract = updateAsIsPreview();
+
+  const processName = normalizeContractString(
+    state.context?.processName ||
+    state.asIsProcess?.as_is_process?.process_name ||
+    'as_is_process'
+  )
+    .replace(/[^\w\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  downloadJson(`${processName || 'as_is_process'}_AS_IS.json`, contract);
+}
+  
 function deleteAdditionalInformationRow(button){
   const row = button?.closest('.additional-info-item');
   if(row) row.remove();
@@ -8947,48 +8962,99 @@ function renderAsIsDetectedSipoc(){
       : '<div class="note">No hay salidas detectadas desde las actividades.</div>';
   }
 }
+
+function buildAsIsProcessContract(){
+  state.asis = state.asis || {};
+
+  const sourceRoute =
+    state.asIsProcess?.as_is_process?.source_route ||
+    state.asIsProcess?.source_route ||
+    state.metadata?.route ||
+    'pending_validation';
+
+  const normalizedSourceRoute = sourceRoute === 'new'
+    ? 'new_process'
+    : sourceRoute === 'doc'
+      ? 'existing_documented_process'
+      : sourceRoute || 'pending_validation';
+
+  return {
+    as_is_process: {
+      source_route: normalizedSourceRoute,
+      suppliers_inputs: mergeSuppliersInputs(safeArray(state.asis.suppliers_inputs)),
+      outputs_customers: mergeOutputsCustomers(safeArray(state.asis.outputs_customers)),
+      activities: safeArray(state.asis.activities).map((activity, index) => {
+        const type = normalizePromptAType(activity?.type || 'actividad');
+        const isDecision = type === 'decision';
+
+        return {
+          id: normalizeContractString(activity?.id || (isDecision ? `DEC-${String(index + 1).padStart(3, '0')}` : `ACT-${String(index + 1).padStart(3, '0')}`)),
+          name: normalizeContractString(activity?.name || 'pendiente_validacion'),
+          actor: normalizeContractString(activity?.actor || 'pendiente_validacion'),
+          type,
+          document: isDecision ? '' : normalizeContractString(activity?.document || ''),
+          estimated_time: isDecision ? '' : normalizeContractString(activity?.estimated_time || ''),
+          inputs_used: isDecision ? [] : normalizeActivityInputList(activity?.inputs_used),
+          outputs_generated: isDecision ? [] : normalizeActivityOutputList(activity?.outputs_generated),
+          previous: normalizeActivityConnectionList(activity?.previous),
+          next: normalizeActivityConnectionList(activity?.next),
+          observations: normalizeContractString(activity?.observations || ''),
+          clarifying_notes: safeArray(activity?.clarifying_notes).map(normalizeContractString).filter(Boolean),
+          source: normalizeContractString(activity?.source || sourceRouteLabel()),
+          editable: true
+        };
+      }),
+      additional_information: safeArray(state.asis.additional_information).map(info => ({
+        title: normalizeContractString(info?.title || ''),
+        type: normalizeContractString(info?.type || 'nota_contextual'),
+        related_activity: normalizeContractString(info?.related_activity || ''),
+        content: normalizeContractString(info?.content || ''),
+        source: normalizeContractString(info?.source || 'pendiente_validacion'),
+        editable: true
+      }))
+    }
+  };
+}  
   
 function updateAsIsPreview(){
   state.asis = state.asis || {};
 
-  const acts = safeArray(state.asis.activities);
-  const additionalInfo = safeArray(state.asis.additional_information);
+  const asIsContract = buildAsIsProcessContract();
 
-  const issues = [];
+  state.asIsProcess = asIsContract;
 
-  acts.forEach((a, idx) => {
-    if(!a.name) issues.push(`Fila ${idx + 1}: falta nombre de actividad.`);
-    if(!a.actor) issues.push(`Fila ${idx + 1}: falta actor o rol.`);
-    if(!a.type) issues.push(`Fila ${idx + 1}: falta tipo.`);
-  });
+  const acts = safeArray(asIsContract.as_is_process.activities);
+  const additionalInfo = safeArray(asIsContract.as_is_process.additional_information);
 
   if(qs('asisCountKpi')){
     qs('asisCountKpi').textContent = acts.length;
   }
 
   if(qs('asisValidationBox')){
-    qs('asisValidationBox').textContent = issues.length
-      ? issues.join('\n')
-      : (acts.length ? 'AS IS listo para análisis.' : 'Sin actividades cargadas.');
+    const validator = typeof lmpStructuralValidator === 'function'
+      ? lmpStructuralValidator(asIsContract)
+      : null;
+
+    qs('asisValidationBox').textContent = validator?.blocking_issues?.length
+      ? `${validator.blocking_issues.length} vacíos estructurales pendientes.`
+      : (acts.length ? 'AS-IS listo para análisis.' : 'Sin actividades cargadas.');
   }
 
   renderAsIsQuickDashboard();
-  renderAsIsDetectedSipoc();
+
+  if(typeof renderAsIsDetectedSipoc === 'function'){
+    renderAsIsDetectedSipoc();
+  }
 
   if(qs('asisJsonPreview')){
-    qs('asisJsonPreview').textContent = JSON.stringify({
-      source_route: state.asIsProcess?.as_is_process?.source_route || state.metadata?.route || 'pending_validation',
-      activities: acts,
-      suppliers_inputs: safeArray(state.asis.suppliers_inputs),
-      outputs_customers: safeArray(state.asis.outputs_customers),
-      additional_information: additionalInfo,
-      b1_audit_log: safeArray(state.asis?.b1_audit_log)
-    }, null, 2);
+    qs('asisJsonPreview').textContent = JSON.stringify(asIsContract, null, 2);
   }
 
   if(typeof renderLmpB1StructuralStatus === 'function'){
     renderLmpB1StructuralStatus();
   }
+
+  return asIsContract;
 }
 
 function extractAsIsFromBriefPayload(briefPayload){
