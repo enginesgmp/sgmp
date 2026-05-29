@@ -218,6 +218,12 @@
     background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
     border-radius:18px;padding:16px
   }
+  .asis-mini-accordion .repeat-item{
+  padding:0 !important;
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+}
   .repeat-head,.activity-top,.improvement-head{
     display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px
   }
@@ -2407,7 +2413,95 @@ color:#A93226;
   border-bottom:1px solid rgba(11,46,89,.08) !important;
   box-shadow:inset 5px 0 0 #00C2FF !important;
 }
+/* AS-IS · filas compactas para previas, siguientes, entradas y salidas */
+.asis-line-row{
+  display:grid !important;
+  grid-template-columns:minmax(0, 1fr) 180px 36px !important;
+  gap:8px !important;
+  align-items:center !important;
+  width:100% !important;
+  padding:7px 8px !important;
+  margin:6px 0 !important;
+  background:#F8FBFF !important;
+  border:1px solid rgba(11,46,89,.10) !important;
+  border-left:3px solid rgba(0,194,255,.55) !important;
+  border-radius:12px !important;
+  box-shadow:none !important;
+}
 
+.asis-line-row .asis-line-select,
+.asis-line-row .asis-line-tag{
+  width:100% !important;
+  min-height:34px !important;
+  height:34px !important;
+  padding:6px 10px !important;
+  border-radius:10px !important;
+  font-size:.82rem !important;
+  line-height:1.2 !important;
+  background:#FFFFFF !important;
+  color:#0A1F44 !important;
+  border:1px solid rgba(11,46,89,.14) !important;
+  box-shadow:none !important;
+}
+
+.asis-line-row .asis-line-tag{
+  font-size:.78rem !important;
+}
+
+.asis-line-delete{
+  width:34px !important;
+  height:34px !important;
+  min-width:34px !important;
+  padding:0 !important;
+  border:none !important;
+  border-radius:999px !important;
+  background:#B8322A !important;
+  color:#FFFFFF !important;
+  font-size:1rem !important;
+  font-weight:900 !important;
+  line-height:1 !important;
+  cursor:pointer !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+}
+
+.asis-line-delete:hover{
+  background:#9F2A24 !important;
+  transform:translateY(-1px);
+}
+
+[data-dynamic-list="inputs"] .asis-line-row,
+[data-dynamic-list="outputs"] .asis-line-row{
+  grid-template-columns:minmax(0, 1fr) 36px !important;
+}
+
+.asis-mini-accordion .list{
+  gap:4px !important;
+  margin-top:8px !important;
+}
+
+.asis-add-inline-btn{
+  margin-top:8px !important;
+  padding:8px 12px !important;
+  border-radius:999px !important;
+  font-size:.78rem !important;
+}
+
+@media(max-width:820px){
+  .asis-line-row{
+    grid-template-columns:1fr !important;
+  }
+
+  [data-dynamic-list="inputs"] .asis-line-row,
+  [data-dynamic-list="outputs"] .asis-line-row{
+    grid-template-columns:1fr !important;
+  }
+
+  .asis-line-delete{
+    justify-self:start !important;
+  }
+}
 .asis-mini-accordion[open] > .asis-mini-summary,
 .asis-activity-accordion[open] > .asis-activity-summary{
   background:linear-gradient(135deg,#DFF3FF,#FFFFFF) !important;
@@ -7844,24 +7938,24 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
 
   return rows.map((row, rowIndex) => `
-    <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
-      <div class="asis-compact-relation-grid">
-        <div class="field">
-          <label>Actividad</label>
-          <select class="${classPrefix}_activity" onchange="syncAsisRow(${index})">
-            ${renderAsisActivityOptions(row.activity || '', index)}
-          </select>
-        </div>
+    <div class="asis-line-row ${classPrefix}_row" data-row="${rowIndex}">
+      <select class="${classPrefix}_activity asis-line-select" onchange="syncAsisRow(${index})">
+        ${renderAsisActivityOptions(row.activity || '', index)}
+      </select>
 
-        <div class="field">
-          <label>Etiqueta opcional</label>
-          <input class="${classPrefix}_connector" value="${escapeHtml(row.connector || '')}" placeholder="Ej. SI, NO, solicitud" oninput="syncAsisRow(${index})" />
-        </div>
+      <input
+        class="${classPrefix}_connector asis-line-tag"
+        value="${escapeHtml(row.connector || '')}"
+        placeholder="Etiqueta"
+        oninput="syncAsisRow(${index})"
+      />
 
-        <div class="asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar relación" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-        </div>
-      </div>
+      <button
+        class="asis-line-delete"
+        type="button"
+        title="Eliminar"
+        onclick="removeAsisDynamicRow(this, ${index})"
+      >×</button>
     </div>
   `).join('');
 }
@@ -7893,7 +7987,7 @@ function renderActivityInputRows(list, index){
   const catalog = flattenSuppliersInputsCatalog();
 
   if(!catalog.length){
-    return '<div class="note">No hay entradas globales registradas. Agrega entradas/proveedores en el catálogo superior.</div>';
+    return '<div class="note">No hay entradas/proveedores registrados en el catálogo superior.</div>';
   }
 
   const rows = normalizeActivityInputList(list);
@@ -7901,19 +7995,17 @@ function renderActivityInputRows(list, index){
   if(!rows.length) return '';
 
   return rows.map((input, rowIndex) => `
-    <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
-      <div class="asis-compact-single-grid">
-        <div class="field">
-          <label>Entrada / proveedor</label>
-          <select class="a_input_select" onchange="syncAsisRow(${index})">
-            ${renderAsisInputOptions(input || '')}
-          </select>
-        </div>
+    <div class="asis-line-row a_input_row" data-row="${rowIndex}">
+      <select class="a_input_select asis-line-select" onchange="syncAsisRow(${index})">
+        ${renderAsisInputOptions(input || '')}
+      </select>
 
-        <div class="asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar entrada" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-        </div>
-      </div>
+      <button
+        class="asis-line-delete"
+        type="button"
+        title="Eliminar"
+        onclick="removeAsisDynamicRow(this, ${index})"
+      >×</button>
     </div>
   `).join('');
 }
@@ -7945,7 +8037,7 @@ function renderActivityOutputRows(list, index){
   const catalog = flattenOutputsCustomersCatalog();
 
   if(!catalog.length){
-    return '<div class="note">No hay salidas globales registradas. Agrega salidas/clientes en el catálogo superior.</div>';
+    return '<div class="note">No hay salidas/clientes registrados en el catálogo superior.</div>';
   }
 
   const rows = normalizeActivityOutputList(list);
@@ -7953,19 +8045,17 @@ function renderActivityOutputRows(list, index){
   if(!rows.length) return '';
 
   return rows.map((output, rowIndex) => `
-    <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
-      <div class="asis-compact-single-grid">
-        <div class="field">
-          <label>Salida / cliente</label>
-          <select class="a_output_select" onchange="syncAsisRow(${index})">
-            ${renderAsisOutputOptions(output || '')}
-          </select>
-        </div>
+    <div class="asis-line-row a_output_row" data-row="${rowIndex}">
+      <select class="a_output_select asis-line-select" onchange="syncAsisRow(${index})">
+        ${renderAsisOutputOptions(output || '')}
+      </select>
 
-        <div class="asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar salida" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-        </div>
-      </div>
+      <button
+        class="asis-line-delete"
+        type="button"
+        title="Eliminar"
+        onclick="removeAsisDynamicRow(this, ${index})"
+      >×</button>
     </div>
   `).join('');
 }
@@ -8018,13 +8108,11 @@ function addAsisDynamicRow(index, kind){
 
   target.insertAdjacentHTML('beforeend', html);
 
-  const newRow = target.lastElementChild;
-  const firstSelect = newRow?.querySelector('select');
+  const lastRow = target.lastElementChild;
+  const select = lastRow?.querySelector('select');
 
-  if(firstSelect){
-    setTimeout(() => {
-      firstSelect.focus();
-    }, 50);
+  if(select){
+    setTimeout(() => select.focus(), 50);
   }
 }
 
