@@ -2610,6 +2610,18 @@ color:#A93226;
   font-weight:950 !important;
   transition:transform .18s ease, background .18s ease !important;
 }
+  .asis-add-activity-bottom{
+  margin-top:16px !important;
+  padding-top:14px !important;
+  border-top:1px solid rgba(11,46,89,.08) !important;
+  justify-content:flex-start !important;
+}
+
+.asis-add-activity-bottom .btn-ghost{
+  border-radius:999px !important;
+  font-size:.86rem !important;
+  padding:10px 14px !important;
+}
 
 .asis-activity-accordion:not([open]) > .asis-activity-summary::after{
   transform:rotate(-90deg);
@@ -5292,16 +5304,19 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
       </div>
     </summary>
 
-    <article class="card">
-      <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
-        <div class="actions-left">
-          <button class="btn-ghost" onclick="addAsisActivity()" type="button">Agregar actividad</button>
-        </div>
-      </div>
+<article class="card">
+  <div class="list" id="asisActivities"></div>
 
-      <div class="list" id="asisActivities"></div>
-      <div class="msg" id="asisBuilderMsg"></div>
+  <div class="actions asis-add-activity-bottom">
+    <div class="actions-left">
+      <button class="btn-ghost" onclick="addAsisActivity()" type="button">+ Agregar actividad</button>
+    </div>
+  </div>
+
+  <div class="msg" id="asisBuilderMsg"></div>
+</article>
     </article>
+    
   </details>
 
       <details class="asis-accordion asis-additional-accordion">
@@ -7599,7 +7614,7 @@ function asisActivityTemplate(a, index){
 
   return `
     <details class="activity-item asis-activity-accordion" data-index="${index}">
-      <summary class="activity-top asis-activity-summary">
+      <summary class="activity-top asis-activity-summary" onclick="toggleAsIsActivity(event, ${index})">
         <div>
           <strong>${index + 1}. ${escapeHtml(safe.name || (isDecision ? 'Decisión sin nombre' : 'Actividad sin nombre'))}</strong>
           <small>Actor: ${escapeHtml(safe.actor || 'Sin actor')}</small>
@@ -7786,6 +7801,7 @@ function normalizeActivityConnectionList(value){
 
   return output;
 }
+  
 function normalizeActivityInputList(value){
   const arr = safeArray(value);
 
@@ -8695,9 +8711,17 @@ function sourceRouteLabel(){
 }  
   
 function addAsisActivity(data = {}){
-  collectAsisActivities();
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities);
 
-  state.asis.activities.push(Object.assign({
+  try{
+    collectAsisActivities();
+  }catch(err){
+    console.warn('No se pudo recolectar AS-IS antes de agregar actividad.', err);
+    state.asis.activities = safeArray(state.asis.activities);
+  }
+
+  const newActivity = Object.assign({
     id: 'A' + (state.asis.activities.length + 1),
     name: '',
     actor: '',
@@ -8710,13 +8734,23 @@ function addAsisActivity(data = {}){
     outputs_generated: [],
     clarifying_notes: [],
     observations: '',
-    source: sourceRouteLabel(),
+    source: typeof sourceRouteLabel === 'function' ? sourceRouteLabel() : 'edicion_manual_as_is',
     editable: true
-  }, data || {}));
+  }, data || {});
 
-  renumberAsIsSequence(false);
+  state.asis.activities.push(newActivity);
+
+  try{
+    renumberAsIsSequence(false);
+  }catch(err){
+    console.warn('No se pudo renumerar AS-IS después de agregar actividad.', err);
+  }
+
   renderAsIsActivities();
-  openAsIsActivity(state.asis.activities.length - 1);
+
+  setTimeout(() => {
+    openAsIsActivity(state.asis.activities.length - 1);
+  }, 80);
 }
 
 function deleteAsisActivity(index){
@@ -8899,6 +8933,24 @@ function openAsIsActivity(index){
   setTimeout(() => item.scrollIntoView({ behavior:'smooth', block:'center' }), 80);
 }
 
+function toggleAsIsActivity(event, index){
+  if(event){
+    const interactive = event.target.closest('button, input, textarea, select, option, a');
+    if(interactive) return;
+  }
+
+  const item = qs('asisActivities')?.querySelector(`details.activity-item[data-index="${index}"]`);
+  if(!item) return;
+
+  event?.preventDefault();
+
+  if(item.hasAttribute('open')){
+    item.removeAttribute('open');
+  }else{
+    item.setAttribute('open', 'open');
+  }
+}
+  
 function renumberAsIsSequence(showMessage = true){
   const acts = safeArray(state.asis?.activities);
 
