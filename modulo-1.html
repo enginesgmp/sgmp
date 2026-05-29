@@ -2165,6 +2165,81 @@ color:#A93226;
   border-top:1px solid rgba(11,46,89,.08) !important;
 }
 
+/* AS-IS · Desplegables internos más compactos dentro de actividades */
+#asisActivities .asis-mini-accordion{
+  border-radius:14px !important;
+  border:1px solid rgba(11,46,89,.08) !important;
+  box-shadow:none !important;
+  margin-top:8px !important;
+  background:#FBFDFF !important;
+}
+
+#asisActivities .asis-mini-summary{
+  min-height:42px !important;
+  padding:9px 12px !important;
+  background:linear-gradient(135deg,#F8FCFF,#FFFFFF) !important;
+  box-shadow:inset 3px 0 0 rgba(0,194,255,.45) !important;
+}
+
+#asisActivities .asis-mini-accordion[open] > .asis-mini-summary{
+  background:linear-gradient(135deg,#F1FAFF,#FFFFFF) !important;
+  border-bottom:1px solid rgba(11,46,89,.07) !important;
+}
+
+#asisActivities .asis-mini-summary strong{
+  font-size:.82rem !important;
+  font-weight:900 !important;
+  margin-bottom:1px !important;
+}
+
+#asisActivities .asis-mini-summary small{
+  font-size:.72rem !important;
+  font-weight:650 !important;
+  line-height:1.2 !important;
+}
+
+#asisActivities .asis-mini-body{
+  padding:10px 12px 8px !important;
+}
+
+#asisActivities .asis-mini-body .field-grid{
+  gap:8px !important;
+  margin-top:0 !important;
+}
+
+#asisActivities .asis-mini-body .list{
+  gap:6px !important;
+  margin-top:6px !important;
+}
+
+#asisActivities .asis-dynamic-row{
+  padding:8px 10px !important;
+  border-radius:10px !important;
+  margin-bottom:6px !important;
+  background:#FFFFFF !important;
+  border:1px solid rgba(11,46,89,.07) !important;
+}
+
+#asisActivities .asis-choice-line{
+  padding:7px 9px !important;
+  border-radius:10px !important;
+}
+
+#asisActivities .asis-choice-line strong{
+  font-size:.78rem !important;
+}
+
+#asisActivities .asis-choice-line small{
+  font-size:.70rem !important;
+}
+
+#asisActivities .asis-add-inline-btn{
+  min-height:32px !important;
+  padding:7px 11px !important;
+  font-size:.76rem !important;
+  min-width:140px !important;
+}
+  
 .asis-mini-actions{
   border-top:none !important;
   margin-top:0 !important;
@@ -7504,13 +7579,9 @@ function asisActivityTemplate(a, index){
 
           <div class="asis-mini-body">
             <div class="field-grid asis-activity-grid">
-              <div class="field w-3">
-                <label>ID</label>
-                <input class="a_id" value="${escapeHtml(safe.id || '')}" oninput="syncAsisRow(${index})" />
-              </div>
-
-              <div class="field w-6">
-                <label>${isDecision ? 'Nombre de la decisión' : 'Nombre de la actividad'}</label>
+        
+<div class="field w-7">
+  <label>${isDecision ? 'Nombre de la decisión' : 'Nombre de la actividad'}</label>
                 <input class="a_name" value="${escapeHtml(safe.name || '')}" placeholder="${isDecision ? 'Ej. ¿Cumple condición?' : 'Ej. Revisar solicitud'}" oninput="syncAsisRow(${index})" />
               </div>
 
@@ -7794,9 +7865,7 @@ function renderAsisActivityOptions(selectedValue, currentIndex){
     .filter(activity => activity.name && activity.index !== currentIndex);
 
   const options = activities.map(activity => {
-    const label = activity.id
-      ? `${activity.id} · ${activity.name}`
-      : activity.name;
+const label = activity.name;
 
     return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join('');
@@ -7955,7 +8024,6 @@ const type = normalizePromptAType(get('.a_type') || 'actividad');
 const isDecision = type === 'decision';
 
 const activity = {
-  id: get('.a_id'),
   name: get('.a_name'),
   actor: get('.a_actor'),
   type,
@@ -8081,9 +8149,7 @@ function renderAdditionalInfoActivityOptions(selectedValue){
     .filter(activity => activity.name);
 
   const options = activities.map(activity => {
-    const label = activity.id
-      ? `${activity.id} · ${activity.name}`
-      : activity.name;
+    const label = activity.name;
 
     return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join('');
@@ -8796,7 +8862,6 @@ function buildAsIsProcessContract(){
         const isDecision = type === 'decision';
 
         return {
-          id: normalizeContractString(activity?.id || (isDecision ? `DEC-${String(index + 1).padStart(3, '0')}` : `ACT-${String(index + 1).padStart(3, '0')}`)),
           name: normalizeContractString(activity?.name || 'pendiente_validacion'),
           actor: normalizeContractString(activity?.actor || 'pendiente_validacion'),
           type,
@@ -11830,6 +11895,102 @@ function renderLmpB1StructuralStatus(){
   return result;
 }
 
+function focusAsisStructuralIssue(searchHint){
+  const hint = normalizeContractString(searchHint || '');
+  if(!hint) return;
+
+  if(typeof showSection === 'function'){
+    showSection('asis');
+  }
+
+  const asisSection = qs('asis');
+  if(asisSection){
+    asisSection.classList.remove('asis-loading');
+  }
+
+  function normalizeText(value){
+    return lmpLower(normalizeContractString(value || ''));
+  }
+
+  function openParentDetails(element){
+    let parent = element?.parentElement;
+    while(parent){
+      if(parent.tagName === 'DETAILS'){
+        parent.open = true;
+      }
+      parent = parent.parentElement;
+    }
+  }
+
+  function highlightTarget(element){
+    if(!element) return false;
+
+    openParentDetails(element);
+
+    const row =
+      element.closest('.asis-catalog-table-row') ||
+      element.closest('.asis-global-input-row') ||
+      element.closest('.asis-global-output-row') ||
+      element.closest('.activity-item') ||
+      element.closest('.repeat-item') ||
+      element;
+
+    row.classList.add('asis-focus-highlight');
+    element.classList.add('asis-field-focus');
+
+    setTimeout(() => {
+      row.classList.remove('asis-focus-highlight');
+      element.classList.remove('asis-field-focus');
+    }, 2600);
+
+    row.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    });
+
+    if(typeof element.focus === 'function'){
+      setTimeout(() => element.focus(), 350);
+    }
+
+    return true;
+  }
+
+  const candidates = [
+    ...qsa('#asisGlobalInputs input'),
+    ...qsa('#asisGlobalOutputs input'),
+    ...qsa('#asisActivities input'),
+    ...qsa('#asisActivities textarea'),
+    ...qsa('#asisActivities select'),
+    ...qsa('#asisAdditionalInfo input'),
+    ...qsa('#asisAdditionalInfo textarea'),
+    ...qsa('#asisAdditionalInfo select')
+  ];
+
+  const exact = candidates.find(el => normalizeText(el.value) === normalizeText(hint));
+  if(highlightTarget(exact)) return;
+
+  const partial = candidates.find(el => normalizeText(el.value).includes(normalizeText(hint)));
+  if(highlightTarget(partial)) return;
+
+  const activity = qsa('#asisActivities .activity-item').find(item =>
+    normalizeText(item.textContent).includes(normalizeText(hint))
+  );
+
+  if(highlightTarget(activity)) return;
+
+  const catalogRow = qsa('#asisGlobalInputs .asis-catalog-table-row, #asisGlobalOutputs .asis-catalog-table-row, #asisGlobalInputs .asis-global-input-row, #asisGlobalOutputs .asis-global-output-row').find(row =>
+    normalizeText(row.textContent).includes(normalizeText(hint))
+  );
+
+  if(highlightTarget(catalogRow)) return;
+
+  const msg = qs('asisBuilderMsg');
+  if(msg){
+    msg.className = 'msg show warn';
+    msg.textContent = `No se pudo ubicar automáticamente: ${hint}. Revisa catálogos o actividades.`;
+  }
+}
+  
 function sgmpEnsureBriefHasSourceActivities(brief){
   const normalized = brief || {};
   const sourceActivities = sgmpGetStructuralSourceActivities();
