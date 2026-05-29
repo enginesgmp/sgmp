@@ -7789,6 +7789,37 @@ function flattenOutputsCustomersCatalog(){
   ).filter(row => row.output);
 }
 
+function renderAsisActivityOptions(selectedValue, currentIndex){
+  const selected = normalizeContractString(selectedValue || '');
+
+  const activities = safeArray(state.asis?.activities)
+    .map((activity, idx) => ({
+      index: idx,
+      name: normalizeContractString(activity?.name || ''),
+      id: normalizeContractString(activity?.id || '')
+    }))
+    .filter(activity => activity.name && activity.index !== currentIndex);
+
+  const options = activities.map(activity => {
+    const label = activity.id
+      ? `${activity.id} · ${activity.name}`
+      : activity.name;
+
+    return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+
+  const pendingSelected = selected === 'pendiente_validacion' ? 'selected' : '';
+  const customSelected = selected && selected !== 'pendiente_validacion' && !activities.some(a => lmpLower(a.name) === lmpLower(selected))
+    ? 'selected'
+    : '';
+
+  return `
+    <option value="" ${!selected ? 'selected' : ''}>Seleccionar actividad</option>
+    <option value="pendiente_validacion" ${pendingSelected}>pendiente_validacion</option>
+    ${customSelected ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>` : ''}
+    ${options}
+  `;
+}
   
 function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
@@ -7798,7 +7829,9 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
       <div class="field-grid">
         <div class="field w-7">
           <label>Actividad</label>
-          <input class="${classPrefix}_activity" value="${escapeHtml(row.activity || '')}" placeholder="Nombre exacto de la actividad" oninput="syncAsisRow(${index})" />
+          <select class="${classPrefix}_activity" onchange="syncAsisRow(${index})">
+            ${renderAsisActivityOptions(row.activity || '', index)}
+          </select>
         </div>
 
         <div class="field w-4">
