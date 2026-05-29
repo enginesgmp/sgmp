@@ -2213,6 +2213,19 @@ color:#A93226;
   background:#fcfdff !important;
 }
 
+.asis-dynamic-row{
+  border-left:3px solid rgba(0,194,255,.45) !important;
+  background:#F8FBFF !important;
+}
+
+.asis-dynamic-row select{
+  font-weight:650 !important;
+}
+
+.asis-add-inline-btn{
+  margin-top:8px !important;
+}
+  
 .asis-dynamic-row .field-grid{
   gap:10px !important;
   margin-top:0 !important;
@@ -7648,43 +7661,61 @@ function normalizeActivityConnectionList(value){
 }
 
 function normalizeActivityInputList(value){
-  const map = new Map();
+  const arr = safeArray(value);
 
-  safeArray(value).forEach(item => {
+  if(!arr.length) return [];
+
+  const map = new Map();
+  const output = [];
+
+  arr.forEach(item => {
     const input = typeof item === 'string'
       ? normalizeContractString(item)
       : normalizeContractString(item?.input || item?.name || item?.entrada || '');
 
-    if(!input) return;
+    if(!input){
+      output.push('');
+      return;
+    }
 
     const key = lmpLower(input);
 
     if(!map.has(key)){
       map.set(key, input);
+      output.push(input);
     }
   });
 
-  return Array.from(map.values());
+  return output;
 }
 
 function normalizeActivityOutputList(value){
-  const map = new Map();
+  const arr = safeArray(value);
 
-  safeArray(value).forEach(item => {
-    const output = typeof item === 'string'
+  if(!arr.length) return [];
+
+  const map = new Map();
+  const output = [];
+
+  arr.forEach(item => {
+    const value = typeof item === 'string'
       ? normalizeContractString(item)
       : normalizeContractString(item?.output || item?.name || item?.salida || '');
 
-    if(!output) return;
+    if(!value){
+      output.push('');
+      return;
+    }
 
-    const key = lmpLower(output);
+    const key = lmpLower(value);
 
     if(!map.has(key)){
-      map.set(key, output);
+      map.set(key, value);
+      output.push(value);
     }
   });
 
-  return Array.from(map.values());
+  return output;
 }
   
 function normalizeSuppliersInputsCatalog(rows){
@@ -7779,26 +7810,21 @@ function renderAsisActivityOptions(selectedValue, currentIndex){
   const activities = safeArray(state.asis?.activities)
     .map((activity, idx) => ({
       index: idx,
-      name: normalizeContractString(activity?.name || ''),
-      id: normalizeContractString(activity?.id || '')
+      name: normalizeContractString(activity?.name || '')
     }))
     .filter(activity => activity.name && activity.index !== currentIndex);
 
   const options = activities.map(activity => {
-const label = activity.name;
-
-    return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    return `<option value="${escapeHtml(activity.name)}" ${lmpLower(activity.name) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(activity.name)}</option>`;
   }).join('');
 
-  const pendingSelected = selected === 'pendiente_validacion' ? 'selected' : '';
-  const customSelected = selected && selected !== 'pendiente_validacion' && !activities.some(a => lmpLower(a.name) === lmpLower(selected))
-    ? 'selected'
+  const customSelected = selected && !activities.some(a => lmpLower(a.name) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
     : '';
 
   return `
     <option value="" ${!selected ? 'selected' : ''}>Seleccionar actividad</option>
-    <option value="pendiente_validacion" ${pendingSelected}>pendiente_validacion</option>
-    ${customSelected ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>` : ''}
+    ${customSelected}
     ${options}
   `;
 }
@@ -7861,11 +7887,13 @@ function renderActivityInputRows(list, index){
 
   const rows = normalizeActivityInputList(list);
 
+  if(!rows.length) return '';
+
   return rows.map((input, rowIndex) => `
     <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
       <div class="asis-compact-single-grid">
         <div class="field">
-          <label>Entrada</label>
+          <label>Entrada / proveedor</label>
           <select class="a_input_select" onchange="syncAsisRow(${index})">
             ${renderAsisInputOptions(input || '')}
           </select>
@@ -7911,11 +7939,13 @@ function renderActivityOutputRows(list, index){
 
   const rows = normalizeActivityOutputList(list);
 
+  if(!rows.length) return '';
+
   return rows.map((output, rowIndex) => `
     <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
       <div class="asis-compact-single-grid">
         <div class="field">
-          <label>Salida</label>
+          <label>Salida / cliente</label>
           <select class="a_output_select" onchange="syncAsisRow(${index})">
             ${renderAsisOutputOptions(output || '')}
           </select>
@@ -7958,54 +7988,33 @@ function addAsisDynamicRow(index, kind){
   let html = '';
 
   if(kind === 'previous'){
-    html = renderActivityConnectionsRows([{ activity: 'pendiente_validacion', connector: '' }], 'a_previous', index, 'previous');
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_previous', index, 'previous');
   }
 
   if(kind === 'next'){
-    html = renderActivityConnectionsRows([{ activity: 'pendiente_validacion', connector: '' }], 'a_next', index, 'next');
+    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_next', index, 'next');
   }
 
   if(kind === 'inputs'){
-    html = `
-      <div class="repeat-item asis-dynamic-row a_input_row">
-        <div class="asis-compact-single-grid">
-          <div class="field">
-            <label>Entrada</label>
-            <select class="a_input_select" onchange="syncAsisRow(${index})">
-              ${renderAsisInputOptions('')}
-            </select>
-          </div>
-
-          <div class="asis-row-delete-wrap">
-            <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar entrada" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-          </div>
-        </div>
-      </div>
-    `;
+    html = renderActivityInputRows([''], index);
   }
 
   if(kind === 'outputs'){
-    html = `
-      <div class="repeat-item asis-dynamic-row a_output_row">
-        <div class="asis-compact-single-grid">
-          <div class="field">
-            <label>Salida</label>
-            <select class="a_output_select" onchange="syncAsisRow(${index})">
-              ${renderAsisOutputOptions('')}
-            </select>
-          </div>
-
-          <div class="asis-row-delete-wrap">
-            <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar salida" onclick="removeAsisDynamicRow(this, ${index})">×</button>
-          </div>
-        </div>
-      </div>
-    `;
+    html = renderActivityOutputRows([''], index);
   }
 
   if(!html) return;
 
   target.insertAdjacentHTML('beforeend', html);
+
+  const newRow = target.lastElementChild;
+  const firstSelect = newRow?.querySelector('select');
+
+  if(firstSelect){
+    setTimeout(() => {
+      firstSelect.focus();
+    }, 50);
+  }
 }
 
 function removeAsisDynamicRow(button, index){
