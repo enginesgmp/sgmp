@@ -3278,6 +3278,66 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
   margin-top:4px !important;
   margin-bottom:8px !important;
 }
+  .asis-base-block{
+  background:#fff;
+  border:1px solid rgba(11,46,89,.08);
+  border-radius:16px;
+  padding:14px;
+  margin-top:12px;
+}
+
+.asis-compact-relation-grid{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(220px, 320px) 42px;
+  gap:10px;
+  align-items:end;
+}
+
+.asis-compact-single-grid{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 42px;
+  gap:10px;
+  align-items:end;
+}
+
+.asis-dynamic-row{
+  padding:10px !important;
+  margin:0 0 8px 0;
+}
+
+.asis-dynamic-row .field{
+  gap:5px;
+}
+
+.asis-dynamic-row select,
+.asis-dynamic-row input{
+  min-height:38px;
+  padding:8px 10px !important;
+}
+
+.asis-row-delete-wrap{
+  display:flex;
+  align-items:end;
+  justify-content:center;
+}
+
+.asis-row-delete-btn{
+  width:36px;
+  height:36px;
+  padding:0 !important;
+  border-radius:999px !important;
+}
+
+@media (max-width: 820px){
+  .asis-compact-relation-grid,
+  .asis-compact-single-grid{
+    grid-template-columns:1fr;
+  }
+
+  .asis-row-delete-wrap{
+    justify-content:flex-start;
+  }
+}
 </style>
 </head>
 <body>
@@ -7434,16 +7494,9 @@ function asisActivityTemplate(a, index){
           <button class="btn-danger" onclick="deleteAsisActivity(${index})" type="button">Eliminar</button>
         </div>
 
-        <details class="asis-mini-accordion" open>
-          <summary class="asis-mini-summary">
-            <div>
-              <strong>Datos base</strong>
-              <small>${isDecision ? 'Identificación de la decisión.' : 'Identificación de la actividad.'}</small>
-            </div>
-          </summary>
-
-          <div class="asis-mini-body">
-            <div class="field-grid asis-activity-grid">
+        <div class="asis-base-block">
+  <div class="asis-mini-body">
+    <div class="field-grid asis-activity-grid">
         
 <div class="field w-7">
   <label>${isDecision ? 'Nombre de la decisión' : 'Nombre de la actividad'}</label>
@@ -7486,9 +7539,9 @@ function asisActivityTemplate(a, index){
               </div>
 
               <input class="a_source hidden" value="${escapeHtml(safe.source || sourceRouteLabel())}" />
-            </div>
+                     </div>
           </div>
-        </details>
+        </div>
 
         <details class="asis-mini-accordion" style="margin-top:12px;">
           <summary class="asis-mini-summary">
@@ -7525,6 +7578,7 @@ function asisActivityTemplate(a, index){
                   <div class="list" data-dynamic-list="inputs">
                     ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
                   </div>
+                  <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'inputs')">+ Agregar entrada</button>
                 </div>
               </div>
             </div>
@@ -7566,6 +7620,7 @@ function asisActivityTemplate(a, index){
                   <div class="list" data-dynamic-list="outputs">
                     ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
                   </div>
+                  <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'outputs')">+ Agregar salida</button>
                 </div>
               </div>
             </div>
@@ -7753,20 +7808,20 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 
   return rows.map((row, rowIndex) => `
     <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
-      <div class="field-grid">
-        <div class="field w-7">
+      <div class="asis-compact-relation-grid">
+        <div class="field">
           <label>Actividad</label>
           <select class="${classPrefix}_activity" onchange="syncAsisRow(${index})">
             ${renderAsisActivityOptions(row.activity || '', index)}
           </select>
         </div>
 
-        <div class="field w-4">
+        <div class="field">
           <label>Etiqueta opcional</label>
-          <input class="${classPrefix}_connector" value="${escapeHtml(row.connector || '')}" placeholder="Ej. Informe, SI, NO, solicitud" oninput="syncAsisRow(${index})" />
+          <input class="${classPrefix}_connector" value="${escapeHtml(row.connector || '')}" placeholder="Ej. SI, NO, solicitud" oninput="syncAsisRow(${index})" />
         </div>
 
-        <div class="field w-1 asis-row-delete-wrap">
+        <div class="asis-row-delete-wrap">
           <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar relación" onclick="removeAsisDynamicRow(this, ${index})">×</button>
         </div>
       </div>
@@ -7774,56 +7829,104 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
   `).join('');
 }
 
-function renderActivityInputRows(list, index){
-  const selected = new Set(
-    normalizeActivityInputList(list).map(lmpLower)
-  );
+function renderAsisInputOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+  const catalog = flattenSuppliersInputsCatalog();
 
+  const options = catalog.map(row => {
+    const label = row.supplier
+      ? `${row.input} — ${row.supplier}`
+      : row.input;
+
+    return `<option value="${escapeHtml(row.input)}" ${lmpLower(row.input) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+
+  const customSelected = selected && !catalog.some(row => lmpLower(row.input) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
+    : '';
+
+  return `
+    <option value="" ${!selected ? 'selected' : ''}>Seleccionar entrada</option>
+    ${customSelected}
+    ${options}
+  `;
+}
+
+function renderActivityInputRows(list, index){
   const catalog = flattenSuppliersInputsCatalog();
 
   if(!catalog.length){
     return '<div class="note">No hay entradas globales registradas. Agrega entradas/proveedores en el catálogo superior.</div>';
   }
 
-  return catalog.map((row, rowIndex) => {
-    const checked = selected.has(lmpLower(row.input)) ? 'checked' : '';
+  const rows = normalizeActivityInputList(list);
 
-    return `
-      <label class="asis-choice-line">
-        <input class="a_input_choice" type="checkbox" value="${escapeHtml(row.input)}" ${checked} onchange="syncAsisRow(${index})" />
-        <span>
-          <strong>${escapeHtml(row.input)}</strong>
-          <small>Proveedor: ${escapeHtml(row.supplier || 'pendiente_validacion')}</small>
-        </span>
-      </label>
-    `;
+  return rows.map((input, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_input_row" data-row="${rowIndex}">
+      <div class="asis-compact-single-grid">
+        <div class="field">
+          <label>Entrada</label>
+          <select class="a_input_select" onchange="syncAsisRow(${index})">
+            ${renderAsisInputOptions(input || '')}
+          </select>
+        </div>
+
+        <div class="asis-row-delete-wrap">
+          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar entrada" onclick="removeAsisDynamicRow(this, ${index})">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderAsisOutputOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+  const catalog = flattenOutputsCustomersCatalog();
+
+  const options = catalog.map(row => {
+    const label = row.customer
+      ? `${row.output} — ${row.customer}`
+      : row.output;
+
+    return `<option value="${escapeHtml(row.output)}" ${lmpLower(row.output) === lmpLower(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   }).join('');
+
+  const customSelected = selected && !catalog.some(row => lmpLower(row.output) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`
+    : '';
+
+  return `
+    <option value="" ${!selected ? 'selected' : ''}>Seleccionar salida</option>
+    ${customSelected}
+    ${options}
+  `;
 }
 
 function renderActivityOutputRows(list, index){
-  const selected = new Set(
-    normalizeActivityOutputList(list).map(lmpLower)
-  );
-
   const catalog = flattenOutputsCustomersCatalog();
 
   if(!catalog.length){
     return '<div class="note">No hay salidas globales registradas. Agrega salidas/clientes en el catálogo superior.</div>';
   }
 
-  return catalog.map((row, rowIndex) => {
-    const checked = selected.has(lmpLower(row.output)) ? 'checked' : '';
+  const rows = normalizeActivityOutputList(list);
 
-    return `
-      <label class="asis-choice-line">
-        <input class="a_output_choice" type="checkbox" value="${escapeHtml(row.output)}" ${checked} onchange="syncAsisRow(${index})" />
-        <span>
-          <strong>${escapeHtml(row.output)}</strong>
-          <small>Cliente: ${escapeHtml(row.customer || 'pendiente_validacion')}</small>
-        </span>
-      </label>
-    `;
-  }).join('');
+  return rows.map((output, rowIndex) => `
+    <div class="repeat-item asis-dynamic-row a_output_row" data-row="${rowIndex}">
+      <div class="asis-compact-single-grid">
+        <div class="field">
+          <label>Salida</label>
+          <select class="a_output_select" onchange="syncAsisRow(${index})">
+            ${renderAsisOutputOptions(output || '')}
+          </select>
+        </div>
+
+        <div class="asis-row-delete-wrap">
+          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar salida" onclick="removeAsisDynamicRow(this, ${index})">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
   
 function readActivityConnectionsFromRow(item, classPrefix){
@@ -7834,14 +7937,14 @@ function readActivityConnectionsFromRow(item, classPrefix){
 }
 
 function readActivityInputsFromRow(item){
-  return qsa('.a_input_choice:checked', item)
+  return qsa('.a_input_select', item)
     .map(input => input.value.trim())
     .filter(Boolean);
 }
 
 function readActivityOutputsFromRow(item){
-  return qsa('.a_output_choice:checked', item)
-    .map(input => input.value.trim())
+  return qsa('.a_output_select', item)
+    .map(output => output.value.trim())
     .filter(Boolean);
 }
 
@@ -7855,23 +7958,54 @@ function addAsisDynamicRow(index, kind){
   let html = '';
 
   if(kind === 'previous'){
-    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_previous', index, 'previous');
+    html = renderActivityConnectionsRows([{ activity: 'pendiente_validacion', connector: '' }], 'a_previous', index, 'previous');
   }
 
   if(kind === 'next'){
-    html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_next', index, 'next');
+    html = renderActivityConnectionsRows([{ activity: 'pendiente_validacion', connector: '' }], 'a_next', index, 'next');
   }
 
   if(kind === 'inputs'){
-    html = renderActivityInputRows([{ input: '', supplier: '' }], index);
+    html = `
+      <div class="repeat-item asis-dynamic-row a_input_row">
+        <div class="asis-compact-single-grid">
+          <div class="field">
+            <label>Entrada</label>
+            <select class="a_input_select" onchange="syncAsisRow(${index})">
+              ${renderAsisInputOptions('')}
+            </select>
+          </div>
+
+          <div class="asis-row-delete-wrap">
+            <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar entrada" onclick="removeAsisDynamicRow(this, ${index})">×</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   if(kind === 'outputs'){
-    html = renderActivityOutputRows([{ output: '', customer: '' }], index);
+    html = `
+      <div class="repeat-item asis-dynamic-row a_output_row">
+        <div class="asis-compact-single-grid">
+          <div class="field">
+            <label>Salida</label>
+            <select class="a_output_select" onchange="syncAsisRow(${index})">
+              ${renderAsisOutputOptions('')}
+            </select>
+          </div>
+
+          <div class="asis-row-delete-wrap">
+            <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar salida" onclick="removeAsisDynamicRow(this, ${index})">×</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
+  if(!html) return;
+
   target.insertAdjacentHTML('beforeend', html);
-  syncAsisRow(index);
 }
 
 function removeAsisDynamicRow(button, index){
