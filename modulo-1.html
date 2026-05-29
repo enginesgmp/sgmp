@@ -7470,6 +7470,7 @@ function saveMasterAndContinue(){
 function asisActivityTemplate(a, index){
   const safe = a || {};
   const type = normalizePromptAType(safe.type || 'actividad');
+  const isDecision = type === 'decision';
 
   const observationsText = normalizeContractString(
     safe.observations ||
@@ -7486,15 +7487,15 @@ function asisActivityTemplate(a, index){
     <details class="activity-item asis-activity-accordion" data-index="${index}">
       <summary class="activity-top asis-activity-summary">
         <div>
-          <strong>${index + 1}. ${escapeHtml(safe.name || 'Actividad sin nombre')}</strong>
+          <strong>${index + 1}. ${escapeHtml(safe.name || (isDecision ? 'Decisión sin nombre' : 'Actividad sin nombre'))}</strong>
           <small>Actor: ${escapeHtml(safe.actor || 'Sin actor')}</small>
         </div>
-        <span class="status-badge ${type === 'decision' ? 'is-decision' : ''}">${escapeHtml(type)}</span>
+        <span class="status-badge ${isDecision ? 'is-decision' : ''}">${escapeHtml(type)}</span>
       </summary>
 
       <div class="asis-activity-body">
         <div class="asis-activity-actions">
-          <button class="btn-ok" onclick="syncAsisRow(${index})" type="button">Guardar actividad</button>
+          <button class="btn-ok" onclick="syncAsisRow(${index})" type="button">Guardar</button>
           <button class="btn-ghost" onclick="moveAsisActivity(${index}, -1)" type="button">↑ Subir</button>
           <button class="btn-ghost" onclick="moveAsisActivity(${index}, 1)" type="button">↓ Bajar</button>
           <button class="btn-danger" onclick="deleteAsisActivity(${index})" type="button">Eliminar</button>
@@ -7504,7 +7505,7 @@ function asisActivityTemplate(a, index){
           <summary class="asis-mini-summary">
             <div>
               <strong>Datos base</strong>
-              <small>Identificación mínima de la actividad.</small>
+              <small>${isDecision ? 'Identificación de la decisión.' : 'Identificación de la actividad.'}</small>
             </div>
           </summary>
 
@@ -7516,13 +7517,13 @@ function asisActivityTemplate(a, index){
               </div>
 
               <div class="field w-6">
-                <label>Nombre de la actividad</label>
-                <input class="a_name" value="${escapeHtml(safe.name || '')}" placeholder="Ej. Revisar solicitud" oninput="syncAsisRow(${index})" />
+                <label>${isDecision ? 'Nombre de la decisión' : 'Nombre de la actividad'}</label>
+                <input class="a_name" value="${escapeHtml(safe.name || '')}" placeholder="${isDecision ? 'Ej. ¿Cumple condición?' : 'Ej. Revisar solicitud'}" oninput="syncAsisRow(${index})" />
               </div>
 
               <div class="field w-3">
                 <label>Tipo</label>
-                <select class="a_type" onchange="syncAsisRow(${index})">
+                <select class="a_type" onchange="renderAsIsActivities()">
                   <option value="actividad" ${type === 'actividad' ? 'selected' : ''}>Actividad</option>
                   <option value="decision" ${type === 'decision' ? 'selected' : ''}>Decisión</option>
                 </select>
@@ -7533,14 +7534,26 @@ function asisActivityTemplate(a, index){
                 <input class="a_actor" value="${escapeHtml(safe.actor || '')}" placeholder="Área, cargo o responsable" oninput="syncAsisRow(${index})" />
               </div>
 
+              ${isDecision ? '' : `
+                <div class="field w-6">
+                  <label>Documento / sistema si aplica</label>
+                  <input class="a_document" value="${escapeHtml(safe.document || '')}" placeholder="Documento, sistema, formato o evidencia" oninput="syncAsisRow(${index})" />
+                </div>
+
+                <div class="field w-4">
+                  <label>Tiempo estimado</label>
+                  <input class="a_estimated_time" value="${escapeHtml(safe.estimated_time || safe.time || '')}" placeholder="Ej. 10 min, 2 horas, 1 día" oninput="syncAsisRow(${index})" />
+                </div>
+              `}
+
               <div class="field w-6">
-                <label>Documento / sistema si aplica</label>
-                <input class="a_document" value="${escapeHtml(safe.document || '')}" placeholder="Documento, sistema, formato o evidencia" oninput="syncAsisRow(${index})" />
+                <label>Notas aclaratorias</label>
+                <textarea class="a_clarifying_notes" placeholder="Una nota por línea" oninput="syncAsisRow(${index})">${escapeHtml(clarifyingNotesText)}</textarea>
               </div>
 
-              <div class="field w-4">
-                <label>Tiempo estimado</label>
-                <input class="a_estimated_time" value="${escapeHtml(safe.estimated_time || safe.time || '')}" placeholder="Ej. 10 min, 2 horas, 1 día" oninput="syncAsisRow(${index})" />
+              <div class="field w-6">
+                <label>Observaciones</label>
+                <textarea class="a_observations" placeholder="Observaciones técnicas del levantamiento" oninput="syncAsisRow(${index})">${escapeHtml(observationsText)}</textarea>
               </div>
 
               <input class="a_source hidden" value="${escapeHtml(safe.source || sourceRouteLabel())}" />
@@ -7551,81 +7564,84 @@ function asisActivityTemplate(a, index){
         <details class="asis-mini-accordion" style="margin-top:12px;">
           <summary class="asis-mini-summary">
             <div>
-              <strong>Conexiones de entrada</strong>
-              <small>Define de dónde viene la actividad: actividad previa o entrada SIPOC con proveedor.</small>
+              <strong>Relaciones previas</strong>
+              <small>Actividades anteriores.</small>
             </div>
           </summary>
 
           <div class="asis-mini-body">
             <div class="field-grid">
               <div class="field w-12">
-                <label>Actividades previas</label>
                 <div class="list" data-dynamic-list="previous">
                   ${renderActivityConnectionsRows(safe.previous || [], 'a_previous', index, 'previous')}
                 </div>
                 <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'previous')">+ Agregar previa</button>
               </div>
-
-              <div class="field w-12">
-                <label>Entradas usadas desde catálogo</label>
-                <div class="list" data-dynamic-list="inputs">
-                  ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
-                </div>
-              </div>
             </div>
           </div>
         </details>
 
+        ${isDecision ? '' : `
+          <details class="asis-mini-accordion" style="margin-top:12px;">
+            <summary class="asis-mini-summary">
+              <div>
+                <strong>Entradas asociadas</strong>
+                <small>Entradas usadas desde el catálogo.</small>
+              </div>
+            </summary>
+
+            <div class="asis-mini-body">
+              <div class="field-grid">
+                <div class="field w-12">
+                  <div class="list" data-dynamic-list="inputs">
+                    ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
+        `}
+
         <details class="asis-mini-accordion" style="margin-top:12px;">
           <summary class="asis-mini-summary">
             <div>
-              <strong>Conexiones de salida</strong>
-              <small>Define hacia dónde va la actividad: actividad siguiente o salida SIPOC con cliente.</small>
+              <strong>Relaciones siguientes</strong>
+              <small>Actividades posteriores.</small>
             </div>
           </summary>
 
           <div class="asis-mini-body">
             <div class="field-grid">
               <div class="field w-12">
-                <label>Actividades siguientes</label>
                 <div class="list" data-dynamic-list="next">
                   ${renderActivityConnectionsRows(safe.next || [], 'a_next', index, 'next')}
                 </div>
                 <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'next')">+ Agregar siguiente</button>
               </div>
+            </div>
+          </div>
+        </details>
 
-              <div class="field w-12">
-                <label>Salidas generadas desde catálogo</label>
-                <div class="list" data-dynamic-list="outputs">
-                  ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
+        ${isDecision ? '' : `
+          <details class="asis-mini-accordion" style="margin-top:12px;">
+            <summary class="asis-mini-summary">
+              <div>
+                <strong>Salidas generadas</strong>
+                <small>Salidas usadas desde el catálogo.</small>
+              </div>
+            </summary>
+
+            <div class="asis-mini-body">
+              <div class="field-grid">
+                <div class="field w-12">
+                  <div class="list" data-dynamic-list="outputs">
+                    ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </details>
-
-        <details class="asis-mini-accordion" style="margin-top:12px;">
-          <summary class="asis-mini-summary">
-            <div>
-              <strong>Notas</strong>
-              <small>Comentarios visibles del proceso y observaciones técnicas del levantamiento.</small>
-            </div>
-          </summary>
-
-          <div class="asis-mini-body">
-            <div class="field-grid">
-              <div class="field w-6">
-                <label>Nota aclaratoria</label>
-                <textarea class="a_clarifying_notes" placeholder="Una nota por línea" oninput="syncAsisRow(${index})">${escapeHtml(clarifyingNotesText)}</textarea>
-              </div>
-
-              <div class="field w-6">
-                <label>Observaciones</label>
-                <textarea class="a_observations" placeholder="Observaciones técnicas del levantamiento" oninput="syncAsisRow(${index})">${escapeHtml(observationsText)}</textarea>
-              </div>
-            </div>
-          </div>
-        </details>
+          </details>
+        `}
       </div>
     </details>
   `;
@@ -7776,27 +7792,22 @@ function flattenOutputsCustomersCatalog(){
   
 function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
-  
+
   return rows.map((row, rowIndex) => `
     <div class="repeat-item asis-dynamic-row ${classPrefix}_row" data-row="${rowIndex}">
       <div class="field-grid">
-        <div class="field w-8">
-          <label style="display:none">Actividad</label>
+        <div class="field w-7">
+          <label>Actividad</label>
           <input class="${classPrefix}_activity" value="${escapeHtml(row.activity || '')}" placeholder="Nombre exacto de la actividad" oninput="syncAsisRow(${index})" />
         </div>
 
-        <div class="field w-3">
-          <label>Conector</label>
-          <select class="${classPrefix}_connector" onchange="syncAsisRow(${index})">
-            <option value="" ${!row.connector ? 'selected' : ''}>Sin conector</option>
-            <option value="SI" ${row.connector === 'SI' ? 'selected' : ''}>SI</option>
-            <option value="NO" ${row.connector === 'NO' ? 'selected' : ''}>NO</option>
-            <option value="OTRO" ${row.connector === 'OTRO' ? 'selected' : ''}>OTRO</option>
-          </select>
+        <div class="field w-4">
+          <label>Etiqueta opcional</label>
+          <input class="${classPrefix}_connector" value="${escapeHtml(row.connector || '')}" placeholder="Ej. Informe, SI, NO, solicitud" oninput="syncAsisRow(${index})" />
         </div>
 
         <div class="field w-1 asis-row-delete-wrap">
-          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar conexión" onclick="removeAsisDynamicRow(this, ${index})">×</button>
+          <button class="btn-danger asis-row-delete-btn" type="button" title="Eliminar relación" onclick="removeAsisDynamicRow(this, ${index})">×</button>
         </div>
       </div>
     </div>
@@ -7914,26 +7925,29 @@ function readAsisRow(item){
 
   const get = (sel) => item.querySelector(sel)?.value?.trim() || '';
 
-  const activity = {
-    id: get('.a_id'),
-    name: get('.a_name'),
-    actor: get('.a_actor'),
-    type: normalizePromptAType(get('.a_type') || 'actividad'),
-    document: get('.a_document'),
-    estimated_time: get('.a_estimated_time'),
+const type = normalizePromptAType(get('.a_type') || 'actividad');
+const isDecision = type === 'decision';
 
-    previous: readActivityConnectionsFromRow(item, 'a_previous'),
-    next: readActivityConnectionsFromRow(item, 'a_next'),
+const activity = {
+  id: get('.a_id'),
+  name: get('.a_name'),
+  actor: get('.a_actor'),
+  type,
+  document: isDecision ? '' : get('.a_document'),
+  estimated_time: isDecision ? '' : get('.a_estimated_time'),
 
-    inputs_used: readActivityInputsFromRow(item),
-    outputs_generated: readActivityOutputsFromRow(item),
+  previous: readActivityConnectionsFromRow(item, 'a_previous'),
+  next: readActivityConnectionsFromRow(item, 'a_next'),
 
-    clarifying_notes: splitItems(get('.a_clarifying_notes')),
-    observations: get('.a_observations'),
+  inputs_used: isDecision ? [] : readActivityInputsFromRow(item),
+  outputs_generated: isDecision ? [] : readActivityOutputsFromRow(item),
 
-    source: get('.a_source') || sourceRouteLabel(),
-    editable: true
-  };
+  clarifying_notes: splitItems(get('.a_clarifying_notes')),
+  observations: get('.a_observations'),
+
+  source: get('.a_source') || sourceRouteLabel(),
+  editable: true
+};
 
   return activity.name ? activity : null;
 }
