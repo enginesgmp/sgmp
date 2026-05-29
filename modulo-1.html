@@ -1108,12 +1108,6 @@ textarea[id*="Prompt"],
   border-left:4px solid var(--primary);
 }
 
-.route-section.json-flow{
-  border-left:4px solid var(--warn);
-}
-
-
-
 .route-grid-three{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -3773,12 +3767,16 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
         el.textContent = JSON.stringify(obj, null, 2);
       }
 
-      function prepSetGeneratedEnabled(enabled) {
-        ["prep_generate_pre_btn", "prep_generate_interview_btn"].forEach(function(id){
-          const el = document.getElementById(id);
-          if (el) el.disabled = !enabled;
-        });
-      }
+function prepSetGeneratedEnabled(enabled) {
+  ["prep_generate_pre_btn", "prep_generate_interview_btn", "prep_open_extractor_btn"].forEach(function(id){
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
+  });
+
+  if (typeof updatePreparationArtifactsByRoute === "function") {
+    updatePreparationArtifactsByRoute();
+  }
+}
 
 function getPreparationIndicatorsForSave(){
   let indicators = [];
@@ -4021,51 +4019,6 @@ function gatherContext(prefix){
 }
 
 ${script}
-<\/script>
-
-<!-- =========================================================
-     SGMP LMP · FIX V4 INSTRUMENTOS PREPARACIÓN
-     Objetivo: evitar que los botones de generación de HTML externo
-     queden bloqueados visualmente por el atributo disabled.
-     No cambia IDs, no cambia funciones base, no altera JSON.
-========================================================= -->
-<script id="sgmp-lmp-v4-instrument-buttons-fix">
-(function(){
-  function enableInstrumentButtons(){
-    var preBtn = document.getElementById('prep_generate_pre_btn');
-    var intBtn = document.getElementById('prep_generate_interview_btn');
-
-    if(preBtn){
-      preBtn.disabled = false;
-      preBtn.removeAttribute('disabled');
-      if(!preBtn.dataset.sgmpInstrumentBound){
-        preBtn.addEventListener('click', function(){
-          if(typeof window.generatePreInterviewFromPreparation === 'function'){
-            window.generatePreInterviewFromPreparation();
-          }
-        });
-        preBtn.dataset.sgmpInstrumentBound = '1';
-      }
-    }
-
-    if(intBtn){
-      intBtn.disabled = false;
-      intBtn.removeAttribute('disabled');
-      if(!intBtn.dataset.sgmpInstrumentBound){
-        intBtn.addEventListener('click', function(){
-          if(typeof window.generateInterviewFromPreparation === 'function'){
-            window.generateInterviewFromPreparation();
-          }
-        });
-        intBtn.dataset.sgmpInstrumentBound = '1';
-      }
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', enableInstrumentButtons);
-  window.addEventListener('load', enableInstrumentButtons);
-  setTimeout(enableInstrumentButtons, 300);
-})();
 <\/script>
 
 </body>
@@ -4495,98 +4448,98 @@ function buildInterviewHTML(context = {}) {
 }
 
 function buildDocumentedStatusInterviewHTML(context = {}) {
-  const body = `
-    <section class="panel">
-      <h2 class="section-title">Contexto precargado</h2>
-      <p class="section-sub">Valida el contexto del proceso documentado antes de entrevistar al líder.</p>
-      <div class="grid-3">
-        <div class="field"><label>Empresa</label><input id="ctx_company" /></div>
-        <div class="field"><label>Proceso</label><input id="ctx_process" /></div>
-        <div class="field"><label>Código</label><input id="ctx_code" /></div>
-        <div class="field"><label>Líder del proceso</label><input id="ctx_owner" /></div>
-        <div class="field"><label>Analista</label><input id="ctx_analyst" /></div>
-        <div class="field"><label>Tipo de proceso</label><input id="ctx_type" /></div>
-        <div class="field"><label>Industria</label><input id="ctx_industry" /></div>
-        <div class="field"><label>Actividad del negocio</label><input id="ctx_activity" /></div>
-        <div class="field" style="grid-column:1/-1"><label>Finalidad del proceso</label><textarea id="ctx_purpose"></textarea></div>
-      </div>
-    </section>
+const body = `
+  <section class="panel">
+    <h2 class="section-title">Contexto precargado</h2>
+    <p class="section-sub">Valida el contexto general antes de iniciar la entrevista breve con el líder.</p>
+    <div class="grid-3">
+      <div class="field"><label>Empresa</label><input id="ctx_company" /></div>
+      <div class="field"><label>Proceso</label><input id="ctx_process" /></div>
+      <div class="field"><label>Código</label><input id="ctx_code" /></div>
+      <div class="field"><label>Líder del proceso</label><input id="ctx_owner" /></div>
+      <div class="field"><label>Analista</label><input id="ctx_analyst" /></div>
+      <div class="field"><label>Tipo de proceso</label><input id="ctx_type" /></div>
+      <div class="field"><label>Industria</label><input id="ctx_industry" /></div>
+      <div class="field"><label>Actividad del negocio</label><input id="ctx_activity" /></div>
+      <div class="field" style="grid-column:1/-1"><label>Finalidad del proceso</label><textarea id="ctx_purpose"></textarea></div>
+    </div>
+  </section>
 
-    <section class="panel">
-      <h2 class="section-title">Entrevista breve de status</h2>
-      <p class="section-sub">Esta entrevista no levanta el flujo completo. Sirve para contrastar el SIPOC documentado con la realidad actual y captar problemas, desperdicios y oportunidades.</p>
-      <div class="grid-3">
-        <div class="field"><label>Nombre del líder</label><input id="participant_name" /></div>
-        <div class="field"><label>Cargo/rol del líder</label><input id="participant_role" /></div>
-        <div class="field">
-          <label>Estado general del proceso</label>
-          <select id="process_status">
-            <option value="vigente_y_representativo">Vigente y representativo</option>
-            <option value="vigente_con_diferencias">Vigente con diferencias</option>
-            <option value="desactualizado">Desactualizado</option>
-            <option value="pendiente_validacion">Pendiente validación</option>
-          </select>
-        </div>
-        <input id="interview_date" type="hidden" />
+  <section class="panel">
+    <h2 class="section-title">Entrevista breve de status actual</h2>
+    <p class="section-sub">Esta entrevista recoge la visión del líder sobre cómo funciona hoy el proceso, sus principales problemas, demoras, restricciones e ideas de mejora. No reemplaza el análisis documental ni el Extractor SIPOC.</p>
+    <div class="grid-3">
+      <div class="field"><label>Nombre del líder</label><input id="participant_name" /></div>
+      <div class="field"><label>Cargo/rol del líder</label><input id="participant_role" /></div>
+      <div class="field">
+        <label>Estado general percibido del proceso</label>
+        <select id="process_status">
+          <option value="estable">Estable</option>
+          <option value="estable_con_problemas">Estable con problemas</option>
+          <option value="variable_o_no_estandarizado">Variable o no estandarizado</option>
+          <option value="requiere_actualizacion">Requiere actualización</option>
+          <option value="pendiente_validacion">Pendiente validación</option>
+        </select>
       </div>
-    </section>
+      <input id="interview_date" type="hidden" />
+    </div>
+  </section>
 
-    <section class="panel">
-      <h2 class="section-title">Validación del proceso actual</h2>
-      <div class="grid-2">
-        <div class="field">
-          <label>¿El SIPOC/documento refleja cómo se trabaja actualmente?</label>
-          <textarea id="current_fit" placeholder="Indica qué sí refleja y qué no refleja del proceso actual."></textarea>
-        </div>
-        <div class="field">
-          <label>Diferencias relevantes frente a la realidad</label>
-          <textarea id="documented_vs_real" placeholder="Actividades, actores, entradas, salidas, controles o excepciones que cambiaron."></textarea>
-        </div>
-        <div class="field">
-          <label>Problemas actuales del proceso</label>
-          <textarea id="current_problems" placeholder="Demoras, reprocesos, errores, retrabajos, esperas, devoluciones o fallas frecuentes."></textarea>
-        </div>
-        <div class="field">
-          <label>Desperdicios observados</label>
-          <textarea id="wastes" placeholder="Esperas, movimientos innecesarios, duplicidades, sobreprocesamiento, búsqueda de información, inventarios o retrabajo."></textarea>
-        </div>
-        <div class="field">
-          <label>Excepciones o casos especiales</label>
-          <textarea id="exceptions" placeholder="Casos fuera del flujo normal, aprobaciones especiales o rutas alternativas."></textarea>
-        </div>
-        <div class="field">
-          <label>Controles, validaciones o aprobaciones críticas</label>
-          <textarea id="controls" placeholder="Controles que no deben perderse al mejorar o automatizar el proceso."></textarea>
-        </div>
-        <div class="field">
-          <label>Sistemas, documentos o registros usados actualmente</label>
-          <textarea id="systems_documents" placeholder="Sistemas, Excel, correos, formularios, registros o documentos clave."></textarea>
-        </div>
-        <div class="field">
-          <label>Oportunidades de mejora / automatización</label>
-          <textarea id="opportunities" placeholder="Ideas, dolores, digitalización, automatización, simplificación o reducción de costos."></textarea>
-        </div>
-        <div class="field" style="grid-column:1/-1">
-          <label>Notas libres del analista</label>
-          <textarea id="analyst_notes" placeholder="Contradicciones, dudas, temas para validar, énfasis del líder o información complementaria."></textarea>
-        </div>
-      </div>
-    </section>
+  <section class="panel">
+    <h2 class="section-title">Preguntas al líder</h2>
+    <p class="section-sub">Responde con notas concretas. La idea es captar información explícita para complementar el proceso documentado.</p>
 
-    <section class="panel">
-      <h2 class="section-title">Exportar JSON</h2>
-      <div class="help">
-        Descarga este JSON y cárgalo en el LMP como entrevista breve de status del proceso documentado. El flujo principal vendrá del JSON del Extractor SIPOC/PDF.
+    <div class="grid-2">
+      <div class="field">
+        <label>1. ¿Cómo se ejecuta actualmente el proceso en la práctica?</label>
+        <textarea id="current_execution" placeholder="Describe de forma general cómo se trabaja hoy, qué áreas participan y qué pasos son más relevantes."></textarea>
       </div>
-      <div class="actions" style="margin-top:14px">
-        <button class="btn-ok" id="btn_export_status" type="button">Descargar JSON</button>
-        <button class="btn-ghost" id="btn_preview_status" type="button">Ver JSON</button>
-      </div>
-      <div id="status_msg" class="msg"></div>
-      <div id="status_preview" class="pre" style="margin-top:14px"></div>
-    </section>
-  `;
 
+      <div class="field">
+        <label>2. ¿Con qué frecuencia se ejecuta el proceso y qué volumen aproximado maneja?</label>
+        <textarea id="frequency_volume" placeholder="Ej. veces por semana, casos por mes, picos de trabajo, temporadas, cargas variables."></textarea>
+      </div>
+
+      <div class="field">
+        <label>3. ¿Dónde se generan más demoras, atrasos o esperas?</label>
+        <textarea id="delays_waiting" placeholder="Indica actividades, aprobaciones, áreas, documentos, sistemas o momentos donde se concentra la espera."></textarea>
+      </div>
+
+      <div class="field">
+        <label>4. ¿Dónde falta información, se repite trabajo o se generan errores?</label>
+        <textarea id="information_rework_errors" placeholder="Describe faltantes de información, reprocesos, duplicidades, errores frecuentes o retrabajos."></textarea>
+      </div>
+
+      <div class="field">
+        <label>5. ¿Qué restricciones o bloqueos afectan el desempeño del proceso?</label>
+        <textarea id="constraints_blockers" placeholder="Ej. personas, sistemas, aprobaciones, capacidad, documentación, coordinación, reglas o dependencias."></textarea>
+      </div>
+
+      <div class="field">
+        <label>6. ¿Cómo debería verse el proceso a futuro?</label>
+        <textarea id="future_vision" placeholder="Ideas del líder sobre simplificación, digitalización, automatización, reducción de costos o mejora del flujo."></textarea>
+      </div>
+
+      <div class="field" style="grid-column:1/-1">
+        <label>Notas libres del analista</label>
+        <textarea id="analyst_notes" placeholder="Dudas, énfasis del líder, datos críticos, contradicciones o información complementaria."></textarea>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Exportar JSON</h2>
+    <div class="help">
+      Descarga este JSON y cárgalo en el LMP como entrevista breve de status actual. El flujo principal vendrá del JSON del Extractor SIPOC/PDF.
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn-ok" id="btn_export_status" type="button">Descargar JSON</button>
+      <button class="btn-ghost" id="btn_preview_status" type="button">Ver JSON</button>
+    </div>
+    <div id="status_msg" class="msg"></div>
+    <div id="status_preview" class="pre" style="margin-top:14px"></div>
+  </section>
+`;
   const script = `
     function clean(value){ return String(value || "").trim(); }
 
@@ -4605,47 +4558,45 @@ function buildDocumentedStatusInterviewHTML(context = {}) {
       return clean(document.getElementById(id)?.value || "");
     }
 
-    function buildStatusJson(){
-      const context = {
-        ...gatherContext("ctx"),
-        leaderName: getValue("participant_name"),
-        leaderRole: getValue("participant_role"),
-        participantName: getValue("participant_name"),
-        participantRole: getValue("participant_role"),
-        date: getValue("interview_date")
-      };
+  function buildStatusJson(){
+  const context = {
+    ...gatherContext("ctx"),
+    leaderName: getValue("participant_name"),
+    leaderRole: getValue("participant_role"),
+    participantName: getValue("participant_name"),
+    participantRole: getValue("participant_role"),
+    date: getValue("interview_date")
+  };
 
-      return {
-        instrument: "documented_process_status_interview",
-        source_type: "documented_process_status_interview",
-        version: "1.0",
-        generatedAt: new Date().toISOString(),
-        context,
-        interview_data: {
-          leaderName: getValue("participant_name"),
-          leaderRole: getValue("participant_role"),
-          date: getValue("interview_date"),
-          process_status: getValue("process_status")
-        },
-        status_review: {
-          current_fit: getValue("current_fit"),
-          documented_vs_real: getValue("documented_vs_real"),
-          current_problems: getValue("current_problems"),
-          wastes: getValue("wastes"),
-          exceptions: getValue("exceptions"),
-          controls: getValue("controls"),
-          systems_documents: getValue("systems_documents"),
-          opportunities: getValue("opportunities")
-        },
-        analyst_notes: getValue("analyst_notes"),
-        lmp_usage: {
-          route: "existing_documented_process",
-          role_in_prompt_a: "complemento_de_status_del_proceso_documentado",
-          use_as_structured_flow: false,
-          primary_flow_source: "extractor_json"
-        }
-      };
+  return {
+    instrument: "documented_process_status_interview",
+    source_type: "documented_process_status_interview",
+    version: "2.0",
+    generatedAt: new Date().toISOString(),
+    context,
+    interview_data: {
+      leaderName: getValue("participant_name"),
+      leaderRole: getValue("participant_role"),
+      date: getValue("interview_date"),
+      process_status: getValue("process_status")
+    },
+    status_review: {
+      current_execution: getValue("current_execution"),
+      frequency_volume: getValue("frequency_volume"),
+      delays_waiting: getValue("delays_waiting"),
+      information_rework_errors: getValue("information_rework_errors"),
+      constraints_blockers: getValue("constraints_blockers"),
+      future_vision: getValue("future_vision")
+    },
+    analyst_notes: getValue("analyst_notes"),
+    lmp_usage: {
+      route: "existing_documented_process",
+      role_in_prompt_a: "complemento_de_status_actual_desde_lider",
+      use_as_structured_flow: false,
+      primary_flow_source: "extractor_json"
     }
+  };
+}
 
     function previewStatusJson(){
       const data = buildStatusJson();
@@ -4663,15 +4614,15 @@ function buildDocumentedStatusInterviewHTML(context = {}) {
     initStatusInterview();
   `;
 
-  return createExternalToolShell({
-    context,
-    title: "Entrevista breve de status",
-    subtitle: "Validación rápida del proceso documentado frente a la realidad actual.",
-    badge: "SGMP · Status proceso documentado",
-    intro: "Esta entrevista no levanta todo el flujo. Sirve para validar el estado actual del proceso documentado, detectar diferencias, problemas, desperdicios, excepciones y oportunidades de mejora.",
-    body,
-    script
-  });
+return createExternalToolShell({
+  context,
+  title: "Entrevista breve de status actual",
+  subtitle: "Guía compacta para recoger la visión del líder sobre el proceso actual, problemas, demoras, restricciones e ideas de mejora.",
+  badge: "SGMP · Status actual",
+  intro: "Esta entrevista complementa el proceso documentado. No reemplaza el Extractor SIPOC ni valida por sí sola el flujo; recoge información explícita del líder sobre cómo funciona hoy el proceso y dónde existen problemas u oportunidades.",
+  body,
+  script
+});
 }
       
       function generatePreInterviewFromPreparation(){
@@ -4760,28 +4711,31 @@ function updatePreparationArtifactsByRoute(){
   const preBtn = document.getElementById("prep_generate_pre_btn");
   const extractorBtn = document.getElementById("prep_open_extractor_btn");
   const intBtn = document.getElementById("prep_generate_interview_btn");
+  const note = document.querySelector("#prep_generation_card .note");
+
+  const showBtn = (el, show) => {
+    if (!el) return;
+    el.classList.toggle("hidden", !show);
+    el.style.display = show ? "" : "none";
+    el.disabled = !show;
+    el.setAttribute("aria-hidden", show ? "false" : "true");
+  };
 
   if(route === 'doc'){
-    if(preBtn){
-      preBtn.style.display = "none";
-      preBtn.disabled = true;
-    }
+    showBtn(preBtn, false);
+    showBtn(extractorBtn, true);
+    showBtn(intBtn, true);
 
     if(extractorBtn){
-      extractorBtn.style.display = "";
-      extractorBtn.disabled = false;
       extractorBtn.textContent = "Abrir Extractor SIPOC";
-      extractorBtn.title = "Abre el Extractor SIPOC para convertir documentación existente en JSON estructurado.";
+      extractorBtn.title = "Abre el Extractor SIPOC para estructurar documentación existente en JSON.";
     }
 
     if(intBtn){
-      intBtn.style.display = "";
-      intBtn.disabled = false;
       intBtn.textContent = "Generar entrevista de status actual";
-      intBtn.title = "Genera una entrevista breve para validar el estado actual del proceso documentado.";
+      intBtn.title = "Genera una entrevista breve para conocer la situación actual desde la visión del líder.";
     }
 
-    const note = document.querySelector("#prep_generation_card .note");
     if(note){
       note.innerHTML = 'Para proceso documentado, usa el <strong>Extractor SIPOC</strong> y genera la <strong>entrevista de status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.';
     }
@@ -4789,25 +4743,20 @@ function updatePreparationArtifactsByRoute(){
     return;
   }
 
-  if(preBtn){
-    preBtn.style.display = "";
-    preBtn.disabled = false;
-    preBtn.textContent = "Generar cuestionario actores internos";
-  }
+  showBtn(preBtn, true);
+  showBtn(extractorBtn, false);
+  showBtn(intBtn, true);
 
-  if(extractorBtn){
-    extractorBtn.style.display = "none";
-    extractorBtn.disabled = true;
+  if(preBtn){
+    preBtn.textContent = "Generar cuestionario actores internos";
+    preBtn.title = "Genera el cuestionario para actores internos del proceso nuevo.";
   }
 
   if(intBtn){
-    intBtn.style.display = "";
-    intBtn.disabled = false;
     intBtn.textContent = "Generar entrevista guía";
     intBtn.title = "Genera la entrevista guía para levantamiento de proceso nuevo.";
   }
 
-  const note = document.querySelector("#prep_generation_card .note");
   if(note){
     note.innerHTML = 'Para proceso nuevo, genera el <strong>cuestionario de actores internos</strong> y la <strong>entrevista guía</strong>. Después carga los JSON y la transcripción TXT en <strong>Carga y consolidación</strong>.';
   }
