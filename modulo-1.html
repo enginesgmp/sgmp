@@ -2610,6 +2610,114 @@ color:#A93226;
   font-weight:950 !important;
   transition:transform .18s ease, background .18s ease !important;
 }
+  /* AS-IS · Barras rápidas de relación */
+.asis-quick-block{
+  border-radius:16px !important;
+  overflow:hidden !important;
+  border:1px solid rgba(11,46,89,.10) !important;
+  background:#FFFFFF !important;
+  box-shadow:0 6px 16px rgba(11,46,89,.045) !important;
+}
+
+.asis-quick-summary{
+  min-height:54px !important;
+  padding:11px 14px !important;
+  display:flex !important;
+  align-items:center !important;
+  gap:12px !important;
+  cursor:pointer !important;
+  background:linear-gradient(135deg,#F8FCFF,#FFFFFF) !important;
+  border-left:4px solid rgba(39,174,96,.70) !important;
+  box-shadow:none !important;
+}
+
+.asis-quick-summary::-webkit-details-marker{
+  display:none !important;
+}
+
+.asis-quick-summary::after{
+  content:none !important;
+  display:none !important;
+}
+
+.asis-quick-add{
+  border:none !important;
+  background:rgba(39,174,96,.10) !important;
+  color:#16834A !important;
+  border:1px solid rgba(39,174,96,.22) !important;
+  border-radius:999px !important;
+  padding:9px 13px !important;
+  font-size:.86rem !important;
+  font-weight:950 !important;
+  line-height:1 !important;
+  cursor:pointer !important;
+  min-width:170px !important;
+  text-align:left !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:flex-start !important;
+  gap:6px !important;
+}
+
+.asis-quick-add:hover{
+  background:rgba(39,174,96,.16) !important;
+  border-color:rgba(39,174,96,.38) !important;
+  color:#0F6D3B !important;
+  transform:translateY(-1px);
+}
+
+.asis-quick-fill{
+  flex:1 1 auto !important;
+  min-width:20px !important;
+}
+
+.asis-quick-counter{
+  width:34px !important;
+  height:34px !important;
+  min-width:34px !important;
+  border-radius:999px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  background:rgba(0,194,255,.10) !important;
+  border:1px solid rgba(0,194,255,.24) !important;
+  color:#0B2E59 !important;
+  font-size:.88rem !important;
+  font-weight:950 !important;
+}
+
+.asis-quick-block[open] .asis-quick-summary{
+  background:linear-gradient(135deg,#EFFBF5,#FFFFFF) !important;
+  border-bottom:1px solid rgba(11,46,89,.08) !important;
+}
+
+.asis-quick-body{
+  padding:10px 12px 12px !important;
+  background:#FFFFFF !important;
+}
+
+.asis-quick-body .field-grid{
+  margin-top:0 !important;
+}
+
+.asis-quick-body .list{
+  margin-top:0 !important;
+}
+
+@media(max-width:820px){
+  .asis-quick-summary{
+    flex-wrap:wrap !important;
+  }
+
+  .asis-quick-add{
+    width:calc(100% - 48px) !important;
+    min-width:0 !important;
+  }
+
+  .asis-quick-fill{
+    display:none !important;
+  }
+}
   .asis-add-activity-bottom{
   margin-top:16px !important;
   padding-top:14px !important;
@@ -7645,6 +7753,72 @@ function saveMasterAndContinue(){
 /* =========================
    AS IS · BUILDER EDITABLE
 ========================= */
+function countAsisQuickRows(kind, activity){
+  if(kind === 'previous'){
+    return normalizeActivityConnectionList(activity?.previous || []).filter(row => row.activity).length;
+  }
+
+  if(kind === 'next'){
+    return normalizeActivityConnectionList(activity?.next || []).filter(row => row.activity).length;
+  }
+
+  if(kind === 'inputs'){
+    return normalizeActivityInputList(activity?.inputs_used || activity?.ext_inputs || []).filter(Boolean).length;
+  }
+
+  if(kind === 'outputs'){
+    return normalizeActivityOutputList(activity?.outputs_generated || activity?.ext_outputs || []).filter(Boolean).length;
+  }
+
+  return 0;
+}
+
+function renderAsisQuickRelationBlock(config){
+  const {
+    index,
+    kind,
+    label,
+    count,
+    bodyHtml
+  } = config || {};
+
+  return `
+    <details class="asis-mini-accordion asis-quick-block" data-kind="${escapeHtml(kind)}" style="margin-top:12px;">
+      <summary class="asis-mini-summary asis-quick-summary">
+        <button
+          class="asis-quick-add"
+          type="button"
+          onclick="event.preventDefault(); event.stopPropagation(); addAsisDynamicRow(${index}, '${escapeHtml(kind)}', true)"
+        >+ ${escapeHtml(label)}</button>
+
+        <span class="asis-quick-fill"></span>
+
+        <span class="asis-quick-counter" title="Elementos conectados">${Number(count || 0)}</span>
+      </summary>
+
+      <div class="asis-mini-body asis-quick-body">
+        <div class="field-grid">
+          <div class="field w-12">
+            <div class="list" data-dynamic-list="${escapeHtml(kind)}">
+              ${bodyHtml || ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function updateAsisQuickCounterFromList(listEl){
+  const block = listEl?.closest('.asis-quick-block');
+  if(!block) return;
+
+  const counter = block.querySelector('.asis-quick-counter');
+  if(!counter) return;
+
+  const count = Array.from(listEl.querySelectorAll('.asis-line-row')).length;
+  counter.textContent = String(count);
+}
   
 function asisActivityTemplate(a, index){
   const safe = a || {};
@@ -7729,84 +7903,40 @@ function asisActivityTemplate(a, index){
           </div>
         </div>
 
-        <details class="asis-mini-accordion" style="margin-top:12px;">
-          <summary class="asis-mini-summary">
-            <div>
-              <strong>Actividad previa</strong>
-            </div>
-          </summary>
-
-          <div class="asis-mini-body">
-            <div class="field-grid">
-              <div class="field w-12">
-                <div class="list" data-dynamic-list="previous">
-                  ${renderActivityConnectionsRows(safe.previous || [], 'a_previous', index, 'previous')}
-                </div>
-                <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'previous')">+ Agregar previa</button>
-              </div>
-            </div>
-          </div>
-        </details>
+${renderAsisQuickRelationBlock({
+  index,
+  kind: 'previous',
+  label: 'Actividad previa',
+  count: countAsisQuickRows('previous', safe),
+  bodyHtml: renderActivityConnectionsRows(safe.previous || [], 'a_previous', index, 'previous')
+})}
 
         ${isDecision ? '' : `
-          <details class="asis-mini-accordion" style="margin-top:12px;">
-            <summary class="asis-mini-summary">
-              <div>
-               <strong>Entradas/proveedores</strong>
-              </div>
-            </summary>
-
-            <div class="asis-mini-body">
-              <div class="field-grid">
-                <div class="field w-12">
-                  <div class="list" data-dynamic-list="inputs">
-                    ${renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)}
-                  </div>
-                  <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'inputs')">+ Agregar entrada</button>
-                </div>
-              </div>
-            </div>
-          </details>
+       ${renderAsisQuickRelationBlock({
+  index,
+  kind: 'inputs',
+  label: 'Entrada/proveedor',
+  count: countAsisQuickRows('inputs', safe),
+  bodyHtml: renderActivityInputRows(safe.inputs_used || safe.ext_inputs || [], index)
+})}
         `}
 
-        <details class="asis-mini-accordion" style="margin-top:12px;">
-          <summary class="asis-mini-summary">
-            <div>
-              <strong>Actividad siguiente</strong>
-            </div>
-          </summary>
-
-          <div class="asis-mini-body">
-            <div class="field-grid">
-              <div class="field w-12">
-                <div class="list" data-dynamic-list="next">
-                  ${renderActivityConnectionsRows(safe.next || [], 'a_next', index, 'next')}
-                </div>
-                <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'next')">+ Agregar siguiente</button>
-              </div>
-            </div>
-          </div>
-        </details>
+${renderAsisQuickRelationBlock({
+  index,
+  kind: 'next',
+  label: 'Actividad siguiente',
+  count: countAsisQuickRows('next', safe),
+  bodyHtml: renderActivityConnectionsRows(safe.next || [], 'a_next', index, 'next')
+})}
 
         ${isDecision ? '' : `
-          <details class="asis-mini-accordion" style="margin-top:12px;">
-            <summary class="asis-mini-summary">
-              <div>
-                <strong>Salidas/clientes</strong>
-              </div>
-            </summary>
-
-            <div class="asis-mini-body">
-              <div class="field-grid">
-                <div class="field w-12">
-                  <div class="list" data-dynamic-list="outputs">
-                    ${renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)}
-                  </div>
-                  <button class="btn-ok asis-add-inline-btn" type="button" onclick="addAsisDynamicRow(${index}, 'outputs')">+ Agregar salida</button>
-                </div>
-              </div>
-            </div>
-          </details>
+        ${renderAsisQuickRelationBlock({
+  index,
+  kind: 'outputs',
+  label: 'Salida/cliente',
+  count: countAsisQuickRows('outputs', safe),
+  bodyHtml: renderActivityOutputRows(safe.outputs_generated || safe.ext_outputs || [], index)
+})}
         `}
       </div>
     </details>
@@ -8166,12 +8296,19 @@ function readActivityOutputsFromRow(item){
     .filter(Boolean);
 }
 
-function addAsisDynamicRow(index, kind){
+function addAsisDynamicRow(index, kind, openPanel = false){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
   if(!item) return;
 
   const target = item.querySelector(`[data-dynamic-list="${kind}"]`);
   if(!target) return;
+
+  if(openPanel){
+    const block = target.closest('details.asis-quick-block, details.asis-mini-accordion');
+    if(block){
+      block.setAttribute('open', 'open');
+    }
+  }
 
   let html = '';
 
@@ -8195,17 +8332,37 @@ function addAsisDynamicRow(index, kind){
 
   target.insertAdjacentHTML('beforeend', html);
 
+  updateAsisQuickCounterFromList(target);
+  syncAsisRow(index);
+
   const lastRow = target.lastElementChild;
   const select = lastRow?.querySelector('select');
 
   if(select){
-    setTimeout(() => select.focus(), 50);
+    setTimeout(() => {
+      select.focus();
+
+      if(typeof select.showPicker === 'function'){
+        try{
+          select.showPicker();
+        }catch(err){
+          console.warn('No se pudo abrir automáticamente el selector.', err);
+        }
+      }
+    }, 80);
   }
 }
 
 function removeAsisDynamicRow(button, index){
   const row = button?.closest('.asis-line-row, .asis-dynamic-row');
+  const list = row?.closest('[data-dynamic-list]');
+
   if(row) row.remove();
+
+  if(list){
+    updateAsisQuickCounterFromList(list);
+  }
+
   syncAsisRow(index);
 }
   
