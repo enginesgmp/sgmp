@@ -4949,7 +4949,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 
 <article class="card">
   <h3>Consolidado de insumos</h3>
-  <p>Consolida los insumo<p>Consolida preparación, contexto y archivos cargados en una entrada técnica para Prompt A. La respuesta estructurada de Prompt A será la base del Proceso AS-IS.</p>s de la ruta seleccionada, genera la entrada para Prompt A y permite cargar el JSON estructurado que alimentará el Proceso AS-IS.</p>
+  <p>Consolida preparación, contexto y archivos cargados en una entrada técnica para Prompt A. La respuesta estructurada de Prompt A será la base del Proceso AS-IS.</p>
 
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
   <div class="actions-left">
@@ -12960,40 +12960,6 @@ function renderAnalysisValidation(){
   return issues;
 }
 
-function useLatestExternalBrief(){
-  if(!list.length){ showMsg('briefExternalMsg','warn','No hay briefs externos cargados.'); return; }
-  const latest = list[list.length - 1];
-  const normalized = normalizeBriefPayload(latest);
-  state.briefReview = { raw: normalized, approved:false };
-  renderBriefDraft();
-  renderBriefValidation();
-  showMsg('briefExternalMsg','ok','Se cargó el último brief externo al editor. Revísalo y apruébalo si corresponde.');
-}
-
-function renderBriefDraft(){
-  let brief = getBriefPayload();
-  if(!brief){
-    if(qs('briefEditor')) qs('briefEditor').value='';
-    if(qs('briefDetectedPreview')) qs('briefDetectedPreview').textContent='Sin brief generado.';
-    if(qs('briefApprovedKpi')) qs('briefApprovedKpi').textContent='No';
-    if(qs('briefGapsKpi')) qs('briefGapsKpi').textContent='0';
-    return;
-  }
-  if(!brief.summary || !brief.sipoc){
-    brief = normalizeBriefPayload(brief);
-    state.briefReview = state.briefReview || { raw:null, approved:false };
-    state.briefReview.raw = brief;
-    state.brief = brief;
-  }
-  const issues = evaluateBriefCompleteness(brief);
-  const warnings = safeArray(brief.validation?.warnings || []);
-  const editorValue = JSON.stringify(brief, null, 2);
-  if(qs('briefEditor')) qs('briefEditor').value = editorValue;
-  if(qs('briefDetectedPreview')) qs('briefDetectedPreview').textContent = editorValue;
-  if(qs('briefApprovedKpi')) qs('briefApprovedKpi').textContent = state.briefReview?.approved ? 'Sí' : 'No';
-  if(qs('briefGapsKpi')) qs('briefGapsKpi').textContent = issues.length + warnings.length + safeArray(brief.informationGaps || []).length;
-}
-
 function buildBriefPrompt(master){
   const inputPayload = master || buildPromptAInputPayload();
   const inputText = JSON.stringify(inputPayload, null, 2);
@@ -15003,7 +14969,7 @@ function initDropZones(){
 function mergeContextSources(){
   const out = JSON.parse(JSON.stringify(state.context));
   const briefPayload = getBriefPayload();
-  const all = [state.preInterview, state.interview, briefPayload, ...state.loads.pre, ...state.loads.interview, ...state.loads.brief].filter(Boolean);
+  const all = [   state.preInterview,   state.interview,   briefPayload,   ...safeArray(state.loads?.pre),   ...safeArray(state.loads?.interview),   ...safeArray(state.loads?.interviewTranscript),   ...safeArray(state.loads?.sipoc),   ...safeArray(state.loads?.statusInterview),   ...safeArray(state.loads?.docs) ].filter(Boolean);
   all.forEach(item => {
     const c = item.context || {};
     out.company ||= c.company || '';
