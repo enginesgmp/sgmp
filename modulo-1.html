@@ -7311,7 +7311,7 @@ function saveMasterAndContinue(){
       return;
     }
 
-    applyBriefToLmp();
+    applyStructuredAsIsToLmp();
 
   }catch(error){
     showMsg(
@@ -13876,59 +13876,6 @@ function processBriefResponse(){
   return processPromptAResponse();
 }
   
-function approveBriefAndUnlockAnalysis(){
-  const rawText = qs('briefEditor')?.value.trim() || '';
-
-  if(!rawText){
-    showMsg('briefIaMsg','warn','No hay as_is_process para aprobar.');
-    return;
-  }
-
-  try{
-    const parsed = JSON.parse(rawText);
-
-    if(!parsed?.as_is_process){
-      throw new Error('El JSON editable no contiene la raíz as_is_process.');
-    }
-
-    const normalized = normalizePromptAAsIsProcess(parsed);
-    const issues = validatePromptAAsIsProcess(normalized);
-
-    applyPromptAAsIsProcess(normalized);
-
-    state.asIsProcessApproved = issues.length === 0;
-    state.briefReview = {
-      raw: normalized,
-      approved: issues.length === 0,
-      type: 'as_is_process'
-    };
-
-    renderBriefValidation();
-
-    if(issues.length){
-      showMsg(
-        'briefIaMsg',
-        'warn',
-        'as_is_process todavía tiene vacíos estructurales. Puedes continuar revisando, pero no está completamente limpio.'
-      );
-      return;
-    }
-
-    showMsg(
-      'briefIaMsg',
-      'ok',
-      'as_is_process aprobado correctamente. El AS-IS editable quedó listo para validación.'
-    );
-
-    if(typeof refreshCargaFlowState === 'function'){
-      refreshCargaFlowState();
-    }
-
-  }catch(error){
-    showMsg('briefIaMsg','err','No fue posible aprobar as_is_process. Detalle: ' + error.message);
-  }
-}
-
 function applyStructuredAsIsToLmp(){
   try{
     let payload = state.asIsProcess;
@@ -15077,7 +15024,9 @@ function sgmpPushMasterActivity(master, seenAct, rawActivity){
 function mergeMaster(){
   const allPre = [...state.loads.pre]; if(state.preInterview) allPre.push(state.preInterview);
   const allInterview = [...state.loads.interview]; if(state.interview) allInterview.push(state.interview);
-  const allBrief = []; const briefPayload = getBriefPayload(); if(briefPayload) allBrief.push(briefPayload);
+  const allBrief = [];
+  const briefPayload = getBriefPayload();
+  if(briefPayload) allBrief.push(briefPayload);
   const master = {
     context: mergeContextSources(),
     sipoc: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documentsSystems:[] },
@@ -17799,9 +17748,7 @@ setTimeout(()=>URL.revokeObjectURL(url),1000);
     window.sgmpV3StartGlobalTimer();window.sgmpV3BeginManualStage(currentVisibleStage());window.sgmpV3RefreshTimersUI();
   }
 })();
-</script>
 
-<script>
 (function(){
   var C="LMP",API="https://script.google.com/macros/s/AKfycbyQZi1flaILc4e3I7MFp8gLctkzC6VccjfFz5aHluMrGZLwOUeS3uQaHPsMZ3l5yfDw-Q/exec";
   var IDS={agent_name:"sgmp-agent-name",agent_code:"sgmp-agent-code",agent_slogan:"sgmp-agent-slogan",
