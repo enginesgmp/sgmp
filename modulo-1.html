@@ -4854,7 +4854,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 <div class="section-head">
 <div>
 <h2>Carga y consolidación</h2>
-<p>Consolida los archivos JSON según la ruta seleccionada. Esta sección solo prepara insumos, consolidado y Brief; el análisis se ejecuta exclusivamente en las etapas B1–B6 del menú lateral.</p>
+<p>Consolida los insumos de la ruta seleccionada, genera la entrada para Prompt A y permite cargar el JSON estructurado que alimentará el Proceso AS-IS.</p>
 </div>
 <div class="step-pill">Paso 3</div>
 </div>
@@ -4949,7 +4949,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 
 <article class="card">
   <h3>Consolidado de insumos</h3>
-  <p>Consolida preparación, contexto y archivos cargados en una entrada temporal para Prompt A. Este consolidado no alimenta directamente el AS-IS.</p>
+  <p>Consolida los insumo<p>Consolida preparación, contexto y archivos cargados en una entrada técnica para Prompt A. La respuesta estructurada de Prompt A será la base del Proceso AS-IS.</p>s de la ruta seleccionada, genera la entrada para Prompt A y permite cargar el JSON estructurado que alimentará el Proceso AS-IS.</p>
 
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
   <div class="actions-left">
@@ -6594,7 +6594,14 @@ function applySipocExtractorJson(parsed){
   const normalized = normalizeSipocExtractorToLmpInstrument(normalizedContract);
   state.metadata.route = 'doc';
   state.metadata.currentStage = 'carga';
-  state.loads = state.loads || { pre:[], interview:[], brief:[], docs:[] };
+  state.loads = state.loads || {
+  pre:[],
+  interview:[],
+  interviewTranscript:[],
+  sipoc:[],
+  statusInterview:[],
+  docs:[]
+};
   state.loads.sipoc = [
   ...(state.loads.sipoc || []),
   {
@@ -10660,7 +10667,14 @@ function resetAll(){
     interview:null,
     brief:null,
     briefReview:{raw:null,approved:false},
-    loads:{pre:[],interview:[],brief:[],docs:[]},
+    loads:{
+  pre:[],
+  interview:[],
+  interviewTranscript:[],
+  sipoc:[],
+  statusInterview:[],
+  docs:[]
+},
     master:null,
     asis:{activities:[]},
     analysis:null,
@@ -12431,36 +12445,56 @@ function removeLoadedItem(type, index){
 }
 
 function clearLoadsGroup(type){
-  if(type === 'docs') state.loads.docs = [];
-  else if(type === 'pre' || type === 'interview' || type === 'brief') state.loads[type] = [];
+  if(type === 'docs'){
+    state.loads.docs = [];
+  }
+
+  if(type === 'pre'){
+    state.loads.pre = [];
+  }
+
+  if(type === 'interview'){
+    state.loads.interview = [];
+    state.loads.interviewTranscript = [];
+    state.loads.sipoc = [];
+    state.loads.statusInterview = [];
+  }
+
   updateLoadKpis();
   refreshLoadViews();
-  if(type==='brief'){ state.briefReview = { raw:null, approved:false }; if(qs('briefEditor')) qs('briefEditor').value=''; if(qs('briefDetectedPreview')) qs('briefDetectedPreview').textContent=''; }
+
+  if(typeof refreshCargaFlowState === 'function'){
+    refreshCargaFlowState();
+  }
 }
 
 function clearAllLoads(){
+  state.loads = state.loads || {};
+
   state.loads.pre = [];
-state.loads.interview = [];
-state.loads.interviewTranscript = [];
-state.loads.sipoc = [];
-state.loads.statusInterview = [];
-state.loads.docs = [];
-state.loads.brief = [];
+  state.loads.interview = [];
+  state.loads.interviewTranscript = [];
+  state.loads.sipoc = [];
+  state.loads.statusInterview = [];
+  state.loads.docs = [];
+
   state.master = null;
-  state.briefReview = { raw:null, approved:false };
-  state.brief = null;
+
   if(qs('masterEditor')) qs('masterEditor').value = '';
-  if(qs('briefPromptEditor')) qs('briefPromptEditor').value = '';
-  if(qs('briefResponseEditor')) qs('briefResponseEditor').value = '';
-  if(qs('briefEditor')) qs('briefEditor').value = '';
-  if(qs('analysisPromptEditor')) qs('analysisPromptEditor').value = '';
-  if(qs('iaResponseEditor')) qs('iaResponseEditor').value = '';
-  if(qs('iaDetectedPreview')) qs('iaDetectedPreview').textContent = '';
-  if(qs('briefGapsList')) qs('briefGapsList').textContent = 'Sin vacíos detectados.';
+
+  const promptABox = qs('promptAInputEditor') || qs('briefPromptEditor');
+  if(promptABox) promptABox.value = '';
+
+  const promptAResponseBox = qs('promptAResponseEditor') || qs('briefResponseEditor');
+  if(promptAResponseBox) promptAResponseBox.value = '';
+
   updateLoadKpis();
   refreshLoadViews();
-  renderBriefDraft();
-  renderAnalysisValidation();
+
+  if(typeof refreshCargaFlowState === 'function'){
+    refreshCargaFlowState();
+  }
+
   showMsg('cargaMsg','ok','Carga limpiada correctamente.');
 }
 
@@ -12927,7 +12961,6 @@ function renderAnalysisValidation(){
 }
 
 function useLatestExternalBrief(){
-  const list = state.loads.brief || [];
   if(!list.length){ showMsg('briefExternalMsg','warn','No hay briefs externos cargados.'); return; }
   const latest = list[list.length - 1];
   const normalized = normalizeBriefPayload(latest);
@@ -15181,7 +15214,7 @@ function sgmpPushMasterActivity(master, seenAct, rawActivity){
 function mergeMaster(){
   const allPre = [...state.loads.pre]; if(state.preInterview) allPre.push(state.preInterview);
   const allInterview = [...state.loads.interview]; if(state.interview) allInterview.push(state.interview);
-  const allBrief = [...state.loads.brief]; const briefPayload = getBriefPayload(); if(briefPayload) allBrief.push(briefPayload);
+  const allBrief = const briefPayload = getBriefPayload(); if(briefPayload) allBrief.push(briefPayload);
   const master = {
     context: mergeContextSources(),
     sipoc: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documentsSystems:[] },
