@@ -3698,15 +3698,34 @@ CONTRATO FORMAL TAMBIÉN ACEPTADO:
         el.textContent = JSON.stringify(obj, null, 2);
       }
 
-function prepSetGeneratedEnabled(enabled) {
-  ["prep_generate_pre_btn", "prep_generate_interview_btn", "prep_open_extractor_btn"].forEach(function(id){
-    const el = document.getElementById(id);
-    if (el) el.disabled = !enabled;
-  });
+function isPreparationReadyForArtifacts(){
+  const c = state?.context || {};
+  const indicators = Array.isArray(c.globalIndicators) ? c.globalIndicators : [];
 
-  if (typeof updatePreparationArtifactsByRoute === "function") {
-    updatePreparationArtifactsByRoute();
-  }
+  return !!(
+    c.company &&
+    c.processName &&
+    c.processCode &&
+    c.owner &&
+    c.analyst &&
+    c.industry &&
+    c.processType &&
+    c.activity &&
+    c.purpose &&
+    c.observation &&
+    indicators.length > 0
+  );
+}
+
+function guardPreparationArtifactsReady(){
+  if(isPreparationReadyForArtifacts()) return true;
+
+  prepShowMessage(
+    "warn",
+    "Primero guarda la preparación completa: parámetros base, al menos un indicador global y contexto adicional."
+  );
+
+  return false;
 }
 
 function getPreparationIndicatorsForSave(){
@@ -4643,6 +4662,7 @@ function updatePreparationArtifactsByRoute(){
   const extractorBtn = document.getElementById("prep_open_extractor_btn");
   const intBtn = document.getElementById("prep_generate_interview_btn");
   const note = document.querySelector("#prep_generation_card .note");
+  const canGenerateArtifacts = isPreparationReadyForArtifacts();
 
   function setVisible(el, visible){
     if(!el) return;
@@ -4691,6 +4711,19 @@ function updatePreparationArtifactsByRoute(){
 
   if(note){
     note.innerHTML = 'Para proceso nuevo, genera el <strong>cuestionario de actores internos</strong> y la <strong>entrevista guía</strong>. Después carga los JSON y la transcripción TXT en <strong>Carga y consolidación</strong>.';
+  }
+}
+      
+function prepSetGeneratedEnabled(enabled) {
+  const canGenerate = !!enabled && isPreparationReadyForArtifacts();
+
+  ["prep_generate_pre_btn", "prep_generate_interview_btn", "prep_open_extractor_btn"].forEach(function(id){
+    const el = document.getElementById(id);
+    if (el) el.disabled = !canGenerate;
+  });
+
+  if (typeof updatePreparationArtifactsByRoute === "function") {
+    updatePreparationArtifactsByRoute();
   }
 }
       
