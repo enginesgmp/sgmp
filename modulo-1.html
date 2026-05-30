@@ -2626,8 +2626,8 @@ color:#A93226;
   align-items:center !important;
   gap:12px !important;
   cursor:pointer !important;
-  background:linear-gradient(135deg,#F8FCFF,#FFFFFF) !important;
-  border-left:4px solid rgba(39,174,96,.70) !important;
+  background:linear-gradient(135deg,#ECFFF5,#FFFFFF) !important;
+  border-left:5px solid rgba(39,174,96,.82) !important;
   box-shadow:none !important;
 }
 
@@ -2642,9 +2642,9 @@ color:#A93226;
 
 .asis-quick-add{
   border:none !important;
-  background:rgba(39,174,96,.10) !important;
-  color:#16834A !important;
-  border:1px solid rgba(39,174,96,.22) !important;
+  background:rgba(39,174,96,.16) !important;
+  color:#0F7A43 !important;
+  border:1px solid rgba(39,174,96,.34) !important;
   border-radius:999px !important;
   padding:9px 13px !important;
   font-size:.86rem !important;
@@ -2687,7 +2687,7 @@ color:#A93226;
 }
 
 .asis-quick-block[open] .asis-quick-summary{
-  background:linear-gradient(135deg,#EFFBF5,#FFFFFF) !important;
+  background:linear-gradient(135deg,#DFF8EC,#FFFFFF) !important;
   border-bottom:1px solid rgba(11,46,89,.08) !important;
 }
 
@@ -7995,8 +7995,15 @@ function normalizeActivityInputList(value){
       ? normalizeContractString(item)
       : normalizeContractString(item?.input || item?.name || item?.entrada || '');
 
+    const connector = typeof item === 'string'
+      ? ''
+      : normalizeContractString(item?.connector || item?.label || item?.etiqueta || '');
+
     if(!input){
-      output.push('');
+      output.push({
+        input: '',
+        connector
+      });
       return;
     }
 
@@ -8004,7 +8011,10 @@ function normalizeActivityInputList(value){
 
     if(!map.has(key)){
       map.set(key, input);
-      output.push(input);
+      output.push({
+        input,
+        connector
+      });
     }
   });
 
@@ -8020,20 +8030,30 @@ function normalizeActivityOutputList(value){
   const output = [];
 
   arr.forEach(item => {
-    const value = typeof item === 'string'
+    const outputName = typeof item === 'string'
       ? normalizeContractString(item)
       : normalizeContractString(item?.output || item?.name || item?.salida || '');
 
-    if(!value){
-      output.push('');
+    const connector = typeof item === 'string'
+      ? ''
+      : normalizeContractString(item?.connector || item?.label || item?.etiqueta || '');
+
+    if(!outputName){
+      output.push({
+        output: '',
+        connector
+      });
       return;
     }
 
-    const key = lmpLower(value);
+    const key = lmpLower(outputName);
 
     if(!map.has(key)){
-      map.set(key, value);
-      output.push(value);
+      map.set(key, outputName);
+      output.push({
+        output: outputName,
+        connector
+      });
     }
   });
 
@@ -8211,11 +8231,18 @@ function renderActivityInputRows(list, index){
 
   if(!rows.length) return '';
 
-  return rows.map((input, rowIndex) => `
+  return rows.map((row, rowIndex) => `
     <div class="asis-line-row a_input_row" data-row="${rowIndex}">
       <select class="a_input_select asis-line-select" onchange="syncAsisRow(${index})">
-        ${renderAsisInputOptions(input || '')}
+        ${renderAsisInputOptions(row.input || '')}
       </select>
+
+      <input
+        class="a_input_connector asis-line-tag"
+        value="${escapeHtml(row.connector || '')}"
+        placeholder="Etiqueta"
+        oninput="syncAsisRow(${index})"
+      />
 
       <button
         class="asis-line-delete"
@@ -8261,11 +8288,18 @@ function renderActivityOutputRows(list, index){
 
   if(!rows.length) return '';
 
-  return rows.map((output, rowIndex) => `
+  return rows.map((row, rowIndex) => `
     <div class="asis-line-row a_output_row" data-row="${rowIndex}">
       <select class="a_output_select asis-line-select" onchange="syncAsisRow(${index})">
-        ${renderAsisOutputOptions(output || '')}
+        ${renderAsisOutputOptions(row.output || '')}
       </select>
+
+      <input
+        class="a_output_connector asis-line-tag"
+        value="${escapeHtml(row.connector || '')}"
+        placeholder="Etiqueta"
+        oninput="syncAsisRow(${index})"
+      />
 
       <button
         class="asis-line-delete"
@@ -8285,15 +8319,17 @@ function readActivityConnectionsFromRow(item, classPrefix){
 }
 
 function readActivityInputsFromRow(item){
-  return qsa('.a_input_select', item)
-    .map(input => input.value.trim())
-    .filter(Boolean);
+  return qsa('.a_input_row', item).map(row => ({
+    input: row.querySelector('.a_input_select')?.value?.trim() || '',
+    connector: row.querySelector('.a_input_connector')?.value?.trim() || ''
+  })).filter(row => row.input);
 }
 
 function readActivityOutputsFromRow(item){
-  return qsa('.a_output_select', item)
-    .map(output => output.value.trim())
-    .filter(Boolean);
+  return qsa('.a_output_row', item).map(row => ({
+    output: row.querySelector('.a_output_select')?.value?.trim() || '',
+    connector: row.querySelector('.a_output_connector')?.value?.trim() || ''
+  })).filter(row => row.output);
 }
 
 function addAsisDynamicRow(index, kind, openPanel = false){
@@ -8320,13 +8356,13 @@ function addAsisDynamicRow(index, kind, openPanel = false){
     html = renderActivityConnectionsRows([{ activity: '', connector: '' }], 'a_next', index, 'next');
   }
 
-  if(kind === 'inputs'){
-    html = renderActivityInputRows([''], index);
-  }
+if(kind === 'inputs'){
+  html = renderActivityInputRows([{ input: '', connector: '' }], index);
+}
 
-  if(kind === 'outputs'){
-    html = renderActivityOutputRows([''], index);
-  }
+if(kind === 'outputs'){
+  html = renderActivityOutputRows([{ output: '', connector: '' }], index);
+}
 
   if(!html) return;
 
