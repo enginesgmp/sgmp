@@ -3357,7 +3357,64 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
   border-style:dashed !important;
   background:#F7F9FC !important;
 }
+.loaded-file-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
 
+.loaded-file-card{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  padding:12px 12px;
+  border-radius:14px;
+  background:#FFFFFF;
+  border:1px solid rgba(0,194,255,.22);
+  color:#0B2E59;
+  box-shadow:0 6px 14px rgba(11,46,89,.07);
+}
+
+.loaded-file-card strong{
+  display:block;
+  color:#0B2E59;
+  font-size:.86rem;
+  font-weight:950;
+  overflow-wrap:anywhere;
+}
+
+.loaded-file-card small{
+  display:block;
+  margin-top:4px;
+  color:#5B6F8A;
+  font-size:.76rem;
+  font-weight:750;
+  overflow-wrap:anywhere;
+}
+
+.loaded-file-remove{
+  width:30px;
+  min-width:30px;
+  height:30px;
+  border-radius:999px;
+  border:none;
+  background:#B8322A;
+  color:#FFFFFF;
+  font-size:1rem;
+  font-weight:950;
+  line-height:1;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.loaded-file-remove:hover{
+  background:#9F2A24;
+  transform:translateY(-1px);
+}
+  
 .load-panel-inactive::after{
   content:"Bloqueado por la ruta seleccionada";
   display:block;
@@ -12339,75 +12396,106 @@ function renderLoadList(targetId, items, mode){
   const list = safeArray(items);
 
   if(!list.length){
-    el.innerHTML = 'Sin archivos cargados.';
+    el.innerHTML = '<div class="loaded-file-empty">Sin archivos cargados.</div>';
     return;
   }
 
-  el.innerHTML = list.map((item, idx) => {
-    const name = escapeHtml(
-      item.__fileName ||
-      item.name ||
-      item.title ||
-      item.context?.processName ||
-      item.instrument ||
-      `${mode || 'archivo'} ${idx + 1}`
-    );
+  el.innerHTML = `
+    <div class="loaded-file-list">
+      ${list.map((item, idx) => {
+        const name = escapeHtml(
+          item.__fileName ||
+          item.name ||
+          item.title ||
+          item.context?.processName ||
+          item.instrument ||
+          `${mode || 'archivo'} ${idx + 1}`
+        );
 
-    const kind = escapeHtml(
-      item.source_type ||
-      item.instrument ||
-      item.type ||
-      item.__summary ||
-      'insumo_cargado'
-    );
+        const kind = escapeHtml(
+          item.source_type ||
+          item.instrument ||
+          item.type ||
+          item.__summary ||
+          'insumo_cargado'
+        );
 
-    const activitiesCount = safeArray(
-      item.activities ||
-      item.lmpSipocDraft?.activities ||
-      item.normalized_contract?.sipoc_extraction?.activities
-    ).length;
+        const activitiesCount = safeArray(
+          item.activities ||
+          item.lmpSipocDraft?.activities ||
+          item.normalized_contract?.sipoc_extraction?.activities
+        ).length;
 
-    const extra = activitiesCount ? ` · ${activitiesCount} actividades` : '';
+        const extra = activitiesCount ? ` · ${activitiesCount} actividades` : '';
 
-    const meta = mode === 'docs'
-      ? `${escapeHtml(item.__sizeLabel || '')} · ${escapeHtml(item.__summary || 'Archivo TXT cargado')}`
-      : `${kind}${extra}`;
+        const meta = mode === 'docs'
+          ? `${escapeHtml(item.__sizeLabel || '')} · ${escapeHtml(item.__summary || 'Archivo TXT cargado')}`
+          : `${kind}${extra}`;
 
-    return `
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)">
-        <div>
-          <strong>${name}</strong><br>
-          <small>${meta}</small>
-        </div>
-      </div>
-    `;
-  }).join('');
+        const loadType = item.__loadType || mode || '';
+        const loadIndex = Number.isInteger(item.__loadIndex) ? item.__loadIndex : idx;
+
+        return `
+          <div class="loaded-file-card">
+            <div>
+              <strong>${name}</strong>
+              <small>${meta}</small>
+            </div>
+            <button class="loaded-file-remove" type="button" title="Quitar insumo" onclick="removeLoadedItem('${escapeHtml(loadType)}', ${loadIndex})">×</button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 function refreshLoadViews(){
-  renderLoadList('preLoadList', safeArray(state.loads?.pre), 'pre');
+  const withLoadMeta = (items, type) =>
+    safeArray(items).map((item, index) => ({
+      ...item,
+      __loadType: type,
+      __loadIndex: index
+    }));
+
+  renderLoadList(
+    'preLoadList',
+    withLoadMeta(state.loads?.pre, 'pre'),
+    'pre'
+  );
 
   renderLoadList(
     'interviewLoadList',
     [
-      ...safeArray(state.loads?.interview),
-      ...safeArray(state.loads?.interviewTranscript),
-      ...safeArray(state.loads?.sipoc),
-      ...safeArray(state.loads?.statusInterview)
+      ...withLoadMeta(state.loads?.interview, 'interview'),
+      ...withLoadMeta(state.loads?.interviewTranscript, 'interviewTranscript'),
+      ...withLoadMeta(state.loads?.sipoc, 'sipoc'),
+      ...withLoadMeta(state.loads?.statusInterview, 'statusInterview')
     ],
     'mixed_inputs'
   );
 
-  renderLoadList('docLoadList', safeArray(state.loads?.docs), 'docs');
+  renderLoadList(
+    'docLoadList',
+    withLoadMeta(state.loads?.docs, 'docs'),
+    'docs'
+  );
 
   refreshCargaFlowState();
 }
 
 function removeLoadedItem(type, index){
-  if(!state.loads[type]) return;
-  state.loads[type].splice(index,1);
+  state.loads = state.loads || {};
+
+  if(!Array.isArray(state.loads[type])) return;
+
+  state.loads[type].splice(index, 1);
+
   updateLoadKpis();
   refreshLoadViews();
+
+  if(typeof refreshCargaFlowState === 'function'){
+    refreshCargaFlowState();
+  }
 }
 
 function clearLoadsGroup(type){
