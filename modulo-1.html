@@ -4575,18 +4575,21 @@ return createExternalToolShell({
 });
 }
       
-      function generatePreInterviewFromPreparation(){
-        const context = savePreparationContext();
-        if (!validatePreparationContext(context)) return;
+function generatePreInterviewFromPreparation(){
+  if (!guardPreparationArtifactsReady()) return;
+
+  const context = getPreparationContext();
+  if (!validatePreparationContext(context)) return;
         const html = buildPreInterviewHTML(context);
         prepDownloadGeneratedHtml("cuestionario_actores_internos.html", html);
         prepShowMessage("ok", "HTML de cuestionario para actores internos generado y descargado correctamente.");
       }
 
 function generateInterviewFromPreparation(){
-  const context = savePreparationContext();
-  if (!validatePreparationContext(context)) return;
+  if (!guardPreparationArtifactsReady()) return;
 
+  const context = getPreparationContext();
+  if (!validatePreparationContext(context)) return;
   const route = state?.metadata?.route || 'new';
 
   if(route === 'doc'){
@@ -4669,7 +4672,7 @@ function updatePreparationArtifactsByRoute(){
 
     el.classList.toggle("hidden", !visible);
     el.style.setProperty("display", visible ? "inline-flex" : "none", "important");
-    el.disabled = !visible;
+    el.disabled = !visible || !canGenerateArtifacts;
     el.setAttribute("aria-hidden", visible ? "false" : "true");
   }
 
@@ -4689,7 +4692,7 @@ function updatePreparationArtifactsByRoute(){
     }
 
     if(note){
-      note.innerHTML = 'Para proceso documentado, usa el <strong>Extractor SIPOC</strong> y genera la <strong>entrevista de status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.';
+      note.innerHTML = canGenerateArtifacts   ? 'Para proceso documentado, usa el <strong>Extractor SIPOC</strong> y genera la <strong>entrevista de status actual</strong>. Después carga ambos JSON en <strong>Carga y consolidación</strong>.'   : 'Primero guarda la preparación completa: parámetros base, al menos un indicador global y contexto adicional.';
     }
 
     return;
@@ -4710,7 +4713,7 @@ function updatePreparationArtifactsByRoute(){
   }
 
   if(note){
-    note.innerHTML = 'Para proceso nuevo, genera el <strong>cuestionario de actores internos</strong> y la <strong>entrevista guía</strong>. Después carga los JSON y la transcripción TXT en <strong>Carga y consolidación</strong>.';
+    note.innerHTML = canGenerateArtifacts   ? 'Para proceso nuevo, genera el <strong>cuestionario de actores internos</strong> y la <strong>entrevista guía</strong>. Después carga los JSON y la transcripción TXT en <strong>Carga y consolidación</strong>.'   : 'Primero guarda la preparación completa: parámetros base, al menos un indicador global y contexto adicional.';
   }
 }
       
@@ -4731,12 +4734,7 @@ function initializePreparationState(){
   hydratePreparationFromState();
 
   const hydratedContext = getPreparationContext();
-  const canGenerate = !!(
-    hydratedContext.company &&
-    hydratedContext.processName &&
-    hydratedContext.analyst &&
-    hydratedContext.processType
-  );
+const canGenerate = isPreparationReadyForArtifacts();
 
   if (canGenerate) {
     prepPreviewContext(hydratedContext);
