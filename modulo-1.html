@@ -2672,6 +2672,33 @@ align-self:center !important;
   min-width:20px !important;
 }
 
+.asis-quick-state{
+  min-width:58px !important;
+  height:30px !important;
+  border-radius:999px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  background:rgba(11,46,89,.06) !important;
+  border:1px solid rgba(11,46,89,.12) !important;
+  color:#0B2E59 !important;
+  font-size:.74rem !important;
+  font-weight:900 !important;
+}
+
+.asis-quick-state::before{
+  content:"Abrir";
+}
+
+.asis-quick-block[open] .asis-quick-state::before{
+  content:"Cerrar";
+}
+
+.asis-quick-block[open] .asis-quick-state{
+  background:rgba(39,174,96,.12) !important;
+  border-color:rgba(39,174,96,.24) !important;
+  color:#0F7A43 !important;
+}  
 .asis-quick-counter{
   width:34px !important;
   height:34px !important;
@@ -5370,7 +5397,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
       </div>
     </article>
 
-<details class="asis-accordion asis-alert-accordion" id="asisStructuralStatusCard" open>
+<details class="asis-accordion asis-alert-accordion" id="asisStructuralStatusCard">
   <summary>
     <div class="asis-summary-main">
       <span>Vacíos estructurales</span>
@@ -5389,7 +5416,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 
 <div class="asis-accordion-layout" style="grid-column:span 12;">
 
-  <details class="asis-accordion asis-inputs-accordion" open>
+  <details class="asis-accordion asis-inputs-accordion">
     <summary>
       <div class="asis-summary-main">
         <span>Entradas y proveedores</span>
@@ -5412,7 +5439,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     </article>
   </details>
 
-  <details class="asis-accordion asis-outputs-accordion" open>
+  <details class="asis-accordion asis-outputs-accordion">
     <summary>
       <div class="asis-summary-main">
         <span>Salidas y clientes</span>
@@ -5434,7 +5461,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     </article>
   </details>
 
-  <details class="asis-accordion asis-main-accordion" open>
+  <details class="asis-accordion asis-main-accordion">
     <summary>
       <div class="asis-summary-main">
         <span>Actividades del flujo</span>
@@ -5445,13 +5472,15 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 <article class="card">
   <div class="list" id="asisActivities"></div>
 
-  <div class="actions asis-add-activity-bottom">
-    <div class="actions-left">
-      <button class="btn-ghost" onclick="addAsisActivity()" type="button">+ Agregar actividad</button>
-    </div>
+<div class="actions asis-add-activity-bottom">
+  <div class="actions-left">
+    <button class="btn-ok asis-add-inline-btn" onclick="addAsisActivity()" type="button">+ Agregar actividad</button>
   </div>
 
-  <div class="msg" id="asisBuilderMsg"></div>
+  <div class="actions-right">
+    <button class="btn" onclick="saveAsIsActivitiesCatalog()" type="button">Guardar catálogo</button>
+  </div>
+</div>
 </article>
     </article>
     
@@ -5468,7 +5497,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
         <article class="card">
    <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
   <div class="actions-left">
-    <button class="btn-ghost" onclick="addAdditionalInformationRow()" type="button">Agregar información</button>
+    <button class="btn-ok asis-add-inline-btn" onclick="addAdditionalInformationRow()" type="button">+ Agregar información</button>
   </div>
   <div class="actions-right">
     <button class="btn" onclick="saveAdditionalInformation()" type="button">Guardar información</button>
@@ -7794,6 +7823,7 @@ function renderAsisQuickRelationBlock(config){
 
         <span class="asis-quick-fill"></span>
 
+        <span class="asis-quick-state" aria-hidden="true"></span> 
         <span class="asis-quick-counter" title="Elementos conectados">${Number(count || 0)}</span>
       </summary>
 
@@ -8874,11 +8904,10 @@ function saveAsIsGlobalCatalogs(){
     renderLmpB1StructuralStatus();
   }
 
-  const msg = qs('asisBuilderMsg');
-  if(msg){
-    msg.className = 'msg show ok';
-    msg.textContent = 'Catálogos AS-IS guardados y estructura actualizada.';
-    closeAllAsIsActivities();
+  closeAllAsIsAccordions();
+
+  if(typeof showAsisMessage === 'function'){
+    showAsisMessage('ok', 'Catálogo guardado y JSON AS-IS actualizado.');
   }
 }
   
@@ -9017,17 +9046,33 @@ function addAsisActivity(data = {}){
     console.warn('No se pudo renumerar AS-IS después de agregar actividad.', err);
   }
 
-renderAsIsActivities();
-closeAllAsIsActivities();
+  renderAsIsActivities();
+  closeAllAsIsActivities();
 
-updateAsIsPreview();
-updateTopStatus();
+  const newIndex = state.asis.activities.length - 1;
+  const item = qs('asisActivities')?.querySelector(`details.activity-item[data-index="${newIndex}"]`);
 
-window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+  if(item){
+    item.setAttribute('open', 'open');
 
-if(typeof renderLmpB1StructuralStatus === 'function'){
-  renderLmpB1StructuralStatus();
-}
+    const nameInput = item.querySelector('.a_name');
+    if(nameInput){
+      setTimeout(() => nameInput.focus(), 80);
+    }
+  }
+
+  updateAsIsPreview();
+  updateTopStatus();
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+
+  if(typeof showAsisMessage === 'function'){
+    showAsisMessage('ok', 'Nueva actividad agregada. Completa sus datos y guarda.');
+  }
 }
 
 function deleteAsisActivity(index){
@@ -9139,6 +9184,7 @@ function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
 
   const activities = state.asis.activities;
   const currentName = normalizeContractString(newActivity?.name || '');
+  const oldName = normalizeContractString(oldActivity?.name || '');
 
   if(!currentName) return;
 
@@ -9151,6 +9197,7 @@ function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
   oldPrevious.forEach(rel => {
     if(!asisRelationExists(newPrevious, rel.activity)){
       const target = findAsisActivityByName(rel.activity);
+      removeAsisRelationByName(target, 'next', oldName || currentName);
       removeAsisRelationByName(target, 'next', currentName);
     }
   });
@@ -9158,9 +9205,24 @@ function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
   oldNext.forEach(rel => {
     if(!asisRelationExists(newNext, rel.activity)){
       const target = findAsisActivityByName(rel.activity);
+      removeAsisRelationByName(target, 'previous', oldName || currentName);
       removeAsisRelationByName(target, 'previous', currentName);
     }
   });
+
+  if(oldName && oldName !== currentName){
+    activities.forEach(activity => {
+      activity.previous = normalizeAsisRelationRows(activity.previous || []).map(rel => ({
+        activity: lmpLower(rel.activity) === lmpLower(oldName) ? currentName : rel.activity,
+        connector: rel.connector || ''
+      }));
+
+      activity.next = normalizeAsisRelationRows(activity.next || []).map(rel => ({
+        activity: lmpLower(rel.activity) === lmpLower(oldName) ? currentName : rel.activity,
+        connector: rel.connector || ''
+      }));
+    });
+  }
 
   newPrevious.forEach(rel => {
     if(!rel.activity) return;
@@ -9184,17 +9246,56 @@ function syncAsisBidirectionalConnections(index, oldActivity, newActivity){
   });
 }
 
+function normalizeAllAsisBidirectionalConnections(){
+  state.asis = state.asis || {};
+  state.asis.activities = safeArray(state.asis.activities);
+
+  state.asis.activities.forEach(activity => {
+    const currentName = normalizeContractString(activity?.name || '');
+    if(!currentName) return;
+
+    normalizeAsisRelationRows(activity.previous || []).forEach(rel => {
+      if(!rel.activity || lmpLower(rel.activity) === lmpLower(currentName)) return;
+
+      const target = findAsisActivityByName(rel.activity);
+      addAsisRelationIfMissing(target, 'next', currentName, rel.connector);
+    });
+
+    normalizeAsisRelationRows(activity.next || []).forEach(rel => {
+      if(!rel.activity || lmpLower(rel.activity) === lmpLower(currentName)) return;
+
+      const target = findAsisActivityByName(rel.activity);
+      addAsisRelationIfMissing(target, 'previous', currentName, rel.connector);
+    });
+  });
+
+  state.asis.activities.forEach(activity => {
+    activity.previous = normalizeAsisRelationRows(activity.previous || []);
+    activity.next = normalizeAsisRelationRows(activity.next || []);
+  });
+}
+                                                                         
 function saveAsisActivity(index){
   syncAsisRow(index, true);
 
+  if(typeof normalizeAllAsisBidirectionalConnections === 'function'){
+    normalizeAllAsisBidirectionalConnections();
+  }
+
+  updateAsIsPreview();
+  updateTopStatus();
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+
+  renderAsIsActivities();
+  closeAllAsIsAccordions();
+
   if(typeof showAsisMessage === 'function'){
-    showAsisMessage('ok', 'Actividad guardada y estructura AS-IS actualizada.');
-  } else {
-    const msg = qs('asisBuilderMsg');
-    if(msg){
-      msg.className = 'msg show ok';
-      msg.textContent = 'Actividad guardada y estructura AS-IS actualizada.';
-    }
+    showAsisMessage('ok', 'Actividad guardada y conexiones actualizadas.');
   }
 }
 
@@ -9228,11 +9329,7 @@ function syncAsisRow(index, fullUpdate = false){
   if(typeof renderLmpB1StructuralStatus === 'function'){
     renderLmpB1StructuralStatus();
   }
-
-if(fullUpdate && typeof renderAsIsActivities === 'function'){
-  renderAsIsActivities();
-  closeAllAsIsActivities();
-}
+// El render/cierre se gestiona desde saveAsisActivity() o saveAsIsActivitiesCatalog().
 }
   
 function refreshAsIsActivitySummary(item, index){
@@ -9250,6 +9347,35 @@ function refreshAsIsActivitySummary(item, index){
     badge.classList.toggle('is-decision', /decision|decisi[oó]n/i.test(type));
   }
 }
+
+  function closeAllAsIsAccordions(){
+  qsa('#asis details.asis-accordion').forEach(item => {
+    item.removeAttribute('open');
+  });
+
+  qsa('#asisActivities details.activity-item').forEach(item => {
+    item.removeAttribute('open');
+  });
+
+  qsa('#asisActivities details.asis-quick-block').forEach(item => {
+    item.removeAttribute('open');
+  });
+}
+
+function showAsisMessage(type, text){
+  const msg = qs('asisBuilderMsg');
+  if(!msg) return;
+
+  msg.className = 'msg show ' + type;
+  msg.textContent = text;
+
+  clearTimeout(window.__ASIS_MSG_TIMER__);
+
+  window.__ASIS_MSG_TIMER__ = setTimeout(() => {
+    msg.className = 'msg';
+    msg.textContent = '';
+  }, 2600);
+}
   
 function closeAllAsIsActivities(){
   qsa('#asisActivities details.activity-item').forEach(item => {
@@ -9257,11 +9383,15 @@ function closeAllAsIsActivities(){
   });
 }
 
-function openAsIsActivity(index){
+function openAsIsActivity(index, scroll = false){
   const item = qs('asisActivities')?.querySelector(`details.activity-item[data-index="${index}"]`);
   if(!item) return;
+
   item.setAttribute('open', 'open');
-  setTimeout(() => item.scrollIntoView({ behavior:'smooth', block:'center' }), 80);
+
+  if(scroll){
+    setTimeout(() => item.scrollIntoView({ behavior:'smooth', block:'center' }), 80);
+  }
 }
 
 function toggleAsIsActivity(event, index){
@@ -9456,9 +9586,31 @@ function updateAsIsPreview(){
 
   return asIsContract;
 }
+  
+function saveAsIsActivitiesCatalog(){
+  collectAsisActivities();
+  normalizeAllAsisBidirectionalConnections();
 
+  updateAsIsPreview();
+  updateTopStatus();
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+
+  renderAsIsActivities();
+  closeAllAsIsAccordions();
+
+  if(typeof showAsisMessage === 'function'){
+    showAsisMessage('ok', 'Catálogo de actividades guardado y JSON AS-IS actualizado.');
+  }
+}
+  
 function saveAsIsAndContinue(){
   const acts = collectAsisActivities();
+  normalizeAllAsisBidirectionalConnections();
   if(!acts.length){
     showMsg('asisBuilderMsg','warn','Agrega o carga al menos una actividad AS IS antes de continuar.');
     return;
@@ -14300,6 +14452,9 @@ function applyBriefToLmp(){
 
       if(typeof renderAsIsActivities === 'function'){
         renderAsIsActivities();
+        if(typeof closeAllAsIsAccordions === 'function'){
+  closeAllAsIsAccordions();
+}
         document.querySelectorAll('#asis details.activity-item').forEach(detail => {
   detail.removeAttribute('open');
 });
