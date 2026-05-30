@@ -5385,9 +5385,10 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     <div class="step-pill">Paso 4</div>
   </div>
 
-  <div class="cards">
+<div class="cards">
+  <div class="msg" id="asisBuilderMsg" style="grid-column:span 12;"></div>
 
-    <article class="card" id="asisQuickDashboardCard">
+  <article class="card" id="asisQuickDashboardCard">
       <h3>Resumen de AS-IS</h3>
       
       <div class="kpi-wrap" style="grid-template-columns:repeat(5,minmax(0,1fr));">
@@ -5458,7 +5459,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     <button class="btn-ok asis-add-inline-btn" onclick="addAsIsGlobalInputRow()" type="button">+ Agregar entrada</button>
   </div>
   <div class="actions-right">
-    <button class="btn" onclick="saveAsIsGlobalCatalogs()" type="button">Guardar catálogo</button>
+    <button class="btn" onclick="saveAsIsGlobalCatalogs('inputs')" type="button">Guardar catálogo</button>
   </div>
 </div>
       
@@ -5481,7 +5482,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     <button class="btn-ok asis-add-inline-btn" onclick="addAsIsGlobalOutputRow()" type="button">+ Agregar salida</button>
   </div>
   <div class="actions-right">
-    <button class="btn" onclick="saveAsIsGlobalCatalogs()" type="button">Guardar catálogo</button>
+    <button class="btn" onclick="saveAsIsGlobalCatalogs('outputs')" type="button">Guardar catálogo</button>
   </div>
 </div>
     </article>
@@ -8519,20 +8520,11 @@ const activity = {
 function saveAdditionalInformation(){
   collectAdditionalInformation();
 
-  updateAsIsPreview();
-  updateTopStatus();
+  refreshAsIsStructuralStatus();
 
-  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+  closeSingleAsIsAccordion('.asis-additional-accordion');
 
-  if(typeof renderLmpB1StructuralStatus === 'function'){
-    renderLmpB1StructuralStatus();
-  }
-
-  const msg = qs('asisBuilderMsg');
-  if(msg){
-    msg.className = 'msg show ok';
-    msg.textContent = 'Información adicional guardada y JSON AS-IS actualizado.';
-  }
+  showAsisMessage('ok', 'Información adicional guardada y actualizada.');
 }
 
 function collectAdditionalInformation(){
@@ -8918,23 +8910,24 @@ function syncAsIsGlobalCatalogs(rerenderActivities = false){
   }
 }
 
-function saveAsIsGlobalCatalogs(){
+function saveAsIsGlobalCatalogs(scope = ''){
   syncAsIsGlobalCatalogs(true);
 
-  updateAsIsPreview();
-  updateTopStatus();
+  refreshAsIsStructuralStatus();
 
-  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
-
-  if(typeof renderLmpB1StructuralStatus === 'function'){
-    renderLmpB1StructuralStatus();
+  if(scope === 'inputs'){
+    closeSingleAsIsAccordion('.asis-inputs-accordion');
+    showAsisMessage('ok', 'Catálogo de entradas y proveedores guardado y actualizado.');
+    return;
   }
 
-  closeAllAsIsAccordions();
-
-  if(typeof showAsisMessage === 'function'){
-    showAsisMessage('ok', 'Catálogo guardado y JSON AS-IS actualizado.');
+  if(scope === 'outputs'){
+    closeSingleAsIsAccordion('.asis-outputs-accordion');
+    showAsisMessage('ok', 'Catálogo de salidas y clientes guardado y actualizado.');
+    return;
   }
+
+  showAsisMessage('ok', 'Catálogo guardado y actualizado.');
 }
   
 function addAsIsGlobalInputRow(){
@@ -9308,21 +9301,13 @@ function saveAsisActivity(index){
     normalizeAllAsisBidirectionalConnections();
   }
 
-  updateAsIsPreview();
-  updateTopStatus();
-
-  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
-
-  if(typeof renderLmpB1StructuralStatus === 'function'){
-    renderLmpB1StructuralStatus();
-  }
+  refreshAsIsStructuralStatus();
 
   renderAsIsActivities();
-  closeAllAsIsAccordions();
 
-  if(typeof showAsisMessage === 'function'){
-    showAsisMessage('ok', 'Actividad guardada y conexiones actualizadas.');
-  }
+  closeSingleAsIsActivity(index);
+
+  showAsisMessage('ok', 'Actividad guardada y conexiones actualizadas.');
 }
 
 function syncAsisRow(index, fullUpdate = false){
@@ -9374,6 +9359,31 @@ function refreshAsIsActivitySummary(item, index){
   }
 }
 
+function closeSingleAsIsAccordion(selector){
+  const accordion = qs(selector);
+  if(accordion){
+    accordion.removeAttribute('open');
+  }
+}
+
+function closeSingleAsIsActivity(index){
+  const item = qs('asisActivities')?.querySelector(`details.activity-item[data-index="${index}"]`);
+  if(item){
+    item.removeAttribute('open');
+  }
+}
+
+function refreshAsIsStructuralStatus(){
+  updateAsIsPreview();
+  updateTopStatus();
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+}
+  
   function closeAllAsIsAccordions(){
   qsa('#asis details.asis-accordion').forEach(item => {
     item.removeAttribute('open');
@@ -9617,21 +9627,13 @@ function saveAsIsActivitiesCatalog(){
   collectAsisActivities();
   normalizeAllAsisBidirectionalConnections();
 
-  updateAsIsPreview();
-  updateTopStatus();
-
-  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
-
-  if(typeof renderLmpB1StructuralStatus === 'function'){
-    renderLmpB1StructuralStatus();
-  }
+  refreshAsIsStructuralStatus();
 
   renderAsIsActivities();
-  closeAllAsIsAccordions();
 
-  if(typeof showAsisMessage === 'function'){
-    showAsisMessage('ok', 'Catálogo de actividades guardado y JSON AS-IS actualizado.');
-  }
+  closeSingleAsIsAccordion('.asis-main-accordion');
+
+  showAsisMessage('ok', 'Catálogo de actividades guardado y actualizado.');
 }
   
 function saveAsIsAndContinue(){
