@@ -1487,6 +1487,12 @@ body.sgmp-v3-processing button:not(.sgmp-v3-allow),body.sgmp-v3-processing input
   box-shadow:0 8px 18px rgba(11,46,89,.055);
 }
 
+.asis-issue-toolbar{
+  display:flex;
+  justify-content:flex-end;
+  margin-bottom:10px;
+}
+
 .asis-issue-index{
   width:24px;
   height:24px;
@@ -8106,7 +8112,7 @@ function asisActivityTemplate(a, index){
 
               <div class="field w-3">
                 <label>Tipo</label>
-                <select class="a_type" onchange="syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index});">
+                <select class="a_type" onchange="handleAsIsActivityTypeChange(${index})">
                   <option value="actividad" ${type === 'actividad' ? 'selected' : ''}>Actividad</option>
                   <option value="decision" ${type === 'decision' ? 'selected' : ''}>Decisión</option>
                 </select>
@@ -9748,6 +9754,31 @@ function saveAsisActivity(index){
   showAsisMessage('ok', 'Actividad guardada y conexiones actualizadas.');
 }
 
+function handleAsIsActivityTypeChange(index){
+  syncAsisRow(index, true);
+
+  const activity = state.asis?.activities?.[index];
+  const type = normalizePromptAType(activity?.type || 'actividad');
+
+  if(type === 'decision'){
+    activity.document = '';
+    activity.estimated_time = '';
+    activity.inputs_used = [];
+    activity.outputs_generated = [];
+  }
+
+  if(typeof normalizeAllAsisBidirectionalConnections === 'function'){
+    normalizeAllAsisBidirectionalConnections();
+  }
+
+  if(typeof renderAsIsActivities === 'function'){
+    renderAsIsActivities();
+  }
+
+  openAsIsActivity(index, false);
+  refreshAsIsStructuralStatus();
+}
+  
 function syncAsisRow(index, fullUpdate = false){
   const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
   if(!item) return;
@@ -12683,52 +12714,103 @@ const invalidInputs = inputs.filter(value => !registeredInputs.has(lmpLower(valu
 const validOutputs = outputs.filter(value => registeredOutputs.has(lmpLower(value)));
 const invalidOutputs = outputs.filter(value => !registeredOutputs.has(lmpLower(value)));
 
-const hasInputConnection = previous.length > 0 || validInputs.length > 0;
-const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
+const normalizedType = normalizePromptAType(activity.type);
+const isDecision = normalizedType === 'decision';
 
-    if(lmpStructuralIsPending(activity.name)){
-      issues.push(lmpStructuralIssue(
-        'activity_without_name',
-        'critical',
-        `${base}.name`,
-        `${typeLabel} sin nombre`,
-        '',
-        { where: label, searchHint: activity.id || '' }
-      ));
-    }
+const hasInputConnection = isDecision
+  ? previous.length > 0
+  : previous.length > 0 || validInputs.length > 0;
 
-    if(lmpStructuralIsPending(activity.actor)){
-      issues.push(lmpStructuralIssue(
-        'activity_without_actor',
-        'critical',
-        `${base}.actor`,
-        `${typeLabel} sin actor`,
-        '',
-        { where: label, searchHint: activity.name || activity.id || '' }
-      ));
-    }
+const hasOutputConnection = isDecision
+  ? next.length > 0
+  : next.length > 0 || validOutputs.length > 0;
 
-    if(!hasInputConnection){
-      issues.push(lmpStructuralIssue(
-        'activity_without_input_connection',
-        'critical',
-        `${base}.previous / ${base}.inputs_used`,
-        `${typeLabel} sin entrada funcional`,
-        '',
-        { where: label, searchHint: activity.name || activity.id || '' }
-      ));
+if(lmpStructuralIsPending(activity.name)){
+  issues.push(lmpStructuralIssue(
+    'activity_without_name',
+    'critical',
+    `${base}.name`,
+    `${typeLabel} sin nombre`,
+    '',
+    {
+      where: label,
+      searchHint: activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'name'
     }
+  ));
+}
 
-    if(!hasOutputConnection){
-      issues.push(lmpStructuralIssue(
-        'activity_without_output_connection',
-        'critical',
-        `${base}.next / ${base}.outputs_generated`,
-        `${typeLabel} sin salida funcional`,
-        '',
-        { where: label, searchHint: activity.name || activity.id || '' }
-      ));
+if(lmpStructuralIsPending(activity.actor)){
+  issues.push(lmpStructuralIssue(
+    'activity_without_actor',
+    'critical',
+    `${base}.actor`,
+    `${typeLabel} sin actor`,
+    '',
+    {
+      where: label,
+      searchHint: activity.name || activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'actor'
     }
+  ));
+}
+
+if(!hasInputConnection && !hasOutputConnection){
+  issues.push(lmpStructuralIssue(
+    'activity_isolated',
+    'critical',
+    `${base}.previous / ${base}.next`,
+    `${typeLabel} aislada`,
+    '',
+    {
+      where: label,
+      searchHint: activity.name || activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'connections'
+    }
+  ));
+}
+
+else{
+  if(!hasInputConnection){
+    issues.push(lmpStructuralIssue(
+      isDecision ? 'decision_without_previous_activity' : 'activity_without_input_connection',
+      'critical',
+      isDecision ? `${base}.previous` : `${base}.previous / ${base}.inputs_used`,
+      isDecision ? 'Decisión sin actividad previa' : 'Actividad sin entrada funcional',
+      '',
+      {
+        where: label,
+        searchHint: activity.name || activity.id || '',
+        targetSection: 'activities',
+        targetIndex: index,
+        targetField: 'input_connection'
+      }
+    ));
+  }
+
+  if(!hasOutputConnection){
+    issues.push(lmpStructuralIssue(
+      isDecision ? 'decision_without_next_activity' : 'activity_without_output_connection',
+      'critical',
+      isDecision ? `${base}.next` : `${base}.next / ${base}.outputs_generated`,
+      isDecision ? 'Decisión sin actividad siguiente' : 'Actividad sin salida funcional',
+      '',
+      {
+        where: label,
+        searchHint: activity.name || activity.id || '',
+        targetSection: 'activities',
+        targetIndex: index,
+        targetField: 'output_connection'
+      }
+    ));
+  }
+}
 
         invalidInputs.forEach(input => {
       issues.push(lmpStructuralIssue(
@@ -12751,17 +12833,6 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
         { where: `${label} → ${output}`, searchHint: output }
       ));
     });
-    
-    if(!hasInputConnection && !hasOutputConnection){
-      issues.push(lmpStructuralIssue(
-        'activity_isolated',
-        'critical',
-        `${base}.previous / ${base}.next`,
-        `${typeLabel} aislada`,
-        '',
-        { where: label, searchHint: activity.name || activity.id || '' }
-      ));
-    }
   });
 
   suppliersInputs.forEach((row, index) => {
@@ -12775,7 +12846,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
         `as_is_process.suppliers_inputs[${index}].inputs`,
         'Proveedor sin entrada',
         '',
-        { where: supplier || `Proveedor ${index + 1}`, searchHint: supplier }
+        {   where: supplier || `Proveedor ${index + 1}`,   searchHint: supplier,   targetSection: 'suppliers_inputs',   targetIndex: index,   targetField: 'inputs' }
       ));
     }
 
@@ -12787,7 +12858,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
           `as_is_process.suppliers_inputs[${index}].supplier`,
           'Entrada sin proveedor',
           '',
-          { where: input || `Entrada ${index + 1}`, searchHint: input }
+          {   where: input || `Entrada ${index + 1}`,   searchHint: input,   targetSection: 'suppliers_inputs',   targetIndex: index,   targetField: 'supplier' }
         ));
       }
 
@@ -12798,7 +12869,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
           `as_is_process.suppliers_inputs[${index}].inputs`,
           'Entrada sin actividad receptora',
           '',
-          { where: input, searchHint: input }
+          {   where: input,   searchHint: input,   targetSection: 'suppliers_inputs',   targetIndex: index,   targetField: 'inputs' }
         ));
       }
     });
@@ -12815,7 +12886,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
         `as_is_process.outputs_customers[${index}].output`,
         'Cliente sin salida',
         '',
-        { where: customers.join(', ') || `Cliente ${index + 1}`, searchHint: customers.join(' ') }
+        {   where: customers.join(', ') || `Cliente ${index + 1}`,   searchHint: customers.join(' '),   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'output' }
       ));
     }
 
@@ -12826,7 +12897,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
         `as_is_process.outputs_customers[${index}].customers`,
         'Salida sin cliente',
         '',
-        { where: output || `Salida ${index + 1}`, searchHint: output }
+        {   where: output || `Salida ${index + 1}`,   searchHint: output,   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'customers' }
       ));
     }
 
@@ -12837,7 +12908,7 @@ const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
         `as_is_process.outputs_customers[${index}].output`,
         'Salida sin actividad generadora',
         '',
-        { where: output, searchHint: output }
+        {   where: output,   searchHint: output,   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'output' }
       ));
     }
   });
@@ -13298,11 +13369,20 @@ function renderLmpB1StructuralStatus(){
 
   if(kpi) kpi.textContent = issues.length;
 
-  if(list){
-    if(!issues.length){
-      list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
-    }else{
-      list.innerHTML = '<div class="asis-issue-list">' + issues.map((issue, index) => `
+if(list){
+  const refreshButton = `
+    <div class="asis-issue-toolbar">
+      <button class="brief-mini-btn" type="button" onclick="forceRefreshAsIsStructuralIssues()">
+        Actualizar vacíos
+      </button>
+    </div>
+  `;
+
+  if(!issues.length){
+    list.innerHTML = refreshButton + '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
+  }else{
+    
+      list.innerHTML = refreshButton + '<div class="asis-issue-list">' + issues.map((issue, index) => `
         <div class="asis-issue-row">
           <div class="asis-issue-index">${index + 1}</div>
           <div class="asis-issue-content">
@@ -13310,7 +13390,7 @@ function renderLmpB1StructuralStatus(){
             <span><b>Dónde:</b> ${escapeHtml(issue.where || issue.path || issue.field || 'pendiente_validacion')}</span>
           </div>
           <div class="asis-issue-action">
-            <button class="brief-mini-btn" type="button" onclick="focusAsisStructuralIssue('${escapeHtml(issue.searchHint || issue.affectedValue || issue.where || '')}')">Corregir</button>
+            <button   class="brief-mini-btn"   type="button"   onclick="focusAsisStructuralIssueByIssue(${index})" >Corregir</button>
           </div>
         </div>
       `).join('') + '</div>';
@@ -13320,6 +13400,157 @@ function renderLmpB1StructuralStatus(){
   return result;
 }
 
+function forceRefreshAsIsStructuralIssues(){
+  if(typeof syncAsIsGlobalCatalogs === 'function'){
+    syncAsIsGlobalCatalogs(false);
+  }
+
+  if(typeof collectAsisActivities === 'function'){
+    collectAsisActivities();
+  }
+
+  if(typeof normalizeAllAsisBidirectionalConnections === 'function'){
+    normalizeAllAsisBidirectionalConnections();
+  }
+
+  window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    renderLmpB1StructuralStatus();
+  }
+
+  if(typeof updateAsIsPreview === 'function'){
+    updateAsIsPreview();
+  }
+
+  if(typeof updateTopStatus === 'function'){
+    updateTopStatus();
+  }
+
+  if(typeof showAsisMessage === 'function'){
+    showAsisMessage('ok', 'Vacíos estructurales actualizados.');
+  }
+}
+
+function focusAsisStructuralIssueByIssue(issueIndex){
+  const issue = safeArray(window.__LMP_B1_STRUCTURAL_ISSUES__)[issueIndex];
+  if(!issue) return;
+
+  if(typeof showSection === 'function'){
+    showSection('asis');
+  }
+
+  const asisSection = qs('asis');
+  if(asisSection){
+    asisSection.classList.remove('asis-loading');
+  }
+
+  const section = issue.targetSection || '';
+  const index = Number.isInteger(issue.targetIndex) ? issue.targetIndex : null;
+  const field = issue.targetField || '';
+
+  const openParentDetails = element => {
+    let parent = element?.parentElement;
+    while(parent){
+      if(parent.tagName === 'DETAILS'){
+        parent.open = true;
+      }
+      parent = parent.parentElement;
+    }
+  };
+
+  const highlightTarget = element => {
+    if(!element) return false;
+
+    openParentDetails(element);
+
+    const row =
+      element.closest('.asis-catalog-table-row') ||
+      element.closest('.asis-global-input-row') ||
+      element.closest('.asis-global-output-row') ||
+      element.closest('.activity-item') ||
+      element.closest('.repeat-item') ||
+      element;
+
+    row.classList.add('asis-focus-highlight');
+    element.classList.add('asis-field-focus');
+
+    setTimeout(() => {
+      row.classList.remove('asis-focus-highlight');
+      element.classList.remove('asis-field-focus');
+    }, 2600);
+
+    row.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    });
+
+    if(typeof element.focus === 'function'){
+      setTimeout(() => element.focus(), 350);
+    }
+
+    return true;
+  };
+
+  if(section === 'activities' && index !== null){
+    const item = qs('asisActivities')?.querySelector(`.activity-item[data-index="${index}"]`);
+
+    if(item){
+      item.open = true;
+
+      let target = null;
+
+      if(field === 'name'){
+        target = item.querySelector('.a_name');
+      }else if(field === 'actor'){
+        target = item.querySelector('.a_actor');
+      }else if(field === 'input_connection'){
+        target =
+          item.querySelector('.a_previous_activity') ||
+          item.querySelector('.a_input_select') ||
+          item.querySelector('[data-dynamic-list="previous"] button') ||
+          item.querySelector('[data-dynamic-list="inputs"] button');
+      }else if(field === 'output_connection'){
+        target =
+          item.querySelector('.a_next_activity') ||
+          item.querySelector('.a_output_select') ||
+          item.querySelector('[data-dynamic-list="next"] button') ||
+          item.querySelector('[data-dynamic-list="outputs"] button');
+      }else{
+        target = item;
+      }
+
+      if(highlightTarget(target || item)) return;
+    }
+  }
+
+  if(section === 'suppliers_inputs' && index !== null){
+    const row = qs('asisGlobalInputs')?.querySelectorAll('.asis-catalog-table-row, .asis-global-input-row')[index];
+
+    if(row){
+      const target = field === 'supplier'
+        ? row.querySelector('.global_supplier')
+        : row.querySelector('.global_input');
+
+      if(highlightTarget(target || row)) return;
+    }
+  }
+
+  if(section === 'outputs_customers' && index !== null){
+    const row = qs('asisGlobalOutputs')?.querySelectorAll('.asis-catalog-table-row, .asis-global-output-row')[index];
+
+    if(row){
+      const target = field === 'output'
+        ? row.querySelector('.global_output')
+        : row.querySelector('.global_customer');
+
+      if(highlightTarget(target || row)) return;
+    }
+  }
+
+  focusAsisStructuralIssue(issue.searchHint || issue.affectedValue || issue.where || '');
+}
+  
 function focusAsisStructuralIssue(searchHint){
   const hint = normalizeContractString(searchHint || '');
   if(!hint) return;
