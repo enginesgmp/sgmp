@@ -5704,29 +5704,39 @@ function sgmpLoadPrompts(moduleCode, onReady) {
     });
 }
 
+function sgmpCleanKey(value){
+  return String(value || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .trim();
+}
+
 function sgmpRegisterPrompt(p) {
   if(!p) return;
 
-  const promptKey = String(
+  const promptKey = sgmpCleanKey(
     p.prompt_key ||
     p.promptKey ||
     p.prompt_code ||
     p.promptCode ||
     p.key ||
     ''
-  ).trim();
+  );
 
   if(!promptKey) return;
 
-  SGMP_PROMPTS[promptKey] = String(
+  const promptText = String(
     p.prompt_text ||
     p.promptText ||
     p.prompt ||
     p.text ||
     p.content ||
     ''
-  );
+  ).trim();
 
+  if(!promptText) return;
+
+  SGMP_PROMPTS[promptKey] = promptText;
   SGMP_PROMPT_META[promptKey] = p;
 
   var stageMap = {
@@ -5737,7 +5747,15 @@ function sgmpRegisterPrompt(p) {
     prompt_sb_contract_builder: 'lmp_sb_contract'
   };
 
-  var stage = p.stage_code || p.stageCode || p.stage || p.prompt_stage || stageMap[promptKey] || '';
+  var stage = sgmpCleanKey(
+    p.stage_code ||
+    p.stageCode ||
+    p.stage ||
+    p.prompt_stage ||
+    stageMap[promptKey] ||
+    ''
+  );
+
   if(stage) SGMP_STAGE_CONFIG[stage] = p;
 }
 
@@ -5758,7 +5776,6 @@ async function sgmpEnsurePromptsLoaded(moduleCode){
     const response = await fetch(url);
     const text = await response.text();
     const parsed = text ? JSON.parse(text) : {};
-
     const rows = Array.isArray(parsed?.data) ? parsed.data : [];
 
     rows.forEach(function(p){
@@ -5767,12 +5784,51 @@ async function sgmpEnsurePromptsLoaded(moduleCode){
       }
     });
 
+    if(!(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim())){
+      const fallbackPromptA = rows.find(function(p){
+        const key = sgmpCleanKey(p.prompt_key || p.promptKey || p.prompt_code || p.key || '');
+        const stage = sgmpCleanKey(p.stage_code || p.stageCode || p.stage || '');
+        const label = String(p.prompt_label || p.promptLabel || '').toLowerCase();
+        const text = String(p.prompt_text || p.promptText || p.prompt || p.text || '');
+
+        return (
+          key.toLowerCase() === 'prompt_a' ||
+          stage.toLowerCase() === 'prompt_a' ||
+          label.includes('prompt a') ||
+          (text.includes('{{MASTER_JSON}}') && text.includes('as_is_process'))
+        );
+      });
+
+      if(fallbackPromptA){
+        SGMP_PROMPTS.prompt_A = String(
+          fallbackPromptA.prompt_text ||
+          fallbackPromptA.promptText ||
+          fallbackPromptA.prompt ||
+          fallbackPromptA.text ||
+          ''
+        ).trim();
+
+        SGMP_PROMPT_META.prompt_A = fallbackPromptA;
+        SGMP_STAGE_CONFIG.prompt_A = fallbackPromptA;
+      }
+    }
+
     try {
       sessionStorage.setItem('sgmp_p_' + moduleCode, JSON.stringify(rows));
     } catch(e) {}
 
     if(!(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim())){
-      console.warn('PROMPTS cargados, pero no se encontró prompt_A.', rows);
+      console.warn('PROMPTS recibidos desde API, pero ninguno fue reconocido como prompt_A.', {
+        url,
+        total_rows: rows.length,
+        keys: rows.map(r => ({
+          module_code: r.module_code,
+          prompt_key: r.prompt_key,
+          stage_code: r.stage_code,
+          enabled: r.enabled,
+          label: r.prompt_label
+        }))
+      });
       return false;
     }
 
