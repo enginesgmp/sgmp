@@ -8290,15 +8290,21 @@ function renderAsisInputDatalistOptions(selectedValue){
   const selected = normalizeContractString(selectedValue || '');
   const catalog = flattenSuppliersInputsCatalog();
 
-  const options = catalog.map(row => {
-    const label = row.supplier
-      ? `${row.input} — ${row.supplier}`
-      : row.input;
+  const seen = new Set();
 
-    return `<option value="${escapeHtml(row.input)}" label="${escapeHtml(label)}"></option>`;
-  }).join('');
+  const options = catalog
+    .map(row => normalizeContractString(row.input || ''))
+    .filter(input => {
+      if(!input) return false;
+      const key = lmpLower(input);
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(input => `<option value="${escapeHtml(input)}"></option>`)
+    .join('');
 
-  const customSelected = selected && !catalog.some(row => lmpLower(row.input) === lmpLower(selected))
+  const customSelected = selected && !seen.has(lmpLower(selected))
     ? `<option value="${escapeHtml(selected)}"></option>`
     : '';
 
@@ -8384,15 +8390,21 @@ function renderAsisOutputDatalistOptions(selectedValue){
   const selected = normalizeContractString(selectedValue || '');
   const catalog = flattenOutputsCustomersCatalog();
 
-  const options = catalog.map(row => {
-    const label = row.customer
-      ? `${row.output} — ${row.customer}`
-      : row.output;
+  const seen = new Set();
 
-    return `<option value="${escapeHtml(row.output)}" label="${escapeHtml(label)}"></option>`;
-  }).join('');
+  const options = catalog
+    .map(row => normalizeContractString(row.output || ''))
+    .filter(output => {
+      if(!output) return false;
+      const key = lmpLower(output);
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(output => `<option value="${escapeHtml(output)}"></option>`)
+    .join('');
 
-  const customSelected = selected && !catalog.some(row => lmpLower(row.output) === lmpLower(selected))
+  const customSelected = selected && !seen.has(lmpLower(selected))
     ? `<option value="${escapeHtml(selected)}"></option>`
     : '';
 
@@ -9591,27 +9603,13 @@ function buildAsIsQuickDashboard(){
     activities.map(activity => activity.actor)
   );
 
-  const activityInputs = activities.flatMap(activity =>
-    normalizeActivityInputList(activity.inputs_used).map(row => row.input)
+  const catalogInputs = getUniqueNormalizedValues(
+    flattenSuppliersInputsCatalog().map(row => row.input)
   );
 
-  const catalogInputs = flattenSuppliersInputsCatalog().map(row => row.input);
-
-  const activityOutputs = activities.flatMap(activity =>
-    normalizeActivityOutputList(activity.outputs_generated).map(row => row.output)
+  const catalogOutputs = getUniqueNormalizedValues(
+    flattenOutputsCustomersCatalog().map(row => row.output)
   );
-
-  const catalogOutputs = flattenOutputsCustomersCatalog().map(row => row.output);
-
-  const inputs = getUniqueNormalizedValues([
-    ...catalogInputs,
-    ...activityInputs
-  ]);
-
-  const outputs = getUniqueNormalizedValues([
-    ...catalogOutputs,
-    ...activityOutputs
-  ]);
 
   const additionalInformation = safeArray(state.asis?.additional_information)
     .filter(info =>
@@ -9626,8 +9624,8 @@ function buildAsIsQuickDashboard(){
     activities: activities.length,
     decisions: activities.filter(activity => normalizePromptAType(activity.type) === 'decision').length,
     actors: actors.length,
-    inputs: inputs.length,
-    outputs: outputs.length,
+    inputs: catalogInputs.length,
+    outputs: catalogOutputs.length,
     additionalInformation: additionalInformation.length
   };
 }
@@ -12081,6 +12079,21 @@ function lmpStructuralValidator(input, options = {}){
   const usedInputs = getAsisUsedInputsSet(activities);
   const generatedOutputs = getAsisGeneratedOutputsSet(activities);
 
+  const registeredInputs = new Set(
+    suppliersInputs
+      .flatMap(row => safeArray(row.inputs))
+      .map(input => normalizeContractString(input || ''))
+      .filter(input => input && !lmpStructuralIsPending(input))
+      .map(input => lmpLower(input))
+  );
+
+  const registeredOutputs = new Set(
+    outputsCustomers
+      .map(row => normalizeContractString(row.output || ''))
+      .filter(output => output && !lmpStructuralIsPending(output))
+      .map(output => lmpLower(output))
+  );
+
   const issues = [];
 
   if(!activities.length){
@@ -12119,8 +12132,14 @@ const outputs = normalizeActivityOutputList(activity.outputs_generated || activi
   .map(row => normalizeContractString(row.output || ''))
   .filter(value => value && !lmpStructuralIsPending(value));
 
-const hasInputConnection = previous.length > 0 || inputs.length > 0;
-const hasOutputConnection = next.length > 0 || outputs.length > 0;
+const validInputs = inputs.filter(value => registeredInputs.has(lmpLower(value)));
+const invalidInputs = inputs.filter(value => !registeredInputs.has(lmpLower(value)));
+
+const validOutputs = outputs.filter(value => registeredOutputs.has(lmpLower(value)));
+const invalidOutputs = outputs.filter(value => !registeredOutputs.has(lmpLower(value)));
+
+const hasInputConnection = previous.length > 0 || validInputs.length > 0;
+const hasOutputConnection = next.length > 0 || validOutputs.length > 0;
 
     if(lmpStructuralIsPending(activity.name)){
       issues.push(lmpStructuralIssue(
@@ -12166,6 +12185,28 @@ const hasOutputConnection = next.length > 0 || outputs.length > 0;
       ));
     }
 
+        invalidInputs.forEach(input => {
+      issues.push(lmpStructuralIssue(
+        'activity_input_not_registered',
+        'critical',
+        `${base}.inputs_used`,
+        `${typeLabel} con entrada no registrada en catálogo`,
+        '',
+        { where: `${label} → ${input}`, searchHint: input }
+      ));
+    });
+
+    invalidOutputs.forEach(output => {
+      issues.push(lmpStructuralIssue(
+        'activity_output_not_registered',
+        'critical',
+        `${base}.outputs_generated`,
+        `${typeLabel} con salida no registrada en catálogo`,
+        '',
+        { where: `${label} → ${output}`, searchHint: output }
+      ));
+    });
+    
     if(!hasInputConnection && !hasOutputConnection){
       issues.push(lmpStructuralIssue(
         'activity_isolated',
