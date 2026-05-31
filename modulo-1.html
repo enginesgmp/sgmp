@@ -12310,7 +12310,7 @@ window.LMP_B1_WARNING_TAXONOMY = Object.freeze({
   catalog_consistency: {
     label: 'Inconsistencias de catálogo',
     description: 'Entradas, salidas, actores o documentos usados no coinciden con catálogos SIPOC.',
-    types: ['activity_input_not_registered','activity_output_not_registered','actor_not_in_catalog','document_not_in_catalog']
+    types: ['activity_input_not_registered','activity_output_not_registered','activity_actor_not_registered','actor_not_in_catalog','document_not_in_catalog']
   }
 });
 
@@ -12725,6 +12725,12 @@ function lmpStructuralValidator(input, options = {}){
       .filter(output => output && !lmpStructuralIsPending(output))
       .map(output => lmpLower(output))
   );
+  const registeredActors = new Set(
+  getAsIsActorCatalog()
+    .map(row => normalizeContractString(row.name || ''))
+    .filter(actor => actor && !lmpStructuralIsPending(actor))
+    .map(actor => lmpLower(actor))
+);
 const registeredActivityNames = new Set(
   activities
     .map(activity => normalizeContractString(activity.name || ''))
@@ -12828,6 +12834,26 @@ if(lmpStructuralIsPending(activity.actor)){
   ));
 }
 
+if(
+  !lmpStructuralIsPending(activity.actor) &&
+  !registeredActors.has(lmpLower(normalizeContractString(activity.actor || '')))
+){
+  issues.push(lmpStructuralIssue(
+    'activity_actor_not_registered',
+    'critical',
+    `${base}.actor`,
+    `${typeLabel} con actor no registrado en catálogo`,
+    '',
+    {
+      where: `${label} → ${activity.actor}`,
+      searchHint: activity.name || activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'actor_reference'
+    }
+  ));
+}
+    
 if(!hasInputConnection && !hasOutputConnection){
   issues.push(lmpStructuralIssue(
     'activity_isolated',
@@ -13624,7 +13650,7 @@ const field = issue.targetField || issueData.targetField || '';
 if(field === 'name'){
   target = item.querySelector('.a_name');
 
-}else if(field === 'actor'){
+}else if(field === 'actor' || field === 'actor_reference'){
   target = item.querySelector('.a_actor');
 
 }else if(field === 'activity_input_reference'){
