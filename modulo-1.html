@@ -5742,6 +5742,28 @@ function sgmpRegisterPrompt(p) {
 }
 
 // Obtener prompt — nunca falla, devuelve fallback si no hay nada
+  function sgmpEnsurePromptsLoaded(moduleCode){
+  return new Promise(function(resolve){
+    try{
+      if(SGMP_PROMPTS && SGMP_PROMPTS.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()){
+        resolve(true);
+        return;
+      }
+
+      try {
+        sessionStorage.removeItem('sgmp_p_' + moduleCode);
+      } catch(e) {}
+
+      sgmpLoadPrompts(moduleCode, function(){
+        resolve(!!(SGMP_PROMPTS.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()));
+      });
+    }catch(error){
+      console.warn('No fue posible asegurar carga de prompts SGMP.', error);
+      resolve(false);
+    }
+  });
+}
+  
 function sgmpPrompt(key, fallback) {
   return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
 }
@@ -13366,11 +13388,15 @@ async function runPromptAWithAI(){
       throw new Error('No existe consolidado temporal para ejecutar Prompt A.');
     }
 
-    if(typeof sgmpLoadRuntimeConfig === 'function'){
-      await sgmpLoadRuntimeConfig();
-    }
+    if(typeof sgmpEnsurePromptsLoaded === 'function'){
+  await sgmpEnsurePromptsLoaded('LMP');
+}
 
-    const prompt = buildPromptAPrompt(payload);
+if(typeof sgmpLoadRuntimeConfig === 'function'){
+  await sgmpLoadRuntimeConfig();
+}
+
+const prompt = buildPromptAPrompt(payload);
 
     if(!prompt || !String(prompt).trim()){
       throw new Error('No se pudo construir Prompt A desde Google Sheets/API.');
