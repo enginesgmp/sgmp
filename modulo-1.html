@@ -6728,7 +6728,15 @@ if(current === 'carga'){
    RUTAS DE INICIO
 ========================= */
 function selectRoute(route){
-  state.metadata.route = route;
+  state.metadata = state.metadata || {};
+
+  if(route === 'new' || route === 'doc'){
+    state.metadata.route = route;
+    state.metadata.workRoute = route;
+    state.metadata.loadMode = null;
+  }else if(route === 'backup' || route === 'resume' || route === 'update'){
+    state.metadata.loadMode = route;
+  }
 
   qsa('.route-card').forEach(c => c.classList.remove('active'));
 
@@ -7264,6 +7272,55 @@ function applySingleInstrumentJson(parsed, type){
   return state.asis.activities?.length || state.master?.activities?.length || 0;
 }
 
+function resolveLmpWorkRouteFromBackup(parsed){
+  const directRoute = String(
+    parsed?.metadata?.route ||
+    parsed?.metadata?.workRoute ||
+    parsed?.route ||
+    ''
+  ).trim();
+
+  if(['new', 'doc'].includes(directRoute)){
+    return directRoute;
+  }
+
+  const sourceRoute = String(
+    parsed?.asIsProcess?.as_is_process?.source_route ||
+    parsed?.asis?.source_route ||
+    parsed?.as_is_process?.source_route ||
+    ''
+  ).trim();
+
+  if(sourceRoute === 'existing_documented_process'){
+    return 'doc';
+  }
+
+  if(sourceRoute === 'new_process'){
+    return 'new';
+  }
+
+  const loads = parsed?.loads || {};
+
+  const hasDocumentedInputs =
+    safeArray(loads.sipoc).length ||
+    safeArray(loads.statusInterview).length;
+
+  const hasNewProcessInputs =
+    safeArray(loads.pre).length ||
+    safeArray(loads.interview).length ||
+    safeArray(loads.interviewTranscript).length;
+
+  if(hasDocumentedInputs && !hasNewProcessInputs){
+    return 'doc';
+  }
+
+  if(hasNewProcessInputs && !hasDocumentedInputs){
+    return 'new';
+  }
+
+  return 'new';
+}
+  
 async function loadRouteJson(mode){
   const input = qs('resumeFile');
   const file = input.files[0];
@@ -7277,11 +7334,18 @@ async function loadRouteJson(mode){
     const importType = detectLmpImportType(parsed);
     let detectedActivities = 0;
 
-    if(importType === 'LMP_BACKUP'){
-      mergeLoadedState(parsed);
-      state.metadata.route = parsed?.metadata?.route || 'backup';
-      detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
-    }
+if(importType === 'LMP_BACKUP'){
+  const resolvedRoute = resolveLmpWorkRouteFromBackup(parsed);
+
+  mergeLoadedState(parsed);
+
+  state.metadata = state.metadata || {};
+  state.metadata.route = resolvedRoute;
+  state.metadata.workRoute = resolvedRoute;
+  state.metadata.loadMode = mode || 'backup';
+
+  detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
+}
     else if(importType === 'JSON_MAESTRO_PROCESO'){
       detectedActivities = applyJsonMaestroProceso(parsed);
     }
@@ -7291,11 +7355,18 @@ async function loadRouteJson(mode){
     else if(['ENTREVISTA_JSON','CUESTIONARIO_JSON','SIPOC_JSON'].includes(importType)){
       detectedActivities = applySingleInstrumentJson(parsed, importType);
     }
-    else{
-      mergeLoadedState(parsed);
-      state.metadata.route = parsed?.metadata?.route || 'backup';
-      detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
-    }
+else{
+  const resolvedRoute = resolveLmpWorkRouteFromBackup(parsed);
+
+  mergeLoadedState(parsed);
+
+  state.metadata = state.metadata || {};
+  state.metadata.route = resolvedRoute;
+  state.metadata.workRoute = resolvedRoute;
+  state.metadata.loadMode = mode || 'backup';
+
+  detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
+}
 
     renderAllFromState();
     updateTopStatus();
@@ -7587,6 +7658,15 @@ function mergeLoadedState(loaded){
   if(!state.metadata) state.metadata = {};
   if(!state.metadata.currentStage) state.metadata.currentStage = 'inicio';
 
+  const resolvedRoute = resolveLmpWorkRouteFromBackup(loaded);
+
+state.metadata.route = resolvedRoute;
+state.metadata.workRoute = resolvedRoute;
+
+if(!state.metadata.loadMode){
+  state.metadata.loadMode = 'backup';
+}
+  
   cleanEmptyAsisActivities();
 }
 
@@ -11574,6 +11654,14 @@ function syncVisibleStage(){
 function downloadBackup(){
   syncVisibleStage();
   cleanEmptyAsisActivities();
+
+  state.metadata = state.metadata || {};
+
+  const resolvedRoute = resolveLmpWorkRouteFromBackup(state);
+
+  state.metadata.route = resolvedRoute;
+  state.metadata.workRoute = resolvedRoute;
+  state.metadata.lastSavedAt = new Date().toISOString();
 
   const backup = JSON.stringify(state, null, 2);
   downloadText('lmp_respaldo.json', backup, 'application/json;charset=utf-8');
@@ -18449,6 +18537,18 @@ function renderAllFromState(){
   cleanEmptyAsisActivities();
 
   updateTopStatus();
+
+  if(typeof updatePreparationArtifactsByRoute === 'function'){
+  updatePreparationArtifactsByRoute();
+}
+
+if(typeof updateCargaInputsByRoute === 'function'){
+  updateCargaInputsByRoute();
+}
+
+if(typeof refreshCargaFlowState === 'function'){
+  refreshCargaFlowState();
+}
 
   if(typeof hydrateContextFromState === 'function'){
     hydrateContextFromState();
