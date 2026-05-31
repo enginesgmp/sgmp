@@ -3728,7 +3728,25 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
   background:#9F2A24;
   transform:translateY(-1px);
 }
-  
+.asis-issue-toolbar{
+  display:flex;
+  justify-content:flex-end;
+  margin-top:12px;
+  margin-bottom:0;
+}
+
+.asis-issue-toolbar .brief-mini-btn{
+  background:rgba(192,57,43,.07) !important;
+  color:#8A2E23 !important;
+  border:1px solid rgba(192,57,43,.20) !important;
+  box-shadow:none !important;
+}
+
+.asis-issue-toolbar .brief-mini-btn:hover{
+  background:rgba(192,57,43,.11) !important;
+  border-color:rgba(192,57,43,.32) !important;
+  color:#8A2E23 !important;
+} 
 </style>
 </head>
 <body>
@@ -12407,10 +12425,15 @@ function lmpStructuralIssue(code, level, path, title, suggestion, extra = {}){
     level,
     path,
     title: normalizeContractString(title || ''),
-    suggestion: '',
+    suggestion: normalizeContractString(suggestion || ''),
     where: normalizeContractString(extra.where || path || ''),
     searchHint: normalizeContractString(extra.searchHint || extra.affectedValue || ''),
     affectedValue: normalizeContractString(extra.affectedValue || ''),
+
+    targetSection: extra.targetSection || '',
+    targetIndex: Number.isInteger(extra.targetIndex) ? extra.targetIndex : null,
+    targetField: extra.targetField || '',
+
     data: extra || {}
   };
 }
@@ -12669,7 +12692,12 @@ function lmpStructuralValidator(input, options = {}){
       .filter(output => output && !lmpStructuralIsPending(output))
       .map(output => lmpLower(output))
   );
-
+const registeredActivityNames = new Set(
+  activities
+    .map(activity => normalizeContractString(activity.name || ''))
+    .filter(name => name && !lmpStructuralIsPending(name))
+    .map(name => lmpLower(name))
+);
   const issues = [];
 
   if(!activities.length){
@@ -12688,17 +12716,25 @@ function lmpStructuralValidator(input, options = {}){
     const label = activity.name || activity.id || `Actividad ${index + 1}`;
     const typeLabel = normalizePromptAType(activity.type) === 'decision' ? 'Decisión' : 'Actividad';
 
-const previous = normalizeActivityConnectionList(activity.previous)
+const previousRaw = normalizeActivityConnectionList(activity.previous)
   .filter(row => {
     const value = normalizeContractString(row.activity);
     return value && !lmpStructuralIsPending(value);
   });
 
-const next = normalizeActivityConnectionList(activity.next)
+const nextRaw = normalizeActivityConnectionList(activity.next)
   .filter(row => {
     const value = normalizeContractString(row.activity);
     return value && !lmpStructuralIsPending(value);
   });
+
+const previous = previousRaw.filter(row =>
+  registeredActivityNames.has(lmpLower(row.activity))
+);
+
+const next = nextRaw.filter(row =>
+  registeredActivityNames.has(lmpLower(row.activity))
+);
 
 const inputs = normalizeActivityInputList(activity.inputs_used || activity.ext_inputs || [])
   .map(row => normalizeContractString(row.input || ''))
@@ -12812,28 +12848,39 @@ else{
   }
 }
 
-        invalidInputs.forEach(input => {
-      issues.push(lmpStructuralIssue(
-        'activity_input_not_registered',
-        'critical',
-        `${base}.inputs_used`,
-        `${typeLabel} con entrada no registrada en catálogo`,
-        '',
-        { where: `${label} → ${input}`, searchHint: input }
-      ));
-    });
+invalidInputs.forEach(input => {
+  issues.push(lmpStructuralIssue(
+    'activity_input_not_registered',
+    'critical',
+    `${base}.inputs_used`,
+    `${typeLabel} con entrada no registrada en catálogo`,
+    '',
+    {
+      where: `${label} → ${input}`,
+      searchHint: activity.name || activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'input_connection'
+    }
+  ));
+});
 
-    invalidOutputs.forEach(output => {
-      issues.push(lmpStructuralIssue(
-        'activity_output_not_registered',
-        'critical',
-        `${base}.outputs_generated`,
-        `${typeLabel} con salida no registrada en catálogo`,
-        '',
-        { where: `${label} → ${output}`, searchHint: output }
-      ));
-    });
-  });
+invalidOutputs.forEach(output => {
+  issues.push(lmpStructuralIssue(
+    'activity_output_not_registered',
+    'critical',
+    `${base}.outputs_generated`,
+    `${typeLabel} con salida no registrada en catálogo`,
+    '',
+    {
+      where: `${label} → ${output}`,
+      searchHint: activity.name || activity.id || '',
+      targetSection: 'activities',
+      targetIndex: index,
+      targetField: 'output_connection'
+    }
+  ));
+});
 
   suppliersInputs.forEach((row, index) => {
     const supplier = normalizeContractString(row.supplier || '');
@@ -13378,11 +13425,12 @@ if(list){
     </div>
   `;
 
-  if(!issues.length){
-    list.innerHTML = refreshButton + '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>';
-  }else{
-    
-      list.innerHTML = refreshButton + '<div class="asis-issue-list">' + issues.map((issue, index) => `
+if(!issues.length){
+  list.innerHTML = '<div class="brief-empty-state">Sin vacíos estructurales detectados.</div>' + refreshButton;
+}else{
+  
+    list.innerHTML = '<div class="asis-issue-list">' + issues.map((issue, index) => `
+      
         <div class="asis-issue-row">
           <div class="asis-issue-index">${index + 1}</div>
           <div class="asis-issue-content">
@@ -13393,7 +13441,7 @@ if(list){
             <button   class="brief-mini-btn"   type="button"   onclick="focusAsisStructuralIssueByIssue(${index})" >Corregir</button>
           </div>
         </div>
-      `).join('') + '</div>';
+      `).join('') + '</div>' + refreshButton;
     }
   }
 
@@ -13413,14 +13461,18 @@ function forceRefreshAsIsStructuralIssues(){
     normalizeAllAsisBidirectionalConnections();
   }
 
+  if(typeof updateAsIsPreview === 'function'){
+    updateAsIsPreview();
+  }
+
   window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
 
   if(typeof renderLmpB1StructuralStatus === 'function'){
     renderLmpB1StructuralStatus();
   }
 
-  if(typeof updateAsIsPreview === 'function'){
-    updateAsIsPreview();
+  if(typeof renderAsIsQuickDashboard === 'function'){
+    renderAsIsQuickDashboard();
   }
 
   if(typeof updateTopStatus === 'function'){
@@ -13445,9 +13497,16 @@ function focusAsisStructuralIssueByIssue(issueIndex){
     asisSection.classList.remove('asis-loading');
   }
 
-  const section = issue.targetSection || '';
-  const index = Number.isInteger(issue.targetIndex) ? issue.targetIndex : null;
-  const field = issue.targetField || '';
+const issueData = issue.data || {};
+
+const section = issue.targetSection || issueData.targetSection || '';
+const index = Number.isInteger(issue.targetIndex)
+  ? issue.targetIndex
+  : Number.isInteger(issueData.targetIndex)
+    ? issueData.targetIndex
+    : null;
+
+const field = issue.targetField || issueData.targetField || '';
 
   const openParentDetails = element => {
     let parent = element?.parentElement;
@@ -13524,29 +13583,29 @@ function focusAsisStructuralIssueByIssue(issueIndex){
     }
   }
 
-  if(section === 'suppliers_inputs' && index !== null){
-    const row = qs('asisGlobalInputs')?.querySelectorAll('.asis-catalog-table-row, .asis-global-input-row')[index];
+if(section === 'suppliers_inputs' && index !== null){
+  const row = qs('asisGlobalInputs')?.querySelectorAll('.asis-global-input-row')[index];
 
-    if(row){
-      const target = field === 'supplier'
-        ? row.querySelector('.global_supplier')
-        : row.querySelector('.global_input');
+  if(row){
+    const target = field === 'supplier'
+      ? row.querySelector('.global_input_supplier')
+      : row.querySelector('.global_input_name');
 
-      if(highlightTarget(target || row)) return;
-    }
+    if(highlightTarget(target || row)) return;
   }
+}
 
-  if(section === 'outputs_customers' && index !== null){
-    const row = qs('asisGlobalOutputs')?.querySelectorAll('.asis-catalog-table-row, .asis-global-output-row')[index];
+if(section === 'outputs_customers' && index !== null){
+  const row = qs('asisGlobalOutputs')?.querySelectorAll('.asis-global-output-row')[index];
 
-    if(row){
-      const target = field === 'output'
-        ? row.querySelector('.global_output')
-        : row.querySelector('.global_customer');
+  if(row){
+    const target = field === 'output'
+      ? row.querySelector('.global_output_name')
+      : row.querySelector('.global_output_customer');
 
-      if(highlightTarget(target || row)) return;
-    }
+    if(highlightTarget(target || row)) return;
   }
+}
 
   focusAsisStructuralIssue(issue.searchHint || issue.affectedValue || issue.where || '');
 }
