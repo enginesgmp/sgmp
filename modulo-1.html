@@ -12648,6 +12648,44 @@ function getAsisGeneratedOutputsSet(activities){
 
   return set;
 }
+
+function findOutputCustomerUiRowIndex(outputValue = '', customerValue = ''){
+  const targetOutput = normalizeContractString(outputValue || '');
+  const targetCustomer = normalizeContractString(customerValue || '');
+
+  const rows = flattenOutputsCustomersCatalog();
+
+  const isSame = (a, b) => lmpLower(normalizeContractString(a || '')) === lmpLower(normalizeContractString(b || ''));
+
+  let index = rows.findIndex(row => {
+    const rowOutput = normalizeContractString(row.output || '');
+    const rowCustomer = normalizeContractString(row.customer || '');
+
+    const outputMatches = targetOutput
+      ? isSame(rowOutput, targetOutput)
+      : lmpStructuralIsPending(rowOutput);
+
+    const customerMatches = targetCustomer
+      ? isSame(rowCustomer, targetCustomer)
+      : true;
+
+    return outputMatches && customerMatches;
+  });
+
+  if(index >= 0) return index;
+
+  if(targetOutput){
+    index = rows.findIndex(row => isSame(row.output, targetOutput));
+    if(index >= 0) return index;
+  }
+
+  if(targetCustomer){
+    index = rows.findIndex(row => isSame(row.customer, targetCustomer));
+    if(index >= 0) return index;
+  }
+
+  return null;
+}
   
 function lmpStructuralValidator(input, options = {}){
   const source = input || {};
@@ -12916,38 +12954,65 @@ invalidOutputs.forEach(output => {
     const output = normalizeContractString(row.output || '');
     const customers = safeArray(row.customers).map(normalizeContractString).filter(Boolean);
 
-    if(lmpStructuralIsPending(output)){
-      issues.push(lmpStructuralIssue(
-        'customer_without_output',
-        'critical',
-        `as_is_process.outputs_customers[${index}].output`,
-        'Cliente sin salida',
-        '',
-        {   where: customers.join(', ') || `Cliente ${index + 1}`,   searchHint: customers.join(' '),   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'output' }
-      ));
-    }
+if(lmpStructuralIsPending(output)){
+  const firstCustomer = customers.find(customer => !lmpStructuralIsPending(customer)) || customers[0] || '';
+  const uiIndex = findOutputCustomerUiRowIndex('', firstCustomer);
 
-    if(customers.some(customer => lmpStructuralIsPending(customer)) || !customers.length){
-      issues.push(lmpStructuralIssue(
-        'output_without_customer',
-        'critical',
-        `as_is_process.outputs_customers[${index}].customers`,
-        'Salida sin cliente',
-        '',
-        {   where: output || `Salida ${index + 1}`,   searchHint: output,   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'customers' }
-      ));
+  issues.push(lmpStructuralIssue(
+    'customer_without_output',
+    'critical',
+    `as_is_process.outputs_customers[${index}].output`,
+    'Cliente sin salida',
+    '',
+    {
+      where: customers.join(', ') || `Cliente ${index + 1}`,
+      searchHint: customers.join(' '),
+      targetSection: 'outputs_customers',
+      targetIndex: uiIndex !== null ? uiIndex : index,
+      targetField: 'output'
     }
+  ));
+}
 
-    if(output && !lmpStructuralIsPending(output) && !generatedOutputs.has(lmpLower(output))){
-      issues.push(lmpStructuralIssue(
-        'output_without_generating_activity',
-        'critical',
-        `as_is_process.outputs_customers[${index}].output`,
-        'Salida sin actividad generadora',
-        '',
-        {   where: output,   searchHint: output,   targetSection: 'outputs_customers',   targetIndex: index,   targetField: 'output' }
-      ));
+if(customers.some(customer => lmpStructuralIsPending(customer)) || !customers.length){
+  const pendingCustomer = customers.find(customer => lmpStructuralIsPending(customer)) || '';
+  const uiIndex = findOutputCustomerUiRowIndex(output, pendingCustomer);
+
+  issues.push(lmpStructuralIssue(
+    'output_without_customer',
+    'critical',
+    `as_is_process.outputs_customers[${index}].customers`,
+    'Salida sin cliente',
+    '',
+    {
+      where: output || `Salida ${index + 1}`,
+      searchHint: output,
+      targetSection: 'outputs_customers',
+      targetIndex: uiIndex !== null ? uiIndex : index,
+      targetField: 'customers'
     }
+  ));
+}
+
+if(output && !lmpStructuralIsPending(output) && !generatedOutputs.has(lmpLower(output))){
+  const firstCustomer = customers.find(customer => !lmpStructuralIsPending(customer)) || '';
+  const uiIndex = findOutputCustomerUiRowIndex(output, firstCustomer);
+
+  issues.push(lmpStructuralIssue(
+    'output_without_generating_activity',
+    'critical',
+    `as_is_process.outputs_customers[${index}].output`,
+    'Salida sin actividad generadora',
+    '',
+    {
+      where: output,
+      searchHint: output,
+      targetSection: 'outputs_customers',
+      targetIndex: uiIndex !== null ? uiIndex : index,
+      targetField: 'output'
+    }
+  ));
+}
   });
 
   const blockingIssues = issues.filter(issue => issue.level === 'critical');
