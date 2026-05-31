@@ -8038,7 +8038,7 @@ function asisActivityTemplate(a, index){
     value="${escapeHtml(safe.actor || '')}"
     placeholder="Buscar o seleccionar actor interno"
     onfocus="lmpOpenSearchPanel(this, 'actor', ${index})"
-    oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+    oninput="lmpSearchInputChanged(this)"
     onchange="lmpValidateSearchSelection(this, 'actor', ${index}); syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index})"
     onblur="lmpValidateSearchSelection(this, 'actor', ${index}); syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index})"
   />
@@ -8372,15 +8372,16 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 
     return `
       <div class="asis-line-row ${classPrefix}_row" data-row="${rowIndex}">
-        <input
-          class="${classPrefix}_activity asis-line-select lmp-search-input"
-          value="${escapeHtml(activityValue)}"
-          placeholder="Buscar o seleccionar actividad"
-          onfocus="lmpOpenSearchPanel(this, 'activity', ${index})"
-          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-          onchange="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
-          onblur="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
-        />
+      
+<input
+  class="${classPrefix}_activity asis-line-select lmp-search-input"
+  value="${escapeHtml(activityValue)}"
+  placeholder="Buscar o seleccionar actividad"
+  onfocus="lmpOpenSearchPanel(this, 'activity', ${index})"
+  oninput="lmpSearchInputChanged(this)"
+  onchange="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
+  onblur="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
+/>
 
         <input
           class="${classPrefix}_connector asis-line-tag"
@@ -8473,7 +8474,7 @@ function renderActivityInputRows(list, index){
           value="${escapeHtml(inputValue || '')}"
           placeholder="Buscar entrada o proveedor"
           onfocus="lmpOpenSearchPanel(this, 'input', ${index})"
-          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+          oninput="lmpSearchInputChanged(this)"
           onchange="lmpValidateSearchSelection(this, 'input', ${index}); syncAsisRow(${index})"
           onblur="lmpValidateSearchSelection(this, 'input', ${index}); syncAsisRow(${index})"
         />
@@ -8569,7 +8570,7 @@ function renderActivityOutputRows(list, index){
           value="${escapeHtml(outputValue || '')}"
           placeholder="Buscar salida o cliente"
           onfocus="lmpOpenSearchPanel(this, 'output', ${index})"
-          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+          oninput="lmpSearchInputChanged(this)"
           onchange="lmpValidateSearchSelection(this, 'output', ${index}); syncAsisRow(${index})"
           onblur="lmpValidateSearchSelection(this, 'output', ${index}); syncAsisRow(${index})"
         />
@@ -14511,32 +14512,49 @@ function normalizePromptAAsIsProcess(payload){
   const root = payload?.as_is_process ? payload : { as_is_process: payload };
   const p = root.as_is_process || {};
 
+  const normalizedActivities = safeArray(p.activities)
+    .map((activity, index) => normalizePromptAActivity(activity, index))
+    .filter(activity => activity.name);
+
+  const normalizedActorsCatalog = normalizeAsIsActorsCatalog(
+    safeArray(p.actors_catalog).length
+      ? p.actors_catalog
+      : safeArray(p.actors).length
+        ? p.actors
+        : normalizedActivities.map(activity => activity.actor)
+  );
+
   return {
     as_is_process: {
       source_route: String(p.source_route || 'pending_validation').trim(),
-      activities: safeArray(p.activities)
-        .map((activity, index) => normalizePromptAActivity(activity, index))
-        .filter(activity => activity.name),
+
+      actors: normalizedActorsCatalog.map(row => row.name),
+      actors_catalog: normalizedActorsCatalog,
+
+      activities: normalizedActivities,
+
       suppliers_inputs: safeArray(p.suppliers_inputs || p.suppliersInputs).map(row => ({
         supplier: String(row?.supplier || 'pendiente_validacion').trim(),
         inputs: normalizePromptAList(row?.inputs),
         source: String(row?.source || 'prompt_a').trim(),
         editable: row?.editable !== false
       })),
+
       outputs_customers: safeArray(p.outputs_customers || p.outputsCustomers).map(row => ({
         output: String(row?.output || 'pendiente_validacion').trim(),
         customers: normalizePromptAList(row?.customers),
         source: String(row?.source || 'prompt_a').trim(),
         editable: row?.editable !== false
       })),
+
       additional_information: safeArray(p.additional_information || p.additionalInformation).map(item => ({
-  title: String(item?.title || 'Información adicional').trim(),
-  type: String(item?.type || 'nota_contextual').trim(),
-  related_activity: String(item?.related_activity || item?.relatedActivity || '').trim(),
-  content: String(item?.content || '').trim(),
-  source: String(item?.source || 'pendiente_validacion').trim(),
-  editable: item?.editable !== false
-}))
+        title: String(item?.title || 'Información adicional').trim(),
+        type: String(item?.type || 'nota_contextual').trim(),
+        related_activity: String(item?.related_activity || item?.relatedActivity || '').trim(),
+        content: String(item?.content || '').trim(),
+        source: String(item?.source || 'pendiente_validacion').trim(),
+        editable: item?.editable !== false
+      }))
     }
   };
 }
@@ -14689,10 +14707,19 @@ function applyPromptAAsIsProcess(asIsPayload){
 
   state.asIsProcess = asIsPayload;
 
-  state.asis = state.asis || {};
-  state.asis.suppliers_inputs = normalizeSuppliersInputsCatalog(p.suppliers_inputs);
-  state.asis.outputs_customers = normalizeOutputsCustomersCatalog(p.outputs_customers);
-  state.asis.additional_information = safeArray(p.additional_information);
+state.asis = state.asis || {};
+
+state.asis.actors_catalog = normalizeAsIsActorsCatalog(
+  safeArray(p.actors_catalog).length
+    ? p.actors_catalog
+    : safeArray(p.actors).length
+      ? p.actors
+      : safeArray(p.activities).map(activity => activity.actor)
+);
+
+state.asis.suppliers_inputs = normalizeSuppliersInputsCatalog(p.suppliers_inputs);
+state.asis.outputs_customers = normalizeOutputsCustomersCatalog(p.outputs_customers);
+state.asis.additional_information = safeArray(p.additional_information);
 
   state.asis.activities = safeArray(p.activities).map((activity, index) => ({
     id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
