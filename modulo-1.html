@@ -2584,7 +2584,27 @@ border-left:5px solid #8ED3E8 !important;
 #asis.asis-loading .asis-save-row{
   display:none !important;
 }
+/* AS-IS · Actores del proceso alineado visualmente con catálogos */
+.asis-actors-accordion > summary{
+  border-left:5px solid #7C3AED !important;
+  background:linear-gradient(135deg, #F8F5FF, #F1EAFF) !important;
+}
 
+.asis-actors-accordion[open] > summary{
+  border-bottom:1px solid rgba(124,58,237,.16) !important;
+}
+
+.asis-actors-accordion > summary::after{
+  background:rgba(124,58,237,.10) !important;
+  border-color:rgba(124,58,237,.22) !important;
+  color:#4C1D95 !important;
+}
+
+.asis-actors-accordion[open] > summary::after{
+  background:rgba(124,58,237,.08) !important;
+  border-color:rgba(124,58,237,.18) !important;
+  color:#4C1D95 !important;
+}
   /* AS-IS · Información adicional como bloque secundario gris */
 .asis-additional-accordion > summary{
   background:#FAFCFF !important;
@@ -8019,7 +8039,8 @@ function asisActivityTemplate(a, index){
     placeholder="Buscar o seleccionar actor interno"
     onfocus="lmpOpenSearchPanel(this, 'actor', ${index})"
     oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-    onchange="syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index})"
+    onchange="lmpValidateSearchSelection(this, 'actor', ${index}); syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index})"
+    onblur="lmpValidateSearchSelection(this, 'actor', ${index}); syncAsisRow(${index}); refreshAsIsActivitySummary(this.closest('.activity-item'), ${index})"
   />
 </div>
 
@@ -8347,27 +8368,26 @@ function renderActivityConnectionsRows(list, classPrefix, index, mode){
 
   return rows.map((row, rowIndex) => {
     const activityValue = normalizeContractString(row.activity || '');
-    const listId = `${classPrefix}_activity_options_${index}_${rowIndex}`;
+    const connectorValue = normalizeContractString(row.connector || '');
 
     return `
       <div class="asis-line-row ${classPrefix}_row" data-row="${rowIndex}">
         <input
-          class="${classPrefix}_activity asis-line-select"
-          list="${listId}"
+          class="${classPrefix}_activity asis-line-select lmp-search-input"
           value="${escapeHtml(activityValue)}"
           placeholder="Buscar o seleccionar actividad"
-          oninput="syncAsisRow(${index})"
-          onchange="syncAsisRow(${index})"
+          onfocus="lmpOpenSearchPanel(this, 'activity', ${index})"
+          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+          onchange="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
+          onblur="lmpValidateSearchSelection(this, 'activity', ${index}); syncAsisRow(${index})"
         />
 
-<input
-  class="${classPrefix}_activity asis-line-select lmp-search-input"
-  value="${escapeHtml(activityValue)}"
-  placeholder="Buscar o seleccionar actividad"
-  onfocus="lmpOpenSearchPanel(this, 'activity', ${index})"
-  oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-  onchange="syncAsisRow(${index})"
-/>
+        <input
+          class="${classPrefix}_connector asis-line-tag"
+          value="${escapeHtml(connectorValue)}"
+          placeholder="Etiqueta / qué viaja"
+          oninput="syncAsisRow(${index})"
+        />
 
         <button
           class="asis-line-delete"
@@ -8445,27 +8465,25 @@ function renderActivityInputRows(list, index){
   return rows.map((row, rowIndex) => {
     const inputValue = typeof row === 'string' ? row : row.input;
     const connectorValue = typeof row === 'string' ? '' : row.connector;
-    const listId = `asis_input_options_${index}_${rowIndex}`;
 
     return `
       <div class="asis-line-row a_input_row" data-row="${rowIndex}">
-<input
-  class="a_input_select asis-line-select lmp-search-input"
-  value="${escapeHtml(inputValue || '')}"
-  placeholder="Buscar entrada o proveedor"
-  onfocus="lmpOpenSearchPanel(this, 'input', ${index})"
-  oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-  onchange="syncAsisRow(${index})"
-/>
+        <input
+          class="a_input_select asis-line-select lmp-search-input"
+          value="${escapeHtml(inputValue || '')}"
+          placeholder="Buscar entrada o proveedor"
+          onfocus="lmpOpenSearchPanel(this, 'input', ${index})"
+          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+          onchange="lmpValidateSearchSelection(this, 'input', ${index}); syncAsisRow(${index})"
+          onblur="lmpValidateSearchSelection(this, 'input', ${index}); syncAsisRow(${index})"
+        />
 
-<input
-  class="a_input_select asis-line-select lmp-search-input"
-  value="${escapeHtml(inputValue || '')}"
-  placeholder="Buscar entrada o proveedor"
-  onfocus="lmpOpenSearchPanel(this, 'input', ${index})"
-  oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-  onchange="syncAsisRow(${index})"
-/>
+        <input
+          class="a_input_connector asis-line-tag"
+          value="${escapeHtml(connectorValue || '')}"
+          placeholder="Etiqueta / qué entra"
+          oninput="syncAsisRow(${index})"
+        />
 
         <button
           class="asis-line-delete"
@@ -8543,27 +8561,25 @@ function renderActivityOutputRows(list, index){
   return rows.map((row, rowIndex) => {
     const outputValue = typeof row === 'string' ? row : row.output;
     const connectorValue = typeof row === 'string' ? '' : row.connector;
-    const listId = `asis_output_options_${index}_${rowIndex}`;
 
     return `
       <div class="asis-line-row a_output_row" data-row="${rowIndex}">
-<input
-  class="a_output_select asis-line-select lmp-search-input"
-  value="${escapeHtml(outputValue || '')}"
-  placeholder="Buscar salida o cliente"
-  onfocus="lmpOpenSearchPanel(this, 'output', ${index})"
-  oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-  onchange="syncAsisRow(${index})"
-/>
+        <input
+          class="a_output_select asis-line-select lmp-search-input"
+          value="${escapeHtml(outputValue || '')}"
+          placeholder="Buscar salida o cliente"
+          onfocus="lmpOpenSearchPanel(this, 'output', ${index})"
+          oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
+          onchange="lmpValidateSearchSelection(this, 'output', ${index}); syncAsisRow(${index})"
+          onblur="lmpValidateSearchSelection(this, 'output', ${index}); syncAsisRow(${index})"
+        />
 
-<input
-  class="a_output_select asis-line-select lmp-search-input"
-  value="${escapeHtml(outputValue || '')}"
-  placeholder="Buscar salida o cliente"
-  onfocus="lmpOpenSearchPanel(this, 'output', ${index})"
-  oninput="syncAsisRow(${index}); lmpSearchInputChanged(this)"
-  onchange="syncAsisRow(${index})"
-/>
+        <input
+          class="a_output_connector asis-line-tag"
+          value="${escapeHtml(connectorValue || '')}"
+          placeholder="Etiqueta / qué sale"
+          oninput="syncAsisRow(${index})"
+        />
 
         <button
           class="asis-line-delete"
@@ -8995,30 +9011,13 @@ function normalizeAsIsActorsCatalog(list){
 function getAsIsActorCatalog(){
   state.asis = state.asis || {};
 
-  const catalogActors = normalizeAsIsActorsCatalog(state.asis.actors_catalog);
+  if(Array.isArray(state.asis.actors_catalog)){
+    return normalizeAsIsActorsCatalog(state.asis.actors_catalog);
+  }
 
-  const activityActors = normalizeAsIsActorsCatalog(
+  return normalizeAsIsActorsCatalog(
     safeArray(state.asis.activities).map(activity => activity.actor)
   );
-
-  const map = new Map();
-
-  [...catalogActors, ...activityActors].forEach(row => {
-    const name = normalizeContractString(row.name || '');
-    if(!name || name === 'pendiente_validacion') return;
-
-    const key = lmpLower(name);
-
-    if(!map.has(key)){
-      map.set(key, {
-        name,
-        source: row.source || 'manual_lmp',
-        editable: true
-      });
-    }
-  });
-
-  return Array.from(map.values());
 }
 
 function renderAsIsActorsCatalog(){
@@ -9074,7 +9073,7 @@ function addAsIsActorRow(){
   });
 
   renderAsIsGlobalCatalogs();
-  updateAsIsPreview();
+  refreshAsIsStructuralStatus();
 }
 
 function deleteAsIsActorRow(button){
@@ -9082,7 +9081,7 @@ function deleteAsIsActorRow(button){
   if(row) row.remove();
 
   syncAsIsGlobalCatalogs(false);
-  updateAsIsPreview();
+  refreshAsIsStructuralStatus();
 }
   
 function renderAsIsGlobalCatalogs(){
@@ -9259,11 +9258,18 @@ function saveAsIsGlobalCatalogs(scope = ''){
 
   refreshAsIsStructuralStatus();
 
-    if(scope === 'actors'){
-    closeSingleAsIsAccordion('.asis-actors-accordion');
-    showAsisMessage('ok', 'Catálogo de actores del proceso guardado y actualizado.');
-    return;
+if(scope === 'actors'){
+  renderAsIsQuickDashboard();
+
+  if(typeof renderLmpB1StructuralStatus === 'function'){
+    window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
+    renderLmpB1StructuralStatus();
   }
+
+  closeSingleAsIsAccordion('.asis-actors-accordion');
+  showAsisMessage('ok', 'Catálogo de actores del proceso guardado y actualizado.');
+  return;
+}
 
   if(scope === 'inputs'){
     closeSingleAsIsAccordion('.asis-inputs-accordion');
@@ -9922,15 +9928,15 @@ function lmpUniqueSearchOptions(options){
 }
 
 function lmpBuildSearchOptions(type, currentIndex){
-  if(type === 'actor'){
-    return lmpUniqueSearchOptions(
-      getAsIsActorCatalog().map(row => ({
-        value: row.name,
-        label: row.name,
-        meta: 'Actor interno'
-      }))
-    );
-  }
+if(type === 'actor'){
+  return lmpUniqueSearchOptions(
+    getAsIsActorCatalog().map(row => ({
+      value: row.name,
+      label: row.name,
+      meta: ''
+    }))
+  );
+}
 
   if(type === 'activity'){
     return lmpUniqueSearchOptions(
@@ -10000,16 +10006,16 @@ function lmpOpenSearchPanel(input, type, currentIndex){
       .slice(0, 40);
 
     if(!filtered.length){
-      panel.innerHTML = `<div class="lmp-search-empty">Sin coincidencias. Puedes escribir el valor manualmente.</div>`;
+      panel.innerHTML = `<div class="lmp-search-empty">Sin coincidencias en el catálogo. Selecciona un valor registrado.</div>`;
       return;
     }
 
-    panel.innerHTML = filtered.map(option => `
-      <button type="button" class="lmp-search-option" data-value="${escapeHtml(option.value)}">
-        <strong>${escapeHtml(option.label)}</strong>
-        <small>${escapeHtml(option.meta || '')}</small>
-      </button>
-    `).join('');
+panel.innerHTML = filtered.map(option => `
+  <button type="button" class="lmp-search-option" data-value="${escapeHtml(option.value)}">
+    <strong>${escapeHtml(option.label)}</strong>
+    ${option.meta ? `<small>${escapeHtml(option.meta)}</small>` : ''}
+  </button>
+`).join('');
 
     panel.querySelectorAll('.lmp-search-option').forEach(btn => {
       btn.addEventListener('mousedown', event => {
@@ -10043,6 +10049,41 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if(event.key === 'Escape') lmpCloseSearchPanels();
 });
+
+function lmpIsValidSearchSelection(value, type, currentIndex){
+  const clean = normalizeContractString(value || '');
+  if(!clean) return true;
+
+  return lmpBuildSearchOptions(type, currentIndex)
+    .some(option => lmpLower(option.value) === lmpLower(clean));
+}
+
+function lmpValidateSearchSelection(input, type, currentIndex){
+  if(!input) return;
+
+  const clean = normalizeContractString(input.value || '');
+
+  if(!clean){
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles:true }));
+    return;
+  }
+
+  if(!lmpIsValidSearchSelection(clean, type, currentIndex)){
+    input.value = '';
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'asisBuilderMsg',
+        'warn',
+        'Selecciona un valor existente del catálogo. No se crean actores, actividades, entradas ni salidas desde este campo.'
+      );
+    }
+
+    input.dispatchEvent(new Event('input', { bubbles:true }));
+    input.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+}
   
 function renderAsIsQuickDashboard(){
   const summary = buildAsIsQuickDashboard();
@@ -13882,7 +13923,16 @@ function renderStructuredAsIsValidation(){
     Array.isArray(asis.additional_information)
   );
 
-  const issues = structureOk ? validatePromptAAsIsProcess(payload) : [];
+  const validator = structureOk && typeof lmpStructuralValidator === 'function'
+    ? lmpStructuralValidator(payload)
+    : null;
+
+  const issues = safeArray(
+    validator?.issues ||
+    validator?.blocking_issues ||
+    validator?.validation?.gaps ||
+    []
+  );
 
   state.briefReview = {
     raw: payload,
@@ -14930,7 +14980,16 @@ function processPromptAResponse(){
       return;
     }
 
-    const issues = validatePromptAAsIsProcess(normalized);
+const validator = typeof lmpStructuralValidator === 'function'
+  ? lmpStructuralValidator(normalized)
+  : null;
+
+const issues = safeArray(
+  validator?.issues ||
+  validator?.blocking_issues ||
+  validator?.validation?.gaps ||
+  validatePromptAAsIsProcess(normalized)
+);
 
     state.asIsProcess = normalized;
     state.brief = normalized;
@@ -15002,9 +15061,19 @@ function applyStructuredAsIsToLmp(){
       return;
     }
 
-    const normalized = normalizePromptAAsIsProcess(payload);
-    const issues = validatePromptAAsIsProcess(normalized);
+const normalized = normalizePromptAAsIsProcess(payload);
 
+const validator = typeof lmpStructuralValidator === 'function'
+  ? lmpStructuralValidator(normalized)
+  : null;
+
+const issues = safeArray(
+  validator?.issues ||
+  validator?.blocking_issues ||
+  validator?.validation?.gaps ||
+  validatePromptAAsIsProcess(normalized)
+);
+    
     state.asIsProcess = normalized;
     state.brief = normalized;
     state.asIsProcessApproved = true;
