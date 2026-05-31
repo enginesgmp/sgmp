@@ -3488,21 +3488,40 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
 }
 
 .asis-apply-progress-bar{
+  position:relative;
   width:0%;
   height:100%;
   border-radius:999px;
+  overflow:hidden;
   background:linear-gradient(90deg,#00C2FF,#1A56DB,#00C2FF);
 }
 
+.asis-apply-progress-bar::after{
+  content:"";
+  position:absolute;
+  top:0;
+  bottom:0;
+  left:0;
+  width:42%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+  animation:asisProgressShimmer .95s linear infinite;
+}
+
 #asis.asis-loading .asis-apply-progress-bar{
-  animation:asisProgressFill 2s ease-out forwards;
+  animation:asisProgressFill 3s ease-out forwards;
 }
 
 @keyframes asisProgressFill{
   0%{width:0%;}
-  35%{width:42%;}
-  70%{width:78%;}
+  28%{width:36%;}
+  55%{width:64%;}
+  78%{width:86%;}
   100%{width:100%;}
+}
+
+@keyframes asisProgressShimmer{
+  0%{transform:translateX(-120%);}
+  100%{transform:translateX(260%);}
 }
 
 #asis.asis-loading .cards,
@@ -5106,7 +5125,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
   <div class="kpi-wrap">
     <div class="kpi-card">
       <h4>JSON estructurado</h4>
-      <div class="big" id="structuredAsIsApprovedKpi">No</div>
+      <div class="big" id="structuredAsIsApprovedKpi">—</div>
       <small>validado</small>
     </div>
     <div class="kpi-card">
@@ -13116,12 +13135,12 @@ function evaluateBriefCompleteness(normalizedBrief){
 function renderStructuredAsIsValidation(){
   const kpiApproved = qs('structuredAsIsApprovedKpi');
   const kpiGaps = qs('structuredAsIsGapsKpi');
-  const list = qs('briefGapsList');
+  const list = qs('structuredAsIsValidationBox');
 
-  const payload = state.asIsProcess || state.briefReview?.raw || state.brief;
+  const payload = state.asIsProcess || state.briefReview?.raw || null;
 
   if(!(payload && payload.as_is_process)){
-    if(kpiApproved) kpiApproved.textContent = 'No';
+    if(kpiApproved) kpiApproved.textContent = '—';
     if(kpiGaps) kpiGaps.textContent = '0';
     if(list){
       list.innerHTML = '<div class="brief-empty-state">JSON pendiente de validación estructural.</div>';
@@ -13130,6 +13149,7 @@ function renderStructuredAsIsValidation(){
   }
 
   const asis = payload.as_is_process || {};
+
   const structureOk = !!(
     Array.isArray(asis.suppliers_inputs) &&
     Array.isArray(asis.outputs_customers) &&
@@ -13137,7 +13157,7 @@ function renderStructuredAsIsValidation(){
     Array.isArray(asis.additional_information)
   );
 
-  const issues = validatePromptAAsIsProcess(payload);
+  const issues = structureOk ? validatePromptAAsIsProcess(payload) : [];
 
   state.briefReview = {
     raw: payload,
@@ -13567,14 +13587,25 @@ const prompt = buildPromptAPrompt(payload);
       qs('promptAResponsePreview').textContent = formatted;
     }
 
-    processBriefResponse();
-    refreshCargaFlowState();
+state.asIsProcess = null;
+state.asIsProcessApproved = false;
+state.briefReview = null;
 
-    showMsg(
-      'cargaMsg',
-      'ok',
-      'JSON AS-IS generado por IA y validado estructuralmente.'
-    );
+if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = '—';
+if(qs('structuredAsIsGapsKpi')) qs('structuredAsIsGapsKpi').textContent = '0';
+
+if(qs('structuredAsIsValidationBox')){
+  qs('structuredAsIsValidationBox').innerHTML =
+    '<div class="brief-empty-state">JSON generado. Presiona Validar JSON para confirmar si puede aplicarse al LMP.</div>';
+}
+
+refreshCargaFlowState();
+
+showMsg(
+  'cargaMsg',
+  'ok',
+  'JSON AS-IS generado por IA. Ahora puedes validarlo antes de aplicarlo al LMP.'
+);
 
     return parsed;
 
@@ -13938,34 +13969,30 @@ function applyPromptAAsIsProcess(asIsPayload){
 
 function formatBriefJson(){
   const editor = qs('promptAResponseEditor');
+  const preview = qs('promptAResponsePreview');
 
-  if(!editor){
-    showMsg('briefIaMsg','err','No se encontró el JSON generado por IA.');
-    return;
-  }
+  const rawText =
+    editor?.value?.trim() ||
+    preview?.textContent?.trim() ||
+    '';
 
-  const raw = editor.value.trim();
-
-  if(!raw){
-    showMsg('briefIaMsg','warn','No hay JSON para formatear.');
+  if(!rawText || rawText === 'Sin JSON generado.' || rawText === 'No se generó JSON. Revisa el mensaje de error.'){
+    showMsg('cargaMsg','warn','No hay JSON para formatear.');
     return;
   }
 
   try{
-    const parsed = extractJsonFromText(raw);
+    const parsed = extractJsonFromText(rawText);
     const formatted = JSON.stringify(parsed, null, 2);
 
-    editor.value = formatted;
+    if(editor) editor.value = formatted;
+    if(preview) preview.textContent = formatted;
 
-    if(qs('promptAResponsePreview')){
-      qs('promptAResponsePreview').textContent = formatted;
-    }
-
-    showMsg('briefIaMsg','ok','JSON formateado correctamente.');
+    showMsg('cargaMsg','ok','JSON formateado correctamente.');
     refreshCargaFlowState();
 
   }catch(error){
-    showMsg('briefIaMsg','err','No fue posible formatear el JSON. Detalle: ' + error.message);
+    showMsg('cargaMsg','err','No fue posible formatear el JSON. Detalle: ' + error.message);
   }
 }
 
@@ -14161,10 +14188,13 @@ function validatePromptACoverageAgainstExtractor(promptAResult){
   
 function processPromptAResponse(){
   try{
-    const rawText = qs('promptAResponseEditor')?.value?.trim() || '';
+    const rawText =
+      qs('promptAResponseEditor')?.value?.trim() ||
+      qs('promptAResponsePreview')?.textContent?.trim() ||
+      '';
 
-    if(!rawText){
-      showMsg('briefIaMsg', 'warn', 'Pega primero el JSON generado por Prompt A.');
+    if(!rawText || rawText === 'Sin JSON generado.' || rawText === 'No se generó JSON. Revisa el mensaje de error.'){
+      showMsg('cargaMsg', 'warn', 'Primero genera o pega un JSON AS-IS para validarlo.');
       return;
     }
 
@@ -14174,30 +14204,67 @@ function processPromptAResponse(){
     const coverage = validatePromptACoverageAgainstExtractor(adapted);
 
     if(!coverage.ok){
+      state.asIsProcess = null;
+      state.asIsProcessApproved = false;
+
+      if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
+      if(qs('structuredAsIsGapsKpi')) qs('structuredAsIsGapsKpi').textContent = '0';
+      if(qs('structuredAsIsValidationBox')){
+        qs('structuredAsIsValidationBox').innerHTML =
+          '<div class="brief-empty-state">JSON no aplicable al LMP por cobertura incompleta.</div>';
+      }
+
       showMsg('cargaMsg', 'err', coverage.message);
-      showMsg('briefIaMsg', 'err', coverage.message);
+      refreshCargaFlowState();
       return;
     }
 
     const normalized = normalizePromptAAsIsProcess(adapted);
+    const asis = normalized?.as_is_process || {};
+
+    const structureOk = !!(
+      Array.isArray(asis.suppliers_inputs) &&
+      Array.isArray(asis.outputs_customers) &&
+      Array.isArray(asis.activities) &&
+      Array.isArray(asis.additional_information)
+    );
+
+    if(!structureOk){
+      state.asIsProcess = null;
+      state.asIsProcessApproved = false;
+
+      if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
+      if(qs('structuredAsIsGapsKpi')) qs('structuredAsIsGapsKpi').textContent = '0';
+      if(qs('structuredAsIsValidationBox')){
+        qs('structuredAsIsValidationBox').innerHTML =
+          '<div class="brief-empty-state">JSON no aplicable: falta estructura base as_is_process.</div>';
+      }
+
+      showMsg('cargaMsg', 'err', 'JSON no válido para aplicar al LMP.');
+      refreshCargaFlowState();
+      return;
+    }
+
     const issues = validatePromptAAsIsProcess(normalized);
 
     state.asIsProcess = normalized;
     state.brief = normalized;
     state.briefReview = {
-  raw: normalized,
-  approved: true,
-  type: 'as_is_process',
-  issues
-};
-state.asIsProcessApproved = true;
+      raw: normalized,
+      approved: true,
+      type: 'as_is_process',
+      issues
+    };
+    state.asIsProcessApproved = true;
+
+    const formatted = JSON.stringify(normalized, null, 2);
 
     if(qs('promptAResponseEditor')){
-      qs('promptAResponseEditor').value = JSON.stringify(normalized, null, 2);
+      qs('promptAResponseEditor').value = formatted;
     }
 
     if(qs('promptAResponsePreview')){
-      qs('promptAResponsePreview').textContent = JSON.stringify(normalized, null, 2);
+      qs('promptAResponsePreview').textContent = formatted;
     }
 
     renderStructuredAsIsValidation();
@@ -14205,9 +14272,15 @@ state.asIsProcessApproved = true;
     if(typeof refreshCargaFlowState === 'function'){
       refreshCargaFlowState();
     }
-    
+
+    showMsg('cargaMsg', 'ok', 'JSON validado correctamente. Ya puede aplicarse al LMP.');
+
   }catch(error){
-    showMsg('briefIaMsg', 'err', 'No fue posible procesar el JSON de Prompt A. Detalle: ' + error.message);
+    state.asIsProcessApproved = false;
+
+    if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
+
+    showMsg('cargaMsg', 'err', 'No fue posible validar el JSON. Detalle: ' + error.message);
   }
 }
 
@@ -14220,7 +14293,7 @@ function applyStructuredAsIsToLmp(){
     let payload = state.asIsProcess;
 
     if(!(payload && payload.as_is_process)){
-      const rawText = qs('briefResponseEditor')?.value.trim() || '';
+      const rawText =   qs('promptAResponseEditor')?.value?.trim() ||   qs('promptAResponsePreview')?.textContent?.trim() ||   '';
 
       if(!rawText){
         showMsg(
@@ -14305,10 +14378,10 @@ function applyStructuredAsIsToLmp(){
       showMsg(
         'asisBuilderMsg',
         'ok',
-        `as_is_process aplicado correctamente al constructor AS-IS. Vacíos estructurales detectados: ${issues.length}.`
+        `Proceso AS-IS aplicado correctamente al LMP. Vacíos estructurales detectados: ${issues.length}.`
       );
 
-    }, 2000);
+    }, 3000);
 
   }catch(error){
     showMsg(
