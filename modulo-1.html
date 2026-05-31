@@ -5742,26 +5742,46 @@ function sgmpRegisterPrompt(p) {
 }
 
 // Obtener prompt — nunca falla, devuelve fallback si no hay nada
-  function sgmpEnsurePromptsLoaded(moduleCode){
-  return new Promise(function(resolve){
-    try{
-      if(SGMP_PROMPTS && SGMP_PROMPTS.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()){
-        resolve(true);
-        return;
-      }
+async function sgmpEnsurePromptsLoaded(moduleCode){
+  try{
+    moduleCode = moduleCode || 'LMP';
 
-      try {
-        sessionStorage.removeItem('sgmp_p_' + moduleCode);
-      } catch(e) {}
-
-      sgmpLoadPrompts(moduleCode, function(){
-        resolve(!!(SGMP_PROMPTS.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()));
-      });
-    }catch(error){
-      console.warn('No fue posible asegurar carga de prompts SGMP.', error);
-      resolve(false);
+    if(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()){
+      return true;
     }
-  });
+
+    try {
+      sessionStorage.removeItem('sgmp_p_' + moduleCode);
+    } catch(e) {}
+
+    const url = SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode);
+    const response = await fetch(url);
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : {};
+
+    const rows = Array.isArray(parsed?.data) ? parsed.data : [];
+
+    rows.forEach(function(p){
+      if(typeof sgmpRegisterPrompt === 'function'){
+        sgmpRegisterPrompt(p);
+      }
+    });
+
+    try {
+      sessionStorage.setItem('sgmp_p_' + moduleCode, JSON.stringify(rows));
+    } catch(e) {}
+
+    if(!(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim())){
+      console.warn('PROMPTS cargados, pero no se encontró prompt_A.', rows);
+      return false;
+    }
+
+    return true;
+
+  }catch(error){
+    console.error('Error cargando prompt_A desde Sheets/API:', error);
+    return false;
+  }
 }
   
 function sgmpPrompt(key, fallback) {
@@ -6726,7 +6746,7 @@ function applySipocExtractorJson(parsed){
   hydrateAsIsFromMaster();
   updateLoadKpis();
   refreshLoadViews();
-  renderBriefValidation();
+  renderStructuredAsIsValidation();
   renderAnalysisValidation();
   refreshCargaFlowState();
 
@@ -13388,8 +13408,12 @@ async function runPromptAWithAI(){
       throw new Error('No existe consolidado temporal para ejecutar Prompt A.');
     }
 
-    if(typeof sgmpEnsurePromptsLoaded === 'function'){
-  await sgmpEnsurePromptsLoaded('LMP');
+if(typeof sgmpEnsurePromptsLoaded === 'function'){
+  const promptReady = await sgmpEnsurePromptsLoaded('LMP');
+
+  if(!promptReady){
+    throw new Error('No se cargó prompt_A desde la API. Revisa PROMPTS, publicación del Apps Script o URL SGMP_API.');
+  }
 }
 
 if(typeof sgmpLoadRuntimeConfig === 'function'){
@@ -14075,7 +14099,7 @@ function processPromptAResponse(){
       qs('briefResponsePreview').textContent = JSON.stringify(normalized, null, 2);
     }
 
-    renderBriefValidation();
+    renderStructuredAsIsValidation();
 
     if(typeof refreshCargaFlowState === 'function'){
       refreshCargaFlowState();
@@ -14141,7 +14165,7 @@ function applyStructuredAsIsToLmp(){
       issues
     };
 
-    renderBriefValidation();
+    renderStructuredAsIsValidation();
 
     const loader = qs('briefApplyLoader');
     if(loader) loader.classList.remove('hidden');
@@ -14807,7 +14831,7 @@ const loaded = {
     qs('promptAConsolidatedStatus').textContent = 'Aún no se ha consolidado la información.';
   }
 
-  renderBriefValidation();
+  renderStructuredAsIsValidation();
   renderAnalysisValidation();
   refreshCargaFlowState();
 
