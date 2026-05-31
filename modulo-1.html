@@ -5264,7 +5264,7 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
   <article class="card" id="asisQuickDashboardCard">
       <h3>Resumen de AS-IS</h3>
       
-      <div class="kpi-wrap" style="grid-template-columns:repeat(5,minmax(0,1fr));">
+      <div class="kpi-wrap" style="grid-template-columns:repeat(6,minmax(0,1fr));">
         <div class="kpi-card">
           <h4>Actividades</h4>
           <div class="big" id="asisDashActivities">0</div>
@@ -5293,6 +5293,12 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
           <h4>Salidas</h4>
           <div class="big" id="asisDashOutputs">0</div>
           <small>Salidas únicas</small>
+        </div>
+
+        <div class="kpi-card">
+          <h4>Información adicional</h4>
+          <div class="big" id="asisDashAdditionalInfo">0</div>
+          <small>Registros levantados</small>
         </div>
       </div>
     </article>
@@ -8192,31 +8198,69 @@ function renderAsisActivityOptions(selectedValue, currentIndex){
     ${options}
   `;
 }
+
+function renderAsisActivityDatalistOptions(selectedValue, currentIndex){
+  const selected = normalizeContractString(selectedValue || '');
+
+  const activities = safeArray(state.asis?.activities)
+    .map((activity, idx) => ({
+      index: idx,
+      name: normalizeContractString(activity?.name || '')
+    }))
+    .filter(activity => activity.name && activity.index !== currentIndex);
+
+  const options = activities.map(activity => {
+    return `<option value="${escapeHtml(activity.name)}"></option>`;
+  }).join('');
+
+  const customSelected = selected && !activities.some(a => lmpLower(a.name) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}"></option>`
+    : '';
+
+  return `
+    ${customSelected}
+    ${options}
+  `;
+}  
   
 function renderActivityConnectionsRows(list, classPrefix, index, mode){
   const rows = normalizeActivityConnectionList(list);
 
-  return rows.map((row, rowIndex) => `
-    <div class="asis-line-row ${classPrefix}_row" data-row="${rowIndex}">
-      <select class="${classPrefix}_activity asis-line-select" onchange="syncAsisRow(${index})">
-        ${renderAsisActivityOptions(row.activity || '', index)}
-      </select>
+  return rows.map((row, rowIndex) => {
+    const activityValue = normalizeContractString(row.activity || '');
+    const listId = `${classPrefix}_activity_options_${index}_${rowIndex}`;
 
-      <input
-        class="${classPrefix}_connector asis-line-tag"
-        value="${escapeHtml(row.connector || '')}"
-        placeholder="Etiqueta"
-        oninput="syncAsisRow(${index})"
-      />
+    return `
+      <div class="asis-line-row ${classPrefix}_row" data-row="${rowIndex}">
+        <input
+          class="${classPrefix}_activity asis-line-select"
+          list="${listId}"
+          value="${escapeHtml(activityValue)}"
+          placeholder="Buscar o seleccionar actividad"
+          oninput="syncAsisRow(${index})"
+          onchange="syncAsisRow(${index})"
+        />
 
-      <button
-        class="asis-line-delete"
-        type="button"
-        title="Eliminar"
-        onclick="removeAsisDynamicRow(this, ${index})"
-      >×</button>
-    </div>
-  `).join('');
+        <datalist id="${listId}">
+          ${renderAsisActivityDatalistOptions(activityValue, index)}
+        </datalist>
+
+        <input
+          class="${classPrefix}_connector asis-line-tag"
+          value="${escapeHtml(row.connector || '')}"
+          placeholder="Etiqueta"
+          oninput="syncAsisRow(${index})"
+        />
+
+        <button
+          class="asis-line-delete"
+          type="button"
+          title="Eliminar"
+          onclick="removeAsisDynamicRow(this, ${index})"
+        >×</button>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderAsisInputOptions(selectedValue){
@@ -8242,6 +8286,28 @@ function renderAsisInputOptions(selectedValue){
   `;
 }
 
+function renderAsisInputDatalistOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+  const catalog = flattenSuppliersInputsCatalog();
+
+  const options = catalog.map(row => {
+    const label = row.supplier
+      ? `${row.input} — ${row.supplier}`
+      : row.input;
+
+    return `<option value="${escapeHtml(row.input)}" label="${escapeHtml(label)}"></option>`;
+  }).join('');
+
+  const customSelected = selected && !catalog.some(row => lmpLower(row.input) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}"></option>`
+    : '';
+
+  return `
+    ${customSelected}
+    ${options}
+  `;
+}
+  
 function renderActivityInputRows(list, index){
   const catalog = flattenSuppliersInputsCatalog();
 
@@ -8256,12 +8322,22 @@ function renderActivityInputRows(list, index){
   return rows.map((row, rowIndex) => {
     const inputValue = typeof row === 'string' ? row : row.input;
     const connectorValue = typeof row === 'string' ? '' : row.connector;
+    const listId = `asis_input_options_${index}_${rowIndex}`;
 
     return `
       <div class="asis-line-row a_input_row" data-row="${rowIndex}">
-        <select class="a_input_select asis-line-select" onchange="syncAsisRow(${index})">
-          ${renderAsisInputOptions(inputValue || '')}
-        </select>
+        <input
+          class="a_input_select asis-line-select"
+          list="${listId}"
+          value="${escapeHtml(inputValue || '')}"
+          placeholder="Buscar o seleccionar entrada"
+          oninput="syncAsisRow(${index})"
+          onchange="syncAsisRow(${index})"
+        />
+
+        <datalist id="${listId}">
+          ${renderAsisInputDatalistOptions(inputValue || '')}
+        </datalist>
 
         <input
           class="a_input_connector asis-line-tag"
@@ -8304,6 +8380,28 @@ function renderAsisOutputOptions(selectedValue){
   `;
 }
 
+function renderAsisOutputDatalistOptions(selectedValue){
+  const selected = normalizeContractString(selectedValue || '');
+  const catalog = flattenOutputsCustomersCatalog();
+
+  const options = catalog.map(row => {
+    const label = row.customer
+      ? `${row.output} — ${row.customer}`
+      : row.output;
+
+    return `<option value="${escapeHtml(row.output)}" label="${escapeHtml(label)}"></option>`;
+  }).join('');
+
+  const customSelected = selected && !catalog.some(row => lmpLower(row.output) === lmpLower(selected))
+    ? `<option value="${escapeHtml(selected)}"></option>`
+    : '';
+
+  return `
+    ${customSelected}
+    ${options}
+  `;
+}
+  
 function renderActivityOutputRows(list, index){
   const catalog = flattenOutputsCustomersCatalog();
 
@@ -8318,12 +8416,22 @@ function renderActivityOutputRows(list, index){
   return rows.map((row, rowIndex) => {
     const outputValue = typeof row === 'string' ? row : row.output;
     const connectorValue = typeof row === 'string' ? '' : row.connector;
+    const listId = `asis_output_options_${index}_${rowIndex}`;
 
     return `
       <div class="asis-line-row a_output_row" data-row="${rowIndex}">
-        <select class="a_output_select asis-line-select" onchange="syncAsisRow(${index})">
-          ${renderAsisOutputOptions(outputValue || '')}
-        </select>
+        <input
+          class="a_output_select asis-line-select"
+          list="${listId}"
+          value="${escapeHtml(outputValue || '')}"
+          placeholder="Buscar o seleccionar salida"
+          oninput="syncAsisRow(${index})"
+          onchange="syncAsisRow(${index})"
+        />
+
+        <datalist id="${listId}">
+          ${renderAsisOutputDatalistOptions(outputValue || '')}
+        </datalist>
 
         <input
           class="a_output_connector asis-line-tag"
@@ -8422,12 +8530,13 @@ if(openPanel){
   syncAsisRow(index);
 
   const lastRow = target.lastElementChild;
-  const select = lastRow?.querySelector('select');
-if(select){
-  setTimeout(() => {
-    select.focus();
-  }, 80);
-}
+  const field = lastRow?.querySelector('input[list], select');
+
+  if(field){
+    setTimeout(() => {
+      field.focus();
+    }, 80);
+  }
 }
   
 function removeAsisDynamicRow(button, index){
@@ -9474,30 +9583,52 @@ function getUniqueNormalizedValues(values){
 }
 
 function buildAsIsQuickDashboard(){
+  state.asis = state.asis || {};
+
   const activities = safeArray(state.asis?.activities);
 
   const actors = getUniqueNormalizedValues(
     activities.map(activity => activity.actor)
   );
 
-  const inputs = getUniqueNormalizedValues(
-    activities.flatMap(activity =>
-      normalizeActivityInputList(activity.inputs_used).map(row => row.input)
-    )
+  const activityInputs = activities.flatMap(activity =>
+    normalizeActivityInputList(activity.inputs_used).map(row => row.input)
   );
 
-  const outputs = getUniqueNormalizedValues(
-    activities.flatMap(activity =>
-      normalizeActivityOutputList(activity.outputs_generated).map(row => row.output)
-    )
+  const catalogInputs = flattenSuppliersInputsCatalog().map(row => row.input);
+
+  const activityOutputs = activities.flatMap(activity =>
+    normalizeActivityOutputList(activity.outputs_generated).map(row => row.output)
   );
+
+  const catalogOutputs = flattenOutputsCustomersCatalog().map(row => row.output);
+
+  const inputs = getUniqueNormalizedValues([
+    ...catalogInputs,
+    ...activityInputs
+  ]);
+
+  const outputs = getUniqueNormalizedValues([
+    ...catalogOutputs,
+    ...activityOutputs
+  ]);
+
+  const additionalInformation = safeArray(state.asis?.additional_information)
+    .filter(info =>
+      normalizeContractString(info?.title || '') ||
+      normalizeContractString(info?.type || '') ||
+      normalizeContractString(info?.related_activity || '') ||
+      normalizeContractString(info?.content || '') ||
+      normalizeContractString(info?.source || '')
+    );
 
   return {
     activities: activities.length,
     decisions: activities.filter(activity => normalizePromptAType(activity.type) === 'decision').length,
     actors: actors.length,
     inputs: inputs.length,
-    outputs: outputs.length
+    outputs: outputs.length,
+    additionalInformation: additionalInformation.length
   };
 }
 
@@ -9514,6 +9645,7 @@ function renderAsIsQuickDashboard(){
   set('asisDashActors', summary.actors);
   set('asisDashInputs', summary.inputs);
   set('asisDashOutputs', summary.outputs);
+  set('asisDashAdditionalInfo', summary.additionalInformation);
 }
 
 function buildAsIsProcessContract(){
