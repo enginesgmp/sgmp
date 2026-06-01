@@ -18055,14 +18055,38 @@ SALIDA JSON ESTRICTA:
   }
 }`;
 
-  return {
-    B1:{ label:'B1 · Validación AS IS', stageCode:'lmp_analysis_b1', instruction:p('prompt_analysis_b1', fallbackB1) },
-    B2:{ label:'B2 · Análisis AVA', stageCode:'lmp_analysis_VA', instruction:p('prompt_analysis_VA', fallbackB2) },
-    B3:{ label:'B3 · Desperdicios y problemas', stageCode:'lmp_analysis_QUICK_WINS', instruction:p('prompt_analysis_QUICK_WINS', fallbackB3) },
-    B4:{ label:'B4 · Restricciones y causa probable', stageCode:'lmp_analysis_DESPERDICIOS', instruction:p('prompt_analysis_DESPERDICIOS', fallbackB4) },
-    B5:{ label:'B5 · Mejoras aplicadas', stageCode:'lmp_analysis_RESTRICCIONES', instruction:p('prompt_analysis_RESTRICCIONES', p('prompt_improvements', fallbackB5)) },
-    B6:{ label:'B6 · Contrato para SIPOC Builder', stageCode:'lmp_analysis_PROBLEMAS', instruction:p('prompt_analysis_PROBLEMAS', fallbackB6) }
-  };
+return {
+  VA:{
+    label:'Análisis de valor agregado',
+    stageCode:'lmp_analysis_VA',
+    instruction:p('prompt_analysis_VA', fallbackB2)
+  },
+  QUICK_WINS:{
+    label:'Análisis de quick wins',
+    stageCode:'lmp_analysis_QUICK_WINS',
+    instruction:p('prompt_analysis_QUICK_WINS', fallbackB3)
+  },
+  DESPERDICIOS:{
+    label:'Análisis de desperdicios',
+    stageCode:'lmp_analysis_DESPERDICIOS',
+    instruction:p('prompt_analysis_DESPERDICIOS', fallbackB3)
+  },
+  RESTRICCIONES:{
+    label:'Análisis de restricciones',
+    stageCode:'lmp_analysis_RESTRICCIONES',
+    instruction:p('prompt_analysis_RESTRICCIONES', fallbackB4)
+  },
+  PROBLEMAS:{
+    label:'Análisis de problemas',
+    stageCode:'lmp_analysis_PROBLEMAS',
+    instruction:p('prompt_analysis_PROBLEMAS', fallbackB3)
+  },
+  MEJORAS:{
+    label:'Análisis de mejoras',
+    stageCode:'lmp_analysis_MEJORAS',
+    instruction:p('prompt_analysis_MEJORAS', p('prompt_improvements', fallbackB5))
+  }
+};
 }
 
 
@@ -19763,7 +19787,7 @@ const ANALYSIS_STAGE_LABELS = {
     return '';
   }
 
-  state.analysisStages = state.analysisStages || { current:'B2', results:{} };
+  state.analysisStages = state.analysisStages || { current:'VA', results:{} };
   state.analysisStages.current = stage;
 
   const prompt = window.sgmpBuildAnalysisStagePrompt(stage);
@@ -19789,7 +19813,8 @@ if(promptBox && !String(promptBox.value || '').trim()){
   if(!generatedPrompt) return;
 }
     try{
-      state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey;
+      state.analysisStages = state.analysisStages || { current:'VA', results:{} };
+state.analysisStages.current = stageKey;
       if(String(stageKey || '').toUpperCase() === 'B1' && typeof lmpResolveB1DeterministicIfValid === 'function'){
         const deterministicOnly = lmpResolveB1DeterministicIfValid();
         if(deterministicOnly){
@@ -19827,7 +19852,9 @@ if(promptBox && !String(promptBox.value || '').trim()){
         const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput(parsed));
         parsed = lmpConsolidateB1WithAi(deterministic, parsed);
       }
-      state.analysisStages = state.analysisStages || { current:'B1', results:{} }; state.analysisStages.current = stageKey; state.analysisStages.results[stageKey] = parsed; if(typeof saveCompactContextFromBrief === 'function') saveCompactContextFromBrief();
+      state.analysisStages = state.analysisStages || { current:'VA', results:{} };
+state.analysisStages.current = stageKey;
+state.analysisStages.results[stageKey] = parsed;
       const resultBox = el('analysisResult_' + stageKey); if(resultBox) resultBox.value = JSON.stringify(parsed, null, 2);
       if(stageKey === 'B1'){
         const acts = (typeof lmpNormalizeStructuralActivities === 'function')
@@ -19839,11 +19866,11 @@ if(promptBox && !String(promptBox.value || '').trim()){
       const normalized = (typeof normalizeAnalysisPayload === 'function') ? normalizeAnalysisPayload(assembled) : assembled;
       const enriched = (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel(normalized) : normalized;
       state.analysis = enriched;
-      if(stageKey === 'B5'){
+      if(stageKey === 'MEJORAS'){
         const improvements = arr(enriched.improvements).map(x => (typeof normalizeImprovement === 'function' ? normalizeImprovement(x) : x));
         state.tobe = state.tobe || {}; state.tobe.improvements = improvements; if(typeof renderImprovements === 'function') renderImprovements();
       }
-      if(stageKey === 'B6'){
+      if(stageKey === 'PROBLEMAS'){
         const sipocInput = parsed?.sipoc_input || parsed?.sb_contract?.sipoc_input || enriched?.sb_contract?.sipoc_input;
         if(sipocInput){ state.sb_contract = { sipoc_input: sipocInput }; state.sbContractBuilder = state.sbContractBuilder || {}; state.sbContractBuilder.raw = { sipoc_input: sipocInput }; state.sbContractBuilder.approved = true; }
       }
