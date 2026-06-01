@@ -11528,15 +11528,6 @@ function buildTechnicalHtml(){
     ${artifacts.differences}
     <h3>Beneficios esperados</h3>
     ${artifacts.benefits}
-
-    <h2>Salida para evaluador documental</h2>
-    <pre>${escapeHtml(JSON.stringify(artifacts.documentProposal, null, 2))}</pre>
-
-    <h2>Salida para integrador</h2>
-    <pre>${escapeHtml(JSON.stringify({
-      integration_input: artifacts.integrationInput,
-      integration_analysis_base: artifacts.integrationAnalysisBase
-    }, null, 2))}</pre>
   `;
 }
 
@@ -11547,13 +11538,6 @@ function buildImplementationHtml(){
   const rejectedHtml = rejected.length
     ? `<ul>${rejected.map(x => `<li><strong>${escapeHtml(x.title)}</strong>: ${escapeHtml(x.problem || x.summary || 'Mejora rechazada')}</li>`).join('')}</ul>`
     : '<p>No se registraron mejoras rechazadas.</p>';
-
-  const docJson = escapeHtml(JSON.stringify(artifacts.documentProposal, null, 2));
-  const integJson = escapeHtml(JSON.stringify({
-    integration_input: artifacts.integrationInput,
-    integration_analysis_base: artifacts.integrationAnalysisBase
-  }, null, 2));
-
   return `
     <h1>Plan de Implementación</h1>
 
@@ -11571,12 +11555,6 @@ function buildImplementationHtml(){
 
     <h2>Plan Modo A y Modo B</h2>
     ${artifacts.plan}
-
-    <h2>Salida para Evaluador Documental</h2>
-    <pre>${docJson}</pre>
-
-    <h2>Salida para Integrador</h2>
-    <pre>${integJson}</pre>
 
     <h2>Mejoras rechazadas</h2>
     ${rejectedHtml}
@@ -11669,7 +11647,15 @@ function generateResults(){
     return;
   }
 
+  if(
+    (state.decision?.route === 'tobe' || state.decision?.finalMode === 'tobe') &&
+    (!state.tobe?.improvements || !state.tobe.improvements.length)
+  ){
+    seedImprovementsFromAnalysis();
+  }
+
   renderToBeSummary();
+  
   const sbContract = buildSBJson();
   const sbValidation = validateSipocContract(sbContract.sipoc_input);
   if(sbValidation.errors.length){
@@ -18907,10 +18893,8 @@ function continueFromDecision(){
 }
 
 function seedImprovementsFromAnalysis(){
-  const analysis = state.analysis || {};
-  const data = analysis.raw || analysis;
-  const masterIssues = state.master?.issues || {};
-  const findings = data.findings || analysis.findings || {};
+  state.tobe = state.tobe || {};
+  state.tobe.improvements = state.tobe.improvements || [];
 
   const toArray = (value) => {
     if(Array.isArray(value)) return value;
@@ -18923,45 +18907,89 @@ function seedImprovementsFromAnalysis(){
     return text && text !== 'Mejora propuesta' && text !== 'Revisa la propuesta y registra una decisión.';
   };
 
-  const improvementRichness = (item = {}) => {
-    return [
-      item.title,
-      item.summary,
-      item.problem,
-      item.currentState,
-      item.proposedState,
-      item.support,
-      item.impact,
-      item.justification,
-      item.recommendation,
-      item.action,
-      item.expected_benefit,
-      item.expectedBenefit,
-      item.expected_impact
-    ].filter(meaningfulText).length;
+  const userAlreadyDecided = (item = {}) => {
+    return (
+      ['execute','custom','reject'].includes(item.status) ||
+      meaningfulText(item.customText) ||
+      item.source === 'manual' ||
+      item.userAdded === true
+    );
   };
 
- const userAlreadyDecided = (item = {}) => {
-  return (
-    ['execute','custom','reject'].includes(item.status) ||
-    meaningfulText(item.customText) ||
-    item.source === 'manual' ||
-    item.userAdded === true
-  );
-};
+  if(state.tobe.improvements.length && state.tobe.improvements.some(userAlreadyDecided)){
+    renderImprovements();
+    showMsg('tobeMsg','ok','Se conservaron las mejoras ya evaluadas por el usuario.');
+    return;
+  }
+
+  const stageResults = state.analysisStages?.results || {};
+
+  const va = stageResults.VA || {};
+  const quickWinsStage = stageResults.QUICK_WINS || {};
+  const wastesStage = stageResults.DESPERDICIOS || {};
+  const restrictionsStage = stageResults.RESTRICCIONES || {};
+  const problemsStage = stageResults.PROBLEMAS || {};
+  const improvementsStage = stageResults.MEJORAS || {};
+
+  const improvementsFromStage = [
+    ...toArray(improvementsStage.improvements),
+    ...toArray(improvementsStage.mejoras),
+    ...toArray(improvementsStage.improvement_candidates),
+    ...toArray(improvementsStage.proposed_improvements),
+    ...toArray(improvementsStage.quickWins),
+    ...toArray(improvementsStage.strategicProjects)
+  ];
+
+  const quickWins = [
+    ...toArray(quickWinsStage.quickWins),
+    ...toArray(quickWinsStage.quick_wins),
+    ...toArray(quickWinsStage.findings?.quickWins),
+    ...toArray(quickWinsStage.findings?.quick_wins),
+    ...toArray(improvementsStage.quickWins)
+  ];
+
+  const wastes = [
+    ...toArray(wastesStage.wastes),
+    ...toArray(wastesStage.findings?.wastes),
+    ...toArray(wastesStage.findings?.desperdicios),
+    ...toArray(problemsStage.findings?.wastes)
+  ];
+
+  const restrictions = [
+    ...toArray(restrictionsStage.restrictions),
+    ...toArray(restrictionsStage.constraints),
+    ...toArray(restrictionsStage.findings?.restrictions),
+    ...toArray(restrictionsStage.findings?.constraints),
+    ...toArray(restrictionsStage.findings?.suspected_constraints),
+    ...toArray(restrictionsStage.findings?.bottlenecks)
+  ];
+
+  const problems = [
+    ...toArray(problemsStage.problems),
+    ...toArray(problemsStage.findings?.problems),
+    ...toArray(problemsStage.findings?.operational_problems),
+    ...toArray(problemsStage.findings?.wastes)
+  ];
+
+  const legacyAnalysis = state.analysis || {};
+  const legacyData = legacyAnalysis.raw || legacyAnalysis;
+  const legacyFindings = legacyData.findings || legacyAnalysis.findings || {};
+  const masterIssues = state.master?.issues || {};
+
+  const legacyImprovements = [
+    ...toArray(legacyData.raw_original?.improvements),
+    ...toArray(legacyData.raw_original?.mejoras),
+    ...toArray(legacyData.improvements),
+    ...toArray(legacyAnalysis.improvements),
+    ...toArray(legacyData.to_be?.improvements),
+    ...toArray(legacyData.toBe?.improvements),
+    ...toArray(legacyData.improvement_candidates)
+  ];
 
   const sourceImprovements = [
-    ...toArray(data.raw_original?.improvements),
-    ...toArray(data.raw_original?.mejoras),
-    ...toArray(data.raw_original?.to_be?.improvements),
-    ...toArray(data.raw_original?.toBe?.improvements),
-    ...toArray(data.improvements),
-    ...toArray(analysis.improvements),
-    ...toArray(data.to_be?.improvements),
-    ...toArray(data.toBe?.improvements),
-    ...toArray(data.to_be?.improvement_candidates),
-    ...toArray(data.improvement_candidates)
-  ];
+    ...improvementsFromStage,
+    ...legacyImprovements
+  ].filter(Boolean);
 
   const usefulSourceImprovements = sourceImprovements.filter(item => {
     if(!item) return false;
@@ -18981,9 +19009,6 @@ function seedImprovementsFromAnalysis(){
       item.to_be_state,
       item.action,
       item.recommendation,
-      item.header,
-      item.category,
-      item.type,
       item.expected_benefit,
       item.expectedBenefit,
       item.impact,
@@ -18991,94 +19016,79 @@ function seedImprovementsFromAnalysis(){
     ].some(meaningfulText);
   });
 
-  if(state.tobe.improvements.length){
-    const hasUserDecisions = state.tobe.improvements.some(userAlreadyDecided);
-    const existingAvgRichness = state.tobe.improvements.reduce((sum, item) => sum + improvementRichness(item), 0) / state.tobe.improvements.length;
-    const sourceAvgRichness = usefulSourceImprovements.length
-      ? usefulSourceImprovements.reduce((sum, item) => sum + improvementRichness(typeof item === 'string' ? { title:item, summary:item } : item), 0) / usefulSourceImprovements.length
-      : 0;
-
-    if(hasUserDecisions){
-      renderImprovements();
-      showMsg('tobeMsg','ok','Se conservaron las mejoras ya evaluadas por el usuario.');
-      return;
-    }
-
-    if(!usefulSourceImprovements.length || existingAvgRichness >= Math.max(2, sourceAvgRichness - 1)){
-      renderImprovements();
-      showMsg('tobeMsg','ok','Se mostraron las mejoras ya registradas.');
-      return;
-    }
-
-    // Hay mejores datos fuente y el usuario aún no decidió: se reconstruye sin borrar decisiones reales.
-    state.tobe.improvements = [];
-  }
+  state.tobe.improvements = [];
 
   if(usefulSourceImprovements.length){
     usefulSourceImprovements.forEach(item => addImprovement(item));
     renderImprovements();
-    showMsg('tobeMsg','ok','Se cargaron mejoras detectadas por la IA.');
+    showMsg('tobeMsg','ok','Se cargaron mejoras propuestas desde el análisis MEJORAS.');
     return;
   }
 
-  const quickWins = [
-    ...toArray(findings.quickWins),
-    ...toArray(findings.quick_wins),
-    ...toArray(data.quickWins),
-    ...toArray(analysis.quickWins),
+  const fallbackQuickWins = [
+    ...quickWins,
+    ...toArray(legacyFindings.quickWins),
+    ...toArray(legacyFindings.quick_wins),
+    ...toArray(legacyData.quickWins),
     ...toArray(masterIssues.quickWins)
   ];
-  const restrictions = [
-    ...toArray(findings.restrictions),
-    ...toArray(findings.constraints),
-    ...toArray(data.restrictions),
-    ...toArray(data.constraints),
-    ...toArray(analysis.constraints),
+
+  const fallbackRestrictions = [
+    ...restrictions,
+    ...toArray(legacyFindings.restrictions),
+    ...toArray(legacyFindings.constraints),
+    ...toArray(legacyData.restrictions),
+    ...toArray(legacyData.constraints),
     ...toArray(masterIssues.constraints),
     ...toArray(masterIssues.restrictions)
   ];
-  const problems = [
-    ...toArray(findings.problems),
-    ...toArray(data.problems),
-    ...toArray(analysis.problems),
+
+  const fallbackProblems = [
+    ...problems,
+    ...wastes,
+    ...toArray(legacyFindings.problems),
+    ...toArray(legacyData.problems),
     ...toArray(masterIssues.keyIssues),
     ...toArray(masterIssues.problems)
   ];
 
-  quickWins.forEach((q, i) => addImprovement({
-    title: (typeof q === 'object' && (q.title || q.name)) ? (q.title || q.name) : 'Quick win ' + (i + 1),
+  fallbackQuickWins.forEach((q, i) => addImprovement({
+    title: typeof q === 'object' ? (q.title || q.name || q.recommendation || 'Quick win ' + (i + 1)) : 'Quick win ' + (i + 1),
     summary: 'Oportunidad rápida derivada del análisis.',
-    problemSolved: typeof q === 'string' ? q : (q.problem || q.description || q.summary || q.title || JSON.stringify(q)),
-    proposedState: typeof q === 'string' ? 'Aplicar una mejora puntual para resolver: ' + q : (q.action || q.proposedState || q.description || q.title || ''),
+    problemSolved: typeof q === 'string' ? q : (q.problem || q.description || q.summary || q.finding || q.title || JSON.stringify(q)),
+    proposedState: typeof q === 'string' ? 'Aplicar una mejora puntual para resolver: ' + q : (q.action || q.proposedState || q.description || q.recommendation || q.title || ''),
     technicalRationale: typeof q === 'object' ? (q.evidence || q.justification || q.technicalRationale || '') : 'Derivada del análisis del proceso.',
-    expectedImpact: typeof q === 'string' ? 'Mejora rápida de control, trazabilidad o reducción de reproceso.' : (q.expectedImpact || q.impact || q.benefit || '')
+    expectedImpact: typeof q === 'string' ? 'Mejora rápida de control, trazabilidad o reducción de reproceso.' : (q.expectedImpact || q.expectedBenefit || q.impact || q.benefit || '')
   }));
 
-  restrictions.forEach((r, i) => addImprovement({
-    title: (typeof r === 'object' && (r.title || r.name)) ? (r.title || r.name) : 'Restricción ' + (i + 1),
+  fallbackRestrictions.forEach((r, i) => addImprovement({
+    title: typeof r === 'object' ? (r.title || r.name || r.description || 'Restricción ' + (i + 1)) : 'Restricción ' + (i + 1),
     summary: 'Mejora orientada a mitigar una restricción.',
-    problemSolved: typeof r === 'string' ? r : (r.restriction || r.problem || r.description || r.summary || r.title || JSON.stringify(r)),
-    proposedState: typeof r === 'string' ? 'Reducir o eliminar la restricción detectada: ' + r : (r.action || r.proposedState || r.description || r.title || ''),
-    technicalRationale: typeof r === 'string' ? 'La restricción afecta el flujo, el tiempo de ciclo o la capacidad del proceso.' : (r.evidence || r.impact || r.justification || ''),
-    expectedImpact: typeof r === 'string' ? 'Reducción de bloqueo operativo o dependencia crítica.' : (r.impact || r.expectedImpact || r.benefit || '')
+    problemSolved: typeof r === 'string' ? r : (r.restriction || r.problem || r.description || r.summary || r.finding || r.title || JSON.stringify(r)),
+    proposedState: typeof r === 'string' ? 'Reducir o eliminar la restricción detectada: ' + r : (r.action || r.proposedState || r.description || r.recommendation || r.title || ''),
+    technicalRationale: typeof r === 'string' ? 'La restricción afecta el flujo, el tiempo de ciclo o la capacidad del proceso.' : (r.evidence || r.impact || r.justification || r.basis || ''),
+    expectedImpact: typeof r === 'string' ? 'Reducción de bloqueo operativo o dependencia crítica.' : (r.impact || r.expectedImpact || r.expectedBenefit || r.benefit || '')
   }));
 
-  problems.slice(0,5).forEach((p, i) => addImprovement({
-    title: (typeof p === 'object' && (p.title || p.name)) ? (p.title || p.name) : 'Mejora derivada de problema ' + (i + 1),
-    summary: 'Propuesta construida a partir de un problema relevante.',
-    problemSolved: typeof p === 'string' ? p : (p.problem || p.description || p.summary || p.title || JSON.stringify(p)),
-    proposedState: typeof p === 'string' ? 'Replantear la actividad o el control relacionado con: ' + p : (p.action || p.proposedState || p.description || p.title || ''),
-    technicalRationale: 'Resolver este problema reduce fricción, retrabajo o demoras.',
-    expectedImpact: typeof p === 'string' ? 'Mejora del desempeño operativo del proceso.' : (p.impact || p.expectedImpact || p.benefit || '')
+  fallbackProblems.slice(0,8).forEach((p, i) => addImprovement({
+    title: typeof p === 'object' ? (p.title || p.name || p.finding || 'Mejora derivada de problema ' + (i + 1)) : 'Mejora derivada de problema ' + (i + 1),
+    summary: 'Propuesta construida a partir de un problema o desperdicio relevante.',
+    problemSolved: typeof p === 'string' ? p : (p.problem || p.description || p.summary || p.finding || p.title || JSON.stringify(p)),
+    proposedState: typeof p === 'string' ? 'Replantear la actividad o el control relacionado con: ' + p : (p.action || p.proposedState || p.description || p.recommendation || p.title || ''),
+    technicalRationale: typeof p === 'object' ? (p.evidence || p.justification || p.operational_impact || '') : 'Resolver este problema reduce fricción, retrabajo o demoras.',
+    expectedImpact: typeof p === 'string' ? 'Mejora del desempeño operativo del proceso.' : (p.impact || p.expectedImpact || p.expectedBenefit || p.benefit || p.operational_impact || '')
   }));
 
   renderImprovements();
+
   if(state.tobe.improvements.length){
-    showMsg('tobeMsg','ok','Se generaron propuestas desde quick wins, restricciones y problemas del análisis.');
+    showMsg('tobeMsg','ok','Se generaron propuestas desde quick wins, desperdicios, restricciones y problemas del análisis.');
   }else{
     showMsg('tobeMsg','warn','No se detectaron quick wins, restricciones, problemas ni mejoras en el análisis procesado.');
   }
 }
+
+  
 function saveToBeAndContinue(){
   collectImprovements();
 
@@ -20274,7 +20284,8 @@ function syncResultsSummaryViews(){
       ["resultsFutureFlowView", "futureFlow"],
       ["resultsDiffView", "differences"],
       ["resultsBenefitsView", "benefits"],
-      ["resultsDocsView", "docs"]
+      ["resultsDocsView", "docs"],
+      ["implementationView", "plan"]
     ];
 
     map.forEach(function(pair){
