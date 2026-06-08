@@ -1703,6 +1703,7 @@ function processStatus(pid){
 
   return 'PLANIFICADO';
 }
+  
 function adminEditor(p){
   const criticidades = catalogValues('criticidad');
   const origenes = [
@@ -1763,14 +1764,61 @@ function adminEditor(p){
     </div>
   </div>`;
 }
-  function updateAnalyst(procesoId, selectEl){
-  const username = selectEl.value;
-  const user = DATA.usuarios.find(u => String(u.username || '').toLowerCase() === String(username || '').toLowerCase());
-  const name = user ? (user.analista_nombre || user.nombre || username) : 'Pendiente';
+  
+async function updateAnalyst(procesoId, selectEl){
+  const username = String(selectEl.value || "").trim();
 
-  updateProcess(procesoId, 'analista_user', username);
-  updateProcess(procesoId, 'analista', name);
+  const user = DATA.usuarios.find(u =>
+    String(u.username || "").trim().toLowerCase() === username.toLowerCase()
+  );
+
+  const name = user
+    ? (user.analista_nombre || user.nombre || username)
+    : "Pendiente";
+
+  const p = DATA.procesos.find(x => x.proceso_id === procesoId);
+
+  if (p) {
+    p.analista_user = username;
+    p.analista = name;
+  }
+
+  DATA.actividades
+    .filter(a => String(a.proceso_id || "") === String(procesoId || ""))
+    .forEach(a => {
+      a.responsable = name;
+    });
+
+  try {
+    if (apiReady()) {
+      await api("update_process_analyst", {
+        proceso_id: procesoId,
+        analista_user: username,
+        username: SESSION.username
+      });
+
+      DATA = await api("bootstrap", {
+        username: SESSION.username
+      });
+    }
+
+    render();
+    toast("Analista reasignado correctamente.");
+
+  } catch (e) {
+    console.error("Error reasignando analista:", e);
+
+    if (apiReady()) {
+      DATA = await api("bootstrap", {
+        username: SESSION.username
+      });
+    }
+
+    render();
+    toast("No se pudo reasignar el analista: " + e.message);
+  }
 }
+  
 function hitoCard(h,p){
   const av=hitoAdvance(h.hito_proceso_id);
   const acts = activeActivities()   .filter(a => a.hito_proceso_id === h.hito_proceso_id)   .sort((a,b) => Number(a.orden_actividad || 0) - Number(b.orden_actividad || 0));
