@@ -5300,18 +5300,18 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 </article>
 
 <article class="card">
-  <h3>Consolidado de insumos</h3>
-  <p>Consolida preparación, contexto y archivos cargados en una entrada técnica para Prompt A. La respuesta estructurada de Prompt A será la base del Proceso AS-IS.</p>
+  <h3>Prompt A + insumos consolidados</h3>
+  <p>Consolida el Prompt A completo junto con la preparación, contexto y archivos cargados. Este contenido será usado por la API o podrá copiarse para procesarlo fuera del LMP.</p>
 
 <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
   <div class="actions-left">
-    <button class="btn" id="btnBuildPromptAInput" onclick="preparePromptAConsolidatedInput()" type="button">Consolidar insumos</button>
-    <button class="btn-ghost" id="btnCopyPromptAInput" onclick="copyPromptAConsolidatedInput()" type="button">Copiar</button>
+    <button class="btn" id="btnBuildPromptAInput" onclick="preparePromptAConsolidatedInput()" type="button">Consolidar Prompt A + insumos</button>
+    <button class="btn-ghost" id="btnCopyPromptAInput" onclick="copyPromptAConsolidatedInput()" type="button">Copiar prompt completo</button>
   </div>
 </div>
 
   <div class="box" id="promptAConsolidatedStatus" style="margin-top:14px;min-height:260px;max-height:360px;overflow:auto">
-    Aún no se ha consolidado la información.
+    Aún no se ha consolidado el Prompt A + insumos.
   </div>
 
   <textarea id="masterEditor" class="hidden" aria-hidden="true"></textarea>
@@ -5320,18 +5320,23 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 
 <article class="card">
   <h3>JSON estructurado generado por IA</h3>
-  <p>Ejecuta Prompt A con la API. La respuesta se mostrará como JSON de solo lectura y luego podrá validarse antes de aplicarse al LMP.</p>
+  <p>Genera el JSON con la API o pega aquí la respuesta JSON generada fuera del LMP. Luego valida el JSON antes de aplicarlo al proceso AS-IS.</p>
 
   <div class="actions" style="border-top:none;padding-top:0;margin-top:0">
     <div class="actions-left">
       <button class="btn-ok" id="btnRunPromptA" onclick="runPromptAWithAI()" type="button">Generar JSON AS-IS con IA</button>
-      <button class="btn-warn" id="btnProcessPromptAResponse" onclick="processPromptAResponse()" type="button">Validar JSON</button>
+      <button class="btn-warn" id="btnProcessPromptAResponse" onclick="processPromptAResponse()" type="button">Validar JSON pegado/generado</button>
     </div>
   </div>
 
-  <div class="pre" id="promptAResponsePreview" style="margin-top:14px;min-height:360px">Sin JSON generado.</div>
+  <div class="field-grid" style="margin-top:14px">
+    <div class="field w-12">
+      <label>Respuesta JSON generada por API o por IA externa</label>
+      <textarea id="promptAResponseEditor" placeholder="Pega aquí el JSON generado fuera del LMP o revisa aquí el JSON generado por API."></textarea>
+    </div>
+  </div>
 
-  <textarea id="promptAResponseEditor" class="hidden" aria-hidden="true"></textarea>
+  <div class="pre hidden" id="promptAResponsePreview" style="margin-top:14px;min-height:360px">Sin JSON generado.</div>
 
 </article>
 
@@ -14921,22 +14926,33 @@ function preparePromptAConsolidatedInput(){
     const payload = buildPromptAInputPayload();
 
     state.promptAInput = payload;
-    resetPromptAValidationState('Consolidado generado. Ejecuta Prompt A y luego valida el JSON estructurado.');
+    resetPromptAValidationState('Prompt A + insumos consolidados. Puedes generar con API o copiarlo para procesarlo fuera del LMP.');
     state.master = null;
 
-    if(qs('masterEditor')){
-      qs('masterEditor').value = JSON.stringify(payload, null, 2);
+    const prompt = buildPromptAPrompt(payload);
+
+    if(!prompt || !String(prompt).trim()){
+      throw new Error('No se pudo construir el Prompt A completo.');
     }
 
-if(qs('promptAConsolidatedStatus')){
-  qs('promptAConsolidatedStatus').textContent = JSON.stringify(payload, null, 2);
-}
+    if(qs('masterEditor')){
+      qs('masterEditor').value = prompt;
+    }
+
+    if(qs('briefPromptEditor')){
+      qs('briefPromptEditor').value = prompt;
+    }
+
+    if(qs('promptAConsolidatedStatus')){
+      qs('promptAConsolidatedStatus').textContent = prompt;
+    }
+
     refreshCargaFlowState();
 
     showMsg(
       'cargaMsg',
       'ok',
-      'Insumos consolidados correctamente. Ya puedes ejecutar Prompt A con IA.'
+      'Prompt A + insumos consolidados correctamente. Puedes generar el JSON con API o copiar el prompt completo para procesarlo fuera del LMP.'
     );
 
     return payload;
@@ -14945,7 +14961,7 @@ if(qs('promptAConsolidatedStatus')){
     showMsg(
       'cargaMsg',
       'err',
-      'No fue posible consolidar los insumos. Detalle: ' + error.message
+      'No fue posible consolidar Prompt A + insumos. Detalle: ' + error.message
     );
     return null;
   }
@@ -14983,11 +14999,6 @@ const prompt = buildPromptAPrompt(payload);
 
     if(!prompt || !String(prompt).trim()){
       throw new Error('No se pudo construir Prompt A desde Google Sheets/API.');
-    }
-
-    // El prompt no se muestra en pantalla.
-    if(qs('briefPromptEditor')){
-      qs('briefPromptEditor').value = '';
     }
 
     if(qs('promptAResponsePreview')){
@@ -15062,20 +15073,22 @@ function copyPromptAConsolidatedInput(){
   try{
     let text = '';
 
-    if(qs('masterEditor') && qs('masterEditor').value.trim()){
+    if(qs('briefPromptEditor') && qs('briefPromptEditor').value.trim()){
+      text = qs('briefPromptEditor').value.trim();
+    }else if(qs('masterEditor') && qs('masterEditor').value.trim()){
       text = qs('masterEditor').value.trim();
-    }else if(state.promptAInput){
-      text = JSON.stringify(state.promptAInput, null, 2);
+    }else if(qs('promptAConsolidatedStatus') && qs('promptAConsolidatedStatus').textContent.trim()){
+      text = qs('promptAConsolidatedStatus').textContent.trim();
     }
 
-    if(!text){
-      showMsg('cargaMsg','warn','Primero consolida los insumos.');
+    if(!text || text === 'Aún no se ha consolidado el Prompt A + insumos.' || text === 'Aún no se ha consolidado la información.'){
+      showMsg('cargaMsg','warn','Primero consolida Prompt A + insumos.');
       return;
     }
 
     navigator.clipboard.writeText(text)
       .then(function(){
-        showMsg('cargaMsg','ok','Consolidado copiado correctamente.');
+        showMsg('cargaMsg','ok','Prompt A + insumos copiado correctamente.');
       })
       .catch(function(){
         const temp = document.createElement('textarea');
@@ -15084,13 +15097,13 @@ function copyPromptAConsolidatedInput(){
         temp.select();
         document.execCommand('copy');
         temp.remove();
-        showMsg('cargaMsg','ok','Consolidado copiado correctamente.');
+        showMsg('cargaMsg','ok','Prompt A + insumos copiado correctamente.');
       });
 
   }catch(error){
-    showMsg('cargaMsg','err','No fue posible copiar el consolidado. Detalle: ' + error.message);
+    showMsg('cargaMsg','err','No fue posible copiar el Prompt A + insumos. Detalle: ' + error.message);
   }
-}  
+} 
 
   
 // Compatibilidad temporal: si algún botón viejo llama esta función, ejecuta el flujo nuevo.
