@@ -787,7 +787,189 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     grid-template-columns:1fr;
   }
 }
+.admin-matrix-tools{
+  display:grid;
+  grid-template-columns:1.4fr repeat(8, minmax(130px, 1fr)) auto;
+  gap:10px;
+  margin:14px 0;
+  align-items:center;
+}
 
+.admin-matrix-tools input,
+.admin-matrix-tools select{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 11px;
+  background:#fff;
+  color:var(--ink);
+  font-size:13px;
+}
+
+.admin-matrix-wrap{
+  width:100%;
+  overflow:auto;
+  border:1px solid var(--line);
+  border-radius:22px;
+  background:#fff;
+  box-shadow:0 12px 28px rgba(8,70,44,.06);
+}
+
+.admin-matrix-table{
+  width:100%;
+  min-width:1580px;
+  border-collapse:collapse;
+}
+
+.admin-matrix-table th{
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:#F3FAF6;
+  color:var(--green3);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  text-align:left;
+  padding:12px 10px;
+  border-bottom:1px solid var(--line);
+}
+
+.admin-matrix-table td{
+  padding:10px;
+  border-bottom:1px solid var(--line);
+  vertical-align:middle;
+  font-size:12px;
+}
+
+.admin-matrix-table input,
+.admin-matrix-table select,
+.admin-matrix-table textarea{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:8px 9px;
+  background:#fff;
+  color:var(--ink);
+  font-size:12px;
+}
+
+.admin-matrix-table textarea{
+  min-height:38px;
+  resize:vertical;
+}
+
+.admin-code{
+  font-weight:950;
+  color:var(--green3);
+}
+
+.admin-action-cell{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+.admin-kanban-top-scroll{
+  overflow-x:auto;
+  overflow-y:hidden;
+  height:18px;
+  margin:12px 0 4px;
+}
+
+.admin-kanban-top-scroll-inner{
+  height:1px;
+}
+
+.admin-kanban{
+  display:flex;
+  gap:12px;
+  overflow-x:auto;
+  padding:10px 2px 8px;
+}
+
+.admin-kanban-col{
+  min-width:300px;
+  background:#F9FFFB;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:12px;
+}
+
+.admin-kanban-col.dragover{
+  background:#ECFDF5;
+  border-color:#24C47E;
+}
+
+.admin-kanban-title{
+  font-size:13px;
+  font-weight:950;
+  color:var(--green3);
+  margin-bottom:10px;
+  display:flex;
+  justify-content:space-between;
+}
+
+.admin-kanban-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+  margin-bottom:10px;
+  cursor:grab;
+}
+
+.admin-kanban-card:hover{
+  border-color:#9ED4B8;
+  box-shadow:0 10px 24px rgba(24,155,91,.10);
+}
+
+.admin-load-table{
+  width:100%;
+  border-collapse:collapse;
+  overflow:hidden;
+  border-radius:20px;
+  background:#fff;
+  border:1px solid var(--line);
+}
+
+.admin-load-table th,
+.admin-load-table td{
+  border-bottom:1px solid var(--line);
+  padding:10px;
+  font-size:12px;
+  text-align:center;
+}
+
+.admin-load-table th:first-child,
+.admin-load-table td:first-child{
+  text-align:left;
+  font-weight:900;
+  color:var(--green3);
+}
+
+.load-badge{
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  min-width:28px;
+  height:24px;
+  border-radius:10px;
+  background:#EAF8F0;
+  color:var(--green3);
+  font-weight:950;
+}
+
+.load-badge.hot{
+  background:#FFFBEB;
+  color:#92400E;
+}
+
+@media(max-width:1200px){
+  .admin-matrix-tools{
+    grid-template-columns:1fr 1fr;
+  }
+}
   
 </style>
 </head>
@@ -1228,11 +1410,12 @@ $("main").innerHTML = `
         <div class="fill" id="globalFill" style="width:${globalAdvance()}%"></div>
       </div>
     </div>
-        ${isAdmin() ? renderAdminControlCenter() : ""}
+${isAdmin() ? renderAdminControlCenter() : `
     <div class="section-title"><h2>Macroprocesos</h2><span class="meta">Click para ver procesos</span></div>
     <section class="grid">
       ${macros.map(m=>macroCard(m)).join("")}
-    </section>`;
+    </section>
+`}
 }
 
 function renderAdminControlCenter(){
@@ -1276,128 +1459,349 @@ function renderAdminControlTab(mode = "dashboard"){
 }
 
 function renderAdminDashboard(){
-  const stats = adminPlanStats();
-  const ps = DATA.procesos || [];
-
-  const completados = ps.filter(p => processAdvance(p.proceso_id) >= 100).length;
-  const enCurso = ps.filter(p => processAdvance(p.proceso_id) > 0 && processAdvance(p.proceso_id) < 100).length;
-  const pendientes = ps.filter(p => processAdvance(p.proceso_id) === 0).length;
+  const macros = DATA.macroprocesos || [];
 
   return `
-    <div class="admin-alert-grid">
-      <div class="admin-alert-card">
-        <div class="num">${stats.total}</div>
-        <div class="label">Procesos del plan</div>
-      </div>
-      <div class="admin-alert-card">
-        <div class="num">${enCurso}</div>
-        <div class="label">En curso</div>
-      </div>
-      <div class="admin-alert-card warn">
-        <div class="num">${pendientes}</div>
-        <div class="label">Pendientes</div>
-      </div>
-      <div class="admin-alert-card">
-        <div class="num">${completados}</div>
-        <div class="label">Completados</div>
-      </div>
-      <div class="admin-alert-card danger">
-        <div class="num">${stats.sinAnalista}</div>
-        <div class="label">Sin analista</div>
-      </div>
-      <div class="admin-alert-card danger">
-        <div class="num">${stats.conAlertas}</div>
-        <div class="label">Con alertas</div>
-      </div>
+    <div class="section-title">
+      <h2>Macroprocesos</h2>
+      <span class="meta">Vista ejecutiva del plan</span>
     </div>
 
-    <div class="admin-table">
-      <div class="section-title" style="margin-top:18px">
-        <h2>Macroprocesos</h2>
-        <span class="meta">Resumen visual del plan</span>
-      </div>
-
-      ${DATA.macroprocesos.map(m => {
-        const procesosMacro = DATA.procesos.filter(p => p.macro_id === m.macro_id);
-        const avg = procesosMacro.length
-          ? Math.round(procesosMacro.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / procesosMacro.length)
-          : 0;
-
-        return `
-          <article class="admin-control-row admin-control-item" onclick="openMacro('${m.macro_id}')">
-            <div><b>${esc(m.macro_id)}</b></div>
-            <div>
-              <strong>${esc(m.macroproceso)}</strong>
-              <div class="meta">${procesosMacro.length} procesos</div>
-            </div>
-            <div>${avg}% avance</div>
-            <div class="bar"><div class="fill" style="width:${avg}%"></div></div>
-            <div><span class="status">${esc(m.estado || "ACTIVO")}</span></div>
-            <div><span class="admin-chip ok">Ver</span></div>
-          </article>
-        `;
-      }).join("")}
-    </div>
+    <section class="grid">
+      ${macros.map(m => macroCard(m)).join("")}
+    </section>
   `;
 }
 
 function renderAdminMatrix(){
   return `
-    <div class="admin-filter-bar">
-      <input id="adminControlSearch" placeholder="Buscar proceso, macroproceso, analista o líder" oninput="adminApplyFilters()">
+    <div class="admin-matrix-tools">
+      <input id="mSearch" placeholder="Buscar dentro de la matriz" oninput="renderAdminMatrixRows()">
 
-      <select id="adminControlStartWeek" onchange="adminApplyFilters()">
-        <option value="">Todas las semanas inicio</option>
-        ${adminWeekOptions()}
+      <select id="mMacro" onchange="renderAdminMatrixRows()">
+        <option value="">Todos los macroprocesos</option>
+        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.macroproceso)))}
       </select>
 
-      <select id="adminControlDeliveryWeek" onchange="adminApplyFilters()">
-        <option value="">Todas las semanas entrega</option>
-        ${adminWeekOptions()}
-      </select>
-
-      <select id="adminControlAnalyst" onchange="adminApplyFilters()">
+      <select id="mAnalyst" onchange="renderAdminMatrixRows()">
         <option value="">Todos los analistas</option>
         <option value="Pendiente">Pendiente</option>
-        ${adminAnalystOptions()}
+        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.analista)))}
       </select>
 
-      <select id="adminControlAlert" onchange="adminApplyFilters()">
+      <select id="mLeader" onchange="renderAdminMatrixRows()">
+        <option value="">Todos los líderes</option>
+        <option value="Pendiente">Pendiente</option>
+        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.lider)))}
+      </select>
+
+      <select id="mStartWeek" onchange="renderAdminMatrixRows()">
+        <option value="">Todas las semanas inicio</option>
+        ${adminWeekFilterOptions()}
+      </select>
+
+      <select id="mDeliveryWeek" onchange="renderAdminMatrixRows()">
+        <option value="">Todas las semanas entrega</option>
+        ${adminWeekFilterOptions()}
+      </select>
+
+      <select id="mCrit" onchange="renderAdminMatrixRows()">
+        <option value="">Todas las criticidades</option>
+        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.criticidad)))}
+      </select>
+
+      <select id="mStatus" onchange="renderAdminMatrixRows()">
+        <option value="">Todos los estados</option>
+        <option value="PLANIFICADO">PLANIFICADO</option>
+        <option value="LEVANTADO AS-IS">LEVANTADO AS-IS</option>
+        <option value="NUEVO EN CURSO TO-BE">NUEVO EN CURSO TO-BE</option>
+        <option value="AS-IS EN CURSO TO-BE">AS-IS EN CURSO TO-BE</option>
+        <option value="COMPLETADO TO-BE">COMPLETADO TO-BE</option>
+      </select>
+
+      <select id="mAlert" onchange="renderAdminMatrixRows()">
         <option value="">Todas las alertas</option>
         <option value="sin_analista">Sin analista</option>
-        <option value="sin_semana">Sin semana</option>
         <option value="sin_lider">Sin líder</option>
+        <option value="sin_inicio">Sin semana inicio</option>
+        <option value="sin_entrega">Sin semana entrega</option>
       </select>
+
+      <button class="btn ghost" type="button" onclick="clearAdminMatrixFilters()">Limpiar filtros</button>
     </div>
 
-    ${renderAdminControlRows("matrix")}
+    <div class="admin-matrix-wrap">
+      <table class="admin-matrix-table">
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Macroproceso</th>
+            <th>Código</th>
+            <th>Proceso</th>
+            <th>Criticidad</th>
+            <th>Analista</th>
+            <th>Líder</th>
+            <th>Sem. inicio</th>
+            <th>Sem. entrega</th>
+            <th>Origen</th>
+            <th>Estado</th>
+            <th>%</th>
+            <th>Alertas</th>
+            <th>Observación</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="adminMatrixRows">
+          ${adminMatrixRows()}
+        </tbody>
+      </table>
+    </div>
   `;
+}
+
+function adminMatrixRows(){
+  const rows = getAdminMatrixFilteredRows();
+
+  return rows.map(p => {
+    const alerts = processAssignmentAlerts(p);
+    const status = processStatus(p.proceso_id);
+    const advance = processAdvance(p.proceso_id);
+    const origin = p.origen_proceso || (isTrue(p.as_is) ? "AS-IS PREVIO" : "NUEVO");
+
+    return `
+      <tr>
+        <td>${esc(p.numero || "")}</td>
+        <td>${esc(p.macroproceso || "")}</td>
+        <td class="admin-code">${esc(p.proceso_id || "")}</td>
+        <td><b>${esc(p.proceso || "")}</b></td>
+
+        <td>
+          <select onchange="adminUpdateProcessField('${p.proceso_id}','criticidad',this.value)">
+            ${selectOptions(catalogValues('criticidad'), p.criticidad)}
+          </select>
+        </td>
+
+        <td>
+          <select onchange="adminUpdateAnalystField('${p.proceso_id}', this)">
+            <option value="">Pendiente</option>
+            ${analystOptions(p.analista_user)}
+          </select>
+        </td>
+
+        <td>
+          <input value="${esc(p.lider || "")}" onchange="adminUpdateProcessField('${p.proceso_id}','lider',this.value)">
+        </td>
+
+        <td>
+          <select onchange="adminUpdateProcessField('${p.proceso_id}','semana_inicio',this.value)">
+            ${weekOptions(p.semana_inicio || p.semana)}
+          </select>
+        </td>
+
+        <td>
+          <select onchange="adminUpdateProcessField('${p.proceso_id}','semana_entrega',this.value)">
+            ${weekOptions(p.semana_entrega)}
+          </select>
+        </td>
+
+        <td>
+          <select onchange="adminUpdateOriginField('${p.proceso_id}', this.value)">
+            ${selectObjectOptions([
+              {value:'NUEVO', label:'NUEVO'},
+              {value:'AS-IS PREVIO', label:'AS-IS PREVIO'}
+            ], origin)}
+          </select>
+        </td>
+
+        <td><span class="status">${esc(status)}</span></td>
+        <td><b>${advance}%</b></td>
+
+        <td>
+          ${alerts.length
+            ? alerts.map(a=>`<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")
+            : `<span class="admin-chip ok">OK</span>`
+          }
+        </td>
+
+        <td>
+          <textarea onchange="adminUpdateProcessField('${p.proceso_id}','observacion',this.value)">${esc(p.observacion || "")}</textarea>
+        </td>
+
+        <td>
+          <div class="admin-action-cell">
+            <button class="btn soft" type="button" onclick="openProcess('${p.proceso_id}', 'adminControl')">Ver</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="15"><b>No hay procesos para mostrar.</b></td></tr>`;
+}
+
+function renderAdminMatrixRows(){
+  const target = $("adminMatrixRows");
+  if(target) target.innerHTML = adminMatrixRows();
+}
+
+function getAdminMatrixFilteredRows(){
+  const q = String($("mSearch")?.value || "").trim().toLowerCase();
+  const macro = String($("mMacro")?.value || "").trim().toLowerCase();
+  const analyst = String($("mAnalyst")?.value || "").trim().toLowerCase();
+  const leader = String($("mLeader")?.value || "").trim().toLowerCase();
+  const startWeek = String($("mStartWeek")?.value || "").trim();
+  const deliveryWeek = String($("mDeliveryWeek")?.value || "").trim();
+  const crit = String($("mCrit")?.value || "").trim().toLowerCase();
+  const status = String($("mStatus")?.value || "").trim().toLowerCase();
+  const alert = String($("mAlert")?.value || "").trim();
+
+  return (DATA.procesos || []).filter(p => {
+    const pStatus = processStatus(p.proceso_id);
+    const alerts = processAssignmentAlerts(p).map(a=>a.key);
+
+    const text = [
+      p.numero,
+      p.proceso_id,
+      p.macroproceso,
+      p.proceso,
+      p.analista,
+      p.lider,
+      p.criticidad,
+      pStatus
+    ].join(" ").toLowerCase();
+
+    return (!q || text.includes(q)) &&
+      (!macro || String(p.macroproceso || "").toLowerCase() === macro) &&
+      (!analyst || String(p.analista || "Pendiente").toLowerCase() === analyst) &&
+      (!leader || String(p.lider || "Pendiente").toLowerCase() === leader) &&
+      (!startWeek || String(getProcessStartWeek(p) || "") === startWeek) &&
+      (!deliveryWeek || String(getProcessDeliveryWeek(p) || "") === deliveryWeek) &&
+      (!crit || String(p.criticidad || "").toLowerCase() === crit) &&
+      (!status || String(pStatus || "").toLowerCase() === status) &&
+      (!alert || alerts.includes(alert));
+  }).sort((a,b)=>Number(a.numero||0)-Number(b.numero||0));
+}
+
+function clearAdminMatrixFilters(){
+  ["mSearch","mMacro","mAnalyst","mLeader","mStartWeek","mDeliveryWeek","mCrit","mStatus","mAlert"].forEach(id=>{
+    const el = $(id);
+    if(el) el.value = "";
+  });
+  renderAdminMatrixRows();
+}
+
+function adminFilterOptions(values){
+  return values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+}
+
+function adminWeekFilterOptions(){
+  let html = "";
+  for(let i=1; i<=53; i++){
+    html += `<option value="${i}">Semana ${i}</option>`;
+  }
+  return html;
+}
+
+async function adminUpdateProcessField(pid, field, value){
+  const p = DATA.procesos.find(x=>x.proceso_id === pid);
+  if(p) p[field] = value || "";
+
+  try{
+    if(apiReady()){
+      await api("update_process", {
+        proceso_id: pid,
+        field,
+        value,
+        username: SESSION.username
+      });
+
+      DATA = await api("bootstrap", { username: SESSION.username });
+    }
+
+    renderAdminMatrixRows();
+    toast("Cambio guardado.");
+  }catch(e){
+    toast("No se pudo guardar: " + e.message);
+  }
+}
+
+async function adminUpdateOriginField(pid, value){
+  const ok = confirm("Este cambio puede marcar, limpiar o bloquear actividades base AS-IS. ¿Deseas continuar?");
+  if(!ok){
+    renderAdminMatrixRows();
+    return;
+  }
+
+  await adminUpdateProcessField(pid, "origen_proceso", value);
+}
+
+async function adminUpdateAnalystField(pid, selectEl){
+  const username = String(selectEl.value || "").trim();
+  const user = DATA.usuarios.find(u =>
+    String(u.username || "").toLowerCase() === username.toLowerCase()
+  );
+
+  const p = DATA.procesos.find(x=>x.proceso_id === pid);
+  if(p){
+    p.analista_user = username;
+    p.analista = user ? (user.analista_nombre || user.nombre || username) : "Pendiente";
+  }
+
+  try{
+    if(apiReady()){
+      await api("update_process_analyst", {
+        proceso_id: pid,
+        analista_user: username,
+        username: SESSION.username
+      });
+
+      DATA = await api("bootstrap", { username: SESSION.username });
+    }
+
+    renderAdminMatrixRows();
+    toast("Analista actualizado.");
+  }catch(e){
+    toast("No se pudo actualizar analista: " + e.message);
+  }
 }
 
 function renderAdminKanban(){
   const weeks = planWeeks();
-  const procesos = DATA.procesos.slice().sort((a,b) => {
-    return getProcessDeliveryWeek(a) - getProcessDeliveryWeek(b);
-  });
+  const width = Math.max(weeks.length * 314, 1200);
 
   return `
     <div class="card">
       <b>Kanban semanal</b>
-      <p class="meta">Organización visual por semana de entrega. Luego activaremos drag & drop.</p>
+      <p class="meta">Arrastra procesos entre semanas para modificar la semana de entrega.</p>
     </div>
 
-    <div class="admin-kanban">
+    <div id="kanbanTopScroll" class="admin-kanban-top-scroll" onscroll="syncKanbanScroll('top')">
+      <div class="admin-kanban-top-scroll-inner" style="width:${width}px"></div>
+    </div>
+
+    <div id="kanbanBodyScroll" class="admin-kanban" onscroll="syncKanbanScroll('body')">
       ${weeks.map(w => {
-        const items = procesos.filter(p => getProcessDeliveryWeek(p) === w);
+        const items = (DATA.procesos || []).filter(p => Number(getProcessDeliveryWeek(p)) === Number(w));
 
         return `
-          <div class="admin-kanban-col">
-            <div class="admin-kanban-title">Semana ${w}</div>
+          <div class="admin-kanban-col"
+               data-week="${w}"
+               ondragover="adminAllowDrop(event)"
+               ondragenter="this.classList.add('dragover')"
+               ondragleave="this.classList.remove('dragover')"
+               ondrop="adminDropProcessToWeek(event, ${w})">
+
+            <div class="admin-kanban-title">
+              <span>Semana ${w}</span>
+              <span>${items.length}</span>
+            </div>
+
             ${items.map(p => `
-              <article class="admin-kanban-card" onclick="openProcess('${p.proceso_id}', 'adminControl')">
+              <article class="admin-kanban-card"
+                       draggable="true"
+                       ondragstart="adminDragProcess(event, '${p.proceso_id}')">
                 <b>${esc(p.proceso)}</b>
                 <div class="meta">${esc(p.macroproceso)}</div>
                 <div class="meta">Analista: ${esc(p.analista || "Pendiente")}</div>
+                <div class="meta">Líder: ${esc(p.lider || "Pendiente")}</div>
                 <span class="status">${esc(processStatus(p.proceso_id))}</span>
               </article>
             `).join("") || `<div class="meta">Sin procesos</div>`}
@@ -1408,55 +1812,174 @@ function renderAdminKanban(){
   `;
 }
 
-function renderAdminLoads(){
-  const byAnalyst = {};
-  const byLeader = {};
+function syncKanbanScroll(source){
+  const top = $("kanbanTopScroll");
+  const body = $("kanbanBodyScroll");
+  if(!top || !body) return;
 
-  DATA.procesos.forEach(p => {
-    const analyst = p.analista || "Pendiente";
-    const leader = p.lider || "Pendiente";
-    byAnalyst[analyst] = (byAnalyst[analyst] || 0) + 1;
-    byLeader[leader] = (byLeader[leader] || 0) + 1;
-  });
+  if(source === "top") body.scrollLeft = top.scrollLeft;
+  if(source === "body") top.scrollLeft = body.scrollLeft;
+}
+
+function adminDragProcess(ev, pid){
+  ev.dataTransfer.setData("text/plain", pid);
+}
+
+function adminAllowDrop(ev){
+  ev.preventDefault();
+}
+
+async function adminDropProcessToWeek(ev, week){
+  ev.preventDefault();
+  const col = ev.currentTarget;
+  col.classList.remove("dragover");
+
+  const pid = ev.dataTransfer.getData("text/plain");
+  if(!pid) return;
+
+  const p = DATA.procesos.find(x=>x.proceso_id === pid);
+  if(p) p.semana_entrega = week;
+
+  try{
+    if(apiReady()){
+      await api("update_process", {
+        proceso_id: pid,
+        field: "semana_entrega",
+        value: week,
+        username: SESSION.username
+      });
+
+      DATA = await api("bootstrap", { username: SESSION.username });
+    }
+
+    const target = $("adminControlContent");
+    if(target) target.innerHTML = renderAdminKanban();
+
+    toast("Semana de entrega actualizada.");
+  }catch(e){
+    toast("No se pudo mover el proceso: " + e.message);
+  }
+}
+
+function renderAdminLoads(){
+  const weeks = planWeeks();
 
   return `
-    <div class="admin-load-grid">
-      <div class="card">
-        <h3>Carga por analista</h3>
-        ${Object.entries(byAnalyst).sort((a,b)=>b[1]-a[1]).map(([name,total]) => `
-          <div class="admin-load-row">
-            <span>${esc(name)}</span>
-            <b>${total}</b>
-          </div>
-        `).join("")}
-      </div>
+    <h3>Carga semanal por recurso de procesos</h3>
+    ${adminLoadTable("analista", weeks)}
 
-      <div class="card">
-        <h3>Carga por líder</h3>
-        ${Object.entries(byLeader).sort((a,b)=>b[1]-a[1]).map(([name,total]) => `
-          <div class="admin-load-row">
-            <span>${esc(name)}</span>
-            <b>${total}</b>
-          </div>
-        `).join("")}
-      </div>
-    </div>
+    <h3 style="margin-top:22px">Carga semanal por líder de proceso</h3>
+    ${adminLoadTable("lider", weeks)}
+  `;
+}
+
+function adminLoadTable(field, weeks){
+  const names = unique((DATA.procesos || []).map(p => p[field] || "Pendiente"));
+
+  return `
+    <table class="admin-load-table">
+      <thead>
+        <tr>
+          <th>${field === "analista" ? "Recurso" : "Líder"}</th>
+          ${weeks.map(w=>`<th>Sem. ${w}</th>`).join("")}
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${names.map(name => {
+          const row = weeks.map(w => {
+            return (DATA.procesos || []).filter(p =>
+              String(p[field] || "Pendiente") === String(name) &&
+              Number(getProcessDeliveryWeek(p)) === Number(w)
+            ).length;
+          });
+
+          const total = row.reduce((a,b)=>a+b,0);
+
+          return `
+            <tr>
+              <td>${esc(name)}</td>
+              ${row.map(v=>`<td><span class="load-badge ${v>=3 ? "hot" : ""}">${v}</span></td>`).join("")}
+              <td><b>${total}</b></td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
   `;
 }
 
 function renderAdminAlertsPanel(){
-  const ps = DATA.procesos.filter(p => processAlerts(p).length > 0);
+  const ps = (DATA.procesos || []).filter(p => processAssignmentAlerts(p).length > 0);
 
   return `
     <div class="card">
-      <b>Alertas del plan</b>
-      <p class="meta">Procesos con información pendiente o inconsistencias operativas.</p>
+      <b>Alertas de asignación</b>
+      <p class="meta">Solo procesos con analista, líder o semanas pendientes.</p>
     </div>
 
-    ${renderAdminControlRows("alerts", ps)}
+    <div class="admin-matrix-wrap" style="margin-top:14px">
+      <table class="admin-matrix-table">
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Macroproceso</th>
+            <th>Proceso</th>
+            <th>Analista</th>
+            <th>Líder</th>
+            <th>Semana inicio</th>
+            <th>Semana entrega</th>
+            <th>Alertas</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ps.map(p => `
+            <tr>
+              <td>${esc(p.numero || "")}</td>
+              <td>${esc(p.macroproceso || "")}</td>
+              <td><b>${esc(p.proceso || "")}</b></td>
+              <td>${pending(p.analista)}</td>
+              <td>${pending(p.lider)}</td>
+              <td>${getProcessStartWeek(p) || `<span class="pending">Pendiente</span>`}</td>
+              <td>${getProcessDeliveryWeek(p) || `<span class="pending">Pendiente</span>`}</td>
+              <td>${processAssignmentAlerts(p).map(a=>`<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")}</td>
+              <td><button class="btn soft" type="button" onclick="openProcess('${p.proceso_id}', 'adminControl')">Ver</button></td>
+            </tr>
+          `).join("") || `<tr><td colspan="9"><b>No hay alertas de asignación.</b></td></tr>`}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
+function processAssignmentAlerts(p){
+  const alerts = [];
+
+  const analyst = String(p.analista || "").trim();
+  const leader = String(p.lider || "").trim();
+  const startWeek = getProcessStartWeek(p);
+  const deliveryWeek = getProcessDeliveryWeek(p);
+
+  if(!analyst || analyst.toLowerCase() === "pendiente"){
+    alerts.push({key:"sin_analista", type:"danger", text:"Sin analista"});
+  }
+
+  if(!leader || leader.toLowerCase() === "pendiente"){
+    alerts.push({key:"sin_lider", type:"danger", text:"Sin líder"});
+  }
+
+  if(!startWeek){
+    alerts.push({key:"sin_inicio", type:"warn", text:"Sin semana inicio"});
+  }
+
+  if(!deliveryWeek){
+    alerts.push({key:"sin_entrega", type:"warn", text:"Sin semana entrega"});
+  }
+
+  return alerts;
+}
+  
 function renderAdminReport(){
   return `
     <div class="card">
