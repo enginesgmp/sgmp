@@ -1177,258 +1177,64 @@ $("main").innerHTML = `
       ${macros.map(m=>macroCard(m)).join("")}
     </section>`;
 }
-function renderAdminControlCenter(){
-  const stats = adminPlanStats();
-  const currentWeek = currentPlanWeek();
-
-  return `
-    <section class="admin-control">
-      <div class="admin-control-head">
-        <div>
-          <h2>Centro de Control del Plan</h2>
-          <p class="sub" style="margin-bottom:0">
-            Control operativo exclusivo para administración: semanas, entregas, analistas y pendientes críticos del plan.
-          </p>
-        </div>
-        <span class="pill">Solo administrador</span>
-      </div>
-
-      <div class="admin-alert-grid">
-        <div class="admin-alert-card">
-          <div class="num">${stats.total}</div>
-          <div class="label">Procesos del plan</div>
-        </div>
-        <div class="admin-alert-card danger">
-          <div class="num">${stats.sinAnalista}</div>
-          <div class="label">Sin analista</div>
-        </div>
-        <div class="admin-alert-card danger">
-          <div class="num">${stats.sinSemanaInicio + stats.sinSemanaEntrega}</div>
-          <div class="label">Sin semanas completas</div>
-        </div>
-        <div class="admin-alert-card warn">
-          <div class="num">${stats.conAlertas}</div>
-          <div class="label">Con alertas</div>
-        </div>
-      </div>
-
-      <div class="admin-control-tabs">
-<button class="admin-tab active" data-admin-mode="week" type="button" onclick="adminControlView('week', this)">Por semana</button>
-<button class="admin-tab" data-admin-mode="analyst" type="button" onclick="adminControlView('analyst', this)">Por analista</button>
-<button class="admin-tab" data-admin-mode="alerts" type="button" onclick="adminControlView('alerts', this)">Alertas</button>
-<button class="admin-tab" data-admin-mode="all" type="button" onclick="adminControlView('all', this)">Todos</button>
-      </div>
-
-      <div class="admin-filter-bar">
-        <input id="adminControlSearch" placeholder="Buscar proceso, analista, líder o macroproceso" oninput="adminApplyFilters()">
-
-<select id="adminControlStartWeek" onchange="adminApplyFilters()">
-  <option value="">Todas las semanas de inicio</option>
-  <option value="${currentWeek}">Inicio semana actual (${currentWeek})</option>
-  ${adminWeekOptions()}
-</select>
-
-<select id="adminControlDeliveryWeek" onchange="adminApplyFilters()">
-  <option value="">Todas las semanas de entrega</option>
-  <option value="${currentWeek}">Entrega semana actual (${currentWeek})</option>
-  ${adminWeekOptions()}
-</select>
-
-        <select id="adminControlAnalyst" onchange="adminApplyFilters()">
-          <option value="">Todos los analistas</option>
-          <option value="Pendiente">Pendiente</option>
-          ${adminAnalystOptions()}
-        </select>
-
-        <select id="adminControlAlert" onchange="adminApplyFilters()">
-          <option value="">Todas las alertas</option>
-          <option value="sin_analista">Sin analista</option>
-          <option value="sin_semana">Sin semana</option>
-          <option value="sin_lider">Sin líder</option>
-        </select>
-      </div>
-
-      <div id="adminControlContent">
-        ${renderAdminControlRows("week")}
-      </div>
-    </section>
-  `;
+  
+.admin-kanban{
+  display:flex;
+  gap:12px;
+  overflow-x:auto;
+  padding:14px 2px 6px;
 }
 
-function renderAdminControlRows(mode = "week"){
-  let ps = DATA.procesos.slice();
+.admin-kanban-col{
+  min-width:280px;
+  background:#F9FFFB;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:12px;
+}
 
-  if(mode === "alerts"){
-    ps = ps.filter(p => processAlerts(p).length > 0);
+.admin-kanban-title{
+  font-size:13px;
+  font-weight:950;
+  color:var(--green3);
+  margin-bottom:10px;
+}
+
+.admin-kanban-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+  margin-bottom:10px;
+  cursor:pointer;
+}
+
+.admin-kanban-card:hover{
+  border-color:#9ED4B8;
+  box-shadow:0 10px 24px rgba(24,155,91,.10);
+}
+
+.admin-load-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+
+.admin-load-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 0;
+  border-bottom:1px solid var(--line);
+}
+
+@media(max-width:900px){
+  .admin-load-grid{
+    grid-template-columns:1fr;
   }
-
-  if(mode === "week"){
-    ps.sort((a,b) =>
-      getProcessStartWeek(a) - getProcessStartWeek(b) ||
-      getProcessDeliveryWeek(a) - getProcessDeliveryWeek(b) ||
-      String(a.proceso).localeCompare(String(b.proceso))
-    );
-  }
-
-  if(mode === "analyst"){
-    ps.sort((a,b) =>
-      String(a.analista || "Pendiente").localeCompare(String(b.analista || "Pendiente")) ||
-      getProcessStartWeek(a) - getProcessStartWeek(b)
-    );
-  }
-
-  if(mode === "all"){
-    ps.sort((a,b) => Number(a.numero || 0) - Number(b.numero || 0));
-  }
-
-  return `
-    <div class="admin-table" data-admin-mode="${mode}">
-      <div class="admin-control-row admin-control-headrow">
-        <div>Inicio / entrega</div>
-        <div>Proceso</div>
-        <div>Analista</div>
-        <div>Líder</div>
-        <div>Estado</div>
-        <div>Alertas</div>
-      </div>
-      ${ps.map(adminControlRow).join("") || `<div class="card"><b>No hay procesos para mostrar.</b></div>`}
-    </div>
-  `;
 }
 
-function adminControlRow(p){
-  const startWeek = getProcessStartWeek(p) || "Pendiente";
-  const deliveryWeek = getProcessDeliveryWeek(p) || "Pendiente";
-  const alerts = processAlerts(p);
-  const alertText = alerts.map(a => a.text).join(" ");
-  const status = processStatus(p.proceso_id);
-  const advance = processAdvance(p.proceso_id);
-
-  const alertHtml = alerts.length
-    ? alerts.map(a => `<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")
-    : `<span class="admin-chip ok">Completo</span>`;
-
-  return `
-    <article 
-      class="admin-control-row admin-control-item"
-      onclick="openProcess('${p.proceso_id}', 'adminControl')"
-      data-search="${esc((p.proceso + ' ' + p.macroproceso + ' ' + p.analista + ' ' + p.lider + ' ' + status + ' ' + alertText).toLowerCase())}"
-      data-start-week="${esc(startWeek)}"
-      data-delivery-week="${esc(deliveryWeek)}"
-      data-analyst="${esc(p.analista || 'Pendiente')}"
-      data-alerts="${esc(alertText.toLowerCase())}"
-    >
-      <div>
-        <b>Inicio:</b> ${startWeek === "Pendiente" ? pending(startWeek) : "Semana " + esc(startWeek)}<br>
-        <span class="meta"><b>Entrega:</b> ${deliveryWeek === "Pendiente" ? pending(deliveryWeek) : "Semana " + esc(deliveryWeek)}</span>
-      </div>
-
-      <div>
-        <strong>${esc(p.proceso)}</strong>
-        <div class="meta">${esc(p.macroproceso)} · ${esc(p.criticidad || "Sin criticidad")}</div>
-      </div>
-
-      <div>${pending(p.analista)}</div>
-      <div>${pending(p.lider)}</div>
-
-      <div>
-        <span class="status">${esc(status)}</span>
-        <div class="meta">${advance}% avance</div>
-      </div>
-
-      <div style="display:flex;flex-wrap:wrap;gap:5px">${alertHtml}</div>
-    </article>
-  `;
-}
-
-function adminControlView(mode, btn){
-  document.querySelectorAll(".admin-tab").forEach(b => b.classList.remove("active"));
-  if(btn) btn.classList.add("active");
-
-  const target = $("adminControlContent");
-  if(target){
-    target.innerHTML = renderAdminControlRows(mode);
-  }
-
-  adminApplyFilters();
-  ADMIN_CONTROL_STATE = getAdminControlState();
-}
-
-function adminApplyFilters(){
-  const q = String($("adminControlSearch")?.value || "").trim().toLowerCase();
-const startWeek = String($("adminControlStartWeek")?.value || "").trim();
-const deliveryWeek = String($("adminControlDeliveryWeek")?.value || "").trim();
-  const analyst = String($("adminControlAnalyst")?.value || "").trim().toLowerCase();
-  const alert = String($("adminControlAlert")?.value || "").trim();
-
-  document.querySelectorAll(".admin-control-item").forEach(row => {
-    const matchesSearch = !q || row.dataset.search.includes(q);
-
-const matchesStartWeek = !startWeek ||
-  String(row.dataset.startWeek) === startWeek;
-
-const matchesDeliveryWeek = !deliveryWeek ||
-  String(row.dataset.deliveryWeek) === deliveryWeek;
-
-const matchesAnalyst = !analyst ||
-  norm(row.dataset.analyst || "") === norm(analyst);
-
-    let matchesAlert = true;
-
-    if(alert === "sin_analista"){
-      matchesAlert = row.dataset.alerts.includes("sin analista");
-    }
-
-    if(alert === "sin_semana"){
-      matchesAlert =
-        row.dataset.alerts.includes("sin semana inicio") ||
-        row.dataset.alerts.includes("sin semana entrega");
-    }
-
-    if(alert === "sin_lider"){
-      matchesAlert = row.dataset.alerts.includes("sin líder");
-    }
-
-    row.classList.toggle("hidden", !(matchesSearch && matchesStartWeek && matchesDeliveryWeek && matchesAnalyst && matchesAlert));
-  });
-
-  ADMIN_CONTROL_STATE = getAdminControlState();
-}
-
-function getAdminControlState(){
-  const table = document.querySelector(".admin-table");
-
-  return {
-    mode: table?.dataset.adminMode || "week",
-    search: $("adminControlSearch")?.value || "",
-    startWeek: $("adminControlStartWeek")?.value || "",
-    deliveryWeek: $("adminControlDeliveryWeek")?.value || "",
-    analyst: $("adminControlAnalyst")?.value || "",
-    alert: $("adminControlAlert")?.value || ""
-  };
-}
-
-function restoreAdminControlState(state){
-  if(!state || !isAdmin()) return;
-
-  const target = $("adminControlContent");
-  if(target){
-    target.innerHTML = renderAdminControlRows(state.mode || "week");
-  }
-
-  document.querySelectorAll(".admin-tab").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.adminMode === (state.mode || "week"));
-  });
-
-  if($("adminControlSearch")) $("adminControlSearch").value = state.search || "";
-  if($("adminControlStartWeek")) $("adminControlStartWeek").value = state.startWeek || "";
-  if($("adminControlDeliveryWeek")) $("adminControlDeliveryWeek").value = state.deliveryWeek || "";
-  if($("adminControlAnalyst")) $("adminControlAnalyst").value = state.analyst || "";
-  if($("adminControlAlert")) $("adminControlAlert").value = state.alert || "";
-
-  adminApplyFilters();
-}
-
+  
   
 function macroCard(m){
   const procesosMacro = DATA.procesos.filter(p=>p.macro_id===m.macro_id);
