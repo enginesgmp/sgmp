@@ -732,6 +732,63 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   .header{position:static}
   .card,.hero,.row,.hito{box-shadow:none}
 }
+.admin-kanban{
+  display:flex;
+  gap:12px;
+  overflow-x:auto;
+  padding:14px 2px 6px;
+}
+
+.admin-kanban-col{
+  min-width:280px;
+  background:#F9FFFB;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:12px;
+}
+
+.admin-kanban-title{
+  font-size:13px;
+  font-weight:950;
+  color:var(--green3);
+  margin-bottom:10px;
+}
+
+.admin-kanban-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+  margin-bottom:10px;
+  cursor:pointer;
+}
+
+.admin-kanban-card:hover{
+  border-color:#9ED4B8;
+  box-shadow:0 10px 24px rgba(24,155,91,.10);
+}
+
+.admin-load-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+
+.admin-load-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 0;
+  border-bottom:1px solid var(--line);
+}
+
+@media(max-width:900px){
+  .admin-load-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+  
 </style>
 </head>
 <body>
@@ -1177,63 +1234,380 @@ $("main").innerHTML = `
       ${macros.map(m=>macroCard(m)).join("")}
     </section>`;
 }
-  
-.admin-kanban{
-  display:flex;
-  gap:12px;
-  overflow-x:auto;
-  padding:14px 2px 6px;
+
+function renderAdminControlCenter(){
+  return `
+    <section class="admin-control">
+      <div class="admin-control-head">
+        <div>
+          <h2>Centro de Control del Plan</h2>
+          <p class="sub" style="margin-bottom:0">
+            Vista operativa exclusiva para administración. Permite revisar, organizar y controlar el plan de procesos.
+          </p>
+        </div>
+        <span class="pill">Solo administrador</span>
+      </div>
+
+      <div class="admin-control-tabs">
+        <button class="admin-tab active" data-admin-mode="dashboard" type="button" onclick="adminControlView('dashboard', this)">Dashboard</button>
+        <button class="admin-tab" data-admin-mode="matrix" type="button" onclick="adminControlView('matrix', this)">Matriz</button>
+        <button class="admin-tab" data-admin-mode="kanban" type="button" onclick="adminControlView('kanban', this)">Kanban</button>
+        <button class="admin-tab" data-admin-mode="loads" type="button" onclick="adminControlView('loads', this)">Cargas</button>
+        <button class="admin-tab" data-admin-mode="alerts" type="button" onclick="adminControlView('alerts', this)">Alertas</button>
+        <button class="admin-tab" data-admin-mode="report" type="button" onclick="adminControlView('report', this)">Informe</button>
+      </div>
+
+      <div id="adminControlContent">
+        ${renderAdminControlTab("dashboard")}
+      </div>
+    </section>
+  `;
 }
 
-.admin-kanban-col{
-  min-width:280px;
-  background:#F9FFFB;
-  border:1px solid var(--line);
-  border-radius:22px;
-  padding:12px;
+function renderAdminControlTab(mode = "dashboard"){
+  if(mode === "dashboard") return renderAdminDashboard();
+  if(mode === "matrix") return renderAdminMatrix();
+  if(mode === "kanban") return renderAdminKanban();
+  if(mode === "loads") return renderAdminLoads();
+  if(mode === "alerts") return renderAdminAlertsPanel();
+  if(mode === "report") return renderAdminReport();
+
+  return renderAdminDashboard();
 }
 
-.admin-kanban-title{
-  font-size:13px;
-  font-weight:950;
-  color:var(--green3);
-  margin-bottom:10px;
+function renderAdminDashboard(){
+  const stats = adminPlanStats();
+  const ps = DATA.procesos || [];
+
+  const completados = ps.filter(p => processAdvance(p.proceso_id) >= 100).length;
+  const enCurso = ps.filter(p => processAdvance(p.proceso_id) > 0 && processAdvance(p.proceso_id) < 100).length;
+  const pendientes = ps.filter(p => processAdvance(p.proceso_id) === 0).length;
+
+  return `
+    <div class="admin-alert-grid">
+      <div class="admin-alert-card">
+        <div class="num">${stats.total}</div>
+        <div class="label">Procesos del plan</div>
+      </div>
+      <div class="admin-alert-card">
+        <div class="num">${enCurso}</div>
+        <div class="label">En curso</div>
+      </div>
+      <div class="admin-alert-card warn">
+        <div class="num">${pendientes}</div>
+        <div class="label">Pendientes</div>
+      </div>
+      <div class="admin-alert-card">
+        <div class="num">${completados}</div>
+        <div class="label">Completados</div>
+      </div>
+      <div class="admin-alert-card danger">
+        <div class="num">${stats.sinAnalista}</div>
+        <div class="label">Sin analista</div>
+      </div>
+      <div class="admin-alert-card danger">
+        <div class="num">${stats.conAlertas}</div>
+        <div class="label">Con alertas</div>
+      </div>
+    </div>
+
+    <div class="admin-table">
+      <div class="section-title" style="margin-top:18px">
+        <h2>Macroprocesos</h2>
+        <span class="meta">Resumen visual del plan</span>
+      </div>
+
+      ${DATA.macroprocesos.map(m => {
+        const procesosMacro = DATA.procesos.filter(p => p.macro_id === m.macro_id);
+        const avg = procesosMacro.length
+          ? Math.round(procesosMacro.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / procesosMacro.length)
+          : 0;
+
+        return `
+          <article class="admin-control-row admin-control-item" onclick="openMacro('${m.macro_id}')">
+            <div><b>${esc(m.macro_id)}</b></div>
+            <div>
+              <strong>${esc(m.macroproceso)}</strong>
+              <div class="meta">${procesosMacro.length} procesos</div>
+            </div>
+            <div>${avg}% avance</div>
+            <div class="bar"><div class="fill" style="width:${avg}%"></div></div>
+            <div><span class="status">${esc(m.estado || "ACTIVO")}</span></div>
+            <div><span class="admin-chip ok">Ver</span></div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
-.admin-kanban-card{
-  background:#fff;
-  border:1px solid var(--line);
-  border-radius:16px;
-  padding:12px;
-  margin-bottom:10px;
-  cursor:pointer;
+function renderAdminMatrix(){
+  return `
+    <div class="admin-filter-bar">
+      <input id="adminControlSearch" placeholder="Buscar proceso, macroproceso, analista o líder" oninput="adminApplyFilters()">
+
+      <select id="adminControlStartWeek" onchange="adminApplyFilters()">
+        <option value="">Todas las semanas inicio</option>
+        ${adminWeekOptions()}
+      </select>
+
+      <select id="adminControlDeliveryWeek" onchange="adminApplyFilters()">
+        <option value="">Todas las semanas entrega</option>
+        ${adminWeekOptions()}
+      </select>
+
+      <select id="adminControlAnalyst" onchange="adminApplyFilters()">
+        <option value="">Todos los analistas</option>
+        <option value="Pendiente">Pendiente</option>
+        ${adminAnalystOptions()}
+      </select>
+
+      <select id="adminControlAlert" onchange="adminApplyFilters()">
+        <option value="">Todas las alertas</option>
+        <option value="sin_analista">Sin analista</option>
+        <option value="sin_semana">Sin semana</option>
+        <option value="sin_lider">Sin líder</option>
+      </select>
+    </div>
+
+    ${renderAdminControlRows("matrix")}
+  `;
 }
 
-.admin-kanban-card:hover{
-  border-color:#9ED4B8;
-  box-shadow:0 10px 24px rgba(24,155,91,.10);
+function renderAdminKanban(){
+  const weeks = planWeeks();
+  const procesos = DATA.procesos.slice().sort((a,b) => {
+    return getProcessDeliveryWeek(a) - getProcessDeliveryWeek(b);
+  });
+
+  return `
+    <div class="card">
+      <b>Kanban semanal</b>
+      <p class="meta">Organización visual por semana de entrega. Luego activaremos drag & drop.</p>
+    </div>
+
+    <div class="admin-kanban">
+      ${weeks.map(w => {
+        const items = procesos.filter(p => getProcessDeliveryWeek(p) === w);
+
+        return `
+          <div class="admin-kanban-col">
+            <div class="admin-kanban-title">Semana ${w}</div>
+            ${items.map(p => `
+              <article class="admin-kanban-card" onclick="openProcess('${p.proceso_id}', 'adminControl')">
+                <b>${esc(p.proceso)}</b>
+                <div class="meta">${esc(p.macroproceso)}</div>
+                <div class="meta">Analista: ${esc(p.analista || "Pendiente")}</div>
+                <span class="status">${esc(processStatus(p.proceso_id))}</span>
+              </article>
+            `).join("") || `<div class="meta">Sin procesos</div>`}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
-.admin-load-grid{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:14px;
+function renderAdminLoads(){
+  const byAnalyst = {};
+  const byLeader = {};
+
+  DATA.procesos.forEach(p => {
+    const analyst = p.analista || "Pendiente";
+    const leader = p.lider || "Pendiente";
+    byAnalyst[analyst] = (byAnalyst[analyst] || 0) + 1;
+    byLeader[leader] = (byLeader[leader] || 0) + 1;
+  });
+
+  return `
+    <div class="admin-load-grid">
+      <div class="card">
+        <h3>Carga por analista</h3>
+        ${Object.entries(byAnalyst).sort((a,b)=>b[1]-a[1]).map(([name,total]) => `
+          <div class="admin-load-row">
+            <span>${esc(name)}</span>
+            <b>${total}</b>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="card">
+        <h3>Carga por líder</h3>
+        ${Object.entries(byLeader).sort((a,b)=>b[1]-a[1]).map(([name,total]) => `
+          <div class="admin-load-row">
+            <span>${esc(name)}</span>
+            <b>${total}</b>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
-.admin-load-row{
-  display:flex;
-  justify-content:space-between;
-  gap:10px;
-  padding:10px 0;
-  border-bottom:1px solid var(--line);
+function renderAdminAlertsPanel(){
+  const ps = DATA.procesos.filter(p => processAlerts(p).length > 0);
+
+  return `
+    <div class="card">
+      <b>Alertas del plan</b>
+      <p class="meta">Procesos con información pendiente o inconsistencias operativas.</p>
+    </div>
+
+    ${renderAdminControlRows("alerts", ps)}
+  `;
 }
 
-@media(max-width:900px){
-  .admin-load-grid{
-    grid-template-columns:1fr;
+function renderAdminReport(){
+  return `
+    <div class="card">
+      <h3>Informe</h3>
+      <p class="meta">
+        Aquí se construirá el onepage horizontal dinámico con filtros internos y descarga PNG.
+      </p>
+      <button class="btn" type="button" disabled>Generar informe</button>
+      <button class="btn secondary" type="button" disabled>Descargar PNG</button>
+    </div>
+  `;
+}
+
+function renderAdminControlRows(mode = "matrix", customRows = null){
+  let ps = customRows || DATA.procesos.slice();
+
+  if(mode === "alerts"){
+    ps = ps.filter(p => processAlerts(p).length > 0);
   }
+
+  ps.sort((a,b) => Number(a.numero || 0) - Number(b.numero || 0));
+
+  return `
+    <div class="admin-table" data-admin-mode="${mode}">
+      <div class="admin-control-row admin-control-headrow">
+        <div>Inicio / entrega</div>
+        <div>Proceso</div>
+        <div>Analista</div>
+        <div>Líder</div>
+        <div>Estado</div>
+        <div>Alertas</div>
+      </div>
+      ${ps.map(adminControlRow).join("") || `<div class="card"><b>No hay procesos para mostrar.</b></div>`}
+    </div>
+  `;
 }
 
+function adminControlRow(p){
+  const startWeek = getProcessStartWeek(p) || "Pendiente";
+  const deliveryWeek = getProcessDeliveryWeek(p) || "Pendiente";
+  const alerts = processAlerts(p);
+  const alertText = alerts.map(a => a.text).join(" ");
+  const status = processStatus(p.proceso_id);
+  const advance = processAdvance(p.proceso_id);
+
+  const alertHtml = alerts.length
+    ? alerts.map(a => `<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")
+    : `<span class="admin-chip ok">Completo</span>`;
+
+  return `
+    <article 
+      class="admin-control-row admin-control-item"
+      onclick="openProcess('${p.proceso_id}', 'adminControl')"
+      data-search="${esc((p.proceso + ' ' + p.macroproceso + ' ' + p.analista + ' ' + p.lider + ' ' + status + ' ' + alertText).toLowerCase())}"
+      data-start-week="${esc(startWeek)}"
+      data-delivery-week="${esc(deliveryWeek)}"
+      data-analyst="${esc(p.analista || 'Pendiente')}"
+      data-alerts="${esc(alertText.toLowerCase())}"
+    >
+      <div>
+        <b>Inicio:</b> ${startWeek === "Pendiente" ? pending(startWeek) : "Semana " + esc(startWeek)}<br>
+        <span class="meta"><b>Entrega:</b> ${deliveryWeek === "Pendiente" ? pending(deliveryWeek) : "Semana " + esc(deliveryWeek)}</span>
+      </div>
+
+      <div>
+        <strong>${esc(p.proceso)}</strong>
+        <div class="meta">${esc(p.macroproceso)} · ${esc(p.criticidad || "Sin criticidad")}</div>
+      </div>
+
+      <div>${pending(p.analista)}</div>
+      <div>${pending(p.lider)}</div>
+
+      <div>
+        <span class="status">${esc(status)}</span>
+        <div class="meta">${advance}% avance</div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${alertHtml}</div>
+    </article>
+  `;
+}
+
+function adminControlView(mode, btn){
+  document.querySelectorAll(".admin-tab").forEach(b => b.classList.remove("active"));
+  if(btn) btn.classList.add("active");
+
+  const target = $("adminControlContent");
+  if(target){
+    target.innerHTML = renderAdminControlTab(mode);
+  }
+
+  ADMIN_CONTROL_STATE = { mode };
+}
+
+function adminApplyFilters(){
+  const q = String($("adminControlSearch")?.value || "").trim().toLowerCase();
+  const startWeek = String($("adminControlStartWeek")?.value || "").trim();
+  const deliveryWeek = String($("adminControlDeliveryWeek")?.value || "").trim();
+  const analyst = String($("adminControlAnalyst")?.value || "").trim().toLowerCase();
+  const alert = String($("adminControlAlert")?.value || "").trim();
+
+  document.querySelectorAll(".admin-control-item").forEach(row => {
+    const matchesSearch = !q || row.dataset.search.includes(q);
+
+    const matchesStartWeek = !startWeek ||
+      String(row.dataset.startWeek) === startWeek;
+
+    const matchesDeliveryWeek = !deliveryWeek ||
+      String(row.dataset.deliveryWeek) === deliveryWeek;
+
+    const matchesAnalyst = !analyst ||
+      norm(row.dataset.analyst || "") === norm(analyst);
+
+    let matchesAlert = true;
+
+    if(alert === "sin_analista"){
+      matchesAlert = row.dataset.alerts.includes("sin analista");
+    }
+
+    if(alert === "sin_semana"){
+      matchesAlert =
+        row.dataset.alerts.includes("sin semana inicio") ||
+        row.dataset.alerts.includes("sin semana entrega");
+    }
+
+    if(alert === "sin_lider"){
+      matchesAlert = row.dataset.alerts.includes("sin líder");
+    }
+
+    row.classList.toggle("hidden", !(matchesSearch && matchesStartWeek && matchesDeliveryWeek && matchesAnalyst && matchesAlert));
+  });
+}
+
+function getAdminControlState(){
+  return ADMIN_CONTROL_STATE || { mode:"dashboard" };
+}
+
+function restoreAdminControlState(state){
+  if(!state || !isAdmin()) return;
+
+  const mode = state.mode || "dashboard";
+  const target = $("adminControlContent");
+
+  if(target){
+    target.innerHTML = renderAdminControlTab(mode);
+  }
+
+  document.querySelectorAll(".admin-tab").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.adminMode === mode);
+  });
+}
   
   
 function macroCard(m){
