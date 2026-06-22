@@ -1236,6 +1236,126 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     grid-template-columns:1fr 1fr;
   }
 }
+
+/* FILTROS MÚLTIPLES DE LA MATRIZ */
+.admin-matrix-tools{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  gap:10px;
+}
+
+.admin-matrix-tools > input{
+  flex:1 1 280px;
+  min-width:240px;
+  height:44px;
+}
+
+.multi-filter{
+  position:relative;
+  flex:0 1 190px;
+  min-width:165px;
+}
+
+.multi-filter summary{
+  height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:0 12px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  color:var(--green3);
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+  list-style:none;
+}
+
+.multi-filter summary::-webkit-details-marker{
+  display:none;
+}
+
+.multi-filter summary::after{
+  content:"▾";
+  font-size:11px;
+}
+
+.multi-filter[open] summary{
+  border-color:var(--green);
+  box-shadow:0 0 0 3px rgba(24,155,91,.10);
+}
+
+.multi-filter-count{
+  max-width:85px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted);
+  font-size:10px;
+}
+
+.multi-filter-menu{
+  position:absolute;
+  top:50px;
+  left:0;
+  z-index:40;
+  width:260px;
+  max-height:340px;
+  overflow:auto;
+  padding:10px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 18px 45px rgba(8,70,44,.18);
+}
+
+.multi-filter-actions{
+  display:flex;
+  gap:6px;
+  padding-bottom:8px;
+  margin-bottom:6px;
+  border-bottom:1px solid var(--line);
+}
+
+.multi-filter-actions button{
+  flex:1;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:6px;
+  background:var(--soft);
+  color:var(--green3);
+  font-size:10px;
+  font-weight:900;
+}
+
+.multi-filter-option{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  padding:8px 6px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:12px;
+}
+
+.multi-filter-option:hover{
+  background:var(--soft);
+}
+
+.multi-filter-option input{
+  width:auto !important;
+  margin-top:2px;
+  accent-color:var(--green);
+}
+
+.multi-filter-active summary{
+  background:var(--soft);
+  border-color:#9ED4B8;
+}
+
   
 </style>
 </head>
@@ -1745,60 +1865,61 @@ function renderAdminDashboard(){
 }
 
 function renderAdminMatrix(){
+  const macros = unique((DATA.procesos || []).map(p => p.macroproceso));
+  const analysts = unique([
+    "Pendiente",
+    ...(DATA.procesos || []).map(p => p.analista || "Pendiente")
+  ]);
+  const leaders = unique([
+    "Pendiente",
+    ...(DATA.procesos || []).map(p => p.lider || "Pendiente")
+  ]);
+  const criticities = unique((DATA.procesos || []).map(p => p.criticidad));
+
+  const weeks = Array.from({length:53}, (_,i) => ({
+    value:String(i + 1),
+    label:`Semana ${i + 1}`
+  }));
+
+  const statuses = [
+    "PLANIFICADO",
+    "LEVANTADO AS-IS",
+    "NUEVO EN CURSO TO-BE",
+    "AS-IS EN CURSO TO-BE",
+    "COMPLETADO TO-BE"
+  ];
+
+  const alerts = [
+    {value:"sin_analista", label:"Sin analista"},
+    {value:"sin_lider", label:"Sin líder"},
+    {value:"sin_inicio", label:"Sin semana inicio"},
+    {value:"sin_entrega", label:"Sin semana entrega"}
+  ];
+
   return `
     <div class="admin-matrix-tools">
-      <input id="mSearch" placeholder="Buscar dentro de la matriz" oninput="renderAdminMatrixRows()">
+      <input
+        id="mSearch"
+        placeholder="Buscar dentro de la matriz"
+        oninput="renderAdminMatrixRows()"
+      >
 
-      <select id="mMacro" onchange="renderAdminMatrixRows()">
-        <option value="">Todos los macroprocesos</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.macroproceso)))}
-      </select>
+      ${renderMultiFilter("mMacro", "Macroprocesos", macros)}
+      ${renderMultiFilter("mAnalyst", "Analistas", analysts)}
+      ${renderMultiFilter("mLeader", "Líderes", leaders)}
+      ${renderMultiFilter("mStartWeek", "Semanas inicio", weeks)}
+      ${renderMultiFilter("mDeliveryWeek", "Semanas entrega", weeks)}
+      ${renderMultiFilter("mCrit", "Criticidades", criticities)}
+      ${renderMultiFilter("mStatus", "Estados", statuses)}
+      ${renderMultiFilter("mAlert", "Alertas", alerts)}
 
-      <select id="mAnalyst" onchange="renderAdminMatrixRows()">
-        <option value="">Todos los analistas</option>
-        <option value="Pendiente">Pendiente</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.analista)))}
-      </select>
-
-      <select id="mLeader" onchange="renderAdminMatrixRows()">
-        <option value="">Todos los líderes</option>
-        <option value="Pendiente">Pendiente</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.lider)))}
-      </select>
-
-      <select id="mStartWeek" onchange="renderAdminMatrixRows()">
-        <option value="">Todas las semanas inicio</option>
-        ${adminWeekFilterOptions()}
-      </select>
-
-      <select id="mDeliveryWeek" onchange="renderAdminMatrixRows()">
-        <option value="">Todas las semanas entrega</option>
-        ${adminWeekFilterOptions()}
-      </select>
-
-      <select id="mCrit" onchange="renderAdminMatrixRows()">
-        <option value="">Todas las criticidades</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.criticidad)))}
-      </select>
-
-      <select id="mStatus" onchange="renderAdminMatrixRows()">
-        <option value="">Todos los estados</option>
-        <option value="PLANIFICADO">PLANIFICADO</option>
-        <option value="LEVANTADO AS-IS">LEVANTADO AS-IS</option>
-        <option value="NUEVO EN CURSO TO-BE">NUEVO EN CURSO TO-BE</option>
-        <option value="AS-IS EN CURSO TO-BE">AS-IS EN CURSO TO-BE</option>
-        <option value="COMPLETADO TO-BE">COMPLETADO TO-BE</option>
-      </select>
-
-      <select id="mAlert" onchange="renderAdminMatrixRows()">
-        <option value="">Todas las alertas</option>
-        <option value="sin_analista">Sin analista</option>
-        <option value="sin_lider">Sin líder</option>
-        <option value="sin_inicio">Sin semana inicio</option>
-        <option value="sin_entrega">Sin semana entrega</option>
-      </select>
-
-      <button class="btn ghost" type="button" onclick="clearAdminMatrixFilters()">Limpiar filtros</button>
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="clearAdminMatrixFilters()"
+      >
+        Limpiar filtros
+      </button>
     </div>
 
     <div class="admin-matrix-wrap">
@@ -1822,6 +1943,7 @@ function renderAdminMatrix(){
             <th>Acción</th>
           </tr>
         </thead>
+
         <tbody id="adminMatrixRows">
           ${adminMatrixRows()}
         </tbody>
@@ -1830,6 +1952,121 @@ function renderAdminMatrix(){
   `;
 }
 
+  function renderMultiFilter(id, label, items){
+  const normalizedItems = (items || []).map(item => {
+    if(typeof item === "object"){
+      return {
+        value:String(item.value ?? ""),
+        label:String(item.label ?? item.value ?? "")
+      };
+    }
+
+    return {
+      value:String(item ?? ""),
+      label:String(item ?? "")
+    };
+  }).filter(item => item.value);
+
+  return `
+    <details class="multi-filter" id="${id}">
+      <summary>
+        <span>${esc(label)}</span>
+        <span class="multi-filter-count" id="${id}Count">Todos</span>
+      </summary>
+
+      <div class="multi-filter-menu">
+        <div class="multi-filter-actions">
+          <button
+            type="button"
+            onclick="setMultiFilterAll('${id}', true, event)"
+          >
+            Marcar todos
+          </button>
+
+          <button
+            type="button"
+            onclick="setMultiFilterAll('${id}', false, event)"
+          >
+            Desmarcar
+          </button>
+        </div>
+
+        ${normalizedItems.map(item => `
+          <label class="multi-filter-option">
+            <input
+              type="checkbox"
+              value="${esc(item.value)}"
+              onchange="onMultiFilterChange('${id}')"
+            >
+            <span>${esc(item.label)}</span>
+          </label>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function getMultiFilterValues(id){
+  return Array.from(
+    document.querySelectorAll(`#${id} input[type="checkbox"]:checked`)
+  ).map(input => String(input.value));
+}
+
+function onMultiFilterChange(id){
+  updateMultiFilterCount(id);
+  renderAdminMatrixRows();
+}
+
+function updateMultiFilterCount(id){
+  const container = document.getElementById(id);
+  const count = document.getElementById(`${id}Count`);
+  const values = getMultiFilterValues(id);
+
+  if(count){
+    count.textContent = values.length
+      ? `${values.length} seleccionado${values.length === 1 ? "" : "s"}`
+      : "Todos";
+  }
+
+  if(container){
+    container.classList.toggle("multi-filter-active", values.length > 0);
+  }
+}
+
+function setMultiFilterAll(id, checked, event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  document
+    .querySelectorAll(`#${id} input[type="checkbox"]`)
+    .forEach(input => {
+      input.checked = checked;
+    });
+
+  updateMultiFilterCount(id);
+  renderAdminMatrixRows();
+}
+
+function normalizeMultiFilterValue(value){
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function multiFilterMatches(selectedValues, currentValue){
+  if(!selectedValues.length) return true;
+
+  const current = normalizeMultiFilterValue(currentValue);
+
+  return selectedValues.some(value =>
+    normalizeMultiFilterValue(value) === current
+  );
+}
+  
 function adminMatrixRows(){
   const rows = getAdminMatrixFilteredRows();
 
@@ -1914,48 +2151,134 @@ function renderAdminMatrixRows(){
 }
 
 function getAdminMatrixFilteredRows(){
-  const q = String($("mSearch")?.value || "").trim().toLowerCase();
-  const macro = String($("mMacro")?.value || "").trim().toLowerCase();
-  const analyst = String($("mAnalyst")?.value || "").trim().toLowerCase();
-  const leader = String($("mLeader")?.value || "").trim().toLowerCase();
-  const startWeek = String($("mStartWeek")?.value || "").trim();
-  const deliveryWeek = String($("mDeliveryWeek")?.value || "").trim();
-  const crit = String($("mCrit")?.value || "").trim().toLowerCase();
-  const status = String($("mStatus")?.value || "").trim().toLowerCase();
-  const alert = String($("mAlert")?.value || "").trim();
+  const q = String($("mSearch")?.value || "")
+    .trim()
+    .toLowerCase();
 
-  return (DATA.procesos || []).filter(p => {
-    const pStatus = processStatus(p.proceso_id);
-    const alerts = processAssignmentAlerts(p).map(a=>a.key);
+  const macros = getMultiFilterValues("mMacro");
+  const analysts = getMultiFilterValues("mAnalyst");
+  const leaders = getMultiFilterValues("mLeader");
+  const startWeeks = getMultiFilterValues("mStartWeek");
+  const deliveryWeeks = getMultiFilterValues("mDeliveryWeek");
+  const criticities = getMultiFilterValues("mCrit");
+  const statuses = getMultiFilterValues("mStatus");
+  const selectedAlerts = getMultiFilterValues("mAlert");
 
-    const text = [
-      p.numero,
-      p.proceso_id,
-      p.macroproceso,
-      p.proceso,
-      p.analista,
-      p.lider,
-      p.criticidad,
-      pStatus
-    ].join(" ").toLowerCase();
+  return (DATA.procesos || [])
+    .filter(p => {
+      const processState = processStatus(p.proceso_id);
 
-    return (!q || text.includes(q)) &&
-      (!macro || String(p.macroproceso || "").toLowerCase() === macro) &&
-      (!analyst || String(p.analista || "Pendiente").toLowerCase() === analyst) &&
-      (!leader || String(p.lider || "Pendiente").toLowerCase() === leader) &&
-      (!startWeek || String(getProcessStartWeek(p) || "") === startWeek) &&
-      (!deliveryWeek || String(getProcessDeliveryWeek(p) || "") === deliveryWeek) &&
-      (!crit || String(p.criticidad || "").toLowerCase() === crit) &&
-      (!status || String(pStatus || "").toLowerCase() === status) &&
-      (!alert || alerts.includes(alert));
-  }).sort((a,b)=>Number(a.numero||0)-Number(b.numero||0));
+      const processAlertKeys = processAssignmentAlerts(p)
+        .map(alert => String(alert.key));
+
+      const text = [
+        p.numero,
+        p.proceso_id,
+        p.macroproceso,
+        p.proceso,
+        p.analista,
+        p.lider,
+        p.criticidad,
+        processState,
+        p.observacion
+      ].join(" ").toLowerCase();
+
+      const matchesSearch =
+        !q || text.includes(q);
+
+      const matchesMacro =
+        multiFilterMatches(macros, p.macroproceso);
+
+      const matchesAnalyst =
+        multiFilterMatches(
+          analysts,
+          p.analista || "Pendiente"
+        );
+
+      const matchesLeader =
+        multiFilterMatches(
+          leaders,
+          p.lider || "Pendiente"
+        );
+
+      const matchesStartWeek =
+        multiFilterMatches(
+          startWeeks,
+          String(getProcessStartWeek(p) || "")
+        );
+
+      const matchesDeliveryWeek =
+        multiFilterMatches(
+          deliveryWeeks,
+          String(getProcessDeliveryWeek(p) || "")
+        );
+
+      const matchesCriticity =
+        multiFilterMatches(
+          criticities,
+          p.criticidad
+        );
+
+      const matchesStatus =
+        multiFilterMatches(
+          statuses,
+          processState
+        );
+
+      /*
+        Dentro de Alertas funciona como O:
+        si marca "Sin analista" y "Sin líder",
+        muestra procesos que tengan cualquiera de las dos.
+      */
+      const matchesAlerts =
+        !selectedAlerts.length ||
+        selectedAlerts.some(alert =>
+          processAlertKeys.includes(alert)
+        );
+
+      return (
+        matchesSearch &&
+        matchesMacro &&
+        matchesAnalyst &&
+        matchesLeader &&
+        matchesStartWeek &&
+        matchesDeliveryWeek &&
+        matchesCriticity &&
+        matchesStatus &&
+        matchesAlerts
+      );
+    })
+    .sort((a,b) =>
+      Number(a.numero || 0) - Number(b.numero || 0)
+    );
 }
 
 function clearAdminMatrixFilters(){
-  ["mSearch","mMacro","mAnalyst","mLeader","mStartWeek","mDeliveryWeek","mCrit","mStatus","mAlert"].forEach(id=>{
-    const el = $(id);
-    if(el) el.value = "";
+  const search = $("mSearch");
+
+  if(search){
+    search.value = "";
+  }
+
+  [
+    "mMacro",
+    "mAnalyst",
+    "mLeader",
+    "mStartWeek",
+    "mDeliveryWeek",
+    "mCrit",
+    "mStatus",
+    "mAlert"
+  ].forEach(id => {
+    document
+      .querySelectorAll(`#${id} input[type="checkbox"]`)
+      .forEach(input => {
+        input.checked = false;
+      });
+
+    updateMultiFilterCount(id);
   });
+
   renderAdminMatrixRows();
 }
 
