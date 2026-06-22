@@ -1558,6 +1558,43 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   height:900px;
   overflow:hidden;
 }
+
+.kanban-intro-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:18px;
+  flex-wrap:wrap;
+}
+
+.kanban-week-switch{
+  display:flex;
+  padding:4px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--soft);
+}
+
+.kanban-week-switch button{
+  border:0;
+  border-radius:999px;
+  padding:10px 16px;
+  background:transparent;
+  color:var(--green3);
+  font-size:12px;
+  font-weight:950;
+}
+
+.kanban-week-switch button.active{
+  background:linear-gradient(
+    135deg,
+    #0B3D2E,
+    #189B5B
+  );
+  color:#fff;
+  box-shadow:0 6px 16px rgba(24,155,91,.18);
+}
+  
   
 </style>
 </head>
@@ -2661,18 +2698,67 @@ async function adminUpdateAnalystField(pid, selectEl){
   }
 }
 
+let ADMIN_KANBAN_WEEK_MODE = "entrega";
+
+function getKanbanWeek(process){
+  return ADMIN_KANBAN_WEEK_MODE === "inicio"
+    ? getProcessStartWeek(process)
+    : getProcessDeliveryWeek(process);
+}
+
+function getKanbanWeekField(){
+  return ADMIN_KANBAN_WEEK_MODE === "inicio"
+    ? "semana_inicio"
+    : "semana_entrega";
+}
+
+function setAdminKanbanWeekMode(mode){
+  const state = getKanbanViewState();
+
+  ADMIN_KANBAN_WEEK_MODE =
+    mode === "inicio" ? "inicio" : "entrega";
+
+  rerenderAdminKanbanKeepingPosition(state);
+}
+  
 function renderAdminKanban(){
   const weeks = planWeeks();
   const width = Math.max(weeks.length * 264, 1100);
 
+  const isStart = ADMIN_KANBAN_WEEK_MODE === "inicio";
+  const weekLabel = isStart
+    ? "semana de inicio"
+    : "semana de entrega";
+
   return `
     <div class="card admin-section-intro">
-      <h3>Kanban semanal</h3>
+      <div class="kanban-intro-row">
+        <div>
+          <h3>Kanban semanal</h3>
+          <p class="meta">
+            Visualización y organización por ${weekLabel}.
+            Arrastra una tarjeta para modificar esa semana.
+          </p>
+        </div>
 
-      <p class="meta">
-        Arrastra procesos entre semanas para modificar la semana de entrega.
-        Haz clic en una tarjeta para abrir el proceso y revisar sus actividades.
-      </p>
+        <div class="kanban-week-switch">
+          <button
+            type="button"
+            class="${isStart ? "active" : ""}"
+            onclick="setAdminKanbanWeekMode('inicio')"
+          >
+            Semana de inicio
+          </button>
+
+          <button
+            type="button"
+            class="${!isStart ? "active" : ""}"
+            onclick="setAdminKanbanWeekMode('entrega')"
+          >
+            Semana de entrega
+          </button>
+        </div>
+      </div>
     </div>
 
     <div
@@ -2691,67 +2777,77 @@ function renderAdminKanban(){
       class="admin-kanban"
       onscroll="syncKanbanScroll('body')"
     >
-      ${weeks.map(w => {
+      ${weeks.map(week => {
         const items = (DATA.procesos || []).filter(
-          p => Number(getProcessDeliveryWeek(p)) === Number(w)
+          process =>
+            Number(getKanbanWeek(process)) === Number(week)
         );
 
         return `
           <div
             class="admin-kanban-col"
-            data-week="${w}"
+            data-week="${week}"
             ondragover="adminAllowDrop(event)"
             ondragenter="this.classList.add('dragover')"
             ondragleave="this.classList.remove('dragover')"
-            ondrop="adminDropProcessToWeek(event,${w})"
+            ondrop="adminDropProcessToWeek(event, ${week})"
           >
-
             <div class="admin-kanban-title">
-              <span>Semana ${w}</span>
+              <span>Semana ${week}</span>
               <strong>${items.length}</strong>
             </div>
 
             ${
-              items.map(p => `
+              items.map(process => `
                 <article
                   class="admin-kanban-card"
                   draggable="true"
-                  onclick="adminKanbanCardClick(event,'${p.proceso_id}')"
-                  ondragstart="adminDragProcess(event,'${p.proceso_id}')"
+                  onclick="adminKanbanCardClick(
+                    event,
+                    '${process.proceso_id}'
+                  )"
+                  ondragstart="adminDragProcess(
+                    event,
+                    '${process.proceso_id}'
+                  )"
                   ondragend="adminClearDragState()"
                 >
                   <b class="admin-kanban-name">
-                    ${esc(p.proceso || "")}
+                    ${esc(process.proceso || "")}
                   </b>
 
                   <div class="meta">
-                    ${esc(p.macroproceso || "")}
+                    ${esc(process.macroproceso || "")}
                   </div>
 
                   <div class="meta">
                     <b>Analista:</b>
-                    ${esc(p.analista || "Pendiente")}
+                    ${esc(process.analista || "Pendiente")}
                   </div>
 
                   <div class="meta">
                     <b>Líder:</b>
-                    ${esc(p.lider || "Pendiente")}
+                    ${esc(process.lider || "Pendiente")}
                   </div>
 
                   <div class="bar admin-kanban-progress">
                     <div
                       class="fill"
-                      style="width:${processAdvance(p.proceso_id)}%"
+                      style="width:${
+                        processAdvance(process.proceso_id)
+                      }%"
                     ></div>
                   </div>
 
                   <div class="meta">
-                    ${processAdvance(p.proceso_id)}% avance
+                    ${processAdvance(process.proceso_id)}% avance
                   </div>
                 </article>
               `).join("")
               ||
-              `<div class="admin-empty-week">Sin procesos</div>`
+              `<div class="admin-empty-week">
+                Sin procesos
+              </div>`
             }
           </div>
         `;
@@ -2857,46 +2953,46 @@ function adminAllowDrop(event){
   event.dataTransfer.dropEffect = "move";
 }
 
-async function adminDropProcessToWeek(ev, week){
-  ev.preventDefault();
+async function adminDropProcessToWeek(event, week){
+  event.preventDefault();
 
   const kanbanState = getKanbanViewState();
+  const column = event.currentTarget;
 
-  const col = ev.currentTarget;
-  col.classList.remove("dragover");
+  column.classList.remove("dragover");
 
-  const pid =
-    ev.dataTransfer.getData("text/plain") ||
+  const processId =
+    event.dataTransfer.getData("text/plain") ||
     ADMIN_DRAG_PROCESS_ID;
 
-  if(!pid) return;
+  if(!processId) return;
 
   const process = DATA.procesos.find(
-    item => item.proceso_id === pid
+    item => item.proceso_id === processId
   );
 
   if(!process) return;
 
-  const previousWeek = process.semana_entrega || "";
+  const field = getKanbanWeekField();
+  const previousValue = process[field] || "";
 
   if(
-    Number(getProcessDeliveryWeek(process)) ===
-    Number(week)
+    Number(getKanbanWeek(process)) === Number(week)
   ){
     adminClearDragState();
     restoreKanbanViewState(kanbanState);
     return;
   }
 
-  process.semana_entrega = Number(week);
+  process[field] = Number(week);
 
   rerenderAdminKanbanKeepingPosition(kanbanState);
 
   try{
     if(apiReady()){
       await api("update_process", {
-        proceso_id: pid,
-        field: "semana_entrega",
+        proceso_id: processId,
+        field,
         value: Number(week),
         username: SESSION.username
       });
@@ -2914,15 +3010,20 @@ async function adminDropProcessToWeek(ev, week){
     }
 
     rerenderAdminKanbanKeepingPosition(kanbanState);
-    toast("Semana de entrega actualizada.");
+
+    toast(
+      field === "semana_inicio"
+        ? "Semana de inicio actualizada."
+        : "Semana de entrega actualizada."
+    );
 
   }catch(error){
     const rollback = DATA.procesos.find(
-      item => item.proceso_id === pid
+      item => item.proceso_id === processId
     );
 
     if(rollback){
-      rollback.semana_entrega = previousWeek;
+      rollback[field] = previousValue;
     }
 
     rerenderAdminKanbanKeepingPosition(kanbanState);
@@ -2937,6 +3038,7 @@ async function adminDropProcessToWeek(ev, week){
     restoreKanbanViewState(kanbanState);
   }
 }
+  
 function renderAdminLoads(){
   const weeks = planWeeks();
 
