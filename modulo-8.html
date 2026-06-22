@@ -1659,6 +1659,29 @@ let SESSION = null;
 let VIEW = {type:"home"};
 let ADMIN_CONTROL_STATE = null;
 
+  let ADMIN_DRAG_PROCESS_ID = null;
+let ADMIN_KANBAN_DRAGGING = false;
+
+function applyBootstrapData(raw){
+  const candidate =
+    raw?.data && Array.isArray(raw.data.procesos)
+      ? raw.data
+      : raw;
+
+  if(
+    !candidate ||
+    !Array.isArray(candidate.procesos) ||
+    !Array.isArray(candidate.macroprocesos) ||
+    !Array.isArray(candidate.hitos) ||
+    !Array.isArray(candidate.actividades)
+  ){
+    throw new Error("La respuesta del RADAR no contiene una estructura válida.");
+  }
+
+  DATA = candidate;
+  return DATA;
+}
+
 const $ = id => document.getElementById(id);
 const norm = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().trim();
 
@@ -1792,8 +1815,7 @@ if (isAdmin()) {
 }
 
 await syncData();
-render();
-
+    
   } catch (error) {
     console.error("Error en login:", error);
     err.textContent = "RADAR no pudo validar el acceso. Revise la conexión o la configuración de la API.";
@@ -1806,32 +1828,38 @@ render();
 window.login = login;
   
 async function syncData(){
-  const preserveAdminView =
-  isAdmin() &&
-  Boolean($("adminControlContent"));
-
-const savedAdminState = preserveAdminView
-  ? getAdminControlState()
-  : null;
-
-const savedKanbanState =
-  savedAdminState?.mode === "kanban"
-    ? getKanbanViewState()
+  const savedState = isAdmin()
+    ? getAdminControlState()
     : null;
-  try{
-    if(apiReady() && SESSION) DATA=await api("bootstrap",{username:SESSION.username});
-    toast("Información actualizada.");
-    render();
-    if(savedAdminState){
-  restoreAdminControlState(savedAdminState);
 
-  if(savedAdminState.mode === "kanban"){
-    restoreKanbanViewState(savedKanbanState);
+  try{
+    if(apiReady() && SESSION){
+      const rawBootstrap = await api("bootstrap", {
+        username: SESSION.username
+      });
+
+      applyBootstrapData(rawBootstrap);
+    }
+
+    render();
+
+    if(savedState){
+      restoreAdminControlState(savedState);
+    }
+
+    toast("Información actualizada.");
+
+  }catch(error){
+    console.error("Error actualizando RADAR:", error);
+
+    if(savedState){
+      restoreAdminControlState(savedState);
+    }
+
+    toast("No se pudo actualizar: " + error.message);
   }
 }
-  }catch(e){ toast(e.message); }
-}
-
+  
 function logout(){ SESSION=null; location.reload(); }
 
 function getVisibleProcesses(){
@@ -2799,9 +2827,10 @@ function renderAdminKanban(){
 
             ${
               items.map(process => `
-                <article
-                  class="admin-kanban-card"
-                  draggable="true"
+<article
+  class="admin-kanban-card"
+  data-process-id="${process.proceso_id}"
+  draggable="true"
                   onclick="adminKanbanCardClick(
                     event,
                     '${process.proceso_id}'
@@ -2857,8 +2886,12 @@ function renderAdminKanban(){
 }
   
 let ADMIN_KANBAN_SCROLL_LEFT = 0;
+let ADMIN_KANBAN_RESTORING = false;
+let ADMIN_KANBAN_RESTORE_TIMER = null;
 
 function syncKanbanScroll(source){
+  if(ADMIN_KANBAN_RESTORING) return;
+
   const top = $("kanbanTopScroll");
   const body = $("kanbanBodyScroll");
 
@@ -2869,44 +2902,105 @@ function syncKanbanScroll(source){
     : body.scrollLeft;
 
   ADMIN_KANBAN_SCROLL_LEFT = left;
-  top.scrollLeft = left;
-  body.scrollLeft = left;
+
+  ADMIN_CONTROL_STATE = {
+    ...(ADMIN_CONTROL_STATE || {}),
+    mode: "kanban",
+    kanbanLeft: left,
+    pageY: window.scrollY,
+    kanbanWeekMode: ADMIN_KANBAN_WEEK_MODE
+  };
+
+  ADMIN_KANBAN_RESTORING = true;
+
+  if(source === "top"){
+    body.scrollLeft = left;
+  }else{
+    top.scrollLeft = left;
+  }
+
+  requestAnimationFrame(() => {
+    ADMIN_KANBAN_RESTORING = false;
+  });
 }
 
 function getKanbanViewState(){
   const top = $("kanbanTopScroll");
   const body = $("kanbanBodyScroll");
 
-  return {
-    left: body?.scrollLeft ??
-          top?.scrollLeft ??
-          ADMIN_KANBAN_SCROLL_LEFT ??
-          0,
+  const left = top
+    ? top.scrollLeft
+    : body
+      ? body.scrollLeft
+      : ADMIN_KANBAN_SCROLL_LEFT;
 
-    pageY: window.scrollY
+  return {
+    left: Number(left) || 0,
+    kanbanLeft: Number(left) || 0,
+    pageY: window.scrollY,
+    kanbanWeekMode: ADMIN_KANBAN_WEEK_MODE
   };
 }
 
 function restoreKanbanViewState(state){
   if(!state) return;
 
-  ADMIN_KANBAN_SCROLL_LEFT = Number(state.left) || 0;
+  const savedLeft = Number(
+    state.left ??
+    state.kanbanLeft ??
+    ADMIN_KANBAN_SCROLL_LEFT
+  ) || 0;
+
+  const savedPageY = Number(state.pageY) || 0;
+
+  ADMIN_KANBAN_SCROLL_LEFT = savedLeft;
+
+  if(state.kanbanWeekMode){
+    ADMIN_KANBAN_WEEK_MODE =
+      state.kanbanWeekMode === "inicio"
+        ? "inicio"
+        : "entrega";
+  }
+
+  clearTimeout(ADMIN_KANBAN_RESTORE_TIMER);
+  ADMIN_KANBAN_RESTORING = true;
+
+  const applyPosition = () => {
+    const top = $("kanbanTopScroll");
+    const body = $("kanbanBodyScroll");
+
+    if(top){
+      top.scrollLeft = savedLeft;
+    }
+
+    if(body){
+      body.scrollLeft = savedLeft;
+    }
+
+    window.scrollTo({
+      top: savedPageY,
+      left: 0,
+      behavior: "auto"
+    });
+  };
+
+  applyPosition();
 
   requestAnimationFrame(() => {
+    applyPosition();
+
     requestAnimationFrame(() => {
-      const top = $("kanbanTopScroll");
-      const body = $("kanbanBodyScroll");
-
-      if(top) top.scrollLeft = ADMIN_KANBAN_SCROLL_LEFT;
-      if(body) body.scrollLeft = ADMIN_KANBAN_SCROLL_LEFT;
-
-      window.scrollTo({
-        top: Number(state.pageY) || 0,
-        left: 0,
-        behavior: "auto"
-      });
+      applyPosition();
     });
   });
+
+  setTimeout(applyPosition, 60);
+  setTimeout(applyPosition, 180);
+
+  ADMIN_KANBAN_RESTORE_TIMER = setTimeout(() => {
+    applyPosition();
+    ADMIN_KANBAN_RESTORING = false;
+  }, 260);
 }
 
 function rerenderAdminKanbanKeepingPosition(state){
@@ -2917,6 +3011,7 @@ function rerenderAdminKanbanKeepingPosition(state){
   target.innerHTML = renderAdminKanban();
   restoreKanbanViewState(state);
 }
+  
 function adminDragProcess(event, pid){
   ADMIN_DRAG_PROCESS_ID = pid;
   ADMIN_KANBAN_DRAGGING = true;
@@ -2948,6 +3043,43 @@ function adminClearDragState(){
   }, 150);
 }
 
+function getKanbanCardElement(processId){
+  return Array.from(
+    document.querySelectorAll(".admin-kanban-card")
+  ).find(card =>
+    String(card.dataset.processId) === String(processId)
+  );
+}
+
+function updateKanbanColumnState(column){
+  if(!column) return;
+
+  const cards = Array.from(column.children).filter(element =>
+    element.classList.contains("admin-kanban-card")
+  );
+
+  const count = column.querySelector(
+    ".admin-kanban-title strong"
+  );
+
+  if(count){
+    count.textContent = cards.length;
+  }
+
+  const empty = column.querySelector(".admin-empty-week");
+
+  if(cards.length === 0){
+    if(!empty){
+      column.insertAdjacentHTML(
+        "beforeend",
+        `<div class="admin-empty-week">Sin procesos</div>`
+      );
+    }
+  }else if(empty){
+    empty.remove();
+  }
+}  
+
 function adminAllowDrop(event){
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
@@ -2957,9 +3089,9 @@ async function adminDropProcessToWeek(event, week){
   event.preventDefault();
 
   const kanbanState = getKanbanViewState();
-  const column = event.currentTarget;
+  const targetColumn = event.currentTarget;
 
-  column.classList.remove("dragover");
+  targetColumn.classList.remove("dragover");
 
   const processId =
     event.dataTransfer.getData("text/plain") ||
@@ -2976,17 +3108,38 @@ async function adminDropProcessToWeek(event, week){
   const field = getKanbanWeekField();
   const previousValue = process[field] || "";
 
-  if(
-    Number(getKanbanWeek(process)) === Number(week)
-  ){
+  if(Number(getKanbanWeek(process)) === Number(week)){
     adminClearDragState();
     restoreKanbanViewState(kanbanState);
     return;
   }
 
+  const card = getKanbanCardElement(processId);
+  const sourceColumn = card?.closest(".admin-kanban-col");
+  const originalNextElement = card?.nextElementSibling || null;
+
   process[field] = Number(week);
 
-  rerenderAdminKanbanKeepingPosition(kanbanState);
+  /*
+    Se mueve la tarjeta directamente.
+    No se reconstruye todo el Kanban.
+  */
+  if(card && targetColumn){
+    const targetEmpty = targetColumn.querySelector(
+      ".admin-empty-week"
+    );
+
+    if(targetEmpty){
+      targetEmpty.remove();
+    }
+
+    targetColumn.appendChild(card);
+
+    updateKanbanColumnState(sourceColumn);
+    updateKanbanColumnState(targetColumn);
+  }
+
+  restoreKanbanViewState(kanbanState);
 
   try{
     if(apiReady()){
@@ -3001,15 +3154,10 @@ async function adminDropProcessToWeek(event, week){
         username: SESSION.username
       });
 
-      const normalizedData =
-        normalizeBootstrapData(rawBootstrap);
-
-      if(normalizedData){
-        DATA = normalizedData;
-      }
+      applyBootstrapData(rawBootstrap);
     }
 
-    rerenderAdminKanbanKeepingPosition(kanbanState);
+    restoreKanbanViewState(kanbanState);
 
     toast(
       field === "semana_inicio"
@@ -3018,15 +3166,38 @@ async function adminDropProcessToWeek(event, week){
     );
 
   }catch(error){
-    const rollback = DATA.procesos.find(
-      item => item.proceso_id === processId
-    );
+    process[field] = previousValue;
 
-    if(rollback){
-      rollback[field] = previousValue;
+    /*
+      Devuelve la tarjeta a su columna original
+      sin reconstruir el tablero.
+    */
+    if(card && sourceColumn){
+      const sourceEmpty = sourceColumn.querySelector(
+        ".admin-empty-week"
+      );
+
+      if(sourceEmpty){
+        sourceEmpty.remove();
+      }
+
+      if(
+        originalNextElement &&
+        originalNextElement.parentElement === sourceColumn
+      ){
+        sourceColumn.insertBefore(
+          card,
+          originalNextElement
+        );
+      }else{
+        sourceColumn.appendChild(card);
+      }
+
+      updateKanbanColumnState(sourceColumn);
+      updateKanbanColumnState(targetColumn);
     }
 
-    rerenderAdminKanbanKeepingPosition(kanbanState);
+    restoreKanbanViewState(kanbanState);
 
     toast(
       "No se pudo mover el proceso: " +
@@ -3511,15 +3682,31 @@ function adminControlRow(p){
 }
 
 function adminControlView(mode, btn){
-  document.querySelectorAll(".admin-tab").forEach(b => b.classList.remove("active"));
-  if(btn) btn.classList.add("active");
+  const previousState = getAdminControlState();
+
+  document.querySelectorAll(".admin-tab").forEach(button => {
+    button.classList.remove("active");
+  });
+
+  if(btn){
+    btn.classList.add("active");
+  }
 
   const target = $("adminControlContent");
+
+  ADMIN_CONTROL_STATE = {
+    ...previousState,
+    mode,
+    kanbanWeekMode: ADMIN_KANBAN_WEEK_MODE
+  };
+
   if(target){
     target.innerHTML = renderAdminControlTab(mode);
   }
 
-  ADMIN_CONTROL_STATE = { mode };
+  if(mode === "kanban"){
+    restoreKanbanViewState(ADMIN_CONTROL_STATE);
+  }
 }
 
 function adminApplyFilters(){
@@ -3562,7 +3749,22 @@ function adminApplyFilters(){
 }
 
 function getAdminControlState(){
-  return ADMIN_CONTROL_STATE || { mode:"dashboard" };
+  const base = ADMIN_CONTROL_STATE || {
+    mode: "dashboard"
+  };
+
+  if(base.mode === "kanban"){
+    return {
+      ...base,
+      ...getKanbanViewState(),
+      mode: "kanban",
+      kanbanWeekMode: ADMIN_KANBAN_WEEK_MODE
+    };
+  }
+
+  return {
+    ...base
+  };
 }
 
 function restoreAdminControlState(state){
@@ -3571,15 +3773,36 @@ function restoreAdminControlState(state){
   const mode = state.mode || "dashboard";
   const target = $("adminControlContent");
 
+  if(
+    mode === "kanban" &&
+    state.kanbanWeekMode
+  ){
+    ADMIN_KANBAN_WEEK_MODE =
+      state.kanbanWeekMode === "inicio"
+        ? "inicio"
+        : "entrega";
+  }
+
   if(target){
     target.innerHTML = renderAdminControlTab(mode);
   }
 
-  document.querySelectorAll(".admin-tab").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.adminMode === mode);
+  ADMIN_CONTROL_STATE = {
+    ...state,
+    mode
+  };
+
+  document.querySelectorAll(".admin-tab").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.adminMode === mode
+    );
   });
+
+  if(mode === "kanban"){
+    restoreKanbanViewState(state);
+  }
 }
-  
   
 function macroCard(m){
   const procesosMacro = DATA.procesos.filter(p=>p.macro_id===m.macro_id);
