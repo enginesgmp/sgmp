@@ -1783,6 +1783,67 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     justify-content:flex-start;
   }
 }
+
+  /* ADMIN · MACROPROCESOS */
+.admin-macro-row{
+  display:grid;
+  grid-template-columns:90px 1.4fr 130px 90px 120px 150px;
+  gap:10px;
+  align-items:center;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:12px;
+}
+
+.admin-macro-row:last-child{
+  border-bottom:0;
+}
+
+.admin-macro-row.head{
+  background:#F3FAF6;
+  color:var(--green3);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  font-weight:950;
+}
+
+.admin-macro-row:not(.head):hover{
+  background:#F9FFFB;
+}
+
+.admin-macro-icon-cell{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.admin-macro-icon-cell .icon{
+  width:36px;
+  height:36px;
+  border-radius:12px;
+}
+
+.admin-macro-actions{
+  display:flex;
+  gap:6px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+
+@media(max-width:1100px){
+  .admin-macro-row{
+    grid-template-columns:1fr;
+  }
+
+  .admin-macro-row.head{
+    display:none;
+  }
+
+  .admin-macro-actions{
+    justify-content:flex-start;
+  }
+}
   
 </style>
 </head>
@@ -2646,12 +2707,237 @@ async function adminDeactivateUser(userId){
 }
   
 function renderAdminMacroprocesses(){
-  return renderAdminPendingModule(
-    "Administración de macroprocesos",
-    "Sección preparada para crear, editar, ordenar y desactivar macroprocesos. No se editarán colores; el ícono deberá seleccionarse desde opciones."
-  );
+  const macros = DATA.macroprocesos || [];
+
+  return `
+    <div class="section-title">
+      <div>
+        <h2>Administración de macroprocesos</h2>
+        <span class="meta">Crear, modificar, ordenar o desactivar macroprocesos sin eliminar filas.</span>
+      </div>
+      <button class="btn ghost" type="button" onclick="adminNewMacroprocess()">Nuevo macroproceso</button>
+    </div>
+
+    <section class="admin-master-layout">
+      <aside class="admin-master-form">
+        <h3 style="margin:0 0 12px">Formulario de macroproceso</h3>
+
+        <input type="hidden" id="adminMacroId">
+
+        <div class="field">
+          <label>Nombre del macroproceso</label>
+          <input id="adminMacroName" placeholder="Ej. Abastecimiento">
+        </div>
+
+        <div class="field">
+          <label>Ícono</label>
+          <select id="adminMacroIcon">
+            ${adminMacroIconOptions()}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Responsable macro</label>
+          <input id="adminMacroResponsible" placeholder="Opcional">
+        </div>
+
+        <div class="field">
+          <label>Orden</label>
+          <input id="adminMacroOrder" type="number" min="1" placeholder="Orden visual">
+        </div>
+
+        <div class="field">
+          <label>Estado</label>
+          <select id="adminMacroStatus">
+            <option value="ACTIVO">ACTIVO</option>
+            <option value="INACTIVO">INACTIVO</option>
+          </select>
+        </div>
+
+        <div class="admin-master-actions">
+          <button class="btn primary" type="button" onclick="adminSaveMacroprocess()">Guardar macroproceso</button>
+          <button class="btn ghost" type="button" onclick="adminNewMacroprocess()">Limpiar</button>
+        </div>
+      </aside>
+
+      <section class="admin-master-table">
+        <div class="admin-macro-row head">
+          <span>ID</span>
+          <span>Macroproceso</span>
+          <span>Ícono</span>
+          <span>Orden</span>
+          <span>Estado</span>
+          <span>Acciones</span>
+        </div>
+
+        ${
+          macros
+            .slice()
+            .sort((a,b) => Number(a.orden || 999) - Number(b.orden || 999))
+            .map(m => {
+              const status = String(m.estado || "ACTIVO").toUpperCase();
+              const active = String(m.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
+
+              return `
+                <div class="admin-macro-row">
+                  <b class="admin-code">${esc(m.macro_id || "")}</b>
+                  <span>${esc(m.macroproceso || "")}</span>
+                  <span class="admin-macro-icon-cell">
+                    <span class="icon">${iconSvg(m.icono || "folder")}</span>
+                    ${esc(m.icono || "folder")}
+                  </span>
+                  <span>${esc(m.orden || "")}</span>
+                  <span>
+                    <span class="admin-status-pill ${active ? "" : "off"}">
+                      ${active ? "ACTIVO" : "INACTIVO"}
+                    </span>
+                  </span>
+                  <span class="admin-macro-actions">
+                    <button class="btn ghost" type="button" onclick="adminEditMacroprocess('${esc(m.macro_id || "")}')">Editar</button>
+                    <button class="btn danger" type="button" onclick="adminDeactivateMacroprocess('${esc(m.macro_id || "")}')">Inactivar</button>
+                  </span>
+                </div>
+              `;
+            }).join("") || `
+              <div class="admin-macro-row">
+                <span>No hay macroprocesos registrados.</span>
+              </div>
+            `
+        }
+      </section>
+    </section>
+  `;
 }
 
+function adminMacroIconOptions(selected = ""){
+  const icons = [
+    ["boxes", "Abastecimiento"],
+    ["briefcase", "Comercial"],
+    ["target", "Estrategia"],
+    ["coins", "Financiero"],
+    ["factory", "Producción"],
+    ["users", "Recursos Humanos"],
+    ["monitor", "Tecnología"],
+    ["truck", "Logística"],
+    ["wrench", "Mantenimiento"],
+    ["shield", "Normativo"],
+    ["flask", "Investigación y desarrollo"],
+    ["folder", "General"]
+  ];
+
+  return icons.map(([value,label]) => `
+    <option value="${esc(value)}" ${String(selected) === value ? "selected" : ""}>
+      ${esc(label)}
+    </option>
+  `).join("");
+}
+
+function adminNewMacroprocess(){
+  if($("adminMacroId")) $("adminMacroId").value = "";
+  if($("adminMacroName")) $("adminMacroName").value = "";
+  if($("adminMacroIcon")) $("adminMacroIcon").value = "folder";
+  if($("adminMacroResponsible")) $("adminMacroResponsible").value = "";
+  if($("adminMacroOrder")) $("adminMacroOrder").value = "";
+  if($("adminMacroStatus")) $("adminMacroStatus").value = "ACTIVO";
+}
+
+function adminEditMacroprocess(macroId){
+  const m = (DATA.macroprocesos || []).find(x =>
+    String(x.macro_id || "") === String(macroId || "")
+  );
+
+  if(!m){
+    toast("Macroproceso no encontrado.");
+    return;
+  }
+
+  $("adminMacroId").value = m.macro_id || "";
+  $("adminMacroName").value = m.macroproceso || "";
+  $("adminMacroIcon").value = m.icono || "folder";
+  $("adminMacroResponsible").value = m.responsable_macro || "";
+  $("adminMacroOrder").value = m.orden || "";
+  $("adminMacroStatus").value = String(m.estado || "ACTIVO").toUpperCase();
+}
+
+async function adminSaveMacroprocess(){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const macroId = $("adminMacroId").value.trim();
+  const macroproceso = $("adminMacroName").value.trim();
+  const icono = $("adminMacroIcon").value.trim();
+  const responsableMacro = $("adminMacroResponsible").value.trim();
+  const orden = $("adminMacroOrder").value.trim();
+  const estado = $("adminMacroStatus").value.trim().toUpperCase();
+
+  if(!macroproceso){
+    toast("Ingrese el nombre del macroproceso.");
+    return;
+  }
+
+  try{
+    await api("upsert_macroprocess", {
+      username_admin: SESSION.username,
+      macro_id: macroId,
+      macroproceso,
+      icono,
+      responsable_macro: responsableMacro,
+      orden,
+      estado
+    });
+
+    toast("Macroproceso guardado.");
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "macroprocesses"
+    };
+    await syncData();
+
+  }catch(e){
+    console.error("Error guardando macroproceso:", e);
+    toast("No se pudo guardar: " + e.message);
+  }
+}
+
+async function adminDeactivateMacroprocess(macroId){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const m = (DATA.macroprocesos || []).find(x =>
+    String(x.macro_id || "") === String(macroId || "")
+  );
+
+  if(!m){
+    toast("Macroproceso no encontrado.");
+    return;
+  }
+
+  const ok = confirm(`¿Inactivar el macroproceso ${m.macroproceso}? No se eliminará la fila.`);
+  if(!ok) return;
+
+  try{
+    await api("deactivate_macroprocess", {
+      username_admin: SESSION.username,
+      macro_id: macroId
+    });
+
+    toast("Macroproceso inactivado.");
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "macroprocesses"
+    };
+    await syncData();
+
+  }catch(e){
+    console.error("Error inactivando macroproceso:", e);
+    toast("No se pudo inactivar: " + e.message);
+  }
+}
+  
 function renderAdminProcesses(){
   return renderAdminPendingModule(
     "Administración de procesos",
