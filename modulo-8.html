@@ -2796,7 +2796,6 @@ function renderAdminUsers(){
               </span>
               <span class="admin-user-actions">
                 <button class="btn ghost" type="button" onclick="adminEditUser('${esc(u.user_id || "")}')">Editar</button>
-                <button class="btn danger" type="button" onclick="adminDeactivateUser('${esc(u.user_id || "")}')">Inactivar</button>
               </span>
             </div>
           `;
@@ -3013,98 +3012,54 @@ function renderAdminMacroprocesses(){
     <div class="section-title">
       <div>
         <h2>Administración de macroprocesos</h2>
-        <span class="meta">Crear, modificar, ordenar o desactivar macroprocesos sin eliminar filas.</span>
+        <span class="meta">Gestión de macroprocesos. Use Editar para abrir el detalle completo.</span>
       </div>
-      <button class="btn ghost" type="button" onclick="adminNewMacroprocess()">Nuevo macroproceso</button>
+      <button class="btn primary" type="button" onclick="adminNewMacroprocess()">Agregar macroproceso</button>
     </div>
 
-    <section class="admin-master-layout">
-      <aside class="admin-master-form">
-        <h3 style="margin:0 0 12px">Formulario de macroproceso</h3>
+    <section class="admin-master-table admin-full-table">
+      <div class="admin-macro-row head">
+        <span>ID</span>
+        <span>Macroproceso</span>
+        <span>Ícono</span>
+        <span>Orden</span>
+        <span>Estado</span>
+        <span>Acciones</span>
+      </div>
 
-        <input type="hidden" id="adminMacroId">
+      ${
+        macros
+          .slice()
+          .sort((a,b) => Number(a.orden || 999) - Number(b.orden || 999))
+          .map(m => {
+            const status = String(m.estado || "ACTIVO").toUpperCase();
+            const active = String(m.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
 
-        <div class="field">
-          <label>Nombre del macroproceso</label>
-          <input id="adminMacroName" placeholder="Ej. Abastecimiento">
-        </div>
-
-        <div class="field">
-          <label>Ícono</label>
-          <select id="adminMacroIcon">
-            ${adminMacroIconOptions()}
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Responsable macro</label>
-          <input id="adminMacroResponsible" placeholder="Opcional">
-        </div>
-
-        <div class="field">
-          <label>Orden</label>
-          <input id="adminMacroOrder" type="number" min="1" placeholder="Orden visual">
-        </div>
-
-        <div class="field">
-          <label>Estado</label>
-          <select id="adminMacroStatus">
-            <option value="ACTIVO">ACTIVO</option>
-            <option value="INACTIVO">INACTIVO</option>
-          </select>
-        </div>
-
-        <div class="admin-master-actions">
-          <button class="btn primary" type="button" onclick="adminSaveMacroprocess()">Guardar macroproceso</button>
-          <button class="btn ghost" type="button" onclick="adminNewMacroprocess()">Limpiar</button>
-        </div>
-      </aside>
-
-      <section class="admin-master-table">
-        <div class="admin-macro-row head">
-          <span>ID</span>
-          <span>Macroproceso</span>
-          <span>Ícono</span>
-          <span>Orden</span>
-          <span>Estado</span>
-          <span>Acciones</span>
-        </div>
-
-        ${
-          macros
-            .slice()
-            .sort((a,b) => Number(a.orden || 999) - Number(b.orden || 999))
-            .map(m => {
-              const status = String(m.estado || "ACTIVO").toUpperCase();
-              const active = String(m.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
-
-              return `
-                <div class="admin-macro-row">
-                  <b class="admin-code">${esc(m.macro_id || "")}</b>
-                  <span>${esc(m.macroproceso || "")}</span>
-                  <span class="admin-macro-icon-cell">
-                    <span class="icon">${iconSvg(m.icono || "folder")}</span>
-                    ${esc(m.icono || "folder")}
-                  </span>
-                  <span>${esc(m.orden || "")}</span>
-                  <span>
-                    <span class="admin-status-pill ${active ? "" : "off"}">
-                      ${active ? "ACTIVO" : "INACTIVO"}
-                    </span>
-                  </span>
-                  <span class="admin-macro-actions">
-                    <button class="btn ghost" type="button" onclick="adminEditMacroprocess('${esc(m.macro_id || "")}')">Editar</button>
-                    <button class="btn danger" type="button" onclick="adminDeactivateMacroprocess('${esc(m.macro_id || "")}')">Inactivar</button>
-                  </span>
-                </div>
-              `;
-            }).join("") || `
+            return `
               <div class="admin-macro-row">
-                <span>No hay macroprocesos registrados.</span>
+                <b class="admin-code">${esc(m.macro_id || "")}</b>
+                <span>${esc(m.macroproceso || "")}</span>
+                <span class="admin-macro-icon-cell">
+                  <span class="icon">${iconSvg(m.icono || "folder")}</span>
+                  ${esc(m.icono || "folder")}
+                </span>
+                <span>${esc(m.orden || "")}</span>
+                <span>
+                  <span class="admin-status-pill ${active ? "" : "off"}">
+                    ${active ? "ACTIVO" : "INACTIVO"}
+                  </span>
+                </span>
+                <span class="admin-macro-actions">
+                  <button class="btn ghost" type="button" onclick="adminEditMacroprocess('${esc(m.macro_id || "")}')">Editar</button>
+                </span>
               </div>
-            `
-        }
-      </section>
+            `;
+          }).join("") || `
+            <div class="admin-macro-row">
+              <span>No hay macroprocesos registrados.</span>
+            </div>
+          `
+      }
     </section>
   `;
 }
@@ -3132,13 +3087,55 @@ function adminMacroIconOptions(selected = ""){
   `).join("");
 }
 
+function adminMacroprocessForm(m = {}){
+  const status = String(m.estado || "ACTIVO").toUpperCase();
+
+  return `
+    <input type="hidden" id="adminMacroId" value="${esc(m.macro_id || "")}">
+
+    <div class="admin-grid">
+      <div class="field">
+        <label>Nombre del macroproceso</label>
+        <input id="adminMacroName" value="${esc(m.macroproceso || "")}" placeholder="Ej. Abastecimiento">
+      </div>
+
+      <div class="field">
+        <label>Ícono</label>
+        <select id="adminMacroIcon">
+          ${adminMacroIconOptions(m.icono || "folder")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Responsable macro</label>
+        <input id="adminMacroResponsible" value="${esc(m.responsable_macro || "")}" placeholder="Opcional">
+      </div>
+
+      <div class="field">
+        <label>Orden</label>
+        <input id="adminMacroOrder" type="number" min="1" value="${esc(m.orden || "")}" placeholder="Orden visual">
+      </div>
+
+      <div class="field">
+        <label>Estado</label>
+        <select id="adminMacroStatus">
+          <option value="ACTIVO" ${status === "ACTIVO" ? "selected" : ""}>ACTIVO</option>
+          <option value="INACTIVO" ${status === "INACTIVO" ? "selected" : ""}>INACTIVO</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
 function adminNewMacroprocess(){
-  if($("adminMacroId")) $("adminMacroId").value = "";
-  if($("adminMacroName")) $("adminMacroName").value = "";
-  if($("adminMacroIcon")) $("adminMacroIcon").value = "folder";
-  if($("adminMacroResponsible")) $("adminMacroResponsible").value = "";
-  if($("adminMacroOrder")) $("adminMacroOrder").value = "";
-  if($("adminMacroStatus")) $("adminMacroStatus").value = "ACTIVO";
+  adminOpenModal(
+    "Agregar macroproceso",
+    adminMacroprocessForm({}),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveMacroprocess()">Guardar macroproceso</button>
+    `
+  );
 }
 
 function adminEditMacroprocess(macroId){
@@ -3151,12 +3148,14 @@ function adminEditMacroprocess(macroId){
     return;
   }
 
-  $("adminMacroId").value = m.macro_id || "";
-  $("adminMacroName").value = m.macroproceso || "";
-  $("adminMacroIcon").value = m.icono || "folder";
-  $("adminMacroResponsible").value = m.responsable_macro || "";
-  $("adminMacroOrder").value = m.orden || "";
-  $("adminMacroStatus").value = String(m.estado || "ACTIVO").toUpperCase();
+  adminOpenModal(
+    "Editar macroproceso",
+    adminMacroprocessForm(m),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveMacroprocess()">Guardar cambios</button>
+    `
+  );
 }
 
 async function adminSaveMacroprocess(){
@@ -3188,12 +3187,15 @@ async function adminSaveMacroprocess(){
       estado
     });
 
-    toast("Macroproceso guardado.");
-    ADMIN_CONTROL_STATE = {
-      ...(ADMIN_CONTROL_STATE || {}),
-      mode: "macroprocesses"
-    };
-    await syncData();
+toast("Macroproceso guardado.");
+closeAdminModal();
+
+ADMIN_CONTROL_STATE = {
+  ...(ADMIN_CONTROL_STATE || {}),
+  mode: "macroprocesses"
+};
+
+await syncData();
 
   }catch(e){
     console.error("Error guardando macroproceso:", e);
@@ -3379,7 +3381,6 @@ function renderAdminProcesses(){
                 </span>
                 <span class="admin-process-actions">
                   <button class="btn ghost" type="button" onclick="adminEditProcess('${esc(p.proceso_id || "")}')">Editar</button>
-                  <button class="btn danger" type="button" onclick="adminDeactivateProcess('${esc(p.proceso_id || "")}')">Inactivar</button>
                 </span>
               </div>
             `;
