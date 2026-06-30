@@ -2564,26 +2564,113 @@ function inferProcessOrigin(p = {}){
   return "NUEVO";
 }  
 
+function adminProcessForm(p = {}){
+  const macros = (DATA.macroprocesos || []).filter(m =>
+    String(m.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
+    String(m.activo || "SI").toUpperCase() !== "NO"
+  );
+
+  const analysts = (DATA.usuarios || []).filter(u =>
+    String(u.rol || "").toLowerCase() === "analista" &&
+    String(u.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
+    String(u.activo || "SI").toUpperCase() !== "NO"
+  );
+
+  const criticidad = String(p.criticidad || "MEDIO").toUpperCase();
+  const origen = p.proceso_id ? inferProcessOrigin(p) : "NUEVO";
+  const estado = String(p.activo || "SI").toUpperCase() === "NO" ? "INACTIVO" : "ACTIVO";
+
+  return `
+    <input type="hidden" id="adminProcessId" value="${esc(p.proceso_id || "")}">
+
+    <div class="admin-grid">
+      <div class="field admin-grid-full">
+        <label>Nombre del proceso</label>
+        <input id="adminProcessName" value="${esc(p.proceso || "")}" placeholder="Nombre del proceso">
+      </div>
+
+      <div class="field">
+        <label>Macroproceso</label>
+        <select id="adminProcessMacro">
+          <option value="">Seleccione...</option>
+          ${macros.map(m => `
+            <option value="${esc(m.macro_id || "")}" ${String(p.macro_id || "") === String(m.macro_id || "") ? "selected" : ""}>
+              ${esc(m.macroproceso || "")}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Analista</label>
+        <select id="adminProcessAnalyst">
+          <option value="">Pendiente</option>
+          ${analysts.map(u => `
+            <option value="${esc(u.username || "")}" ${String(p.analista_user || "") === String(u.username || "") ? "selected" : ""}>
+              ${esc(u.analista_nombre || u.nombre || u.username || "")}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Líder</label>
+        <input id="adminProcessLeader" value="${esc(p.lider || "")}" placeholder="Líder del proceso">
+      </div>
+
+      <div class="field">
+        <label>Criticidad</label>
+        <select id="adminProcessCriticality">
+          <option value="ALTA" ${criticidad === "ALTA" ? "selected" : ""}>ALTA</option>
+          <option value="MEDIO ALTO" ${criticidad === "MEDIO ALTO" ? "selected" : ""}>MEDIO ALTO</option>
+          <option value="MEDIO" ${criticidad === "MEDIO" ? "selected" : ""}>MEDIO</option>
+          <option value="BAJO" ${criticidad === "BAJO" ? "selected" : ""}>BAJO</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Origen del proceso</label>
+        <select id="adminProcessOrigin">
+          <option value="NUEVO" ${origen === "NUEVO" ? "selected" : ""}>NUEVO</option>
+          <option value="AS-IS PREVIO" ${origen === "AS-IS PREVIO" ? "selected" : ""}>AS-IS PREVIO</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Semana inicio</label>
+        <input id="adminProcessStartWeek" type="number" min="1" max="53" value="${esc(p.semana_inicio || p.semana || "")}">
+      </div>
+
+      <div class="field">
+        <label>Semana entrega</label>
+        <input id="adminProcessEndWeek" type="number" min="1" max="53" value="${esc(p.semana_entrega || "")}">
+      </div>
+
+      <div class="field">
+        <label>Estado</label>
+        <select id="adminProcessStatus">
+          <option value="ACTIVO" ${estado === "ACTIVO" ? "selected" : ""}>ACTIVO</option>
+          <option value="INACTIVO" ${estado === "INACTIVO" ? "selected" : ""}>INACTIVO</option>
+        </select>
+      </div>
+
+      <div class="field admin-grid-full">
+        <label>Observación</label>
+        <textarea id="adminProcessObservation" rows="3" placeholder="Observación interna">${esc(p.observacion || "")}</textarea>
+      </div>
+    </div>
+  `;
+}
+
 function adminNewProcess(){
-  const fields = [
-    "adminProcessId",
-    "adminProcessName",
-    "adminProcessLeader",
-    "adminProcessStartWeek",
-    "adminProcessEndWeek",
-    "adminProcessObservation"
-  ];
-
-  fields.forEach(id => {
-    const el = $(id);
-    if(el) el.value = "";
-  });
-
-  if($("adminProcessMacro")) $("adminProcessMacro").value = "";
-  if($("adminProcessAnalyst")) $("adminProcessAnalyst").value = "";
-  if($("adminProcessCriticality")) $("adminProcessCriticality").value = "MEDIO";
-  if($("adminProcessOrigin")) $("adminProcessOrigin").value = "NUEVO";
-  if($("adminProcessStatus")) $("adminProcessStatus").value = "ACTIVO";
+  adminOpenModal(
+    "Agregar proceso",
+    adminProcessForm({}),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveProcess()">Guardar proceso</button>
+    `
+  );
 }
 
 function adminEditProcess(procesoId){
@@ -2596,19 +2683,15 @@ function adminEditProcess(procesoId){
     return;
   }
 
-  $("adminProcessId").value = p.proceso_id || "";
-  $("adminProcessName").value = p.proceso || "";
-  $("adminProcessMacro").value = p.macro_id || "";
-  $("adminProcessAnalyst").value = p.analista_user || "";
-  $("adminProcessLeader").value = p.lider || "";
-  $("adminProcessCriticality").value = String(p.criticidad || "MEDIO").toUpperCase();
-  $("adminProcessOrigin").value = inferProcessOrigin(p);
-  $("adminProcessStartWeek").value = p.semana_inicio || p.semana || "";
-  $("adminProcessEndWeek").value = p.semana_entrega || "";
-  $("adminProcessStatus").value = String(p.activo || "SI").toUpperCase() === "NO" ? "INACTIVO" : "ACTIVO";
-  $("adminProcessObservation").value = p.observacion || "";
+  adminOpenModal(
+    "Editar proceso",
+    adminProcessForm(p),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveProcess()">Guardar cambios</button>
+    `
+  );
 }
-
 async function adminSaveProcess(){
   if(!isAdmin()){
     toast("Solo administrador.");
@@ -2653,14 +2736,15 @@ async function adminSaveProcess(){
       observacion
     });
 
-    toast("Proceso guardado.");
+toast("Proceso guardado.");
+closeAdminModal();
 
-    ADMIN_CONTROL_STATE = {
-      ...(ADMIN_CONTROL_STATE || {}),
-      mode: "processes"
-    };
+ADMIN_CONTROL_STATE = {
+  ...(ADMIN_CONTROL_STATE || {}),
+  mode: "processes"
+};
 
-    await syncData();
+await syncData();
 
   }catch(e){
     console.error("Error guardando proceso:", e);
@@ -3242,155 +3326,55 @@ async function adminDeactivateMacroprocess(macroId){
   
 function renderAdminProcesses(){
   const procesos = DATA.procesos || [];
-  const macros = (DATA.macroprocesos || []).filter(m =>
-    String(m.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
-    String(m.activo || "SI").toUpperCase() !== "NO"
-  );
-
-  const analysts = (DATA.usuarios || []).filter(u =>
-    String(u.rol || "").toLowerCase() === "analista" &&
-    String(u.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
-    String(u.activo || "SI").toUpperCase() !== "NO"
-  );
 
   return `
     <div class="section-title">
       <div>
         <h2>Administración de procesos</h2>
-        <span class="meta">Crear, editar o inactivar procesos. Al crear un proceso se generan sus hitos y actividades desde la plantilla.</span>
+        <span class="meta">Gestión de procesos. Use Editar para abrir el detalle completo.</span>
       </div>
-      <button class="btn ghost" type="button" onclick="adminNewProcess()">Nuevo proceso</button>
+      <button class="btn primary" type="button" onclick="adminNewProcess()">Agregar proceso</button>
     </div>
 
-    <section class="admin-master-layout">
-      <aside class="admin-master-form">
-        <h3 style="margin:0 0 12px">Formulario de proceso</h3>
+    <section class="admin-master-table admin-full-table">
+      <div class="admin-process-row head">
+        <span>ID</span>
+        <span>Proceso</span>
+        <span>Macroproceso</span>
+        <span>Analista</span>
+        <span>Avance</span>
+        <span>Estado</span>
+        <span>Acciones</span>
+      </div>
 
-        <input type="hidden" id="adminProcessId">
+      ${
+        procesos.map(p => {
+          const active = String(p.activo || "SI").toUpperCase() !== "NO";
+          const status = active ? "ACTIVO" : "INACTIVO";
 
-        <div class="field">
-          <label>Nombre del proceso</label>
-          <input id="adminProcessName" placeholder="Nombre del proceso">
-        </div>
-
-        <div class="field">
-          <label>Macroproceso</label>
-          <select id="adminProcessMacro">
-            <option value="">Seleccione...</option>
-            ${macros.map(m => `
-              <option value="${esc(m.macro_id || "")}">
-                ${esc(m.macroproceso || "")}
-              </option>
-            `).join("")}
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Analista</label>
-          <select id="adminProcessAnalyst">
-            <option value="">Pendiente</option>
-            ${analysts.map(u => `
-              <option value="${esc(u.username || "")}">
-                ${esc(u.analista_nombre || u.nombre || u.username || "")}
-              </option>
-            `).join("")}
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Líder</label>
-          <input id="adminProcessLeader" placeholder="Líder del proceso">
-        </div>
-
-        <div class="field">
-          <label>Criticidad</label>
-          <select id="adminProcessCriticality">
-            <option value="ALTA">ALTA</option>
-            <option value="MEDIO ALTO">MEDIO ALTO</option>
-            <option value="MEDIO">MEDIO</option>
-            <option value="BAJO">BAJO</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Origen del proceso</label>
-          <select id="adminProcessOrigin">
-            <option value="NUEVO">NUEVO</option>
-            <option value="AS-IS PREVIO">AS-IS PREVIO</option>
-          </select>
-        </div>
-
-        <div class="admin-grid">
-          <div class="field">
-            <label>Semana inicio</label>
-            <input id="adminProcessStartWeek" type="number" min="1" max="53">
-          </div>
-
-          <div class="field">
-            <label>Semana entrega</label>
-            <input id="adminProcessEndWeek" type="number" min="1" max="53">
-          </div>
-        </div>
-
-        <div class="field">
-          <label>Estado</label>
-          <select id="adminProcessStatus">
-            <option value="ACTIVO">ACTIVO</option>
-            <option value="INACTIVO">INACTIVO</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Observación</label>
-          <textarea id="adminProcessObservation" rows="3" placeholder="Observación interna"></textarea>
-        </div>
-
-        <div class="admin-master-actions">
-          <button class="btn primary" type="button" onclick="adminSaveProcess()">Guardar proceso</button>
-          <button class="btn ghost" type="button" onclick="adminNewProcess()">Limpiar</button>
-        </div>
-      </aside>
-
-      <section class="admin-master-table">
-        <div class="admin-process-row head">
-          <span>ID</span>
-          <span>Proceso</span>
-          <span>Macroproceso</span>
-          <span>Analista</span>
-          <span>Avance</span>
-          <span>Estado</span>
-          <span>Acciones</span>
-        </div>
-
-        ${
-          procesos.map(p => {
-            const active = String(p.activo || "SI").toUpperCase() !== "NO";
-            const status = active ? "ACTIVO" : "INACTIVO";
-
-            return `
-              <div class="admin-process-row">
-                <b class="admin-code">${esc(p.proceso_id || "")}</b>
-                <span>${esc(p.proceso || "")}</span>
-                <span>${esc(p.macroproceso || "")}</span>
-                <span>${esc(p.analista || "Pendiente")}</span>
-                <span>${esc(p.avance_pct || 0)}%</span>
-                <span>
-                  <span class="admin-status-pill ${active ? "" : "off"}">
-                    ${status}
-                  </span>
-                </span>
-                <span class="admin-process-actions">
-                  <button class="btn ghost" type="button" onclick="adminEditProcess('${esc(p.proceso_id || "")}')">Editar</button>
-                </span>
-              </div>
-            `;
-          }).join("") || `
+          return `
             <div class="admin-process-row">
-              <span>No hay procesos registrados.</span>
+              <b class="admin-code">${esc(p.proceso_id || "")}</b>
+              <span>${esc(p.proceso || "")}</span>
+              <span>${esc(p.macroproceso || "")}</span>
+              <span>${esc(p.analista || "Pendiente")}</span>
+              <span>${esc(p.avance_pct || 0)}%</span>
+              <span>
+                <span class="admin-status-pill ${active ? "" : "off"}">
+                  ${status}
+                </span>
+              </span>
+              <span class="admin-process-actions">
+                <button class="btn ghost" type="button" onclick="adminEditProcess('${esc(p.proceso_id || "")}')">Editar</button>
+              </span>
             </div>
-          `
-        }
-      </section>
+          `;
+        }).join("") || `
+          <div class="admin-process-row">
+            <span>No hay procesos registrados.</span>
+          </div>
+        `
+      }
     </section>
   `;
 }
