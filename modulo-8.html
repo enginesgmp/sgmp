@@ -1681,6 +1681,108 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     grid-template-columns:1fr;
   }
 }
+
+/* ADMIN · USUARIOS */
+.admin-master-layout{
+  display:grid;
+  grid-template-columns:360px 1fr;
+  gap:18px;
+  align-items:start;
+}
+
+.admin-master-form{
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:24px;
+  padding:18px;
+  box-shadow:0 10px 24px rgba(8,70,44,.05);
+}
+
+.admin-master-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+
+.admin-master-table{
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:24px;
+  overflow:hidden;
+  box-shadow:0 10px 24px rgba(8,70,44,.05);
+}
+
+.admin-user-row{
+  display:grid;
+  grid-template-columns:90px 1fr 1fr 120px 120px 150px;
+  gap:10px;
+  align-items:center;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:12px;
+}
+
+.admin-user-row:last-child{
+  border-bottom:0;
+}
+
+.admin-user-row.head{
+  background:#F3FAF6;
+  color:var(--green3);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  font-weight:950;
+}
+
+.admin-user-row:not(.head):hover{
+  background:#F9FFFB;
+}
+
+.admin-user-actions{
+  display:flex;
+  gap:6px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+
+.admin-status-pill{
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  border-radius:999px;
+  padding:5px 9px;
+  border:1px solid var(--line);
+  background:#ECFDF5;
+  color:#166534;
+  font-size:10px;
+  font-weight:950;
+}
+
+.admin-status-pill.off{
+  background:#FFF1F1;
+  border-color:#F2C7C7;
+  color:#991B1B;
+}
+
+@media(max-width:1100px){
+  .admin-master-layout{
+    grid-template-columns:1fr;
+  }
+
+  .admin-user-row{
+    grid-template-columns:1fr;
+  }
+
+  .admin-user-row.head{
+    display:none;
+  }
+
+  .admin-user-actions{
+    justify-content:flex-start;
+  }
+}
   
 </style>
 </head>
@@ -2286,12 +2388,263 @@ function renderAdminPendingModule(title, description){
 }
 
 function renderAdminUsers(){
-  return renderAdminPendingModule(
-    "Administración de usuarios",
-    "Sección preparada para crear, editar, cambiar rol, cambiar contraseña y desactivar usuarios sin eliminar filas del almacenamiento."
-  );
+  const users = DATA.usuarios || [];
+
+  return `
+    <div class="section-title">
+      <div>
+        <h2>Administración de usuarios</h2>
+        <span class="meta">Crear, modificar o desactivar usuarios sin eliminar filas del almacenamiento.</span>
+      </div>
+      <button class="btn ghost" type="button" onclick="adminNewUser()">Nuevo usuario</button>
+    </div>
+
+    <section class="admin-master-layout">
+      <aside class="admin-master-form">
+        <h3 style="margin:0 0 12px">Formulario de usuario</h3>
+
+        <input type="hidden" id="adminUserId">
+
+        <div class="field">
+          <label>Usuario</label>
+          <input id="adminUserUsername" placeholder="usuario de acceso">
+        </div>
+
+        <div class="field">
+          <label>Contraseña</label>
+          <input id="adminUserPassword" placeholder="Nueva contraseña o dejar vacío al editar">
+        </div>
+
+        <div class="field">
+          <label>Nombre completo</label>
+          <input id="adminUserName" placeholder="Nombre completo">
+        </div>
+
+        <div class="field">
+          <label>Rol</label>
+          <select id="adminUserRole" onchange="adminSyncAnalystName()">
+            <option value="analista">analista</option>
+            <option value="admin">admin</option>
+            <option value="gerencia">gerencia</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Estado</label>
+          <select id="adminUserStatus">
+            <option value="ACTIVO">ACTIVO</option>
+            <option value="INACTIVO">INACTIVO</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Analista asociado</label>
+          <input id="adminUserAnalystName" placeholder="Solo aplica para rol analista">
+        </div>
+
+        <div class="field">
+          <label>Notas</label>
+          <textarea id="adminUserNotes" rows="3" placeholder="Notas internas"></textarea>
+        </div>
+
+        <div class="admin-master-actions">
+          <button class="btn primary" type="button" onclick="adminSaveUser()">Guardar usuario</button>
+          <button class="btn ghost" type="button" onclick="adminNewUser()">Limpiar</button>
+        </div>
+      </aside>
+
+      <section class="admin-master-table">
+        <div class="admin-user-row head">
+          <span>ID</span>
+          <span>Usuario</span>
+          <span>Nombre</span>
+          <span>Rol</span>
+          <span>Estado</span>
+          <span>Acciones</span>
+        </div>
+
+        ${
+          users.map(u => {
+            const status = String(u.estado || "ACTIVO").toUpperCase();
+            const active = String(u.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
+
+            return `
+              <div class="admin-user-row">
+                <b class="admin-code">${esc(u.user_id || "")}</b>
+                <span>${esc(u.username || "")}</span>
+                <span>${esc(u.nombre || "")}</span>
+                <span>${esc(u.rol || "")}</span>
+                <span>
+                  <span class="admin-status-pill ${active ? "" : "off"}">
+                    ${active ? "ACTIVO" : "INACTIVO"}
+                  </span>
+                </span>
+                <span class="admin-user-actions">
+                  <button class="btn ghost" type="button" onclick="adminEditUser('${esc(u.user_id || "")}')">Editar</button>
+                  <button class="btn danger" type="button" onclick="adminDeactivateUser('${esc(u.user_id || "")}')">Inactivar</button>
+                </span>
+              </div>
+            `;
+          }).join("") || `
+            <div class="admin-user-row">
+              <span>No hay usuarios registrados.</span>
+            </div>
+          `
+        }
+      </section>
+    </section>
+  `;
 }
 
+function adminNewUser(){
+  const fields = [
+    "adminUserId",
+    "adminUserUsername",
+    "adminUserPassword",
+    "adminUserName",
+    "adminUserAnalystName",
+    "adminUserNotes"
+  ];
+
+  fields.forEach(id => {
+    const el = $(id);
+    if(el) el.value = "";
+  });
+
+  if($("adminUserRole")) $("adminUserRole").value = "analista";
+  if($("adminUserStatus")) $("adminUserStatus").value = "ACTIVO";
+}
+
+function adminEditUser(userId){
+  const u = (DATA.usuarios || []).find(x =>
+    String(x.user_id || "") === String(userId || "")
+  );
+
+  if(!u){
+    toast("Usuario no encontrado.");
+    return;
+  }
+
+  $("adminUserId").value = u.user_id || "";
+  $("adminUserUsername").value = u.username || "";
+  $("adminUserPassword").value = "";
+  $("adminUserName").value = u.nombre || "";
+  $("adminUserRole").value = String(u.rol || "analista").toLowerCase();
+  $("adminUserStatus").value = String(u.estado || "ACTIVO").toUpperCase();
+  $("adminUserAnalystName").value = u.analista_nombre || "";
+  $("adminUserNotes").value = u.notas || "";
+}
+
+function adminSyncAnalystName(){
+  const role = String($("adminUserRole")?.value || "").toLowerCase();
+
+  if(role === "analista" && !$("adminUserAnalystName").value.trim()){
+    $("adminUserAnalystName").value = $("adminUserName").value.trim();
+  }
+
+  if(role !== "analista"){
+    $("adminUserAnalystName").value = "";
+  }
+}
+
+async function adminSaveUser(){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const userId = $("adminUserId").value.trim();
+  const username = $("adminUserUsername").value.trim().toLowerCase();
+  const password = $("adminUserPassword").value.trim();
+  const nombre = $("adminUserName").value.trim();
+  const rol = $("adminUserRole").value.trim().toLowerCase();
+  const estado = $("adminUserStatus").value.trim().toUpperCase();
+  const analistaNombre = $("adminUserAnalystName").value.trim();
+  const notas = $("adminUserNotes").value.trim();
+
+  if(!username){
+    toast("Ingrese el usuario.");
+    return;
+  }
+
+  if(!nombre){
+    toast("Ingrese el nombre completo.");
+    return;
+  }
+
+  if(!userId && !password){
+    toast("Ingrese contraseña para crear usuario nuevo.");
+    return;
+  }
+
+  try{
+    await api("upsert_user", {
+      username_admin: SESSION.username,
+      user_id: userId,
+      user_username: username,
+      password,
+      nombre,
+      rol,
+      estado,
+      analista_nombre: analistaNombre,
+      notas
+    });
+
+    toast("Usuario guardado.");
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "users"
+    };
+    await syncData();
+
+  }catch(e){
+    console.error("Error guardando usuario:", e);
+    toast("No se pudo guardar: " + e.message);
+  }
+}
+
+async function adminDeactivateUser(userId){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const u = (DATA.usuarios || []).find(x =>
+    String(x.user_id || "") === String(userId || "")
+  );
+
+  if(!u){
+    toast("Usuario no encontrado.");
+    return;
+  }
+
+  if(String(u.username || "").toLowerCase() === String(SESSION.username || "").toLowerCase()){
+    toast("No puedes inactivar el usuario conectado.");
+    return;
+  }
+
+  const ok = confirm(`¿Inactivar al usuario ${u.username}? No se eliminará la fila.`);
+  if(!ok) return;
+
+  try{
+    await api("deactivate_user", {
+      username_admin: SESSION.username,
+      user_id: userId
+    });
+
+    toast("Usuario inactivado.");
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "users"
+    };
+    await syncData();
+
+  }catch(e){
+    console.error("Error inactivando usuario:", e);
+    toast("No se pudo inactivar: " + e.message);
+  }
+}
+  
 function renderAdminMacroprocesses(){
   return renderAdminPendingModule(
     "Administración de macroprocesos",
