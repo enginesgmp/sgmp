@@ -1844,6 +1844,55 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     justify-content:flex-start;
   }
 }
+
+/* ADMIN · PROCESOS */
+.admin-process-row{
+  display:grid;
+  grid-template-columns:90px 1.4fr 1fr 1fr 90px 110px 150px;
+  gap:10px;
+  align-items:center;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:12px;
+}
+
+.admin-process-row:last-child{
+  border-bottom:0;
+}
+
+.admin-process-row.head{
+  background:#F3FAF6;
+  color:var(--green3);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  font-weight:950;
+}
+
+.admin-process-row:not(.head):hover{
+  background:#F9FFFB;
+}
+
+.admin-process-actions{
+  display:flex;
+  gap:6px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+
+@media(max-width:1100px){
+  .admin-process-row{
+    grid-template-columns:1fr;
+  }
+
+  .admin-process-row.head{
+    display:none;
+  }
+
+  .admin-process-actions{
+    justify-content:flex-start;
+  }
+}
   
 </style>
 </head>
@@ -2439,6 +2488,149 @@ function renderAdminControlTab(mode = "dashboard"){
   return renderAdminDashboard();
 }
 
+function adminNewProcess(){
+  const fields = [
+    "adminProcessId",
+    "adminProcessName",
+    "adminProcessLeader",
+    "adminProcessStartWeek",
+    "adminProcessEndWeek",
+    "adminProcessObservation"
+  ];
+
+  fields.forEach(id => {
+    const el = $(id);
+    if(el) el.value = "";
+  });
+
+  if($("adminProcessMacro")) $("adminProcessMacro").value = "";
+  if($("adminProcessAnalyst")) $("adminProcessAnalyst").value = "";
+  if($("adminProcessCriticality")) $("adminProcessCriticality").value = "MEDIO";
+  if($("adminProcessOrigin")) $("adminProcessOrigin").value = "NUEVO";
+  if($("adminProcessStatus")) $("adminProcessStatus").value = "ACTIVO";
+}
+
+function adminEditProcess(procesoId){
+  const p = (DATA.procesos || []).find(x =>
+    String(x.proceso_id || "") === String(procesoId || "")
+  );
+
+  if(!p){
+    toast("Proceso no encontrado.");
+    return;
+  }
+
+  $("adminProcessId").value = p.proceso_id || "";
+  $("adminProcessName").value = p.proceso || "";
+  $("adminProcessMacro").value = p.macro_id || "";
+  $("adminProcessAnalyst").value = p.analista_user || "";
+  $("adminProcessLeader").value = p.lider || "";
+  $("adminProcessCriticality").value = String(p.criticidad || "MEDIO").toUpperCase();
+  $("adminProcessOrigin").value = String(p.origen_proceso || "NUEVO").toUpperCase();
+  $("adminProcessStartWeek").value = p.semana_inicio || p.semana || "";
+  $("adminProcessEndWeek").value = p.semana_entrega || "";
+  $("adminProcessStatus").value = String(p.activo || "SI").toUpperCase() === "NO" ? "INACTIVO" : "ACTIVO";
+  $("adminProcessObservation").value = p.observacion || "";
+}
+
+async function adminSaveProcess(){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const procesoId = $("adminProcessId").value.trim();
+  const proceso = $("adminProcessName").value.trim();
+  const macroId = $("adminProcessMacro").value.trim();
+  const analistaUser = $("adminProcessAnalyst").value.trim();
+  const lider = $("adminProcessLeader").value.trim();
+  const criticidad = $("adminProcessCriticality").value.trim().toUpperCase();
+  const origenProceso = $("adminProcessOrigin").value.trim().toUpperCase();
+  const semanaInicio = $("adminProcessStartWeek").value.trim();
+  const semanaEntrega = $("adminProcessEndWeek").value.trim();
+  const estado = $("adminProcessStatus").value.trim().toUpperCase();
+  const observacion = $("adminProcessObservation").value.trim();
+
+  if(!proceso){
+    toast("Ingrese el nombre del proceso.");
+    return;
+  }
+
+  if(!macroId){
+    toast("Seleccione el macroproceso.");
+    return;
+  }
+
+  try{
+    await api("upsert_process_master", {
+      username_admin: SESSION.username,
+      proceso_id: procesoId,
+      proceso,
+      macro_id: macroId,
+      analista_user: analistaUser,
+      lider,
+      criticidad,
+      origen_proceso: origenProceso,
+      semana_inicio: semanaInicio,
+      semana_entrega: semanaEntrega,
+      estado,
+      observacion
+    });
+
+    toast("Proceso guardado.");
+
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "processes"
+    };
+
+    await syncData();
+
+  }catch(e){
+    console.error("Error guardando proceso:", e);
+    toast("No se pudo guardar: " + e.message);
+  }
+}
+
+async function adminDeactivateProcess(procesoId){
+  if(!isAdmin()){
+    toast("Solo administrador.");
+    return;
+  }
+
+  const p = (DATA.procesos || []).find(x =>
+    String(x.proceso_id || "") === String(procesoId || "")
+  );
+
+  if(!p){
+    toast("Proceso no encontrado.");
+    return;
+  }
+
+  const ok = confirm(`¿Inactivar el proceso ${p.proceso}? No se eliminará la fila.`);
+  if(!ok) return;
+
+  try{
+    await api("deactivate_process", {
+      username_admin: SESSION.username,
+      proceso_id: procesoId
+    });
+
+    toast("Proceso inactivado.");
+
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "processes"
+    };
+
+    await syncData();
+
+  }catch(e){
+    console.error("Error inactivando proceso:", e);
+    toast("No se pudo inactivar: " + e.message);
+  }
+}  
+
 function renderAdminPendingModule(title, description){
   return `
     <div class="admin-placeholder">
@@ -2939,10 +3131,159 @@ async function adminDeactivateMacroprocess(macroId){
 }
   
 function renderAdminProcesses(){
-  return renderAdminPendingModule(
-    "Administración de procesos",
-    "Sección preparada para crear, editar y desactivar procesos. La creación deberá generar automáticamente hitos y actividades."
+  const procesos = DATA.procesos || [];
+  const macros = (DATA.macroprocesos || []).filter(m =>
+    String(m.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
+    String(m.activo || "SI").toUpperCase() !== "NO"
   );
+
+  const analysts = (DATA.usuarios || []).filter(u =>
+    String(u.rol || "").toLowerCase() === "analista" &&
+    String(u.estado || "ACTIVO").toUpperCase() === "ACTIVO" &&
+    String(u.activo || "SI").toUpperCase() !== "NO"
+  );
+
+  return `
+    <div class="section-title">
+      <div>
+        <h2>Administración de procesos</h2>
+        <span class="meta">Crear, editar o inactivar procesos. Al crear un proceso se generan sus hitos y actividades desde la plantilla.</span>
+      </div>
+      <button class="btn ghost" type="button" onclick="adminNewProcess()">Nuevo proceso</button>
+    </div>
+
+    <section class="admin-master-layout">
+      <aside class="admin-master-form">
+        <h3 style="margin:0 0 12px">Formulario de proceso</h3>
+
+        <input type="hidden" id="adminProcessId">
+
+        <div class="field">
+          <label>Nombre del proceso</label>
+          <input id="adminProcessName" placeholder="Nombre del proceso">
+        </div>
+
+        <div class="field">
+          <label>Macroproceso</label>
+          <select id="adminProcessMacro">
+            <option value="">Seleccione...</option>
+            ${macros.map(m => `
+              <option value="${esc(m.macro_id || "")}">
+                ${esc(m.macroproceso || "")}
+              </option>
+            `).join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Analista</label>
+          <select id="adminProcessAnalyst">
+            <option value="">Pendiente</option>
+            ${analysts.map(u => `
+              <option value="${esc(u.username || "")}">
+                ${esc(u.analista_nombre || u.nombre || u.username || "")}
+              </option>
+            `).join("")}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Líder</label>
+          <input id="adminProcessLeader" placeholder="Líder del proceso">
+        </div>
+
+        <div class="field">
+          <label>Criticidad</label>
+          <select id="adminProcessCriticality">
+            <option value="ALTA">ALTA</option>
+            <option value="MEDIO ALTO">MEDIO ALTO</option>
+            <option value="MEDIO">MEDIO</option>
+            <option value="BAJO">BAJO</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Origen del proceso</label>
+          <select id="adminProcessOrigin">
+            <option value="NUEVO">NUEVO</option>
+            <option value="AS-IS PREVIO">AS-IS PREVIO</option>
+          </select>
+        </div>
+
+        <div class="admin-grid">
+          <div class="field">
+            <label>Semana inicio</label>
+            <input id="adminProcessStartWeek" type="number" min="1" max="53">
+          </div>
+
+          <div class="field">
+            <label>Semana entrega</label>
+            <input id="adminProcessEndWeek" type="number" min="1" max="53">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Estado</label>
+          <select id="adminProcessStatus">
+            <option value="ACTIVO">ACTIVO</option>
+            <option value="INACTIVO">INACTIVO</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Observación</label>
+          <textarea id="adminProcessObservation" rows="3" placeholder="Observación interna"></textarea>
+        </div>
+
+        <div class="admin-master-actions">
+          <button class="btn primary" type="button" onclick="adminSaveProcess()">Guardar proceso</button>
+          <button class="btn ghost" type="button" onclick="adminNewProcess()">Limpiar</button>
+        </div>
+      </aside>
+
+      <section class="admin-master-table">
+        <div class="admin-process-row head">
+          <span>ID</span>
+          <span>Proceso</span>
+          <span>Macroproceso</span>
+          <span>Analista</span>
+          <span>Avance</span>
+          <span>Estado</span>
+          <span>Acciones</span>
+        </div>
+
+        ${
+          procesos.map(p => {
+            const active = String(p.activo || "SI").toUpperCase() !== "NO";
+            const status = active ? "ACTIVO" : "INACTIVO";
+
+            return `
+              <div class="admin-process-row">
+                <b class="admin-code">${esc(p.proceso_id || "")}</b>
+                <span>${esc(p.proceso || "")}</span>
+                <span>${esc(p.macroproceso || "")}</span>
+                <span>${esc(p.analista || "Pendiente")}</span>
+                <span>${esc(p.avance_pct || 0)}%</span>
+                <span>
+                  <span class="admin-status-pill ${active ? "" : "off"}">
+                    ${status}
+                  </span>
+                </span>
+                <span class="admin-process-actions">
+                  <button class="btn ghost" type="button" onclick="adminEditProcess('${esc(p.proceso_id || "")}')">Editar</button>
+                  <button class="btn danger" type="button" onclick="adminDeactivateProcess('${esc(p.proceso_id || "")}')">Inactivar</button>
+                </span>
+              </div>
+            `;
+          }).join("") || `
+            <div class="admin-process-row">
+              <span>No hay procesos registrados.</span>
+            </div>
+          `
+        }
+      </section>
+    </section>
+  `;
 }
 
 function renderAdminDashboard(){
