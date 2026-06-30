@@ -1893,6 +1893,66 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
     justify-content:flex-start;
   }
 }
+
+/* ADMIN · MODAL EDICIÓN */
+.admin-full-table{
+  width:100%;
+}
+
+.admin-modal-overlay{
+  position:fixed;
+  inset:0;
+  z-index:100000;
+  background:rgba(7,26,18,.48);
+  backdrop-filter:blur(4px);
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:56px 22px;
+  overflow:auto;
+}
+
+.admin-modal-overlay.hidden{
+  display:none;
+}
+
+.admin-modal-card{
+  width:min(760px,100%);
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:28px;
+  box-shadow:0 28px 80px rgba(7,26,18,.28);
+  overflow:hidden;
+}
+
+.admin-modal-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  padding:20px 22px;
+  border-bottom:1px solid var(--line);
+  background:#F8FFFB;
+}
+
+.admin-modal-head h3{
+  margin:0;
+  font-size:22px;
+  letter-spacing:-.03em;
+}
+
+.admin-modal-body{
+  padding:22px;
+}
+
+.admin-modal-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding:16px 22px;
+  border-top:1px solid var(--line);
+  background:#F8FFFB;
+}  
   
 </style>
 </head>
@@ -2631,6 +2691,46 @@ async function adminDeactivateProcess(procesoId){
   }
 }  
 
+function adminOpenModal(title, bodyHtml, actionsHtml){
+  let root = $("adminModalRoot");
+
+  if(!root){
+    root = document.createElement("div");
+    root.id = "adminModalRoot";
+    root.className = "admin-modal-overlay hidden";
+    document.body.appendChild(root);
+  }
+
+  root.innerHTML = `
+    <div class="admin-modal-card">
+      <div class="admin-modal-head">
+        <div>
+          <h3>${esc(title)}</h3>
+        </div>
+        <button class="btn ghost" type="button" onclick="closeAdminModal()">Cerrar</button>
+      </div>
+
+      <div class="admin-modal-body">
+        ${bodyHtml}
+      </div>
+
+      <div class="admin-modal-actions">
+        ${actionsHtml}
+      </div>
+    </div>
+  `;
+
+  root.classList.remove("hidden");
+}
+
+function closeAdminModal(){
+  const root = $("adminModalRoot");
+  if(root){
+    root.classList.add("hidden");
+    root.innerHTML = "";
+  }
+}  
+
 function renderAdminPendingModule(title, description){
   return `
     <div class="admin-placeholder">
@@ -2647,125 +2747,115 @@ function renderAdminUsers(){
     <div class="section-title">
       <div>
         <h2>Administración de usuarios</h2>
-        <span class="meta">Crear, modificar o desactivar usuarios sin eliminar filas del almacenamiento.</span>
+        <span class="meta">Gestión de accesos. Los registros inactivos se conservan en la base.</span>
       </div>
-      <button class="btn ghost" type="button" onclick="adminNewUser()">Nuevo usuario</button>
+      <button class="btn primary" type="button" onclick="adminNewUser()">Agregar usuario</button>
     </div>
 
-    <section class="admin-master-layout">
-      <aside class="admin-master-form">
-        <h3 style="margin:0 0 12px">Formulario de usuario</h3>
+    <section class="admin-master-table admin-full-table">
+      <div class="admin-user-row head">
+        <span>ID</span>
+        <span>Usuario</span>
+        <span>Nombre</span>
+        <span>Rol</span>
+        <span>Estado</span>
+        <span>Acciones</span>
+      </div>
 
-        <input type="hidden" id="adminUserId">
+      ${
+        users.map(u => {
+          const status = String(u.estado || "ACTIVO").toUpperCase();
+          const active = String(u.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
 
-        <div class="field">
-          <label>Usuario</label>
-          <input id="adminUserUsername" placeholder="usuario de acceso">
-        </div>
-
-        <div class="field">
-          <label>Contraseña</label>
-          <input id="adminUserPassword" placeholder="Nueva contraseña o dejar vacío al editar">
-        </div>
-
-        <div class="field">
-          <label>Nombre completo</label>
-          <input id="adminUserName" placeholder="Nombre completo">
-        </div>
-
-        <div class="field">
-          <label>Rol</label>
-          <select id="adminUserRole" onchange="adminSyncAnalystName()">
-            <option value="analista">analista</option>
-            <option value="admin">admin</option>
-            <option value="gerencia">gerencia</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Estado</label>
-          <select id="adminUserStatus">
-            <option value="ACTIVO">ACTIVO</option>
-            <option value="INACTIVO">INACTIVO</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Analista asociado</label>
-          <input id="adminUserAnalystName" placeholder="Solo aplica para rol analista">
-        </div>
-
-        <div class="field">
-          <label>Notas</label>
-          <textarea id="adminUserNotes" rows="3" placeholder="Notas internas"></textarea>
-        </div>
-
-        <div class="admin-master-actions">
-          <button class="btn primary" type="button" onclick="adminSaveUser()">Guardar usuario</button>
-          <button class="btn ghost" type="button" onclick="adminNewUser()">Limpiar</button>
-        </div>
-      </aside>
-
-      <section class="admin-master-table">
-        <div class="admin-user-row head">
-          <span>ID</span>
-          <span>Usuario</span>
-          <span>Nombre</span>
-          <span>Rol</span>
-          <span>Estado</span>
-          <span>Acciones</span>
-        </div>
-
-        ${
-          users.map(u => {
-            const status = String(u.estado || "ACTIVO").toUpperCase();
-            const active = String(u.activo || "SI").toUpperCase() !== "NO" && status === "ACTIVO";
-
-            return `
-              <div class="admin-user-row">
-                <b class="admin-code">${esc(u.user_id || "")}</b>
-                <span>${esc(u.username || "")}</span>
-                <span>${esc(u.nombre || "")}</span>
-                <span>${esc(u.rol || "")}</span>
-                <span>
-                  <span class="admin-status-pill ${active ? "" : "off"}">
-                    ${active ? "ACTIVO" : "INACTIVO"}
-                  </span>
-                </span>
-                <span class="admin-user-actions">
-                  <button class="btn ghost" type="button" onclick="adminEditUser('${esc(u.user_id || "")}')">Editar</button>
-                  <button class="btn danger" type="button" onclick="adminDeactivateUser('${esc(u.user_id || "")}')">Inactivar</button>
-                </span>
-              </div>
-            `;
-          }).join("") || `
+          return `
             <div class="admin-user-row">
-              <span>No hay usuarios registrados.</span>
+              <b class="admin-code">${esc(u.user_id || "")}</b>
+              <span>${esc(u.username || "")}</span>
+              <span>${esc(u.nombre || "")}</span>
+              <span>${esc(u.rol || "")}</span>
+              <span>
+                <span class="admin-status-pill ${active ? "" : "off"}">
+                  ${active ? "ACTIVO" : "INACTIVO"}
+                </span>
+              </span>
+              <span class="admin-user-actions">
+                <button class="btn ghost" type="button" onclick="adminEditUser('${esc(u.user_id || "")}')">Editar</button>
+                <button class="btn danger" type="button" onclick="adminDeactivateUser('${esc(u.user_id || "")}')">Inactivar</button>
+              </span>
             </div>
-          `
-        }
-      </section>
+          `;
+        }).join("") || `
+          <div class="admin-user-row">
+            <span>No hay usuarios registrados.</span>
+          </div>
+        `
+      }
     </section>
   `;
 }
 
+function adminUserForm(user = {}){
+  const role = String(user.rol || "analista").toLowerCase();
+  const status = String(user.estado || "ACTIVO").toUpperCase();
+
+  return `
+    <input type="hidden" id="adminUserId" value="${esc(user.user_id || "")}">
+
+    <div class="admin-grid">
+      <div class="field">
+        <label>Usuario</label>
+        <input id="adminUserUsername" value="${esc(user.username || "")}" placeholder="usuario de acceso">
+      </div>
+
+      <div class="field">
+        <label>Contraseña</label>
+        <input id="adminUserPassword" placeholder="Nueva contraseña o dejar vacío al editar">
+      </div>
+
+      <div class="field">
+        <label>Nombre completo</label>
+        <input id="adminUserName" value="${esc(user.nombre || "")}" placeholder="Nombre completo">
+      </div>
+
+      <div class="field">
+        <label>Rol</label>
+        <select id="adminUserRole" onchange="adminSyncAnalystName()">
+          <option value="analista" ${role === "analista" ? "selected" : ""}>analista</option>
+          <option value="admin" ${role === "admin" ? "selected" : ""}>admin</option>
+          <option value="gerencia" ${role === "gerencia" ? "selected" : ""}>gerencia</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Estado</label>
+        <select id="adminUserStatus">
+          <option value="ACTIVO" ${status === "ACTIVO" ? "selected" : ""}>ACTIVO</option>
+          <option value="INACTIVO" ${status === "INACTIVO" ? "selected" : ""}>INACTIVO</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Analista asociado</label>
+        <input id="adminUserAnalystName" value="${esc(user.analista_nombre || "")}" placeholder="Solo aplica para rol analista">
+      </div>
+
+      <div class="field admin-grid-full">
+        <label>Notas</label>
+        <textarea id="adminUserNotes" rows="3" placeholder="Notas internas">${esc(user.notas || "")}</textarea>
+      </div>
+    </div>
+  `;
+}
+
 function adminNewUser(){
-  const fields = [
-    "adminUserId",
-    "adminUserUsername",
-    "adminUserPassword",
-    "adminUserName",
-    "adminUserAnalystName",
-    "adminUserNotes"
-  ];
-
-  fields.forEach(id => {
-    const el = $(id);
-    if(el) el.value = "";
-  });
-
-  if($("adminUserRole")) $("adminUserRole").value = "analista";
-  if($("adminUserStatus")) $("adminUserStatus").value = "ACTIVO";
+  adminOpenModal(
+    "Agregar usuario",
+    adminUserForm({}),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveUser()">Guardar usuario</button>
+    `
+  );
 }
 
 function adminEditUser(userId){
@@ -2778,16 +2868,15 @@ function adminEditUser(userId){
     return;
   }
 
-  $("adminUserId").value = u.user_id || "";
-  $("adminUserUsername").value = u.username || "";
-  $("adminUserPassword").value = "";
-  $("adminUserName").value = u.nombre || "";
-  $("adminUserRole").value = String(u.rol || "analista").toLowerCase();
-  $("adminUserStatus").value = String(u.estado || "ACTIVO").toUpperCase();
-  $("adminUserAnalystName").value = u.analista_nombre || "";
-  $("adminUserNotes").value = u.notas || "";
+  adminOpenModal(
+    "Editar usuario",
+    adminUserForm(u),
+    `
+      <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
+      <button class="btn primary" type="button" onclick="adminSaveUser()">Guardar cambios</button>
+    `
+  );
 }
-
 function adminSyncAnalystName(){
   const role = String($("adminUserRole")?.value || "").toLowerCase();
 
@@ -2843,12 +2932,15 @@ async function adminSaveUser(){
       notas
     });
 
-    toast("Usuario guardado.");
-    ADMIN_CONTROL_STATE = {
-      ...(ADMIN_CONTROL_STATE || {}),
-      mode: "users"
-    };
-    await syncData();
+toast("Usuario guardado.");
+closeAdminModal();
+
+ADMIN_CONTROL_STATE = {
+  ...(ADMIN_CONTROL_STATE || {}),
+  mode: "users"
+};
+
+await syncData();
 
   }catch(e){
     console.error("Error guardando usuario:", e);
@@ -2876,7 +2968,7 @@ async function adminDeactivateUser(userId){
     return;
   }
 
-  const ok = confirm(`¿Inactivar al usuario ${u.username}? No se eliminará la fila.`);
+const ok = confirm(`¿Inactivar al usuario ${u.username}? El registro se conservará en la base, pero dejará de estar operativo.`);
   if(!ok) return;
 
   try{
