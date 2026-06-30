@@ -1953,6 +1953,31 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   border-top:1px solid var(--line);
   background:#F8FFFB;
 }  
+
+/* INFORME · TABLA COMPACTA */
+.report-process-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:10.5px;
+}
+
+.report-process-table th{
+  background:#F3FAF6;
+  color:#0B5F46;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  font-size:9.5px;
+  text-align:left;
+  padding:8px 7px;
+  border-bottom:1px solid #D6E8DD;
+}
+
+.report-process-table td{
+  padding:7px;
+  border-bottom:1px solid #E2EFE8;
+  vertical-align:top;
+  line-height:1.25;
+}  
   
 </style>
 </head>
@@ -4602,6 +4627,7 @@ function processAssignmentAlerts(p){
   
 function renderAdminReport(){
   const defaultFilters = {
+    reportType: "ejecutivo",
     mode: "pendientes",
     dateField: "semana_entrega",
     from: "",
@@ -4615,10 +4641,20 @@ function renderAdminReport(){
 
   return `
     <div class="admin-report-tools">
-<select id="rMode" onchange="generateAdminReport()">
-  <option value="pendientes">Pendientes</option>
-  <option value="completos">Completos</option>
-</select>
+      <select id="rReportType" onchange="generateAdminReport()">
+        <option value="ejecutivo">Informe ejecutivo</option>
+        <option value="procesos">Informe por procesos</option>
+        <option value="cargas">Informe de cargas</option>
+        <option value="semanal">Informe semanal</option>
+        <option value="alertas">Informe de alertas</option>
+      </select>
+
+      <select id="rMode" onchange="generateAdminReport()">
+        <option value="pendientes">Pendientes</option>
+        <option value="completos">Completos</option>
+        <option value="todos">Todos</option>
+      </select>
+
       <select id="rDateField" onchange="generateAdminReport()">
         <option value="semana_entrega">Semana entrega</option>
         <option value="semana_inicio">Semana inicio</option>
@@ -4656,7 +4692,7 @@ function renderAdminReport(){
     </div>
 
     <div id="adminReportPreview" class="admin-report-preview">
-      ${renderAdminOnePageReport(rows, defaultFilters)}
+      ${renderAdminReportByType(rows, defaultFilters)}
     </div>
   `;
 }
@@ -4671,7 +4707,8 @@ function reportWeekOptions(){
 
 function getAdminReportFilters(){
   return {
-mode: $("rMode")?.value || "pendientes",
+    reportType: $("rReportType")?.value || "ejecutivo",
+    mode: $("rMode")?.value || "pendientes",
     dateField: $("rDateField")?.value || "semana_entrega",
     from: $("rFrom")?.value || "",
     to: $("rTo")?.value || "",
@@ -4712,6 +4749,10 @@ if(filters.mode === "completos" && !closed){
 if(filters.mode === "pendientes" && closed){
   return false;
 }
+
+if(filters.mode === "todos"){
+  // No filtra por cierre.
+}
     
     return true;
   }).sort((a,b)=>Number(a.numero||0)-Number(b.numero||0));
@@ -4723,7 +4764,7 @@ function generateAdminReport(){
   const target = $("adminReportPreview");
 
   if(target){
-    target.innerHTML = renderAdminOnePageReport(rows, filters);
+    target.innerHTML = renderAdminReportByType(rows, filters);
   }
 }
 
@@ -4758,6 +4799,17 @@ function countBy(rows, getter){
     return acc;
   }, {});
 }
+
+function renderAdminReportByType(rows, filters){
+  const type = String(filters.reportType || "ejecutivo").toLowerCase();
+
+  if(type === "procesos") return renderAdminProcessesReport(rows, filters);
+  if(type === "cargas") return renderAdminLoadsReport(rows, filters);
+  if(type === "semanal") return renderAdminWeeklyReport(rows, filters);
+  if(type === "alertas") return renderAdminAlertsReport(rows, filters);
+
+  return renderAdminOnePageReport(rows, filters);
+}  
 
 function renderAdminOnePageReport(rows, filters){
   const s = adminReportStats(rows);
@@ -4840,6 +4892,217 @@ function renderAdminOnePageReport(rows, filters){
   `;
 }
 
+function reportHeader(title, badge, filters){
+  const today = new Date().toLocaleDateString("es-EC");
+
+  const filterText = [
+    filters.mode !== "todos" ? filters.mode : "todos",
+    filters.dateField === "semana_inicio" ? "semana inicio" : "semana entrega",
+    filters.from ? "desde semana " + filters.from : "",
+    filters.to ? "hasta semana " + filters.to : "",
+    filters.macro || "",
+    filters.analyst || "",
+    filters.leader || ""
+  ].filter(Boolean).join(" · ");
+
+  return `
+    <div class="report-head">
+      <div>
+        <h1>${esc(title)}</h1>
+        <p>RADAR SGMP · Centro de Control del Plan · ${esc(today)}</p>
+        <p>${esc(filterText || "Todos los procesos")}</p>
+      </div>
+      <div class="report-badge">${esc(badge)}</div>
+    </div>
+  `;
+}
+
+function renderAdminProcessesReport(rows, filters){
+  const visibleRows = rows.slice(0, 24);
+
+  return `
+    <section id="adminOnePageReport" class="admin-onepage-report">
+      ${reportHeader("INFORME POR PROCESOS", "DETALLE OPERATIVO", filters)}
+
+      <div class="report-kpis">
+        <div><b>${rows.length}</b><span>Procesos</span></div>
+        <div><b>${Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / (rows.length || 1))}%</b><span>Avance prom.</span></div>
+        <div><b>${rows.filter(p=>isProcessClosedForReport(p)).length}</b><span>Completados</span></div>
+        <div><b>${rows.filter(p=>!isProcessClosedForReport(p)).length}</b><span>Pendientes</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
+      </div>
+
+      <div class="report-panel" style="height:650px;overflow:hidden">
+        <h3>Detalle de procesos</h3>
+        <table class="report-process-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Proceso</th>
+              <th>Macroproceso</th>
+              <th>Analista</th>
+              <th>Líder</th>
+              <th>Semana</th>
+              <th>Avance</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${visibleRows.map(p=>`
+              <tr>
+                <td>${esc(p.proceso_id || "")}</td>
+                <td>${esc(p.proceso || "")}</td>
+                <td>${esc(p.macroproceso || "")}</td>
+                <td>${esc(p.analista || "Pendiente")}</td>
+                <td>${esc(p.lider || "Pendiente")}</td>
+                <td>${esc(getProcessDeliveryWeek(p) || "")}</td>
+                <td>${processAdvance(p.proceso_id)}%</td>
+                <td>${esc(processStatus(p.proceso_id))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        ${rows.length > visibleRows.length ? `<p class="meta">Se muestran ${visibleRows.length} de ${rows.length} procesos filtrados.</p>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminLoadsReport(rows, filters){
+  const byAnalyst = countBy(rows, p => p.analista || "Pendiente");
+  const byLeader = countBy(rows, p => p.lider || "Pendiente");
+  const byMacro = countBy(rows, p => p.macroproceso || "Sin macroproceso");
+
+  return `
+    <section id="adminOnePageReport" class="admin-onepage-report">
+      ${reportHeader("INFORME DE CARGAS", "CARGA OPERATIVA", filters)}
+
+      <div class="report-kpis">
+        <div><b>${rows.length}</b><span>Procesos</span></div>
+        <div><b>${Object.keys(byAnalyst).length}</b><span>Analistas</span></div>
+        <div><b>${Object.keys(byLeader).length}</b><span>Líderes</span></div>
+        <div><b>${Object.keys(byMacro).length}</b><span>Macroprocesos</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
+      </div>
+
+      <div class="report-layout">
+        <div class="report-panel">
+          <h3>Carga por analista</h3>
+          ${reportBars(byAnalyst, 12)}
+        </div>
+
+        <div class="report-panel">
+          <h3>Carga por líder</h3>
+          ${reportBars(byLeader, 12)}
+        </div>
+
+        <div class="report-panel">
+          <h3>Carga por macroproceso</h3>
+          ${reportBars(byMacro, 12)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminWeeklyReport(rows, filters){
+  const byStart = countBy(rows, p => "Semana " + getProcessStartWeek(p));
+  const byDelivery = countBy(rows, p => "Semana " + getProcessDeliveryWeek(p));
+  const byStatus = countBy(rows, p => processStatus(p.proceso_id));
+
+  return `
+    <section id="adminOnePageReport" class="admin-onepage-report">
+      ${reportHeader("INFORME SEMANAL", "PLAN POR SEMANAS", filters)}
+
+      <div class="report-kpis">
+        <div><b>${rows.length}</b><span>Procesos</span></div>
+        <div><b>${Object.keys(byStart).length}</b><span>Sem. inicio</span></div>
+        <div><b>${Object.keys(byDelivery).length}</b><span>Sem. entrega</span></div>
+        <div><b>${rows.filter(p=>isProcessClosedForReport(p)).length}</b><span>Cerrados</span></div>
+        <div><b>${rows.filter(p=>!isProcessClosedForReport(p)).length}</b><span>Pendientes</span></div>
+        <div><b>${Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / (rows.length || 1))}%</b><span>Avance prom.</span></div>
+      </div>
+
+      <div class="report-layout">
+        <div class="report-panel">
+          <h3>Procesos por inicio</h3>
+          ${reportBars(byStart, 12)}
+        </div>
+
+        <div class="report-panel">
+          <h3>Procesos por entrega</h3>
+          ${reportBars(byDelivery, 12)}
+        </div>
+
+        <div class="report-panel">
+          <h3>Estado del plan</h3>
+          ${reportBars(byStatus, 12)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminAlertsReport(rows, filters){
+  const alertRows = rows
+    .map(p => ({
+      process: p,
+      alerts: processAlerts(p)
+    }))
+    .filter(x => x.alerts.length);
+
+  return `
+    <section id="adminOnePageReport" class="admin-onepage-report">
+      ${reportHeader("INFORME DE ALERTAS", "CONTROL DE RIESGOS", filters)}
+
+      <div class="report-kpis">
+        <div><b>${rows.length}</b><span>Procesos filtro</span></div>
+        <div><b>${alertRows.length}</b><span>Con alertas</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
+        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
+        <div><b>${rows.filter(p=>!getProcessDeliveryWeek(p)).length}</b><span>Sin entrega</span></div>
+        <div><b>${rows.filter(p=>String(p.criticidad || "").toUpperCase() === "ALTA").length}</b><span>Alta criticidad</span></div>
+      </div>
+
+      <div class="report-panel" style="height:650px;overflow:hidden">
+        <h3>Procesos con alertas</h3>
+        <table class="report-process-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Proceso</th>
+              <th>Macroproceso</th>
+              <th>Analista</th>
+              <th>Líder</th>
+              <th>Avance</th>
+              <th>Alertas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alertRows.slice(0, 22).map(x=>`
+              <tr>
+                <td>${esc(x.process.proceso_id || "")}</td>
+                <td>${esc(x.process.proceso || "")}</td>
+                <td>${esc(x.process.macroproceso || "")}</td>
+                <td>${esc(x.process.analista || "Pendiente")}</td>
+                <td>${esc(x.process.lider || "Pendiente")}</td>
+                <td>${processAdvance(x.process.proceso_id)}%</td>
+                <td>${esc(x.alerts.map(a=>a.text).join(" · "))}</td>
+              </tr>
+            `).join("") || `
+              <tr>
+                <td colspan="7">No hay alertas para los filtros seleccionados.</td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+  
 function reportBars(obj, limit = 8){
   const entries = Object.entries(obj || {})
     .sort((a,b)=>b[1]-a[1])
