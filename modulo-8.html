@@ -1084,11 +1084,21 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
 
 .admin-report-preview{
   width:100%;
-  overflow:auto;
+  overflow:hidden;
   border:1px solid var(--line);
   border-radius:24px;
   background:#eef8f3;
-  padding:18px;
+  padding:14px;
+  min-height:calc(100vh - 280px);
+}
+
+.admin-report-stage{
+  width:100%;
+  height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  overflow:hidden;
 }
 
 .admin-onepage-report{
@@ -1096,11 +1106,12 @@ h1{margin:0;font-size:40px;letter-spacing:-.055em}
   height:900px;
   background:#ffffff;
   border-radius:20px;
-  padding:28px;
+  padding:24px;
   color:#092016;
   box-shadow:0 16px 40px rgba(8,70,44,.10);
+  overflow:hidden;
+  transform-origin:top center;
 }
-
 .report-head{
   display:flex;
   justify-content:space-between;
@@ -4691,9 +4702,11 @@ function renderAdminReport(){
       <button class="btn ghost" type="button" onclick="downloadAdminReportPng()">Descargar PNG</button>
     </div>
 
-    <div id="adminReportPreview" class="admin-report-preview">
-      ${renderAdminReportByType(rows, defaultFilters)}
-    </div>
+<div id="adminReportPreview" class="admin-report-preview">
+  <div class="admin-report-stage">
+    ${renderAdminOnePageReport(rows, defaultFilters)}
+  </div>
+</div>
   `;
 }
 
@@ -4758,18 +4771,45 @@ if(filters.mode === "todos"){
   }).sort((a,b)=>Number(a.numero||0)-Number(b.numero||0));
 }
 
+function fitAdminReportPreview(){
+  const preview = $("adminReportPreview");
+  const stage = preview?.querySelector(".admin-report-stage");
+  const report = $("adminOnePageReport");
+
+  if(!preview || !stage || !report) return;
+
+  const availableWidth = Math.max(320, preview.clientWidth - 8);
+  const availableHeight = Math.max(320, window.innerHeight - preview.getBoundingClientRect().top - 24);
+
+  const scale = Math.min(
+    availableWidth / 1600,
+    availableHeight / 900,
+    1
+  );
+
+  stage.style.height = `${Math.round(900 * scale)}px`;
+  report.style.transform = `scale(${scale})`;
+}
+
+window.addEventListener("resize", fitAdminReportPreview);
+  
 function generateAdminReport(){
   const filters = getAdminReportFilters();
   const rows = getAdminReportRows(filters);
   const target = $("adminReportPreview");
 
   if(target){
-    target.innerHTML = renderAdminReportByType(rows, filters);
+    target.innerHTML = `
+      <div class="admin-report-stage">
+        ${renderAdminOnePageReport(rows, filters)}
+      </div>
+    `;
+    fitAdminReportPreview();
   }
 }
 
 function adminReportStats(rows){
-  const avg = rows.length
+  const global = rows.length
     ? Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / rows.length)
     : 0;
 
@@ -4779,7 +4819,7 @@ function adminReportStats(rows){
 
   return {
     total: rows.length,
-    avg,
+    global,
     weeks: weeks.length,
     analysts: analysts.length,
     pendingAnalyst: rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length,
@@ -4840,7 +4880,7 @@ function renderAdminOnePageReport(rows, filters){
         <div><b>${s.total}</b><span>Procesos</span></div>
         <div><b>${s.weeks}</b><span>Semanas activas</span></div>
         <div><b>${s.analysts}</b><span>Recursos</span></div>
-        <div><b>${s.avg}%</b><span>Avance promedio</span></div>
+        <div><b>${s.global}%</b><span>Avance global</span></div>
         <div><b>${s.pendingAnalyst}</b><span>Analista pend.</span></div>
         <div><b>${s.pendingLeader}</b><span>Líder pend.</span></div>
       </div>
@@ -4861,32 +4901,25 @@ function renderAdminOnePageReport(rows, filters){
           ${reportBars(s.byLeader, 8)}
         </div>
 
-        <div class="report-panel report-wide">
-          <h3>Macroprocesos</h3>
-          <div class="report-tags">
-            ${Object.entries(s.byMacro).map(([k,v])=>`
-              <span><b>${esc(v)}</b> ${esc(k)}</span>
-            `).join("") || `<span>Sin datos</span>`}
-          </div>
-        </div>
+<div class="report-panel">
+  <h3>Macroprocesos</h3>
+  ${reportBars(s.byMacro, 10)}
+</div>
 
-        <div class="report-panel">
-          <h3>Criticidad</h3>
-          <div class="report-tags">
-            ${Object.entries(s.byCrit).map(([k,v])=>`
-              <span><b>${esc(v)}</b> ${esc(k)}</span>
-            `).join("") || `<span>Sin datos</span>`}
-          </div>
-        </div>
+<div class="report-panel">
+  <h3>Criticidad</h3>
+  ${reportBars(s.byCrit, 6)}
+</div>
 
-<div class="report-panel report-management">
-  <h3>Lectura de gestión</h3>
-          <p>
-            El corte consolida ${s.total} procesos, con avance promedio de ${s.avg}%.
-            La carga se distribuye en ${s.weeks} semanas activas y ${s.analysts} recursos.
-            Existen ${s.pendingAnalyst} procesos sin analista y ${s.pendingLeader} con líder pendiente.
-          </p>
-        </div>
+<div class="report-panel report-wide">
+  <h3>Estado del plan</h3>
+  ${reportBars({
+    "Completados TO-BE": rows.filter(p => isProcessClosedForReport(p)).length,
+    "Pendientes": rows.filter(p => !isProcessClosedForReport(p)).length,
+    "Sin analista": s.pendingAnalyst,
+    "Sin líder": s.pendingLeader
+  }, 8)}
+</div>
       </div>
     </section>
   `;
@@ -5134,16 +5167,32 @@ async function downloadAdminReportPng(){
     return;
   }
 
+  const prevTransform = node.style.transform;
+  const prevWidth = node.style.width;
+  const prevHeight = node.style.height;
+
+  node.style.transform = "none";
+  node.style.width = "1920px";
+  node.style.height = "1080px";
+
   const canvas = await html2canvas(node, {
-    scale: 2,
+    scale: 1,
+    width: 1920,
+    height: 1080,
     backgroundColor: "#ffffff",
     useCORS: true
   });
+
+  node.style.transform = prevTransform;
+  node.style.width = prevWidth;
+  node.style.height = prevHeight;
 
   const link = document.createElement("a");
   link.download = `RADAR_informe_corte_${new Date().toISOString().slice(0,10)}.png`;
   link.href = canvas.toDataURL("image/png");
   link.click();
+
+  fitAdminReportPreview();
 }
 
 function renderAdminControlRows(mode = "matrix", customRows = null){
