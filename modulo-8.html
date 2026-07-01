@@ -2987,7 +2987,13 @@ function adminEditProcess(procesoId){
     `
   );
 }
+  
 async function adminSaveProcess(){
+  if(window.ADMIN_PROCESS_SAVING){
+    toast("Guardado en curso. Espere a que termine.");
+    return;
+  }
+
   if(!isAdmin()){
     toast("Solo administrador.");
     return;
@@ -3015,7 +3021,19 @@ async function adminSaveProcess(){
     return;
   }
 
+  const saveBtn = document.querySelector("#adminModalRoot .admin-modal-actions .btn.primary");
+  const originalText = saveBtn ? saveBtn.textContent : "";
+
   try{
+    window.ADMIN_PROCESS_SAVING = true;
+
+    if(saveBtn){
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Guardando...";
+      saveBtn.style.opacity = ".65";
+      saveBtn.style.pointerEvents = "none";
+    }
+
     await api("upsert_process_master", {
       username_admin: SESSION.username,
       proceso_id: procesoId,
@@ -3031,22 +3049,32 @@ async function adminSaveProcess(){
       observacion
     });
 
-toast("Proceso guardado.");
-closeAdminModal();
+    toast("Proceso guardado.");
+    closeAdminModal();
 
-ADMIN_CONTROL_STATE = {
-  ...(ADMIN_CONTROL_STATE || {}),
-  mode: "processes"
-};
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      mode: "processes"
+    };
 
-await syncData();
+    await syncData();
 
   }catch(e){
     console.error("Error guardando proceso:", e);
     toast("No se pudo guardar: " + e.message);
+
+    if(saveBtn){
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText || "Guardar proceso";
+      saveBtn.style.opacity = "";
+      saveBtn.style.pointerEvents = "";
+    }
+
+  }finally{
+    window.ADMIN_PROCESS_SAVING = false;
   }
 }
-
+  
 async function adminDeactivateProcess(procesoId){
   if(!isAdmin()){
     toast("Solo administrador.");
@@ -3618,6 +3646,20 @@ async function adminDeactivateMacroprocess(macroId){
     toast("No se pudo inactivar: " + e.message);
   }
 }
+
+function macroDisplayNameByProcess(p = {}){
+  const macroId = String(p.macro_id || "").trim();
+
+  const macro = (DATA.macroprocesos || []).find(m =>
+    String(m.macro_id || "").trim() === macroId
+  );
+
+  if(macro && macro.macroproceso){
+    return macro.macroproceso;
+  }
+
+  return p.macroproceso || "";
+}
   
 function renderAdminProcesses(){
   const procesos = DATA.procesos || [];
@@ -3651,7 +3693,7 @@ function renderAdminProcesses(){
             <div class="admin-process-row">
               <b class="admin-code">${esc(p.proceso_id || "")}</b>
               <span>${esc(p.proceso || "")}</span>
-              <span>${esc(p.macroproceso || "")}</span>
+              <span>${esc(macroDisplayNameByProcess(p))}</span>
               <span>${esc(p.analista || "Pendiente")}</span>
               <span>${esc(p.avance_pct || 0)}%</span>
               <span>
