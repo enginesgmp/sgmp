@@ -888,11 +888,234 @@ async function submitDecision(id,decision){try{await apiRequest('decideRequest',
 // -----------------------------------------------------------------------------
 
 function renderAdmin(){
-  const canUsers=hasPermission('can_manage_users'),canAudit=hasPermission('can_view_audit');
-  const bosses=state.users.filter(u=>u.role==='boss'&&bool(u.active_flag));
-  const types=frontValues().map(front=>`<div><b>${esc(front)}</b><div>${typeValues(front).map(t=>`<span class="adminTag">${esc(t)}</span>`).join('')}</div></div>`).join('<hr style="border:0;border-top:1px solid #e2edf7">');
-  document.getElementById('adminContent').innerHTML=`<div class="adminGrid"><div class="adminCard"><div class="sectionHead"><div><h3>Usuarios</h3><p class="sub">El rol define las vistas y permisos. Un usuario inactivo no puede ingresar.</p></div>${canUsers?'<button class="btn primary small" onclick="openUserModal()">Nuevo usuario</button>':''}</div><div class="tableWrap"><table style="min-width:0"><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr>${state.users.map(u=>`<tr><td>${esc(u.username)}</td><td>${esc(u.full_name)}</td><td>${esc(roleLabel(u.role))}</td><td>${bool(u.active_flag)?'<span class="badge green">Activo</span>':'<span class="badge gray">Inactivo</span>'}</td><td>${canUsers?`<button class="btn soft small" onclick="openUserModal('${u.user_id}')">Editar</button>`:''}</td></tr>`).join('')}</table></div></div><div class="adminCard"><h3>Jefe global aprobador</h3><p class="sub">${bosses.map(u=>esc(u.full_name)).join(', ')||'No existe un jefe activo.'}</p><p class="sub">Aprueba segunda reprogramación, congelación y anulación.</p></div><div class="adminCard"><h3>Estructura informativa</h3><p class="sub">Cualquier usuario operativo puede crear asignaciones para otro integrante. La persona receptora debe aceptar, rechazar o solicitar ajuste.</p></div><div class="adminCard"><h3>Macrofrentes y tipos</h3>${types}</div><div class="adminCard" style="grid-column:1/-1"><div class="sectionHead"><div><h3>Historial de cambios y trazabilidad</h3><p class="sub">Registro de acciones realizadas por usuario dentro del sistema.</p></div>${canAudit?'<button class="btn primary small" onclick="openAudit()">Ver trazabilidad</button>':''}</div></div></div>`;
+  const canUsers =
+    hasPermission('can_manage_users');
+
+  const canAudit =
+    hasPermission('can_view_audit');
+
+  const radarEnabled =
+    configBool('RADAR_SYNC_ENABLED', false);
+
+  const bosses =
+    state.users.filter(
+      u =>
+        u.role === 'boss' &&
+        bool(u.active_flag)
+    );
+
+  const types =
+    frontValues()
+      .map(front => `
+        <div>
+          <b>${esc(front)}</b>
+          <div>
+            ${typeValues(front)
+              .map(type => `
+                <span class="adminTag">
+                  ${esc(type)}
+                </span>
+              `)
+              .join('')}
+          </div>
+        </div>
+      `)
+      .join(
+        '<hr style="border:0;border-top:1px solid #e2edf7">'
+      );
+
+  document.getElementById('adminContent').innerHTML = `
+    <div class="adminGrid">
+
+      <div class="adminCard">
+        <div class="sectionHead">
+          <div>
+            <h3>Usuarios</h3>
+            <p class="sub">
+              El rol define vistas y permisos.
+              Un usuario inactivo no puede ingresar.
+            </p>
+          </div>
+
+          ${
+            canUsers
+              ? '<button class="btn primary small" onclick="openUserModal()">Nuevo usuario</button>'
+              : ''
+          }
+        </div>
+
+        <div class="tableWrap">
+          <table style="min-width:0">
+            <tr>
+              <th>Usuario</th>
+              <th>Nombre</th>
+              <th>Rol</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+
+            ${state.users.map(user => `
+              <tr>
+                <td>${esc(user.username)}</td>
+                <td>${esc(user.full_name)}</td>
+                <td>${esc(roleLabel(user.role))}</td>
+                <td>
+                  ${
+                    bool(user.active_flag)
+                      ? '<span class="badge green">Activo</span>'
+                      : '<span class="badge gray">Inactivo</span>'
+                  }
+                </td>
+                <td>
+                  ${
+                    canUsers
+                      ? `<button class="btn soft small" onclick="openUserModal('${user.user_id}')">Editar</button>`
+                      : ''
+                  }
+                </td>
+              </tr>
+            `).join('')}
+          </table>
+        </div>
+      </div>
+
+      <div class="adminCard">
+        <div class="sectionHead">
+          <div>
+            <h3>Integración RADAR</h3>
+            <p class="sub">
+              Procesos TO-BE y actividades de solo lectura.
+            </p>
+          </div>
+
+          <span class="badge ${radarEnabled ? 'green' : 'gray'}">
+            ${radarEnabled ? 'Activa' : 'Deshabilitada'}
+          </span>
+        </div>
+
+        <p class="sub">
+          Cada proceso RADAR se convierte en una asignación
+          y conserva sus actividades como información no editable.
+        </p>
+
+        <button
+          class="btn primary small"
+          onclick="syncRadarNow()"
+          ${radarEnabled ? '' : 'disabled'}
+        >
+          Sincronizar RADAR
+        </button>
+      </div>
+
+      <div class="adminCard">
+        <h3>Jefe global aprobador</h3>
+        <p class="sub">
+          ${
+            bosses.map(
+              user => esc(user.full_name)
+            ).join(', ') ||
+            'No existe un jefe activo.'
+          }
+        </p>
+        <p class="sub">
+          Aprueba segunda reprogramación,
+          congelación y anulación.
+        </p>
+      </div>
+
+      <div class="adminCard">
+        <h3>Estructura informativa</h3>
+        <p class="sub">
+          Cualquier usuario operativo puede crear
+          asignaciones para otro integrante.
+        </p>
+      </div>
+
+      <div class="adminCard">
+        <h3>Macrofrentes y tipos</h3>
+        ${types}
+      </div>
+
+      <div class="adminCard" style="grid-column:1/-1">
+        <div class="sectionHead">
+          <div>
+            <h3>Historial de cambios y trazabilidad</h3>
+            <p class="sub">
+              Registro de acciones realizadas por usuario.
+            </p>
+          </div>
+
+          ${
+            canAudit
+              ? '<button class="btn primary small" onclick="openAudit()">Ver trazabilidad</button>'
+              : ''
+          }
+        </div>
+      </div>
+
+    </div>
+  `;
 }
+
+async function syncRadarNow(){
+  const confirmed = confirm(
+    'Se actualizarán desde RADAR los procesos TO-BE y sus actividades. ¿Continuar?'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const result = await apiRequest(
+      'syncRadar',
+      {},
+      {
+        loadingText:
+          'Sincronizando procesos y actividades desde RADAR…'
+      }
+    );
+
+    await refreshData(true);
+
+    showToast(
+      result.message ||
+        'RADAR sincronizado correctamente.',
+      result.status === 'Con advertencias'
+        ? 'info'
+        : 'success'
+    );
+
+    if (
+      Array.isArray(result.warnings) &&
+      result.warnings.length
+    ) {
+      openModal(
+        'Advertencias de sincronización',
+        `${result.warnings.length} registro(s) requieren revisión.`,
+        `
+          <div class="readDetailGrid">
+            ${result.warnings
+              .map(warning => `
+                <div class="readBox">
+                  ${esc(warning)}
+                </div>
+              `)
+              .join('')}
+          </div>
+        `
+      );
+    }
+
+  } catch (error) {
+    showToast(
+      error.message ||
+        'No se pudo sincronizar RADAR.',
+      'error'
+    );
+  }
+}
+  
+  
+  
 function openUserModal(id=''){
   const u=id?userById(id):null;
   openModal(u?'Editar usuario':'Nuevo usuario','El rol controla vistas y permisos.',`<div class="formGrid"><div class="field"><label>Username *</label><input id="usrUsername" value="${esc(u?.username||'')}"></div><div class="field"><label>Nombre completo *</label><input id="usrName" value="${esc(u?.full_name||'')}"></div><div class="field"><label>Rol *</label><select id="usrRole">${state.roles.filter(r=>bool(r.active_flag)).map(r=>`<option value="${r.role}" ${r.role===u?.role?'selected':''}>${esc(roleLabel(r.role))}</option>`).join('')}</select></div><div class="field"><label>${u?'Nueva contraseña (opcional)':'Contraseña *'}</label><input id="usrPassword" type="password"></div></div><label class="checkLine"><input type="checkbox" id="usrActive" ${!u||bool(u.active_flag)?'checked':''}> Usuario activo</label><div class="actions"><button class="btn soft" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveUser('${id}')">Guardar usuario</button></div>`);
