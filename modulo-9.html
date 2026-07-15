@@ -530,6 +530,28 @@ function unique(list){ return [...new Set((list||[]).filter(Boolean))]; }
 function roleLabel(role){ return ({user:'Usuario',boss:'Jefe',admin:'Administrador',management:'Gerencia'})[role] || role || 'Usuario'; }
 function userById(id){ return state.users.find(u=>u.user_id===id) || null; }
 function userName(id){ const u=userById(id); return u?u.full_name:id||'Sin responsable'; }
+  function assignmentOwnerName(assignment) {
+  if (!assignment) {
+    return 'Sin responsable';
+  }
+
+  const linkedUser = userById(
+    assignment.owner_user_id
+  );
+
+  if (linkedUser) {
+    return linkedUser.full_name;
+  }
+
+  if (assignment.source_owner_name) {
+    return (
+      assignment.source_owner_name +
+      ' · No vinculado al HUB'
+    );
+  }
+
+  return 'Sin responsable';
+}
 function userOptions(selected='', includeManagement=false){
   return state.users.filter(u=>bool(u.active_flag) && (includeManagement || u.role!=='management')).map(u=>`<option value="${esc(u.user_id)}" ${u.user_id===selected?'selected':''}>${esc(u.full_name)} · ${esc(u.username)}</option>`).join('');
 }
@@ -728,10 +750,36 @@ function riskSegment(cls,value,label){
   const small=value<12;
   return `<span class="ownerRiskSeg ${cls} ${small?'isSmall':''}" style="width:${value}%" title="${esc(label)}: ${value}%">${small?'':value+'%'}</span>`;
 }
+
+function ownerGroupName(ownerKey, assignments) {
+  if (
+    ownerKey &&
+    ownerKey.indexOf('RADAR_NAME:') === 0
+  ) {
+    return (
+      ownerKey.replace('RADAR_NAME:', '') +
+      ' · No vinculado al HUB'
+    );
+  }
+
+  if (ownerKey === 'UNASSIGNED') {
+    return 'Sin responsable';
+  }
+
+  const firstAssignment =
+    assignments && assignments.length
+      ? assignments[0]
+      : null;
+
+  return firstAssignment
+    ? assignmentOwnerName(firstAssignment)
+    : userName(ownerKey);
+}
+  
 function renderOwnerBars(list){
-  const open=list.filter(openAssignment),by={};open.forEach(a=>(by[a.owner_user_id]||(by[a.owner_user_id]=[])).push(a));
-  const rows=Object.entries(by).sort((a,b)=>b[1].length-a[1].length||userName(a[0]).localeCompare(userName(b[0])));
-  document.getElementById('ownerBars').innerHTML=rows.map(([id,items])=>{const n=items.length,critical=items.filter(criticalAssignment).length,late=items.filter(a=>lateAssignment(a)&&!criticalAssignment(a)).length,rep=items.filter(a=>reprogrammedAssignment(a)&&!lateAssignment(a)).length,normal=Math.max(0,n-critical-late-rep);return `<div class="barLine" title="Abiertas: ${n} · Atrasadas: ${pct(late+critical,n)}% · Reprogramadas: ${pct(rep+critical,n)}% · Críticas: ${pct(critical,n)}%" onclick="showResults('owner','${esc(id)}')"><span>${esc(userName(id))}</span><div class="ownerRiskTrack">${riskSegment('normal',pct(normal,n),'Normal')}${riskSegment('late',pct(late,n),'Atrasadas')}${riskSegment('rep',pct(rep,n),'Reprogramadas')}${riskSegment('critical',pct(critical,n),'Críticas')}</div><b>${n}</b></div>`}).join('')+(rows.length?`<div class="ownerRiskLegend"><span><i style="background:#0f78b8"></i>Normal</span><span><i style="background:#dc2626"></i>Atrasadas</span><span><i style="background:#f97316"></i>Reprogramadas</span><span><i style="background:#64748b"></i>Críticas</span></div>`:'<div class="emptyState">Sin asignaciones abiertas para el filtro.</div>');
+  const open = list.filter(openAssignment); const by = {};  open.forEach(function (assignment) {   const ownerKey =     assignment.owner_user_id ||     (       assignment.source_owner_name         ? 'RADAR_NAME:' + assignment.source_owner_name         : 'UNASSIGNED'     );    if (!by[ownerKey]) {     by[ownerKey] = [];   }    by[ownerKey].push(assignment); });
+  const rows=Object.entries(by).sort((a,b)=>b[1].length-a[1].length||ownerGroupName(a[0], a[1])   .localeCompare(     ownerGroupName(b[0], b[1])   ));
+  document.getElementById('ownerBars').innerHTML=rows.map(([id,items])=>{const n=items.length,critical=items.filter(criticalAssignment).length,late=items.filter(a=>lateAssignment(a)&&!criticalAssignment(a)).length,rep=items.filter(a=>reprogrammedAssignment(a)&&!lateAssignment(a)).length,normal=Math.max(0,n-critical-late-rep);return `<div class="barLine" title="Abiertas: ${n} · Atrasadas: ${pct(late+critical,n)}% · Reprogramadas: ${pct(rep+critical,n)}% · Críticas: ${pct(critical,n)}%" onclick="showResults('owner','${esc(id)}')"><span>${esc(ownerGroupName(id, items))}</span><div class="ownerRiskTrack">${riskSegment('normal',pct(normal,n),'Normal')}${riskSegment('late',pct(late,n),'Atrasadas')}${riskSegment('rep',pct(rep,n),'Reprogramadas')}${riskSegment('critical',pct(critical,n),'Críticas')}</div><b>${n}</b></div>`}).join('')+(rows.length?`<div class="ownerRiskLegend"><span><i style="background:#0f78b8"></i>Normal</span><span><i style="background:#dc2626"></i>Atrasadas</span><span><i style="background:#f97316"></i>Reprogramadas</span><span><i style="background:#64748b"></i>Críticas</span></div>`:'<div class="emptyState">Sin asignaciones abiertas para el filtro.</div>');
 }
 function renderPriorityBars(list){
   const by=Object.fromEntries(PRIORITIES.map(p=>[p,list.filter(a=>a.priority===p).length])),max=Math.max(1,...Object.values(by));
@@ -774,7 +822,7 @@ function rowsForResult(kind,label){
   if(kind==='rep'){rows=rows.filter(reprogrammedAssignment);title='Asignaciones reprogramadas'}
   if(kind==='critical'){rows=rows.filter(criticalAssignment);title='Asignaciones críticas'}
   if(kind==='status'){rows=rows.filter(a=>a.status===label);title='Estado: '+label}
-  if(kind==='owner'){rows=rows.filter(a=>a.owner_user_id===label);title='Responsable: '+userName(label)}
+  if (kind === 'owner') {   if (label.indexOf('RADAR_NAME:') === 0) {     const radarName =       label.replace('RADAR_NAME:', '');      rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         assignment.source_owner_name === radarName       );     });      title =       'Responsable: ' +       radarName +       ' · No vinculado al HUB';    } else if (label === 'UNASSIGNED') {     rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         !assignment.source_owner_name       );     });      title = 'Responsable: Sin responsable';    } else {     rows = rows.filter(function (assignment) {       return (         assignment.owner_user_id === label       );     });      title =       'Responsable: ' +       userName(label);   } }
   if(kind==='priority'){rows=rows.filter(a=>a.priority===label);title='Prioridad: '+label}
   if(kind==='front'){rows=rows.filter(a=>a.macrofront===label);title='Macrofrente: '+label}
   if(kind==='weekStart'){rows=rows.filter(a=>mondayOf(a.start_date)===label);title='Inicios · Semana '+getISOWeekInfo(label).week}
@@ -837,7 +885,7 @@ function showResults(kind, label = '') {
                 </td>
 
                 <td>
-                  ${esc(userName(assignment.owner_user_id))}
+                  ${esc(assignmentOwnerName(assignment))}
                 </td>
 
                 <td>
@@ -1061,7 +1109,7 @@ function renderAssignmentDetail(a,editableContext=false,highlightActivityId=''){
     actions=`<button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Editar asignación</button><button class="btn primary small" onclick="openActivityModal('${a.assignment_id}')">Agregar actividad</button><button class="btn warn small" onclick="openReprogramModal('${a.assignment_id}')">Reprogramar</button><button class="btn warn small" onclick="openFreezeModal('${a.assignment_id}')">Congelar asignación</button>${a.owner_user_id===state.currentUser.user_id?`<button class="btn soft small" onclick="openReassignmentModal('${a.assignment_id}')">Reasignar</button>`:''}<button class="btn primary small" onclick="openCompleteAssignmentModal('${a.assignment_id}')">Completar asignación</button><button class="btn danger small" onclick="openAnnulModal('${a.assignment_id}')">Anular asignación</button>`;
   }
   const adjustment=state.acceptances.find(x=>x.assignment_id===a.assignment_id&&x.requested_by_user_id===state.currentUser.user_id&&x.acceptance_status==='Ajuste solicitado'&&bool(x.active_flag));
-  return `<div class="todoDetailTop"><div><h3>${esc(a.title)}</h3><p>${esc(a.macrofront)} · ${esc(a.assignment_type)}</p></div><div class="chipRow">${statusBadge(a)}${priorityBadge(a.priority)}${reprogramChip(a)}${sourceChip(a)}</div></div>${adjustment?`<div class="reprogramPanel"><h3>Ajuste solicitado</h3><p>${esc(adjustment.adjustment_comment||'')}</p><div class="todoDetailActions"><button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Ajustar</button><button class="btn primary small" onclick="resendInitialAcceptance('${adjustment.acceptance_id}')">Reenviar</button></div></div>`:''}<div class="todoDetailSection"><div class="todoInfoGrid"><div class="todoInfo">   <span>Responsable principal</span>   <b>${esc(userName(a.owner_user_id))}</b> </div>  <div class="todoInfo">   <span>Fecha de inicio</span>   <b>${fmt(a.start_date)}</b> </div>  <div class="todoInfo">   <span>Entrega vigente</span>   <b>${fmt(a.current_due_date)}</b> </div><div class="todoInfo"><span>Creador</span><b>${esc(userName(a.created_by_user_id))}</b></div><div class="todoInfo"><span>Participantes</span><b>${unique(participants).map(userName).join(', ')||'Sin participantes'}</b></div></div>${a.observation?`<div class="todoInfo" style="margin-top:10px"><span>Observación</span><b>${esc(a.observation)}</b></div>`:''}<div class="progress progressLabeled"><span style="width:${p}%"></span><b>${p.toFixed(1)}%</b></div>${actions?`<div class="todoDetailActions">${actions}</div>`:''}</div><div class="todoDetailSection"><h4>Actividades · ${acts.filter(completedActivity).length} de ${acts.length}</h4><div class="activityList">${acts.length?acts.map(t=>renderActivityRow(t,canManage&&!readOnly,highlightActivityId)).join(''):'<div class="emptyState">Sin actividades registradas.</div>'}</div></div>`;
+  return `<div class="todoDetailTop"><div><h3>${esc(a.title)}</h3><p>${esc(a.macrofront)} · ${esc(a.assignment_type)}</p></div><div class="chipRow">${statusBadge(a)}${priorityBadge(a.priority)}${reprogramChip(a)}${sourceChip(a)}</div></div>${adjustment?`<div class="reprogramPanel"><h3>Ajuste solicitado</h3><p>${esc(adjustment.adjustment_comment||'')}</p><div class="todoDetailActions"><button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Ajustar</button><button class="btn primary small" onclick="resendInitialAcceptance('${adjustment.acceptance_id}')">Reenviar</button></div></div>`:''}<div class="todoDetailSection"><div class="todoInfoGrid"><div class="todoInfo">   <span>Responsable principal</span>   <b>${esc(assignmentOwnerName(a))}</b> </div>  <div class="todoInfo">   <span>Fecha de inicio</span>   <b>${fmt(a.start_date)}</b> </div>  <div class="todoInfo">   <span>Entrega vigente</span>   <b>${fmt(a.current_due_date)}</b> </div><div class="todoInfo"><span>Creador</span><b>${esc(userName(a.created_by_user_id))}</b></div><div class="todoInfo"><span>Participantes</span><b>${unique(participants).map(userName).join(', ')||'Sin participantes'}</b></div></div>${a.observation?`<div class="todoInfo" style="margin-top:10px"><span>Observación</span><b>${esc(a.observation)}</b></div>`:''}<div class="progress progressLabeled"><span style="width:${p}%"></span><b>${p.toFixed(1)}%</b></div>${actions?`<div class="todoDetailActions">${actions}</div>`:''}</div><div class="todoDetailSection"><h4>Actividades · ${acts.filter(completedActivity).length} de ${acts.length}</h4><div class="activityList">${acts.length?acts.map(t=>renderActivityRow(t,canManage&&!readOnly,highlightActivityId)).join(''):'<div class="emptyState">Sin actividades registradas.</div>'}</div></div>`;
 }
 function detailItem(label,value,full=false){return value?`<div class="detailItem ${full?'full':''}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`:''}
 function renderActivityRow(t,canManage,highlightActivityId=''){
