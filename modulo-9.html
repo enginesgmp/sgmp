@@ -883,7 +883,77 @@ function returnToDashboard(scroll=true){document.getElementById('dashboardConten
 // MI TRABAJO
 // -----------------------------------------------------------------------------
 
-function myAssignments(){ return visibleAssignments().filter(a=>a.owner_user_id===state.currentUser.user_id&&acceptedAssignment(a)); }
+function renderMyAssignmentRow(a) {
+  const pending =
+    a.acceptance_status !== 'accepted';
+
+  const selected =
+    selectedMyAssignmentId ===
+    a.assignment_id;
+
+  const progress =
+    progressOf(a);
+
+  return `
+    <div
+      class="todoRow
+        ${selected ? 'selected' : ''}
+        ${pending ? 'pending' : ''}"
+      onclick="selectMyAssignment('${a.assignment_id}')"
+    >
+      <span
+        class="todoStatusDot
+          ${
+            pending
+              ? 'pending'
+              : completedAssignment(a)
+                ? 'done'
+                : ''
+          }"
+      ></span>
+
+      <div>
+        <div class="todoRowTitle">
+          ${esc(a.title)}
+        </div>
+
+        <div class="todoRowMeta">
+          ${esc(a.macrofront)}
+          ·
+          ${esc(a.assignment_type)}
+        </div>
+      </div>
+
+      <div class="todoRowAside">
+        <span
+          class="todoRowDate"
+          title="Fecha de inicio"
+        >
+          Inicio: ${fmt(a.start_date)}
+        </span>
+
+        <span
+          class="todoRowDate"
+          title="Fecha de entrega"
+        >
+          Entrega: ${fmt(a.current_due_date)}
+        </span>
+
+        ${
+          criticalAssignment(a)
+            ? '<span class="alertIcon gray">!</span>'
+            : lateAssignment(a)
+              ? '<span class="alertIcon red">!</span>'
+              : ''
+        }
+      </div>
+
+      <div class="todoRowProgress">
+        <span style="width:${progress}%"></span>
+      </div>
+    </div>
+  `;
+}
 function renderMy(){
   const userId=state.currentUser.user_id;
   const active=visibleAssignments().filter(a=>a.owner_user_id===userId&&acceptedAssignment(a));
@@ -907,7 +977,7 @@ function renderMyKpis(list){
 }
 function renderPendingAcceptance(){
   const pending=state.acceptances.filter(a=>a.proposed_owner_user_id===state.currentUser.user_id&&a.acceptance_status==='Pendiente'&&bool(a.active_flag));
-  document.getElementById('pendingAcceptance').innerHTML=pending.length?`<div class="acceptBox"><h3 style="margin:0 0 10px">Asignaciones pendientes de aceptación</h3><div class="acceptList">${pending.map(acc=>{const a=assignmentById(acc.assignment_id);return `<div class="acceptItem" onclick="openAcceptanceDetail('${acc.acceptance_id}')"><div><b>${esc(a?.title||acc.assignment_id)}</b><p class="sub" style="margin:4px 0 0">Asignada por ${esc(userName(acc.requested_by_user_id))} · entrega ${fmt(a?.current_due_date)}</p></div><span class="badge amber">Responder</span></div>`}).join('')}</div></div>`:'';
+  document.getElementById('pendingAcceptance').innerHTML=pending.length?`<div class="acceptBox"><h3 style="margin:0 0 10px">Asignaciones pendientes de aceptación</h3><div class="acceptList">${pending.map(acc=>{const a=assignmentById(acc.assignment_id);return `<div class="acceptItem" onclick="openAcceptanceDetail('${acc.acceptance_id}')"><div><b>${esc(a?.title||acc.assignment_id)}</b><p class="sub" style="margin:4px 0 0">Asignada por ${esc(userName(acc.requested_by_user_id))} · inicio ${fmt(a?.start_date)} · entrega ${fmt(a?.current_due_date)}</p></div><span class="badge amber">Responder</span></div>`}).join('')}</div></div>`:'';
 }
 function selectMyAssignment(id){selectedMyAssignmentId=id;renderMy()}
 function todoAssignmentRow(a,selected){
@@ -925,7 +995,7 @@ function renderAssignmentDetail(a,editableContext=false,highlightActivityId=''){
     actions=`<button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Editar asignación</button><button class="btn primary small" onclick="openActivityModal('${a.assignment_id}')">Agregar actividad</button><button class="btn warn small" onclick="openReprogramModal('${a.assignment_id}')">Reprogramar</button><button class="btn warn small" onclick="openFreezeModal('${a.assignment_id}')">Congelar asignación</button>${a.owner_user_id===state.currentUser.user_id?`<button class="btn soft small" onclick="openReassignmentModal('${a.assignment_id}')">Reasignar</button>`:''}<button class="btn primary small" onclick="openCompleteAssignmentModal('${a.assignment_id}')">Completar asignación</button><button class="btn danger small" onclick="openAnnulModal('${a.assignment_id}')">Anular asignación</button>`;
   }
   const adjustment=state.acceptances.find(x=>x.assignment_id===a.assignment_id&&x.requested_by_user_id===state.currentUser.user_id&&x.acceptance_status==='Ajuste solicitado'&&bool(x.active_flag));
-  return `<div class="todoDetailTop"><div><h3>${esc(a.title)}</h3><p>${esc(a.macrofront)} · ${esc(a.assignment_type)}</p></div><div class="chipRow">${statusBadge(a)}${priorityBadge(a.priority)}${reprogramChip(a)}${sourceChip(a)}</div></div>${adjustment?`<div class="reprogramPanel"><h3>Ajuste solicitado</h3><p>${esc(adjustment.adjustment_comment||'')}</p><div class="todoDetailActions"><button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Ajustar</button><button class="btn primary small" onclick="resendInitialAcceptance('${adjustment.acceptance_id}')">Reenviar</button></div></div>`:''}<div class="todoDetailSection"><div class="todoInfoGrid"><div class="todoInfo"><span>Responsable principal</span><b>${esc(userName(a.owner_user_id))}</b></div><div class="todoInfo"><span>Entrega vigente</span><b>${fmt(a.current_due_date)}</b></div><div class="todoInfo"><span>Creador</span><b>${esc(userName(a.created_by_user_id))}</b></div><div class="todoInfo"><span>Participantes</span><b>${unique(participants).map(userName).join(', ')||'Sin participantes'}</b></div></div>${a.observation?`<div class="todoInfo" style="margin-top:10px"><span>Observación</span><b>${esc(a.observation)}</b></div>`:''}<div class="progress progressLabeled"><span style="width:${p}%"></span><b>${p.toFixed(1)}%</b></div>${actions?`<div class="todoDetailActions">${actions}</div>`:''}</div><div class="todoDetailSection"><h4>Actividades · ${acts.filter(completedActivity).length} de ${acts.length}</h4><div class="activityList">${acts.length?acts.map(t=>renderActivityRow(t,canManage&&!readOnly,highlightActivityId)).join(''):'<div class="emptyState">Sin actividades registradas.</div>'}</div></div>`;
+  return `<div class="todoDetailTop"><div><h3>${esc(a.title)}</h3><p>${esc(a.macrofront)} · ${esc(a.assignment_type)}</p></div><div class="chipRow">${statusBadge(a)}${priorityBadge(a.priority)}${reprogramChip(a)}${sourceChip(a)}</div></div>${adjustment?`<div class="reprogramPanel"><h3>Ajuste solicitado</h3><p>${esc(adjustment.adjustment_comment||'')}</p><div class="todoDetailActions"><button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Ajustar</button><button class="btn primary small" onclick="resendInitialAcceptance('${adjustment.acceptance_id}')">Reenviar</button></div></div>`:''}<div class="todoDetailSection"><div class="todoInfoGrid"><div class="todoInfo">   <span>Responsable principal</span>   <b>${esc(userName(a.owner_user_id))}</b> </div>  <div class="todoInfo">   <span>Fecha de inicio</span>   <b>${fmt(a.start_date)}</b> </div>  <div class="todoInfo">   <span>Entrega vigente</span>   <b>${fmt(a.current_due_date)}</b> </div><div class="todoInfo"><span>Creador</span><b>${esc(userName(a.created_by_user_id))}</b></div><div class="todoInfo"><span>Participantes</span><b>${unique(participants).map(userName).join(', ')||'Sin participantes'}</b></div></div>${a.observation?`<div class="todoInfo" style="margin-top:10px"><span>Observación</span><b>${esc(a.observation)}</b></div>`:''}<div class="progress progressLabeled"><span style="width:${p}%"></span><b>${p.toFixed(1)}%</b></div>${actions?`<div class="todoDetailActions">${actions}</div>`:''}</div><div class="todoDetailSection"><h4>Actividades · ${acts.filter(completedActivity).length} de ${acts.length}</h4><div class="activityList">${acts.length?acts.map(t=>renderActivityRow(t,canManage&&!readOnly,highlightActivityId)).join(''):'<div class="emptyState">Sin actividades registradas.</div>'}</div></div>`;
 }
 function detailItem(label,value,full=false){return value?`<div class="detailItem ${full?'full':''}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`:''}
 function renderActivityRow(t,canManage,highlightActivityId=''){
@@ -983,7 +1053,32 @@ function renderShared(){
   document.getElementById('sharedContent').innerHTML=`<div class="todoWorkspace"><div class="todoListPane"><div class="todoListHeader"><h3>Trabajo compartido</h3><p>${keys.length} elemento(s) relacionados contigo</p></div>${requests.length?group('Solicitudes del jefe',requests.map(r=>sharedTodoRow('req:'+r.request_id,(assignmentById(r.assignment_id)?.title||r.assignment_id),requestTypeLabel(r.request_type),'request')).join(''),''):''}${critical.length?group('Alertas críticas',critical.map(a=>sharedTodoRow('critical:'+a.assignment_id,a.title,'Reprogramada y atrasada','critical')).join(''),''):''}${incoming.length?group('Reasignaciones por responder',incoming.map(r=>sharedTodoRow('reain:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,`${userName(r.from_user_id)} → ${userName(r.to_user_id)}`,'request')).join(''),''):''}${adjustments.length?group('Reasignaciones con ajuste',adjustments.map(r=>sharedTodoRow('reaout:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,r.adjustment_comment||'Ajuste solicitado','request')).join(''),''):''}${group('Creadas por mí para otros',created.map(a=>sharedTodoRow('created:'+a.assignment_id,a.title,`Responsable: ${userName(a.owner_user_id)}`)).join(''),'Sin asignaciones creadas para otros.')}${group('Asignaciones donde participo',assPart.map(a=>sharedTodoRow('apart:'+a.assignment_id,a.title,`Responsable: ${userName(a.owner_user_id)}`)).join(''),'Sin asignaciones compartidas.')}${group('Actividades donde participo',actPart.map(t=>sharedTodoRow('act:'+t.activity_id,t.title,assignmentById(t.assignment_id)?.title||t.assignment_id)).join(''),'Sin actividades compartidas.')}</div><div class="todoDetailPane">${renderSharedDetail(selectedSharedKey)}</div></div>`;
 }
 function sharedSection(title,body){return `<div class="sharedSection"><h3>${esc(title)}</h3>${body}</div>`}
-function sharedAssignmentCard(a){return `<div class="miniCard clickable ${a.acceptance_status!=='accepted'?'pending':''}" onclick="openAssignmentDetail('${a.assignment_id}')"><div><h4>${esc(a.title)}</h4><p>${esc(userName(a.owner_user_id))} · ${fmt(a.current_due_date)} · ${esc(a.acceptance_status)}</p></div>${statusBadge(a)}</div>`}
+function sharedAssignmentCard(a) {
+  return `
+    <div
+      class="miniCard clickable
+        ${
+          a.acceptance_status !== 'accepted'
+            ? 'pending'
+            : ''
+        }"
+      onclick="openAssignmentDetail('${a.assignment_id}')"
+    >
+      <div>
+        <h4>${esc(a.title)}</h4>
+
+        <p>
+          ${esc(userName(a.owner_user_id))}
+          · inicio ${fmt(a.start_date)}
+          · entrega ${fmt(a.current_due_date)}
+          · ${esc(a.acceptance_status)}
+        </p>
+      </div>
+
+      ${statusBadge(a)}
+    </div>
+  `;
+}
 function requestTypeLabel(type){return({REP2:'Segunda reprogramación',FREEZE:'Congelación',ANNUL:'Anulación'})[type]||type}
 function sharedRequestCard(r){const a=assignmentById(r.assignment_id);return `<div class="miniCard"><div><h4>${esc(requestTypeLabel(r.request_type))} · ${esc(a?.title||r.assignment_id)}</h4><p>${esc(userName(r.requester_user_id))} · ${esc(r.reason)}</p></div><div class="actions"><button class="btn primary small" onclick="openDecisionModal('${r.request_id}','approve')">Aprobar</button><button class="btn danger small" onclick="openDecisionModal('${r.request_id}','reject')">Rechazar</button></div></div>`}
 function sharedReassignmentCard(r,incoming){const a=assignmentById(r.assignment_id);return `<div class="miniCard"><div><h4>${esc(a?.title||r.assignment_id)}</h4><p>${esc(userName(r.from_user_id))} → ${esc(userName(r.to_user_id))} · ${esc(r.reason)}</p>${r.adjustment_comment?`<p class="sub">Ajuste: ${esc(r.adjustment_comment)}</p>`:''}</div>${incoming?`<div class="actions"><button class="btn primary small" onclick="respondReassignment('${r.reassignment_id}','accept')">Aceptar</button><button class="btn warn small" onclick="openReassignmentResponse('${r.reassignment_id}','adjust')">Ajustar</button><button class="btn danger small" onclick="respondReassignment('${r.reassignment_id}','reject')">Rechazar</button></div>`:`<button class="btn primary small" onclick="resendReassignment('${r.reassignment_id}')">Reenviar</button>`}</div>`}
