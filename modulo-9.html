@@ -2307,6 +2307,68 @@ function selectSharedItem(key){selectedSharedKey=key;renderShared();}
 function sharedTodoRow(key,title,meta,kind='assignment'){
   return `<div class="todoRow ${selectedSharedKey===key?'selected':''}" onclick="selectSharedItem('${key}')"><span class="todoStatusDot ${kind==='request'?'pending':''}"></span><div><div class="todoRowTitle">${esc(title)}</div><div class="todoRowMeta">${esc(meta||'')}</div></div><div class="todoRowAside">${kind==='critical'?'<span class="badge gray">Crítica</span>':kind==='request'?'<span class="badge orange">Pendiente</span>':''}</div></div>`;
 }
+  function sharedAssignmentSummary(
+  assignment
+) {
+  if (!assignment) {
+    return 'Asignación no disponible';
+  }
+
+  return (
+    'Responsable: ' +
+    assignmentOwnerName(
+      assignment
+    ) +
+    ' · Inicio: ' +
+    fmt(
+      assignment.start_date
+    ) +
+    ' · Entrega: ' +
+    fmt(
+      assignment.current_due_date
+    )
+  );
+}
+
+function sharedActivitySummary(
+  activity
+) {
+  if (!activity) {
+    return 'Actividad no disponible';
+  }
+
+  const assignment =
+    assignmentById(
+      activity.assignment_id
+    );
+
+  return (
+    'Asignación: ' +
+    (
+      assignment
+        ? assignment.title
+        : activity.assignment_id
+    ) +
+    ' · Responsable: ' +
+    (
+      assignment
+        ? assignmentOwnerName(
+            assignment
+          )
+        : userName(
+            activity.owner_user_id
+          )
+    ) +
+    ' · Inicio: ' +
+    fmt(
+      activity.start_date
+    ) +
+    ' · Entrega: ' +
+    fmt(
+      activity.current_due_date
+    )
+  );
+}
 function renderSharedDetail(key){
   if(!key)return '<div class="todoDetailEmpty"><div><b>Selecciona un elemento</b><span>El detalle aparecerá en este panel.</span></div></div>';
   const [type,id]=key.split(':');
@@ -2345,7 +2407,7 @@ function renderShared(){
   const keys=[...requests.map(r=>'req:'+r.request_id),...critical.map(a=>'critical:'+a.assignment_id),...incoming.map(r=>'reain:'+r.reassignment_id),...adjustments.map(r=>'reaout:'+r.reassignment_id),...created.map(a=>'created:'+a.assignment_id),...assPart.map(a=>'apart:'+a.assignment_id),...actPart.map(t=>'act:'+t.activity_id)];
   if(!keys.includes(selectedSharedKey))selectedSharedKey=keys[0]||'';
   const group=(title,rows,empty)=>`<div class="todoGroupTitle">${title}</div>${rows||`<p class="sub" style="padding:0 16px">${empty}</p>`}`;
-  document.getElementById('sharedContent').innerHTML=`<div class="todoWorkspace"><div class="todoListPane"><div class="todoListHeader"><h3>Trabajo compartido</h3><p>${keys.length} elemento(s) relacionados contigo</p></div>${requests.length?group('Solicitudes del jefe',requests.map(r=>sharedTodoRow('req:'+r.request_id,(assignmentById(r.assignment_id)?.title||r.assignment_id),requestTypeLabel(r.request_type),'request')).join(''),''):''}${critical.length?group('Alertas críticas',critical.map(a=>sharedTodoRow('critical:'+a.assignment_id,a.title,'Reprogramada y atrasada','critical')).join(''),''):''}${incoming.length?group('Reasignaciones por responder',incoming.map(r=>sharedTodoRow('reain:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,`${userName(r.from_user_id)} → ${userName(r.to_user_id)}`,'request')).join(''),''):''}${adjustments.length?group('Reasignaciones con ajuste',adjustments.map(r=>sharedTodoRow('reaout:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,r.adjustment_comment||'Ajuste solicitado','request')).join(''),''):''}${group('Creadas por mí para otros',created.map(a=>sharedTodoRow('created:'+a.assignment_id,a.title,`Responsable: ${userName(a.owner_user_id)}`)).join(''),'Sin asignaciones creadas para otros.')}${group('Asignaciones donde participo',assPart.map(a=>sharedTodoRow('apart:'+a.assignment_id,a.title,`Responsable: ${userName(a.owner_user_id)}`)).join(''),'Sin asignaciones compartidas.')}${group('Actividades donde participo',actPart.map(t=>sharedTodoRow('act:'+t.activity_id,t.title,assignmentById(t.assignment_id)?.title||t.assignment_id)).join(''),'Sin actividades compartidas.')}</div><div class="todoDetailPane">${renderSharedDetail(selectedSharedKey)}</div></div>`;
+  document.getElementById('sharedContent').innerHTML=`<div class="todoWorkspace"><div class="todoListPane"><div class="todoListHeader"><h3>Trabajo compartido</h3><p>${keys.length} elemento(s) relacionados contigo</p></div>${requests.length?group('Solicitudes del jefe',requests.map(r=>sharedTodoRow('req:'+r.request_id,(assignmentById(r.assignment_id)?.title||r.assignment_id),requestTypeLabel(r.request_type),'request')).join(''),''):''}${critical.length?group('Alertas críticas',critical.map(a=>sharedTodoRow('critical:'+a.assignment_id,a.title,'Reprogramada y atrasada','critical')).join(''),''):''}${incoming.length?group('Reasignaciones por responder',incoming.map(r=>sharedTodoRow('reain:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,`${userName(r.from_user_id)} → ${userName(r.to_user_id)}`,'request')).join(''),''):''}${adjustments.length?group('Reasignaciones con ajuste',adjustments.map(r=>sharedTodoRow('reaout:'+r.reassignment_id,assignmentById(r.assignment_id)?.title||r.assignment_id,r.adjustment_comment||'Ajuste solicitado','request')).join(''),''):''}${group('Creadas por mí para otros',created.map(function (   assignment ) {   return sharedTodoRow(     'created:' +       assignment.assignment_id,      assignment.title,      sharedAssignmentSummary(       assignment     )   ); }).join(''),'Sin asignaciones creadas para otros.')}${group('Asignaciones donde participo',assPart.map(function (   assignment ) {   return sharedTodoRow(     'apart:' +       assignment.assignment_id,      assignment.title,      sharedAssignmentSummary(       assignment     )   ); }).join(''),'Sin asignaciones compartidas.')}${group('Actividades donde participo',actPart.map(function (   activity ) {   return sharedTodoRow(     'act:' +       activity.activity_id,      activity.title,      sharedActivitySummary(       activity     )   ); }).join(''),'Sin actividades compartidas.')}</div><div class="todoDetailPane">${renderSharedDetail(selectedSharedKey)}</div></div>`;
 }
 function sharedSection(title,body){return `<div class="sharedSection"><h3>${esc(title)}</h3>${body}</div>`}
 function sharedAssignmentCard(a) {
@@ -2363,7 +2425,7 @@ function sharedAssignmentCard(a) {
         <h4>${esc(a.title)}</h4>
 
         <p>
-          ${esc(userName(a.owner_user_id))}
+          ${esc(assignmentOwnerName(a))}
           · inicio ${fmt(a.start_date)}
           · entrega ${fmt(a.current_due_date)}
           · ${esc(a.acceptance_status)}
