@@ -937,12 +937,117 @@ function renderStatusDonutFromCounts(counts){
 }
 function renderOwnerBarsAggregate(rows){document.getElementById('ownerBars').innerHTML=rows.map(item=>{const critical=number(item.criticalPct),late=Math.max(0,number(item.latePct)-critical),rep=Math.max(0,number(item.reprogrammedPct)-critical),normal=Math.max(0,100-critical-late-rep);return `<div class="barLine"><span>${esc(item.fullName)}</span><div class="ownerRiskTrack">${riskSegment('normal',normal,'Normal')}${riskSegment('late',late,'Atrasadas')}${riskSegment('rep',rep,'Reprogramadas')}${riskSegment('critical',critical,'Críticas')}</div><b>${number(item.openAssignments)}</b></div>`}).join('')+(rows.length?`<div class="ownerRiskLegend"><span><i style="background:#0f78b8"></i>Normal</span><span><i style="background:#dc2626"></i>Atrasadas</span><span><i style="background:#f97316"></i>Reprogramadas</span><span><i style="background:#64748b"></i>Críticas</span></div>`:'<div class="emptyState">Sin carga abierta.</div>')}
 function renderPriorityBarsFromCounts(counts){const max=Math.max(1,...PRIORITIES.map(p=>number(counts[p])));document.getElementById('priorityBars').innerHTML=`<div class="priorityBars">${PRIORITIES.map(p=>{const n=number(counts[p]),h=Math.max(6,Math.round(n/max*100));return `<div class="priorityCol"><div class="priorityValue">${n}</div><div class="priorityBarTrack"><div class="priorityFill" style="height:${h}%;background:${PRIORITY_COLORS[p]}"></div></div><div class="priorityName">${p}</div></div>`}).join('')}</div>`}
-function renderMacroCardsAggregate(rows){
-  document.getElementById('macroCards').innerHTML=`<div class="macroTileGrid">${rows.map((item,index)=>{
-    const color=FRONT_COLORS[item.macrofront]||['#0f78b8','#16a34a','#7c3aed','#f97316'][index%4];
-    const delay=number(item.latePct!==undefined?item.latePct:item.delayPct);
-    return `<div class="macroTile" style="--macro:${color};--macro-bg:${hexToRgba(color,.085)};--macro-border:${hexToRgba(color,.22)}"><div class="macroTileTitle">${esc(item.macrofront)}</div><div class="macroMetrics"><div class="macroMetric"><span>Abiertas</span><b>${number(item.openAssignments)}</b></div><div class="macroMetric"><span>Distribución</span><b>${number(item.distributionPct).toFixed(1)}%</b></div><div class="macroMetric"><span>Atraso</span><b>${delay.toFixed(1)}%</b></div></div></div>`;
-  }).join('')}</div>`;
+function renderMacroCardsAggregate(
+  rows
+) {
+  document
+    .getElementById(
+      'macroCards'
+    )
+    .innerHTML = `
+      <div class="macroTileGrid">
+
+        ${rows.map(function (
+          item,
+          index
+        ) {
+          const color =
+            FRONT_COLORS[
+              item.macrofront
+            ] ||
+            [
+              '#0f78b8',
+              '#16a34a',
+              '#7c3aed',
+              '#f97316'
+            ][index % 4];
+
+          const hasProgress =
+            number(
+              item.progressEligibleAssignments
+            ) > 0;
+
+          const hasDelay =
+            number(
+              item.delayEligibleAssignments
+            ) > 0;
+
+          const progressText =
+            hasProgress
+              ? (
+                  number(
+                    item.progressPct
+                  ).toFixed(1) +
+                  '%'
+                )
+              : '—';
+
+          const delayText =
+            hasDelay
+              ? (
+                  number(
+                    item.delayPct
+                  ).toFixed(1) +
+                  '%'
+                )
+              : '—';
+
+          return `
+            <div
+              class="macroTile"
+              style="
+                --macro:${color};
+                --macro-bg:${hexToRgba(
+                  color,
+                  .085
+                )};
+                --macro-border:${hexToRgba(
+                  color,
+                  .22
+                )}
+              "
+            >
+              <div class="macroTileTitle">
+                ${esc(item.macrofront)}
+              </div>
+
+              <div class="macroMetrics">
+
+                <div class="macroMetric">
+                  <span>Abiertas</span>
+                  <b>
+                    ${number(
+                      item.openAssignments
+                    )}
+                  </b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Distribución</span>
+                  <b>
+                    ${number(
+                      item.distributionPct
+                    ).toFixed(1)}%
+                  </b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Avance</span>
+                  <b>${progressText}</b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Retraso</span>
+                  <b>${delayText}</b>
+                </div>
+
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+      </div>
+    `;
 }
 
 function averageDashboardValues(
@@ -1290,15 +1395,187 @@ function renderPriorityBars(list){
   document.getElementById('priorityBars').innerHTML=`<div class="priorityBars">${PRIORITIES.map(p=>{const n=by[p],h=Math.max(6,Math.round(n/max*100));return `<div class="priorityCol" onclick="showResults('priority','${p}')"><div class="priorityValue">${n}</div><div class="priorityBarTrack"><div class="priorityFill" style="height:${h}%;background:${PRIORITY_COLORS[p]}"></div></div><div class="priorityName">${p}</div></div>`}).join('')}</div>`;
 }
 function hexToRgba(hex,a){const c=hex.replace('#',''),n=parseInt(c,16);return`rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
-function renderMacroCards(list){
-  const fronts=frontValues();
-  const open=list.filter(openAssignment);
-  const totalOpen=open.length;
-  document.getElementById('macroCards').innerHTML=`<div class="macroTileGrid">${fronts.map((front,index)=>{
-    const openFront=open.filter(a=>a.macrofront===front);
-    const color=FRONT_COLORS[front]||['#0f78b8','#16a34a','#7c3aed','#f97316'][index%4];
-    return `<div class="macroTile" style="--macro:${color};--macro-bg:${hexToRgba(color,.085)};--macro-border:${hexToRgba(color,.22)}" onclick="showResults('front','${esc(front)}')"><div class="macroTileTitle">${esc(front)}</div><div class="macroMetrics"><div class="macroMetric"><span>Abiertas</span><b>${openFront.length}</b></div><div class="macroMetric"><span>Distribución</span><b>${pct(openFront.length,totalOpen).toFixed(1)}%</b></div><div class="macroMetric"><span>Atraso</span><b>${pct(openFront.filter(lateAssignment).length,openFront.length).toFixed(1)}%</b></div></div></div>`;
-  }).join('')}</div>`;
+function renderMacroCards(list) {
+  /*
+   * Se conservan los macrofrentes configurados
+   * y se agregan valores presentes en los datos
+   * que todavía no estén en el catálogo.
+   */
+  const configuredFronts =
+    frontValues();
+
+  const assignedFronts =
+    list
+      .map(function (assignment) {
+        return String(
+          assignment.macrofront || ''
+        ).trim();
+      })
+      .filter(Boolean);
+
+  const fronts =
+    unique(
+      configuredFronts.concat(
+        assignedFronts
+      )
+    );
+
+  const openAssignments =
+    list.filter(
+      openAssignment
+    );
+
+  const totalOpen =
+    openAssignments.length;
+
+  document
+    .getElementById(
+      'macroCards'
+    )
+    .innerHTML = `
+      <div class="macroTileGrid">
+
+        ${fronts.map(function (
+          front,
+          index
+        ) {
+          const frontAssignments =
+            list.filter(function (
+              assignment
+            ) {
+              return (
+                assignment.macrofront ===
+                front
+              );
+            });
+
+          const openFront =
+            frontAssignments.filter(
+              openAssignment
+            );
+
+          /*
+           * Avance:
+           * solo asignaciones elegibles
+           * cuyo avance sea mayor que cero.
+           */
+          const progressEligible =
+            frontAssignments.filter(
+              progressEligibleAssignment
+            );
+
+          const progressPct =
+            progressEligible.length
+              ? averageDashboardValues(
+                  progressEligible.map(
+                    progressOf
+                  )
+                )
+              : null;
+
+          /*
+           * Retraso:
+           * incluye asignaciones elegibles
+           * cuyo resultado sea cero.
+           */
+          const delayEligible =
+            frontAssignments.filter(
+              delayEligibleAssignment
+            );
+
+          const delayPct =
+            delayEligible.length
+              ? averageDashboardValues(
+                  delayEligible.map(
+                    delayOf
+                  )
+                )
+              : null;
+
+          const color =
+            FRONT_COLORS[front] ||
+            [
+              '#0f78b8',
+              '#16a34a',
+              '#7c3aed',
+              '#f97316'
+            ][index % 4];
+
+          const progressText =
+            progressPct === null
+              ? '—'
+              : (
+                  progressPct.toFixed(1) +
+                  '%'
+                );
+
+          const delayText =
+            delayPct === null
+              ? '—'
+              : (
+                  delayPct.toFixed(1) +
+                  '%'
+                );
+
+          return `
+            <div
+              class="macroTile"
+              style="
+                --macro:${color};
+                --macro-bg:${hexToRgba(
+                  color,
+                  .085
+                )};
+                --macro-border:${hexToRgba(
+                  color,
+                  .22
+                )}
+              "
+              onclick="
+                showResults(
+                  'front',
+                  '${esc(front)}'
+                )
+              "
+            >
+              <div class="macroTileTitle">
+                ${esc(front)}
+              </div>
+
+              <div class="macroMetrics">
+
+                <div class="macroMetric">
+                  <span>Abiertas</span>
+                  <b>${openFront.length}</b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Distribución</span>
+                  <b>
+                    ${pct(
+                      openFront.length,
+                      totalOpen
+                    ).toFixed(1)}%
+                  </b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Avance</span>
+                  <b>${progressText}</b>
+                </div>
+
+                <div class="macroMetric">
+                  <span>Retraso</span>
+                  <b>${delayText}</b>
+                </div>
+
+              </div>
+            </div>
+          `;
+        }).join('')}
+
+      </div>
+    `;
 }
 function weeksForTimeline(list){
   const weeks=[],mon=dateObj(mondayOf(today()));for(let i=-2;i<=3;i++){const d=new Date(mon);d.setDate(mon.getDate()+i*7);weeks.push({monday:toIso(d),week:getISOWeekInfo(d).week,dues:[],starts:[],drag:[],rep:[],critical:[]})}
