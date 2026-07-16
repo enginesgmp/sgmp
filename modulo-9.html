@@ -1610,16 +1610,32 @@ function ownerGroupName(
 }
   
 function renderOwnerBars(list) {
-  const open =
-    list.filter(
-      openAssignment
-    );
+  const isCompletedMode =
+    panelState.mode === 'completed';
+
+  /*
+   * En Pendientes y Todo, la visualización continúa
+   * representando carga abierta.
+   *
+   * En Completadas, se utilizan todas las asignaciones
+   * completadas que ya recibió la función después
+   * de aplicar los filtros del panel.
+   */
+  const ownerAssignments =
+    isCompletedMode
+      ? list.filter(completedAssignment)
+      : list.filter(openAssignment);
 
   const byOwner = {};
 
-  open.forEach(function (
+  ownerAssignments.forEach(function (
     assignment
   ) {
+    /*
+     * Para asignaciones HUB se utiliza owner_user_id.
+     * Para RADAR sin usuario vinculado se conserva
+     * source_owner_name como responsable visible.
+     */
     const ownerKey =
       assignment.owner_user_id ||
       (
@@ -1658,14 +1674,27 @@ function renderOwnerBars(list) {
         );
       });
 
-  document
-    .getElementById(
+  const container =
+    document.getElementById(
       'ownerBars'
-    )
-    .innerHTML =
-      rows.map(function (
-        entry
-      ) {
+    );
+
+  /*
+   * Vista específica para Completadas:
+   * muestra cuántas asignaciones completadas
+   * corresponden a cada responsable.
+   */
+  if (isCompletedMode) {
+    const maximum =
+      Math.max(
+        1,
+        ...rows.map(function (entry) {
+          return entry[1].length;
+        })
+      );
+
+    container.innerHTML =
+      rows.map(function (entry) {
         const ownerKey =
           entry[0];
 
@@ -1675,88 +1704,20 @@ function renderOwnerBars(list) {
         const total =
           items.length;
 
-        const critical =
-          items.filter(
-            criticalAssignment
-          ).length;
-
-        const late =
-          items.filter(function (
-            assignment
-          ) {
-            return (
-              lateAssignment(
-                assignment
-              ) &&
-              !criticalAssignment(
-                assignment
-              )
-            );
-          }).length;
-
-        const reprogrammed =
-          items.filter(function (
-            assignment
-          ) {
-            return (
-              reprogrammedInProgressAssignment(
-                assignment
-              ) &&
-              !lateAssignment(
-                assignment
-              )
-            );
-          }).length;
-
-        const backlog =
-          items.filter(
-            backlogAssignment
-          ).length;
-
-        const onTime =
+        const width =
           Math.max(
-            0,
-            total -
-              critical -
-              late -
-              reprogrammed -
-              backlog
+            8,
+            Math.round(
+              total /
+              maximum *
+              100
+            )
           );
-
-        const onTimePct =
-          pct(onTime, total);
-
-        const backlogPct =
-          pct(backlog, total);
-
-        const latePct =
-          pct(late, total);
-
-        const reprogrammedPct =
-          pct(
-            reprogrammed,
-            total
-          );
-
-        const criticalPct =
-          pct(critical, total);
 
         return `
           <div
             class="barLine"
-            title="
-              Abiertas: ${total}
-              · Sin atraso:
-              ${onTimePct}%
-              · Backlog:
-              ${backlogPct}%
-              · Atrasadas:
-              ${latePct}%
-              · Reprogramadas:
-              ${reprogrammedPct}%
-              · Críticas:
-              ${criticalPct}%
-            "
+            title="Completadas: ${total}"
             onclick="
               showResults(
                 'owner',
@@ -1773,38 +1734,18 @@ function renderOwnerBars(list) {
               )}
             </span>
 
-            <div class="ownerRiskTrack">
-
-              ${riskSegment(
-                'normal',
-                onTimePct,
-                'Sin atraso'
-              )}
-
-              ${riskSegment(
-                'backlog',
-                backlogPct,
-                'Backlog'
-              )}
-
-              ${riskSegment(
-                'late',
-                latePct,
-                'Atrasadas'
-              )}
-
-              ${riskSegment(
-                'rep',
-                reprogrammedPct,
-                'Reprogramadas'
-              )}
-
-              ${riskSegment(
-                'critical',
-                criticalPct,
-                'Críticas'
-              )}
-
+            <div class="barTrack">
+              <span
+                style="
+                  width:${width}%;
+                  background:
+                    linear-gradient(
+                      90deg,
+                      #16a34a,
+                      #22c55e
+                    );
+                "
+              ></span>
             </div>
 
             <b>${total}</b>
@@ -1815,41 +1756,212 @@ function renderOwnerBars(list) {
         rows.length
           ? `
             <div class="ownerRiskLegend">
-
               <span>
-                <i style="background:#0f78b8"></i>
-                Sin atraso
+                <i style="background:#22c55e"></i>
+                Asignaciones completadas
               </span>
-
-              <span>
-                <i style="background:#7c3aed"></i>
-                Backlog
-              </span>
-
-              <span>
-                <i style="background:#dc2626"></i>
-                Atrasadas
-              </span>
-
-              <span>
-                <i style="background:#f97316"></i>
-                Reprogramadas
-              </span>
-
-              <span>
-                <i style="background:#64748b"></i>
-                Críticas
-              </span>
-
             </div>
           `
           : `
             <div class="emptyState">
-              Sin asignaciones abiertas
+              Sin asignaciones completadas
               para el filtro.
             </div>
           `
       );
+
+    return;
+  }
+
+  /*
+   * Vista actual de carga abierta para
+   * Pendientes y Todo.
+   */
+  container.innerHTML =
+    rows.map(function (entry) {
+      const ownerKey =
+        entry[0];
+
+      const items =
+        entry[1];
+
+      const total =
+        items.length;
+
+      const critical =
+        items.filter(
+          criticalAssignment
+        ).length;
+
+      const late =
+        items.filter(function (
+          assignment
+        ) {
+          return (
+            lateAssignment(
+              assignment
+            ) &&
+            !criticalAssignment(
+              assignment
+            )
+          );
+        }).length;
+
+      const reprogrammed =
+        items.filter(function (
+          assignment
+        ) {
+          return (
+            reprogrammedInProgressAssignment(
+              assignment
+            ) &&
+            !lateAssignment(
+              assignment
+            )
+          );
+        }).length;
+
+      const backlog =
+        items.filter(
+          backlogAssignment
+        ).length;
+
+      const onTime =
+        Math.max(
+          0,
+          total -
+            critical -
+            late -
+            reprogrammed -
+            backlog
+        );
+
+      const onTimePct =
+        pct(onTime, total);
+
+      const backlogPct =
+        pct(backlog, total);
+
+      const latePct =
+        pct(late, total);
+
+      const reprogrammedPct =
+        pct(
+          reprogrammed,
+          total
+        );
+
+      const criticalPct =
+        pct(
+          critical,
+          total
+        );
+
+      return `
+        <div
+          class="barLine"
+          title="
+            Abiertas: ${total}
+            · Sin atraso:
+            ${onTimePct}%
+            · Backlog:
+            ${backlogPct}%
+            · Atrasadas:
+            ${latePct}%
+            · Reprogramadas:
+            ${reprogrammedPct}%
+            · Críticas:
+            ${criticalPct}%
+          "
+          onclick="
+            showResults(
+              'owner',
+              '${esc(ownerKey)}'
+            )
+          "
+        >
+          <span>
+            ${esc(
+              ownerGroupName(
+                ownerKey,
+                items
+              )
+            )}
+          </span>
+
+          <div class="ownerRiskTrack">
+            ${riskSegment(
+              'normal',
+              onTimePct,
+              'Sin atraso'
+            )}
+
+            ${riskSegment(
+              'backlog',
+              backlogPct,
+              'Backlog'
+            )}
+
+            ${riskSegment(
+              'late',
+              latePct,
+              'Atrasadas'
+            )}
+
+            ${riskSegment(
+              'rep',
+              reprogrammedPct,
+              'Reprogramadas'
+            )}
+
+            ${riskSegment(
+              'critical',
+              criticalPct,
+              'Críticas'
+            )}
+          </div>
+
+          <b>${total}</b>
+        </div>
+      `;
+    }).join('') +
+    (
+      rows.length
+        ? `
+          <div class="ownerRiskLegend">
+            <span>
+              <i style="background:#0f78b8"></i>
+              Sin atraso
+            </span>
+
+            <span>
+              <i style="background:#7c3aed"></i>
+              Backlog
+            </span>
+
+            <span>
+              <i style="background:#dc2626"></i>
+              Atrasadas
+            </span>
+
+            <span>
+              <i style="background:#f97316"></i>
+              Reprogramadas
+            </span>
+
+            <span>
+              <i style="background:#64748b"></i>
+              Críticas
+            </span>
+          </div>
+        `
+        : `
+          <div class="emptyState">
+            Sin asignaciones abiertas
+            para el filtro.
+          </div>
+        `
+    );
 }
   
 function renderPriorityBars(list){
