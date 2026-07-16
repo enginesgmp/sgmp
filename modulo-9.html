@@ -567,25 +567,204 @@ function assignmentById(id){ return state.assignments.find(a=>a.assignment_id===
 function activityById(id){ return state.activities.find(a=>a.activity_id===id) || null; }
 function activitiesOf(id){ return state.activities.filter(a=>a.assignment_id===id && bool(a.active_flag)).sort((a,b)=>number(a.sequence)-number(b.sequence)); }
 function participantsOf(entityType,entityId){ return state.participations.filter(p=>p.entity_type===entityType&&p.entity_id===entityId&&bool(p.active_flag)).map(p=>p.user_id); }
-function acceptedAssignment(a){ return a && a.acceptance_status==='accepted' && !bool(a.annulled_flag) && bool(a.active_flag); }
-function completedAssignment(a){ return a && a.status==='Completada'; }
-function openAssignment(a){ return acceptedAssignment(a) && !completedAssignment(a); }
-function completedActivity(a){ return a && a.status==='Completada'; }
-function lateActivity(a){ return a && bool(a.active_flag) && !completedActivity(a) && dateKey(a.current_due_date) && dateKey(a.current_due_date)<today(); }
-function lateAssignment(a){ return openAssignment(a) && dateKey(a.current_due_date) && dateKey(a.current_due_date)<today(); }
-function criticalAssignment(a){ return lateAssignment(a) && number(a.reprogram_count)>0; }
-function reprogrammedAssignment(a){ return openAssignment(a) && number(a.reprogram_count)>0; }
-function isDueSoonAssignment(a){
-  if (!openAssignment(a) || !dateKey(a.current_due_date)) return false;
-  const diff = Math.ceil((dateObj(a.current_due_date) - dateObj(today())) / 86400000);
-  return diff >= 0 && diff <= 2;
+
+function acceptedAssignment(a) {
+  return (
+    !!a &&
+    a.acceptance_status === 'accepted' &&
+    !bool(a.annulled_flag) &&
+    bool(a.active_flag)
+  );
 }
-function pendingAcceptanceForAssignment(a){
-  if (!a || !state.currentUser) return null;
-  return state.acceptances.find(x => x.assignment_id===a.assignment_id && x.proposed_owner_user_id===state.currentUser.user_id && ['Pendiente','Ajuste solicitado'].includes(x.acceptance_status) && bool(x.active_flag)) || null;
+
+function completedAssignment(a) {
+  return (
+    !!a &&
+    a.status === 'Completada'
+  );
 }
-function progressOf(a){ const acts=activitiesOf(a.assignment_id); return pct(acts.filter(completedActivity).length,acts.length); }
-function delayOf(a){ const acts=activitiesOf(a.assignment_id); return pct(acts.filter(lateActivity).length,acts.length); }
+
+function openAssignment(a) {
+  return (
+    acceptedAssignment(a) &&
+    !completedAssignment(a)
+  );
+}
+
+function inProgressAssignment(a) {
+  return (
+    acceptedAssignment(a) &&
+    a.status === 'En curso'
+  );
+}
+
+function completedActivity(a) {
+  return (
+    !!a &&
+    a.status === 'Completada'
+  );
+}
+
+function lateActivity(a) {
+  return (
+    !!a &&
+    bool(a.active_flag) &&
+    !completedActivity(a) &&
+    !!dateKey(a.current_due_date) &&
+    dateKey(a.current_due_date) <
+      today()
+  );
+}
+
+/*
+ * Utiliza el cálculo de retraso enviado
+ * por el backend.
+ *
+ * Puede ser verdadero tanto para una
+ * asignación abierta como completada.
+ */
+function lateAssignment(a) {
+  return (
+    !!a &&
+    bool(a.late_flag)
+  );
+}
+
+/*
+ * Crítica significa exclusivamente:
+ * En curso + atrasada + reprogramada.
+ */
+function criticalAssignment(a) {
+  return (
+    !!a &&
+    bool(a.critical_flag)
+  );
+}
+
+/*
+ * Se conserva para elementos visuales como
+ * chips y timeline. Indica que una asignación
+ * abierta tuvo alguna reprogramación.
+ */
+function reprogrammedAssignment(a) {
+  return (
+    openAssignment(a) &&
+    number(a.reprogram_count) > 0
+  );
+}
+
+/*
+ * Se utiliza en indicadores y porcentajes,
+ * donde solo cuentan las reprogramadas
+ * cuyo estado es En curso.
+ */
+function reprogrammedInProgressAssignment(a) {
+  return (
+    !!a &&
+    bool(
+      a.reprogrammed_in_progress_flag
+    )
+  );
+}
+
+function backlogAssignment(a) {
+  return (
+    !!a &&
+    bool(a.backlog_flag)
+  );
+}
+
+function progressEligibleAssignment(a) {
+  return (
+    !!a &&
+    bool(a.progress_eligible_flag)
+  );
+}
+
+function delayEligibleAssignment(a) {
+  return (
+    !!a &&
+    bool(a.delay_eligible_flag)
+  );
+}
+
+function isDueSoonAssignment(a) {
+  if (
+    !openAssignment(a) ||
+    !dateKey(a.current_due_date)
+  ) {
+    return false;
+  }
+
+  const diff =
+    Math.ceil(
+      (
+        dateObj(a.current_due_date) -
+        dateObj(today())
+      ) /
+      86400000
+    );
+
+  return (
+    diff >= 0 &&
+    diff <= 2
+  );
+}
+
+function pendingAcceptanceForAssignment(a) {
+  if (
+    !a ||
+    !state.currentUser
+  ) {
+    return null;
+  }
+
+  return (
+    state.acceptances.find(function (
+      acceptance
+    ) {
+      return (
+        acceptance.assignment_id ===
+          a.assignment_id &&
+        acceptance.proposed_owner_user_id ===
+          state.currentUser.user_id &&
+        [
+          'Pendiente',
+          'Ajuste solicitado'
+        ].includes(
+          acceptance.acceptance_status
+        ) &&
+        bool(acceptance.active_flag)
+      );
+    }) || null
+  );
+}
+
+function progressOf(a) {
+  return a
+    ? number(a.progress_pct)
+    : 0;
+}
+
+function delayOf(a) {
+  return a
+    ? number(a.delay_pct)
+    : 0;
+}
+
+function delayDaysOf(a) {
+  return a
+    ? number(a.delay_days)
+    : 0;
+}
+
+function plannedDaysOf(a) {
+  return a
+    ? number(a.planned_days)
+    : 0;
+}
+
+  
 function isRadar(a){ return a && (a.source_module==='RADAR'||bool(a.read_only_flag)); }
 function canManageAssignment(a){ return !!a && !isRadar(a) && (a.owner_user_id===state.currentUser.user_id || a.created_by_user_id===state.currentUser.user_id || state.currentUser.role==='admin'); }
 function canManageActivity(a){ const assignment=assignmentById(a.assignment_id); return !bool(a.read_only_flag) && (a.owner_user_id===state.currentUser.user_id || assignment?.owner_user_id===state.currentUser.user_id || assignment?.created_by_user_id===state.currentUser.user_id || state.currentUser.role==='admin'); }
@@ -593,11 +772,52 @@ function visibleAssignments(){ return state.assignments.filter(a=>bool(a.active_
 function sourceChip(a){ return isRadar(a)?'<span class="chip visual">RADAR · solo lectura</span>':''; }
 function reprogramChip(a){ const n=number(a.reprogram_count); return n?`<span class="chip ${n===1?'rep1':'rep2'}">R${n}</span>`:''; }
 function priorityBadge(value){ return `<span class="badge ${value==='Alta'?'red':value==='Media'?'amber':'blue'}">${esc(value||'Sin prioridad')}</span>`; }
-function statusBadge(a){
-  if (criticalAssignment(a)) return '<span class="badge gray">Crítica</span>';
-  if (lateAssignment(a)) return '<span class="badge red">Atrasada</span>';
-  const tone={Completada:'green',Congelada:'red','En curso':'blue','No iniciada':'gray'}[a.status]||'gray';
-  return `<span class="badge ${tone}">${esc(a.status||'Sin estado')}</span>`;
+function statusBadge(a) {
+  /*
+   * Una completada puede conservar retraso
+   * histórico, pero su estado principal
+   * continúa siendo Completada.
+   */
+  if (completedAssignment(a)) {
+    return (
+      '<span class="badge green">' +
+      'Completada' +
+      '</span>'
+    );
+  }
+
+  if (criticalAssignment(a)) {
+    return (
+      '<span class="badge gray">' +
+      'Crítica' +
+      '</span>'
+    );
+  }
+
+  if (lateAssignment(a)) {
+    return (
+      '<span class="badge red">' +
+      'Atrasada' +
+      '</span>'
+    );
+  }
+
+  const tone = {
+    'Congelada': 'red',
+    'En curso': 'blue',
+    'No iniciada': 'gray'
+  }[a.status] || 'gray';
+
+  return (
+    '<span class="badge ' +
+    tone +
+    '">' +
+    esc(
+      a.status ||
+      'Sin estado'
+    ) +
+    '</span>'
+  );
 }
 function participantBlock(ids){
   const names=unique(ids).map(userName);
