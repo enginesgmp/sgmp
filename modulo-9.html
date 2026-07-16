@@ -937,7 +937,126 @@ function renderStatusDonutFromCounts(counts){
   ASSIGNMENT_STATUS.forEach(status=>{const n=number(counts[status]),percent=n/total*100,start=offset,mid=start+percent/2;offset+=percent;segments.push(`<circle class="statusSeg" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${STATUS_COLORS[status]}" stroke-width="38" pathLength="100" stroke-dasharray="${percent} ${100-percent}" stroke-dashoffset="${-start}" transform="rotate(-90 ${cx} ${cy})"><title>${esc(status)}: ${n}</title></circle>`);if(n){const angle=mid/100*360-90,rad=angle*Math.PI/180,x1=cx+Math.cos(rad)*(r+20),y1=cy+Math.sin(rad)*(r+20),x2=cx+Math.cos(rad)*(r+42),y2=cy+Math.sin(rad)*(r+42),x3=cx+Math.cos(rad)*(r+58),y3=cy+Math.sin(rad)*(r+58),anchor=Math.cos(rad)>=0?'start':'end';guides.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${STATUS_COLORS[status]}" stroke-width="2"/><text class="statusPct" x="${x3+(anchor==='start'?5:-5)}" y="${y3}" text-anchor="${anchor}" dominant-baseline="middle">${percent.toFixed(1)}%</text>`)}});
   document.getElementById('statusDonut').parentElement.className='donutBox v15';document.getElementById('statusDonut').innerHTML=`<div class="donutCenter"><svg class="statusDonutSvg v15" viewBox="0 0 320 292"><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#eef5fb" stroke-width="38"/>${segments.join('')}<circle cx="${cx}" cy="${cy}" r="56" fill="#fff"/>${guides.join('')}</svg></div>`;document.getElementById('statusLegend').className='statusLegendGrid';document.getElementById('statusLegend').innerHTML=['Completada','Congelada','En curso','No iniciada'].map(status=>`<div class="statusLegendPill"><span class="stateLabel"><span class="dot" style="background:${STATUS_COLORS[status]}"></span>${esc(status)}</span><b>${number(counts[status])}</b></div>`).join('');
 }
-function renderOwnerBarsAggregate(rows){document.getElementById('ownerBars').innerHTML=rows.map(item=>{const critical=number(item.criticalPct),late=Math.max(0,number(item.latePct)-critical),rep=Math.max(0,number(item.reprogrammedPct)-critical),normal=Math.max(0,100-critical-late-rep);return `<div class="barLine"><span>${esc(item.fullName)}</span><div class="ownerRiskTrack">${riskSegment('normal',normal,'Normal')}${riskSegment('late',late,'Atrasadas')}${riskSegment('rep',rep,'Reprogramadas')}${riskSegment('critical',critical,'Críticas')}</div><b>${number(item.openAssignments)}</b></div>`}).join('')+(rows.length?`<div class="ownerRiskLegend"><span><i style="background:#0f78b8"></i>Normal</span><span><i style="background:#dc2626"></i>Atrasadas</span><span><i style="background:#f97316"></i>Reprogramadas</span><span><i style="background:#64748b"></i>Críticas</span></div>`:'<div class="emptyState">Sin carga abierta.</div>')}
+function renderOwnerBarsAggregate(
+  rows
+) {
+  const container =
+    document.getElementById(
+      'ownerBars'
+    );
+
+  container.innerHTML =
+    rows.map(function (item) {
+      const onTime =
+        number(item.onTimePct);
+
+      const backlog =
+        number(item.backlogPct);
+
+      const late =
+        number(item.latePct);
+
+      const reprogrammed =
+        number(
+          item.reprogrammedPct
+        );
+
+      const critical =
+        number(item.criticalPct);
+
+      return `
+        <div
+          class="barLine"
+          title="
+            Abiertas:
+            ${number(
+              item.openAssignments
+            )}
+          "
+        >
+          <span>
+            ${esc(item.fullName)}
+          </span>
+
+          <div class="ownerRiskTrack">
+
+            ${riskSegment(
+              'normal',
+              onTime,
+              'Sin atraso'
+            )}
+
+            ${riskSegment(
+              'backlog',
+              backlog,
+              'Backlog'
+            )}
+
+            ${riskSegment(
+              'late',
+              late,
+              'Atrasadas'
+            )}
+
+            ${riskSegment(
+              'rep',
+              reprogrammed,
+              'Reprogramadas'
+            )}
+
+            ${riskSegment(
+              'critical',
+              critical,
+              'Críticas'
+            )}
+
+          </div>
+
+          <b>
+            ${number(
+              item.openAssignments
+            )}
+          </b>
+        </div>
+      `;
+    }).join('') +
+    (
+      rows.length
+        ? `
+          <div class="ownerRiskLegend">
+            <span>
+              <i style="background:#0f78b8"></i>
+              Sin atraso
+            </span>
+
+            <span>
+              <i style="background:#7c3aed"></i>
+              Backlog
+            </span>
+
+            <span>
+              <i style="background:#dc2626"></i>
+              Atrasadas
+            </span>
+
+            <span>
+              <i style="background:#f97316"></i>
+              Reprogramadas
+            </span>
+
+            <span>
+              <i style="background:#64748b"></i>
+              Críticas
+            </span>
+          </div>
+        `
+        : `
+          <div class="emptyState">
+            Sin carga abierta.
+          </div>
+        `
+    );
+}
 function renderPriorityBarsFromCounts(counts){const max=Math.max(1,...PRIORITIES.map(p=>number(counts[p])));document.getElementById('priorityBars').innerHTML=`<div class="priorityBars">${PRIORITIES.map(p=>{const n=number(counts[p]),h=Math.max(6,Math.round(n/max*100));return `<div class="priorityCol"><div class="priorityValue">${n}</div><div class="priorityBarTrack"><div class="priorityFill" style="height:${h}%;background:${PRIORITY_COLORS[p]}"></div></div><div class="priorityName">${p}</div></div>`}).join('')}</div>`}
 function renderMacroCardsAggregate(
   rows
@@ -1387,11 +1506,249 @@ function ownerGroupName(ownerKey, assignments) {
     : userName(ownerKey);
 }
   
-function renderOwnerBars(list){
-  const open = list.filter(openAssignment); const by = {};  open.forEach(function (assignment) {   const ownerKey =     assignment.owner_user_id ||     (       assignment.source_owner_name         ? 'RADAR_NAME:' + assignment.source_owner_name         : 'UNASSIGNED'     );    if (!by[ownerKey]) {     by[ownerKey] = [];   }    by[ownerKey].push(assignment); });
-  const rows=Object.entries(by).sort((a,b)=>b[1].length-a[1].length||ownerGroupName(a[0], a[1])   .localeCompare(     ownerGroupName(b[0], b[1])   ));
-  document.getElementById('ownerBars').innerHTML=rows.map(([id,items])=>{const n=items.length,critical=items.filter(criticalAssignment).length,late=items.filter(a=>lateAssignment(a)&&!criticalAssignment(a)).length,rep=items.filter(a=>reprogrammedAssignment(a)&&!lateAssignment(a)).length,normal=Math.max(0,n-critical-late-rep);return `<div class="barLine" title="Abiertas: ${n} · Atrasadas: ${pct(late+critical,n)}% · Reprogramadas: ${pct(rep+critical,n)}% · Críticas: ${pct(critical,n)}%" onclick="showResults('owner','${esc(id)}')"><span>${esc(ownerGroupName(id, items))}</span><div class="ownerRiskTrack">${riskSegment('normal',pct(normal,n),'Normal')}${riskSegment('late',pct(late,n),'Atrasadas')}${riskSegment('rep',pct(rep,n),'Reprogramadas')}${riskSegment('critical',pct(critical,n),'Críticas')}</div><b>${n}</b></div>`}).join('')+(rows.length?`<div class="ownerRiskLegend"><span><i style="background:#0f78b8"></i>Normal</span><span><i style="background:#dc2626"></i>Atrasadas</span><span><i style="background:#f97316"></i>Reprogramadas</span><span><i style="background:#64748b"></i>Críticas</span></div>`:'<div class="emptyState">Sin asignaciones abiertas para el filtro.</div>');
+function renderOwnerBars(list) {
+  const open =
+    list.filter(
+      openAssignment
+    );
+
+  const byOwner = {};
+
+  open.forEach(function (
+    assignment
+  ) {
+    const ownerKey =
+      assignment.owner_user_id ||
+      (
+        assignment.source_owner_name
+          ? (
+              'RADAR_NAME:' +
+              assignment.source_owner_name
+            )
+          : 'UNASSIGNED'
+      );
+
+    if (!byOwner[ownerKey]) {
+      byOwner[ownerKey] = [];
+    }
+
+    byOwner[ownerKey].push(
+      assignment
+    );
+  });
+
+  const rows =
+    Object.entries(byOwner)
+      .sort(function (a, b) {
+        return (
+          b[1].length -
+            a[1].length ||
+          ownerGroupName(
+            a[0],
+            a[1]
+          ).localeCompare(
+            ownerGroupName(
+              b[0],
+              b[1]
+            )
+          )
+        );
+      });
+
+  document
+    .getElementById(
+      'ownerBars'
+    )
+    .innerHTML =
+      rows.map(function (
+        entry
+      ) {
+        const ownerKey =
+          entry[0];
+
+        const items =
+          entry[1];
+
+        const total =
+          items.length;
+
+        const critical =
+          items.filter(
+            criticalAssignment
+          ).length;
+
+        const late =
+          items.filter(function (
+            assignment
+          ) {
+            return (
+              lateAssignment(
+                assignment
+              ) &&
+              !criticalAssignment(
+                assignment
+              )
+            );
+          }).length;
+
+        const reprogrammed =
+          items.filter(function (
+            assignment
+          ) {
+            return (
+              reprogrammedInProgressAssignment(
+                assignment
+              ) &&
+              !lateAssignment(
+                assignment
+              )
+            );
+          }).length;
+
+        const backlog =
+          items.filter(
+            backlogAssignment
+          ).length;
+
+        const onTime =
+          Math.max(
+            0,
+            total -
+              critical -
+              late -
+              reprogrammed -
+              backlog
+          );
+
+        const onTimePct =
+          pct(onTime, total);
+
+        const backlogPct =
+          pct(backlog, total);
+
+        const latePct =
+          pct(late, total);
+
+        const reprogrammedPct =
+          pct(
+            reprogrammed,
+            total
+          );
+
+        const criticalPct =
+          pct(critical, total);
+
+        return `
+          <div
+            class="barLine"
+            title="
+              Abiertas: ${total}
+              · Sin atraso:
+              ${onTimePct}%
+              · Backlog:
+              ${backlogPct}%
+              · Atrasadas:
+              ${latePct}%
+              · Reprogramadas:
+              ${reprogrammedPct}%
+              · Críticas:
+              ${criticalPct}%
+            "
+            onclick="
+              showResults(
+                'owner',
+                '${esc(ownerKey)}'
+              )
+            "
+          >
+            <span>
+              ${esc(
+                ownerGroupName(
+                  ownerKey,
+                  items
+                )
+              )}
+            </span>
+
+            <div class="ownerRiskTrack">
+
+              ${riskSegment(
+                'normal',
+                onTimePct,
+                'Sin atraso'
+              )}
+
+              ${riskSegment(
+                'backlog',
+                backlogPct,
+                'Backlog'
+              )}
+
+              ${riskSegment(
+                'late',
+                latePct,
+                'Atrasadas'
+              )}
+
+              ${riskSegment(
+                'rep',
+                reprogrammedPct,
+                'Reprogramadas'
+              )}
+
+              ${riskSegment(
+                'critical',
+                criticalPct,
+                'Críticas'
+              )}
+
+            </div>
+
+            <b>${total}</b>
+          </div>
+        `;
+      }).join('') +
+      (
+        rows.length
+          ? `
+            <div class="ownerRiskLegend">
+
+              <span>
+                <i style="background:#0f78b8"></i>
+                Sin atraso
+              </span>
+
+              <span>
+                <i style="background:#7c3aed"></i>
+                Backlog
+              </span>
+
+              <span>
+                <i style="background:#dc2626"></i>
+                Atrasadas
+              </span>
+
+              <span>
+                <i style="background:#f97316"></i>
+                Reprogramadas
+              </span>
+
+              <span>
+                <i style="background:#64748b"></i>
+                Críticas
+              </span>
+
+            </div>
+          `
+          : `
+            <div class="emptyState">
+              Sin asignaciones abiertas
+              para el filtro.
+            </div>
+          `
+      );
 }
+  
 function renderPriorityBars(list){
   const by=Object.fromEntries(PRIORITIES.map(p=>[p,list.filter(a=>a.priority===p).length])),max=Math.max(1,...Object.values(by));
   document.getElementById('priorityBars').innerHTML=`<div class="priorityBars">${PRIORITIES.map(p=>{const n=by[p],h=Math.max(6,Math.round(n/max*100));return `<div class="priorityCol" onclick="showResults('priority','${p}')"><div class="priorityValue">${n}</div><div class="priorityBarTrack"><div class="priorityFill" style="height:${h}%;background:${PRIORITY_COLORS[p]}"></div></div><div class="priorityName">${p}</div></div>`}).join('')}</div>`;
