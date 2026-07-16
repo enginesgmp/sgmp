@@ -2352,17 +2352,480 @@ function todoAssignmentRow(a, selected) {
     </div>
   `;
 }
-function renderAssignmentDetail(a,editableContext=false,highlightActivityId=''){
-  if(!a)return '<div class="todoDetailEmpty"><div><b>Selecciona una asignación</b><span>El detalle y las actividades aparecerán en este panel.</span></div></div>';
-  const acts =   activitiesOf(a.assignment_id);  const participants =   participantsOf(     'ASSIGNMENT',     a.assignment_id   );  const canManage =   editableContext &&   canManageAssignment(a);  const readOnly =   isRadar(a);  const pendingAcc =   pendingAcceptanceForAssignment(a);  const p =   progressOf(a);  /*  * El cierre solo se habilita cuando existe  * al menos una actividad y todas están completadas.  */ const canComplete =   acts.length > 0 &&   acts.every(completedActivity);
-  let actions='';
-  if(pendingAcc){
-    actions=`<button class="btn primary small" onclick="respondAcceptance('${pendingAcc.acceptance_id}','accept')">Aceptar</button><button class="btn warn small" onclick="openAcceptanceAdjustment('${pendingAcc.acceptance_id}')">Solicitar ajuste</button><button class="btn danger small" onclick="respondAcceptance('${pendingAcc.acceptance_id}','reject')">Rechazar</button>`;
-  }else if(canManage&&!completedAssignment(a)&&!readOnly){
-    actions=`<button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Editar asignación</button><button class="btn primary small" onclick="openActivityModal('${a.assignment_id}')">Agregar actividad</button><button class="btn warn small" onclick="openReprogramModal('${a.assignment_id}')">Reprogramar</button><button class="btn warn small" onclick="openFreezeModal('${a.assignment_id}')">Congelar asignación</button>${a.owner_user_id===state.currentUser.user_id?`<button class="btn soft small" onclick="openReassignmentModal('${a.assignment_id}')">Reasignar</button>`:''}<button   class="btn primary small"   ${canComplete ? '' : 'disabled'}   title="${     canComplete       ? 'Completar asignación'       : acts.length         ? 'Completa todas las actividades para habilitar el cierre.'         : 'Agrega al menos una actividad para habilitar el cierre.'   }"   onclick="openCompleteAssignmentModal('${a.assignment_id}')" >   Completar asignación </button><button class="btn danger small" onclick="openAnnulModal('${a.assignment_id}')">Anular asignación</button>`;
+function renderAssignmentDetail(
+  a,
+  editableContext = false,
+  highlightActivityId = ''
+) {
+  if (!a) {
+    return `
+      <div class="todoDetailEmpty">
+        <div>
+          <b>Selecciona una asignación</b>
+          <span>
+            El detalle y las actividades
+            aparecerán en este panel.
+          </span>
+        </div>
+      </div>
+    `;
   }
-  const adjustment=state.acceptances.find(x=>x.assignment_id===a.assignment_id&&x.requested_by_user_id===state.currentUser.user_id&&x.acceptance_status==='Ajuste solicitado'&&bool(x.active_flag));
-  return `<div class="todoDetailTop"><div><h3>${esc(a.title)}</h3><p>${esc(a.macrofront)} · ${esc(a.assignment_type)}</p></div><div class="chipRow">${statusBadge(a)}${priorityBadge(a.priority)}${reprogramChip(a)}${sourceChip(a)}</div></div>${adjustment?`<div class="reprogramPanel"><h3>Ajuste solicitado</h3><p>${esc(adjustment.adjustment_comment||'')}</p><div class="todoDetailActions"><button class="btn soft small" onclick="openAssignmentModal('${a.assignment_id}')">Ajustar</button><button class="btn primary small" onclick="resendInitialAcceptance('${adjustment.acceptance_id}')">Reenviar</button></div></div>`:''}<div class="todoDetailSection"><div class="todoInfoGrid"><div class="todoInfo">   <span>Responsable principal</span>   <b>${esc(assignmentOwnerName(a))}</b> </div>  <div class="todoInfo">   <span>Fecha de inicio</span>   <b>${fmt(a.start_date)}</b> </div>  <div class="todoInfo">   <span>Entrega vigente</span>   <b>${fmt(a.current_due_date)}</b> </div><div class="todoInfo"><span>Creador</span><b>${esc(userName(a.created_by_user_id))}</b></div><div class="todoInfo"><span>Participantes</span><b>${unique(participants).map(userName).join(', ')||'Sin participantes'}</b></div></div>${a.observation?`<div class="todoInfo" style="margin-top:10px"><span>Observación</span><b>${esc(a.observation)}</b></div>`:''}<div class="progress progressLabeled"><span style="width:${p}%"></span><b>${p.toFixed(1)}%</b></div>${actions?`<div class="todoDetailActions">${actions}</div>`:''}</div><div class="todoDetailSection"><h4>Actividades · ${acts.filter(completedActivity).length} de ${acts.length}</h4><div class="activityList">${acts.length?acts.map(t=>renderActivityRow(t,canManage&&!readOnly,highlightActivityId)).join(''):'<div class="emptyState">Sin actividades registradas.</div>'}</div></div>`;
+
+  const acts =
+    activitiesOf(
+      a.assignment_id
+    );
+
+  const participants =
+    participantsOf(
+      'ASSIGNMENT',
+      a.assignment_id
+    );
+
+  const canManage =
+    editableContext &&
+    canManageAssignment(a);
+
+  const readOnly =
+    isRadar(a);
+
+  const pendingAcc =
+    pendingAcceptanceForAssignment(a);
+
+  const progress =
+    progressOf(a);
+
+  const delayEligible =
+    delayEligibleAssignment(a);
+
+  const delayPct =
+    delayOf(a);
+
+  const delayDays =
+    delayDaysOf(a);
+
+  /*
+   * La asignación solo puede cerrarse
+   * cuando existe al menos una actividad
+   * y todas están completadas.
+   */
+  const canComplete =
+    acts.length > 0 &&
+    acts.every(
+      completedActivity
+    );
+
+  const delayText =
+    !delayEligible
+      ? 'No aplica'
+      : delayPct > 0
+        ? (
+            delayPct.toFixed(1) +
+            '% · ' +
+            delayDays +
+            (
+              delayDays === 1
+                ? ' día'
+                : ' días'
+            )
+          )
+        : 'Sin atraso';
+
+  const delayDescription =
+    !delayEligible
+      ? (
+          'Las asignaciones no iniciadas o ' +
+          'congeladas no participan en el ' +
+          'cálculo de retraso.'
+        )
+      : delayPct > 0
+        ? (
+            'Retraso calculado utilizando la ' +
+            'fecha de entrega vigente.'
+          )
+        : (
+            'La asignación se encuentra dentro ' +
+            'de la fecha de entrega vigente.'
+          );
+
+  const completeTitle =
+    canComplete
+      ? 'Completar asignación'
+      : acts.length
+        ? (
+            'Completa todas las actividades ' +
+            'para habilitar el cierre.'
+          )
+        : (
+            'Agrega al menos una actividad ' +
+            'para habilitar el cierre.'
+          );
+
+  const completeButton = `
+    <button
+      class="btn primary small"
+      ${canComplete ? '' : 'disabled'}
+      title="${esc(completeTitle)}"
+      onclick="
+        openCompleteAssignmentModal(
+          '${a.assignment_id}'
+        )
+      "
+    >
+      Completar asignación
+    </button>
+  `;
+
+  let actions = '';
+
+  if (pendingAcc) {
+    actions = `
+      <button
+        class="btn primary small"
+        onclick="
+          respondAcceptance(
+            '${pendingAcc.acceptance_id}',
+            'accept'
+          )
+        "
+      >
+        Aceptar
+      </button>
+
+      <button
+        class="btn warn small"
+        onclick="
+          openAcceptanceAdjustment(
+            '${pendingAcc.acceptance_id}'
+          )
+        "
+      >
+        Solicitar ajuste
+      </button>
+
+      <button
+        class="btn danger small"
+        onclick="
+          respondAcceptance(
+            '${pendingAcc.acceptance_id}',
+            'reject'
+          )
+        "
+      >
+        Rechazar
+      </button>
+    `;
+
+  } else if (
+    canManage &&
+    !completedAssignment(a) &&
+    !readOnly
+  ) {
+    actions = `
+      <button
+        class="btn soft small"
+        onclick="
+          openAssignmentModal(
+            '${a.assignment_id}'
+          )
+        "
+      >
+        Editar asignación
+      </button>
+
+      <button
+        class="btn primary small"
+        onclick="
+          openActivityModal(
+            '${a.assignment_id}'
+          )
+        "
+      >
+        Agregar actividad
+      </button>
+
+      <button
+        class="btn warn small"
+        onclick="
+          openReprogramModal(
+            '${a.assignment_id}'
+          )
+        "
+      >
+        Reprogramar
+      </button>
+
+      <button
+        class="btn warn small"
+        onclick="
+          openFreezeModal(
+            '${a.assignment_id}'
+          )
+        "
+      >
+        Congelar asignación
+      </button>
+
+      ${
+        a.owner_user_id ===
+        state.currentUser.user_id
+          ? `
+            <button
+              class="btn soft small"
+              onclick="
+                openReassignmentModal(
+                  '${a.assignment_id}'
+                )
+              "
+            >
+              Reasignar
+            </button>
+          `
+          : ''
+      }
+
+      ${completeButton}
+
+      <button
+        class="btn danger small"
+        onclick="
+          openAnnulModal(
+            '${a.assignment_id}'
+          )
+        "
+      >
+        Anular asignación
+      </button>
+    `;
+  }
+
+  const adjustment =
+    state.acceptances.find(
+      function (acceptance) {
+        return (
+          acceptance.assignment_id ===
+            a.assignment_id &&
+          acceptance.requested_by_user_id ===
+            state.currentUser.user_id &&
+          acceptance.acceptance_status ===
+            'Ajuste solicitado' &&
+          bool(
+            acceptance.active_flag
+          )
+        );
+      }
+    );
+
+  return `
+    <div class="todoDetailTop">
+      <div>
+        <h3>${esc(a.title)}</h3>
+
+        <p>
+          ${esc(a.macrofront)}
+          ·
+          ${esc(a.assignment_type)}
+        </p>
+      </div>
+
+      <div class="chipRow">
+        ${statusBadge(a)}
+        ${priorityBadge(a.priority)}
+        ${reprogramChip(a)}
+        ${sourceChip(a)}
+      </div>
+    </div>
+
+    ${
+      adjustment
+        ? `
+          <div class="reprogramPanel">
+            <h3>Ajuste solicitado</h3>
+
+            <p>
+              ${esc(
+                adjustment.adjustment_comment ||
+                ''
+              )}
+            </p>
+
+            <div class="todoDetailActions">
+              <button
+                class="btn soft small"
+                onclick="
+                  openAssignmentModal(
+                    '${a.assignment_id}'
+                  )
+                "
+              >
+                Ajustar
+              </button>
+
+              <button
+                class="btn primary small"
+                onclick="
+                  resendInitialAcceptance(
+                    '${adjustment.acceptance_id}'
+                  )
+                "
+              >
+                Reenviar
+              </button>
+            </div>
+          </div>
+        `
+        : ''
+    }
+
+    <div class="todoDetailSection">
+
+      <div class="todoInfoGrid">
+
+        <div class="todoInfo">
+          <span>Responsable principal</span>
+
+          <b>
+            ${esc(
+              assignmentOwnerName(a)
+            )}
+          </b>
+        </div>
+
+        <div class="todoInfo">
+          <span>Fecha de inicio</span>
+          <b>${fmt(a.start_date)}</b>
+        </div>
+
+        <div class="todoInfo">
+          <span>Entrega vigente</span>
+          <b>${fmt(a.current_due_date)}</b>
+        </div>
+
+        <div class="todoInfo">
+          <span>Creador</span>
+
+          <b>
+            ${esc(
+              userName(
+                a.created_by_user_id
+              )
+            )}
+          </b>
+        </div>
+
+        <div class="todoInfo">
+          <span>Avance</span>
+
+          <b>
+            ${progress.toFixed(1)}%
+          </b>
+        </div>
+
+        <div
+          class="todoInfo"
+          title="${esc(
+            delayDescription
+          )}"
+        >
+          <span>Retraso</span>
+
+          <b>
+            ${esc(delayText)}
+          </b>
+        </div>
+
+        <div class="todoInfo">
+          <span>Participantes</span>
+
+          <b>
+            ${
+              unique(participants)
+                .map(userName)
+                .join(', ') ||
+              'Sin participantes'
+            }
+          </b>
+        </div>
+
+      </div>
+
+      ${
+        a.observation
+          ? `
+            <div
+              class="todoInfo"
+              style="margin-top:10px"
+            >
+              <span>Observación</span>
+
+              <b>
+                ${esc(a.observation)}
+              </b>
+            </div>
+          `
+          : ''
+      }
+
+      <div
+        class="progress progressLabeled"
+      >
+        <span
+          style="width:${progress}%"
+        ></span>
+
+        <b>
+          ${progress.toFixed(1)}%
+        </b>
+      </div>
+
+      ${
+        actions
+          ? `
+            <div class="todoDetailActions">
+              ${actions}
+            </div>
+          `
+          : ''
+      }
+
+    </div>
+
+    <div class="todoDetailSection">
+
+      <h4>
+        Actividades ·
+        ${
+          acts.filter(
+            completedActivity
+          ).length
+        }
+        de
+        ${acts.length}
+      </h4>
+
+      <div class="activityList">
+        ${
+          acts.length
+            ? acts.map(function (
+                activity
+              ) {
+                return renderActivityRow(
+                  activity,
+                  canManage &&
+                    !readOnly,
+                  highlightActivityId
+                );
+              }).join('')
+            : `
+              <div class="emptyState">
+                Sin actividades registradas.
+              </div>
+            `
+        }
+      </div>
+
+    </div>
+  `;
 }
 function detailItem(label,value,full=false){return value?`<div class="detailItem ${full?'full':''}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`:''}
 function renderActivityRow(t,canManage,highlightActivityId=''){
