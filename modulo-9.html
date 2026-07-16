@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>HUB - Procesos y Mejora Continua · v17.2 limpia</title>
+<title>HUB - Procesos y Mejora Continua</title>
 <style>
 :root{
   --ink:#061b35;--muted:#5f7288;--line:#d8e7f4;--line2:#bdd5e8;
@@ -186,7 +186,6 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:
 <script>
 'use strict';
 
-const APP_VERSION = '17.2.0';
 const STORAGE_KEYS = Object.freeze({
   token: 'hub_sgmp_session_token'
 });
@@ -220,8 +219,18 @@ let autoRefreshTimer = null;
 function emptyState(){
   return {
     currentUser:null, permissions:{}, configuration:[], configMap:{}, catalogs:[], users:[], roles:[],
-    dashboard:null, assignments:[], activities:[], participations:[], requests:[], notifications:[],
-    acceptances:[], reassignments:[], benefits:[], lastSyncAt:''
+dashboard:null,
+assignments:[],
+activities:[],
+participations:[],
+requests:[],
+notifications:[],
+acceptances:[],
+reassignments:[],
+benefits:[],
+lastSyncAt:'',
+version:'',
+schemaVersion:''
   };
 }
 
@@ -251,13 +260,64 @@ function normalizeApiUrl(value){
   return url.replace(/\/+$/, '');
 }
 
+function applyRuntimeVersion(
+  version,
+  schemaVersion
+) {
+  const versionText =
+    String(version || '').trim();
+
+  const schemaText =
+    String(schemaVersion || '').trim();
+
+  /*
+   * El título se construye con la versión
+   * oficial recibida desde el backend.
+   */
+  document.title =
+    'HUB - Procesos y Mejora Continua' +
+    (
+      versionText
+        ? ' · v' + versionText
+        : ''
+    );
+
+  /*
+   * Se conservan como atributos técnicos
+   * para diagnóstico desde el navegador.
+   */
+  document.documentElement.dataset.hubVersion =
+    versionText;
+
+  document.documentElement.dataset.schemaVersion =
+    schemaText;
+}  
+
 async function checkBackendStatus(showMessage=false){
   try {
     const response = await fetch(API_URL + '?action=health&_=' + Date.now(), {method:'GET', redirect:'follow'});
     const result = await parseApiResponse(response);
     const health = result.data || result;
-    if (health.status !== 'online') throw new Error(result.message || 'El backend no respondió correctamente.');
-    if (showMessage) showToast('Backend conectado correctamente.', 'success');
+if (
+  health.status !== 'online'
+) {
+  throw new Error(
+    result.message ||
+    'El backend no respondió correctamente.'
+  );
+}
+
+applyRuntimeVersion(
+  health.backendVersion,
+  health.schemaVersion
+);
+
+if (showMessage) {
+  showToast(
+    'Backend conectado correctamente.',
+    'success'
+  );
+}
     return true;
   } catch (error) {
     if (showMessage) showToast(error.message || 'No se pudo conectar con el backend.', 'error');
@@ -340,7 +400,19 @@ async function bootstrapApp(){
 }
 
 function applyBootstrap(data){
-  state.currentUser = data.currentUser || null;
+  state.version =
+    data.version || '';
+
+  state.schemaVersion =
+    data.schemaVersion || '';
+
+  applyRuntimeVersion(
+    state.version,
+    state.schemaVersion
+  );
+
+  state.currentUser =
+    data.currentUser || null;
   state.permissions = normalizeFlags(data.permissions || {});
   state.configuration = data.configuration || [];
   state.configMap = Object.fromEntries(state.configuration.map(item => [item.config_key, item.config_value]));
