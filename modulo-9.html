@@ -534,24 +534,41 @@ function unique(list){ return [...new Set((list||[]).filter(Boolean))]; }
 function roleLabel(role){ return ({user:'Usuario',boss:'Jefe',admin:'Administrador',management:'Gerencia'})[role] || role || 'Usuario'; }
 function userById(id){ return state.users.find(u=>u.user_id===id) || null; }
 function userName(id){ const u=userById(id); return u?u.full_name:id||'Sin responsable'; }
-  function assignmentOwnerName(assignment) {
+function assignmentOwnerName(
+  assignment
+) {
   if (!assignment) {
     return 'Sin responsable';
   }
 
-  const linkedUser = userById(
-    assignment.owner_user_id
-  );
+  /*
+   * En asignaciones RADAR prevalece
+   * el nombre recibido desde la fuente.
+   */
+  if (
+    isRadar(assignment) &&
+    assignment.source_owner_name
+  ) {
+    return String(
+      assignment.source_owner_name
+    ).trim();
+  }
+
+  const linkedUser =
+    userById(
+      assignment.owner_user_id
+    );
 
   if (linkedUser) {
     return linkedUser.full_name;
   }
 
-  if (assignment.source_owner_name) {
-    return (
-      assignment.source_owner_name +
-      ' · No vinculado al HUB'
-    );
+  if (
+    assignment.source_owner_name
+  ) {
+    return String(
+      assignment.source_owner_name
+    ).trim();
   }
 
   return 'Sin responsable';
@@ -1481,28 +1498,41 @@ function riskSegment(cls,value,label){
   return `<span class="ownerRiskSeg ${cls} ${small?'isSmall':''}" style="width:${value}%" title="${esc(label)}: ${value}%">${small?'':value+'%'}</span>`;
 }
 
-function ownerGroupName(ownerKey, assignments) {
+function ownerGroupName(
+  ownerKey,
+  assignments
+) {
   if (
     ownerKey &&
-    ownerKey.indexOf('RADAR_NAME:') === 0
+    ownerKey.indexOf(
+      'RADAR_NAME:'
+    ) === 0
   ) {
-    return (
-      ownerKey.replace('RADAR_NAME:', '') +
-      ' · No vinculado al HUB'
-    );
+    return ownerKey
+      .replace(
+        'RADAR_NAME:',
+        ''
+      )
+      .trim();
   }
 
-  if (ownerKey === 'UNASSIGNED') {
+  if (
+    ownerKey ===
+    'UNASSIGNED'
+  ) {
     return 'Sin responsable';
   }
 
   const firstAssignment =
-    assignments && assignments.length
+    assignments &&
+    assignments.length
       ? assignments[0]
       : null;
 
   return firstAssignment
-    ? assignmentOwnerName(firstAssignment)
+    ? assignmentOwnerName(
+        firstAssignment
+      )
     : userName(ownerKey);
 }
   
@@ -1971,7 +2001,9 @@ function rowsForResult(kind,label){
     'Asignaciones en backlog';
 }
   if(kind==='status'){rows=rows.filter(a=>a.status===label);title='Estado: '+label}
-  if (kind === 'owner') {   if (label.indexOf('RADAR_NAME:') === 0) {     const radarName =       label.replace('RADAR_NAME:', '');      rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         assignment.source_owner_name === radarName       );     });      title =       'Responsable: ' +       radarName +       ' · No vinculado al HUB';    } else if (label === 'UNASSIGNED') {     rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         !assignment.source_owner_name       );     });      title = 'Responsable: Sin responsable';    } else {     rows = rows.filter(function (assignment) {       return (         assignment.owner_user_id === label       );     });      title =       'Responsable: ' +       userName(label);   } }
+  if (kind === 'owner') {   if (label.indexOf('RADAR_NAME:') === 0) {     const radarName =       label.replace('RADAR_NAME:', '');      rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         assignment.source_owner_name === radarName       );     });     title =
+  'Responsable: ' +
+  radarName;    } else if (label === 'UNASSIGNED') {     rows = rows.filter(function (assignment) {       return (         !assignment.owner_user_id &&         !assignment.source_owner_name       );     });      title = 'Responsable: Sin responsable';    } else {     rows = rows.filter(function (assignment) {       return (         assignment.owner_user_id === label       );     });      title =       'Responsable: ' +       userName(label);   } }
   if(kind==='priority'){rows=rows.filter(a=>a.priority===label);title='Prioridad: '+label}
   if(kind==='front'){rows=rows.filter(a=>a.macrofront===label);title='Macrofrente: '+label}
   if(kind==='weekStart'){rows=rows.filter(a=>mondayOf(a.start_date)===label);title='Inicios · Semana '+getISOWeekInfo(label).week}
@@ -2392,16 +2424,448 @@ async function saveAssignment(id=''){
   }catch(e){showToast(e.message,'error')}
 }
 
-function openActivityModal(assignmentId,activityId=''){
-  const a=assignmentById(assignmentId),t=activityId?activityById(activityId):null,editing=!!t,participants=t?participantsOf('ACTIVITY',t.activity_id):[];
-  openModal(editing?'Editar actividad':'Agregar actividad','Las actividades heredan el responsable principal de la asignación.',`<div class="formGrid"><div class="field"><label>Actividad *</label><input id="actTitle" value="${esc(t?.title||'')}"></div><div class="field"><label>Responsable</label><input value="${esc(userName(a?.owner_user_id))}" disabled></div><div class="field"><label>Fecha inicio *</label><input type="date" id="actStart" value="${dateKey(t?.start_date||a?.start_date)}" ${editing?'disabled':''}></div><div class="field"><label>Fecha de entrega *</label><input type="date" id="actDue" value="${dateKey(t?.current_due_date||a?.current_due_date)}" ${editing&&number(t?.reprogram_count)>=1?'disabled':''}></div></div>${editing&&number(t?.reprogram_count)>=1?'<div class="requiredHint">La actividad ya alcanzó su única reprogramación.</div>':''}<div class="field"><label>Participantes</label>${participantChecks('actParticipants',participants)}</div><div class="actions"><button class="btn soft" onclick="closeModal()">Cancelar</button><button class="btn primary" onclick="saveActivity('${assignmentId}','${activityId}')">Guardar actividad</button></div>`);
+function openActivityModal(
+  assignmentId,
+  activityId = ''
+) {
+  const assignment =
+    assignmentById(assignmentId);
+
+  const activity =
+    activityId
+      ? activityById(activityId)
+      : null;
+
+  const editing =
+    !!activity;
+
+  const participants =
+    activity
+      ? participantsOf(
+          'ACTIVITY',
+          activity.activity_id
+        )
+      : [];
+
+  const startDate =
+    dateKey(
+      activity?.start_date ||
+      assignment?.start_date
+    );
+
+  const currentDueDate =
+    dateKey(
+      activity?.current_due_date ||
+      assignment?.current_due_date
+    );
+
+  const assignmentStart =
+    dateKey(
+      assignment?.start_date
+    );
+
+  const assignmentDue =
+    dateKey(
+      assignment?.current_due_date
+    );
+
+  const reprogramUsed =
+    editing &&
+    number(
+      activity?.reprogram_count
+    ) >= 1;
+
+  openModal(
+    editing
+      ? 'Editar actividad'
+      : 'Agregar actividad',
+
+    'Las actividades heredan el responsable principal de la asignación.',
+
+    `
+      <div
+        oninput="
+          validateActivityForm(
+            '${activityId}'
+          )
+        "
+        onchange="
+          validateActivityForm(
+            '${activityId}'
+          )
+        "
+      >
+        <div class="formGrid">
+
+          <div class="field">
+            <label>Actividad *</label>
+
+            <input
+              id="actTitle"
+              value="${esc(
+                activity?.title || ''
+              )}"
+            >
+          </div>
+
+          <div class="field">
+            <label>Responsable</label>
+
+            <input
+              value="${esc(
+                assignmentOwnerName(
+                  assignment
+                )
+              )}"
+              disabled
+            >
+          </div>
+
+          <div class="field">
+            <label>Fecha de inicio *</label>
+
+            <input
+              type="date"
+              id="actStart"
+              value="${startDate}"
+              min="${assignmentStart}"
+              max="${assignmentDue}"
+              ${editing ? 'disabled' : ''}
+            >
+          </div>
+
+          <div class="field">
+            <label>Fecha de entrega *</label>
+
+            <input
+              type="date"
+              id="actDue"
+              value="${currentDueDate}"
+              data-original="${currentDueDate}"
+              min="${assignmentStart}"
+              max="${assignmentDue}"
+              onchange="
+                handleActivityDateChange(
+                  '${activityId}'
+                )
+              "
+              ${reprogramUsed ? 'disabled' : ''}
+            >
+
+            ${
+              reprogramUsed
+                ? `
+                  <div class="requiredHint">
+                    La actividad ya alcanzó
+                    su única reprogramación.
+                  </div>
+                `
+                : ''
+            }
+          </div>
+
+        </div>
+
+        <div
+          id="activityReprogramPanel"
+          class="reprogramPanel hidden"
+        >
+          <h3>
+            Reprogramación de actividad
+          </h3>
+
+          <p class="sub">
+            Fecha vigente:
+            <strong>
+              ${fmt(
+                activity?.current_due_date
+              )}
+            </strong>.
+            La actividad permite una sola
+            reprogramación directa.
+          </p>
+
+          <div class="field">
+            <label>
+              Justificación *
+            </label>
+
+            <textarea
+              id="actReprogramReason"
+              placeholder="Indique el motivo de la nueva fecha."
+            ></textarea>
+          </div>
+
+          <div class="requiredHint">
+            La justificación es obligatoria
+            para aplicar el cambio de fecha.
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Participantes</label>
+
+          ${participantChecks(
+            'actParticipants',
+            participants
+          )}
+        </div>
+
+        <div class="actions">
+          <button
+            class="btn soft"
+            onclick="closeModal()"
+          >
+            Cancelar
+          </button>
+
+          <button
+            id="saveActivityBtn"
+            class="btn primary"
+            onclick="
+              saveActivity(
+                '${assignmentId}',
+                '${activityId}'
+              )
+            "
+          >
+            Guardar actividad
+          </button>
+        </div>
+      </div>
+    `
+  );
+
+  setTimeout(function () {
+    validateActivityForm(
+      activityId
+    );
+  }, 0);
 }
-async function saveActivity(assignmentId,activityId=''){
-  const editing=!!activityId,t=activityId?activityById(activityId):null,a=assignmentById(assignmentId),payload={assignment_id:assignmentId,activity_id:activityId,title:formValue('actTitle'),owner_user_id:a.owner_user_id,current_due_date:formValue('actDue'),participants:checkedValues('actParticipants')};
-  if(!payload.title||!payload.current_due_date)return showToast('Complete los campos obligatorios.','error');
-  if(editing){payload.expected_record_version=t.record_version;if(dateKey(t.current_due_date)!==payload.current_due_date){const reason=prompt('Justificación obligatoria para reprogramar la actividad:');if(!reason)return;payload.reprogram_reason=reason}}
-  else payload.start_date=formValue('actStart');
-  try{await apiRequest(editing?'updateActivity':'createActivity',payload);closeModal();await refreshData(true);showToast(editing?'Actividad actualizada.':'Actividad creada.','success')}catch(e){showToast(e.message,'error')}
+
+function handleActivityDateChange(
+  activityId
+) {
+  const dueInput =
+    document.getElementById(
+      'actDue'
+    );
+
+  const panel =
+    document.getElementById(
+      'activityReprogramPanel'
+    );
+
+  const reason =
+    document.getElementById(
+      'actReprogramReason'
+    );
+
+  if (
+    !dueInput ||
+    !panel
+  ) {
+    return;
+  }
+
+  const changed =
+    !!activityId &&
+    dueInput.value !==
+      dueInput.dataset.original;
+
+  panel.classList.toggle(
+    'hidden',
+    !changed
+  );
+
+  if (
+    !changed &&
+    reason
+  ) {
+    reason.value = '';
+  }
+
+  validateActivityForm(
+    activityId
+  );
+}
+
+function validateActivityForm(
+  activityId
+) {
+  const title =
+    formValue('actTitle');
+
+  const start =
+    formValue('actStart');
+
+  const due =
+    formValue('actDue');
+
+  const dueInput =
+    document.getElementById(
+      'actDue'
+    );
+
+  const saveButton =
+    document.getElementById(
+      'saveActivityBtn'
+    );
+
+  if (!saveButton) {
+    return;
+  }
+
+  const changed =
+    !!activityId &&
+    dueInput &&
+    dueInput.value !==
+      dueInput.dataset.original;
+
+  const reason =
+    formValue(
+      'actReprogramReason'
+    );
+
+  const datesValid =
+    !!start &&
+    !!due &&
+    due >= start &&
+    (
+      !dueInput?.min ||
+      due >= dueInput.min
+    ) &&
+    (
+      !dueInput?.max ||
+      due <= dueInput.max
+    );
+
+  const reprogramValid =
+    !changed ||
+    !!reason;
+
+  saveButton.disabled =
+    !title ||
+    !datesValid ||
+    !reprogramValid;
+}
+
+async function saveActivity(
+  assignmentId,
+  activityId = ''
+) {
+  const editing =
+    !!activityId;
+
+  const activity =
+    editing
+      ? activityById(activityId)
+      : null;
+
+  const assignment =
+    assignmentById(assignmentId);
+
+  validateActivityForm(
+    activityId
+  );
+
+  const saveButton =
+    document.getElementById(
+      'saveActivityBtn'
+    );
+
+  if (
+    saveButton &&
+    saveButton.disabled
+  ) {
+    showToast(
+      'Complete los campos obligatorios y valide las fechas.',
+      'error'
+    );
+
+    return;
+  }
+
+  const payload = {
+    assignment_id:
+      assignmentId,
+
+    activity_id:
+      activityId,
+
+    title:
+      formValue('actTitle'),
+
+    owner_user_id:
+      assignment.owner_user_id,
+
+    current_due_date:
+      formValue('actDue'),
+
+    participants:
+      checkedValues(
+        'actParticipants'
+      )
+  };
+
+  if (editing) {
+    payload.expected_record_version =
+      activity.record_version;
+
+    const dateChanged =
+      dateKey(
+        activity.current_due_date
+      ) !==
+      payload.current_due_date;
+
+    if (dateChanged) {
+      payload.reprogram_reason =
+        formValue(
+          'actReprogramReason'
+        );
+
+      if (
+        !payload.reprogram_reason
+      ) {
+        showToast(
+          'Ingrese la justificación de la reprogramación.',
+          'error'
+        );
+
+        return;
+      }
+    }
+
+  } else {
+    payload.start_date =
+      formValue('actStart');
+  }
+
+  try {
+    await apiRequest(
+      editing
+        ? 'updateActivity'
+        : 'createActivity',
+      payload
+    );
+
+    closeModal();
+
+    await refreshData(true);
+
+    showToast(
+      editing
+        ? 'Actividad actualizada.'
+        : 'Actividad creada.',
+      'success'
+    );
+
+  } catch (error) {
+    showToast(
+      error.message,
+      'error'
+    );
+  }
 }
 async function toggleActivity(id){const t=activityById(id);try{await apiRequest('toggleActivityComplete',{activity_id:id,complete:!completedActivity(t)});await refreshData(true);showToast(completedActivity(t)?'Actividad reabierta.':'Actividad completada.','success')}catch(e){showToast(e.message,'error')}}
 
