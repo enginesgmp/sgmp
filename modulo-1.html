@@ -20913,31 +20913,314 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
 };
 
 
-  
-  window.renderAnalysisScreenAccumulated = function(stageKey){
-    const assembled = window.sgmpAssembleStagedAnalysisPayload();
-    const acts = arr(assembled?.as_is?.activities), findings = assembled?.findings || {}, improvements = arr(assembled?.improvements);
-    if(stageKey === 'B1'){
-      const b1 = state.analysisStages?.results?.B1 || assembled || {};
-      const completeness = b1.completeness || b1.validation?.completeness || assembled?.completeness || {};
-      const gaps = arr(b1.validation?.gaps || b1.gaps || assembled?.validation?.gaps);
-      const blocking = Number(completeness.blocking_count ?? gaps.filter(issue => issue.level === 'critical').length);
-      const score = Number(completeness.score || 0);
-      const lifecycle = b1.lifecycle || b1.validation?.lifecycle || b1.operational_state?.lifecycle || assembled?.lifecycle || 'blocked';
-      [['stageActsKpi_', acts.length], ['stageImpKpi_', score + '%'], ['stageQwKpi_', gaps.length], ['stageResKpi_', blocking], ['stageNvaKpi_', lifecycle]].forEach(([prefix, value]) => {
-        const node = el(prefix + stageKey);
-        if(node) node.textContent = value;
-      });
-      const preview = el('analysisAccumPreview_' + stageKey);
-      if(preview) preview.textContent = JSON.stringify(assembled, null, 2);
-      return;
+ window.renderAnalysisScreenAccumulated = function(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const assembled =
+    typeof window.sgmpAssembleStagedAnalysisPayload === 'function'
+      ? window.sgmpAssembleStagedAnalysisPayload()
+      : {};
+
+  const activities = arr(
+    assembled?.as_is?.activities
+  );
+
+  const findings =
+    assembled?.findings &&
+    typeof assembled.findings === 'object'
+      ? assembled.findings
+      : {};
+
+  const improvements = arr(
+    assembled?.improvements
+  );
+
+  /*
+   * Compatibilidad temporal con respaldos estructurales B1.
+   */
+  if(stage === 'B1'){
+    const b1 =
+      state.analysisStages?.results?.B1 ||
+      assembled ||
+      {};
+
+    const completeness =
+      b1.completeness ||
+      b1.validation?.completeness ||
+      assembled?.completeness ||
+      {};
+
+    const gaps = arr(
+      b1.validation?.gaps ||
+      b1.gaps ||
+      assembled?.validation?.gaps
+    );
+
+    const blocking = Number(
+      completeness.blocking_count ??
+      gaps.filter(function(issue){
+        return String(issue?.level || '')
+          .trim()
+          .toLowerCase() === 'critical';
+      }).length
+    );
+
+    const score = Number(
+      completeness.score || 0
+    );
+
+    const lifecycle =
+      b1.lifecycle ||
+      b1.validation?.lifecycle ||
+      b1.operational_state?.lifecycle ||
+      assembled?.lifecycle ||
+      'blocked';
+
+    [
+      ['stageActsKpi_', activities.length],
+      ['stageImpKpi_', score + '%'],
+      ['stageQwKpi_', gaps.length],
+      ['stageResKpi_', blocking],
+      ['stageNvaKpi_', lifecycle]
+    ].forEach(function(entry){
+      const node = el(entry[0] + stage);
+
+      if(node){
+        node.textContent = entry[1];
+      }
+    });
+
+    const b1Preview = el(
+      'analysisAccumPreview_' + stage
+    );
+
+    if(b1Preview){
+      b1Preview.textContent = JSON.stringify(
+        assembled,
+        null,
+        2
+      );
     }
-    const avaDist = assembled?.ava?.distribution || (typeof sgmpCalculateAvaDistribution === 'function' ? sgmpCalculateAvaDistribution(acts) : {});
-    const quickWins = arr(findings.quickWins || findings.quick_wins).length;
-    const restrictions = arr(findings.restrictions || findings.constraints || findings.suspectedConstraints || findings.suspected_constraints).length;
-    [['stageActsKpi_', acts.length], ['stageImpKpi_', improvements.length], ['stageQwKpi_', quickWins], ['stageResKpi_', restrictions], ['stageNvaKpi_', (avaDist.NVA || avaDist.NVA_pct || 0) + '%']].forEach(([prefix, value]) => { const node = el(prefix + stageKey); if(node) node.textContent = value; });
-    const preview = el('analysisAccumPreview_' + stageKey); if(preview) preview.textContent = JSON.stringify(assembled, null, 2);
+
+    return;
+  }
+
+  const distribution =
+    assembled?.ava?.distribution &&
+    typeof assembled.ava.distribution === 'object'
+      ? assembled.ava.distribution
+      : {};
+
+  const activityAnalysis = arr(
+    assembled?.ava?.activityAnalysis ||
+    state.analysisStages?.results?.VA?.ava?.activityAnalysis
+  );
+
+  const toFiniteNumber = function(value){
+    const number = Number(value);
+
+    return Number.isFinite(number)
+      ? number
+      : 0;
   };
+
+  const round2 = function(value){
+    return Math.round(
+      (toFiniteNumber(value) + Number.EPSILON) * 100
+    ) / 100;
+  };
+
+  /*
+   * Primero intenta obtener los conteos oficiales del JSON VA.
+   */
+  let vaCount = toFiniteNumber(
+    distribution.VA ??
+    distribution.counts?.VA
+  );
+
+  let nnvaCount = toFiniteNumber(
+    distribution.NNVA ??
+    distribution.counts?.NNVA
+  );
+
+  let nvaCount = toFiniteNumber(
+    distribution.NVA ??
+    distribution.counts?.NVA
+  );
+
+  /*
+   * Cuando el JSON no entrega conteos, se reconstruyen desde
+   * activityAnalysis.
+   */
+  if(
+    vaCount + nnvaCount + nvaCount === 0 &&
+    activityAnalysis.length
+  ){
+    activityAnalysis.forEach(function(item){
+      const classification = String(
+        item?.classification ||
+        item?.ava_classification ||
+        item?.avaClassification ||
+        item?.ava ||
+        ''
+      )
+        .trim()
+        .toUpperCase();
+
+      if(classification === 'VA'){
+        vaCount += 1;
+      }else if(classification === 'NNVA'){
+        nnvaCount += 1;
+      }else if(classification === 'NVA'){
+        nvaCount += 1;
+      }
+    });
+  }
+
+  /*
+   * Último respaldo: clasificaciones integradas en las actividades.
+   */
+  if(
+    vaCount + nnvaCount + nvaCount === 0 &&
+    activities.length
+  ){
+    activities.forEach(function(activity){
+      const classification = String(
+        activity?.ava_classification ||
+        activity?.avaClassification ||
+        activity?.ava ||
+        ''
+      )
+        .trim()
+        .toUpperCase();
+
+      if(classification === 'VA'){
+        vaCount += 1;
+      }else if(classification === 'NNVA'){
+        nnvaCount += 1;
+      }else if(classification === 'NVA'){
+        nvaCount += 1;
+      }
+    });
+  }
+
+  const classifiedTotal =
+    vaCount +
+    nnvaCount +
+    nvaCount;
+
+  /*
+   * Usa exclusivamente los campos *_pct como porcentajes.
+   * Si no existen, los calcula desde los conteos.
+   */
+  let vaPct = toFiniteNumber(
+    distribution.VA_pct
+  );
+
+  let nnvaPct = toFiniteNumber(
+    distribution.NNVA_pct
+  );
+
+  let nvaPct = toFiniteNumber(
+    distribution.NVA_pct
+  );
+
+  const suppliedPercentageTotal =
+    vaPct +
+    nnvaPct +
+    nvaPct;
+
+  if(
+    suppliedPercentageTotal === 0 &&
+    classifiedTotal > 0
+  ){
+    vaPct = round2(
+      vaCount / classifiedTotal * 100
+    );
+
+    nnvaPct = round2(
+      nnvaCount / classifiedTotal * 100
+    );
+
+    nvaPct = round2(
+      nvaCount / classifiedTotal * 100
+    );
+  }else{
+    vaPct = round2(vaPct);
+    nnvaPct = round2(nnvaPct);
+    nvaPct = round2(nvaPct);
+  }
+
+  const quickWins = arr(
+    assembled.quickWins ||
+    findings.quickWins ||
+    findings.quick_wins
+  );
+
+  const restrictions = arr(
+    assembled.restrictions ||
+    findings.restrictions ||
+    findings.constraints
+  );
+
+  const kpiValues = [
+    ['stageActsKpi_', activities.length],
+    ['stageImpKpi_', improvements.length],
+    ['stageQwKpi_', quickWins.length],
+    ['stageResKpi_', restrictions.length],
+    ['stageNvaKpi_', nvaPct + '%']
+  ];
+
+  kpiValues.forEach(function(entry){
+    const node = el(
+      entry[0] + stage
+    );
+
+    if(node){
+      node.textContent = entry[1];
+    }
+  });
+
+  /*
+   * Conserva los indicadores calculados dentro del ensamblado
+   * únicamente para consulta y respaldo visual.
+   */
+  assembled.ava = assembled.ava || {};
+
+  assembled.ava.distribution = Object.assign(
+    {},
+    distribution,
+    {
+      VA: vaCount,
+      NNVA: nnvaCount,
+      NVA: nvaCount,
+      VA_pct: vaPct,
+      NNVA_pct: nnvaPct,
+      NVA_pct: nvaPct,
+      total: classifiedTotal,
+      counts: {
+        VA: vaCount,
+        NNVA: nnvaCount,
+        NVA: nvaCount
+      }
+    }
+  );
+
+  const preview = el(
+    'analysisAccumPreview_' + stage
+  );
+
+  if(preview){
+    preview.textContent = JSON.stringify(
+      assembled,
+      null,
+      2
+    );
+  }
+};
+  
   window.downloadAnalysisStageJson = function(stageKey){
     const resultBox = el('analysisResult_' + stageKey), txt = resultBox ? resultBox.value.trim() : '';
     if(!txt){ if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey,'warn','No hay resultado para descargar.'); return; }
