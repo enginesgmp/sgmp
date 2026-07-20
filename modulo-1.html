@@ -17930,376 +17930,66 @@ function sgmpEnrichAnalysisModel(data){
 }
 
 function sgmpGetAnalysisStageDefinitions(){
-  const p = (key, fallback) => (typeof sgmpPrompt === 'function' ? sgmpPrompt(key, fallback) : fallback);
-  const fallbackB1 = `ACTÚA COMO auditor estructural SGMP para B1 · Validación AS IS.
+  const promptStore =
+    typeof SGMP_PROMPTS !== 'undefined' &&
+    SGMP_PROMPTS &&
+    typeof SGMP_PROMPTS === 'object'
+      ? SGMP_PROMPTS
+      : {};
 
-OBJETIVO B1:
-Validar la estructura AS IS usando como fuente principal deterministic_validation.normalized.as_is.activities y source_activities.
-B1 es un motor de validación estructural, no un análisis de mejora.
+  const readPrompt = function(promptKey){
+    const value = promptStore[promptKey];
 
-REGLAS:
-- No generes mejoras, quick wins, TO BE, rediseños, soluciones ni recomendaciones de implementación.
-- No hagas AVA ni clasifiques VA/NNVA/NVA.
-- No generes desperdicios, restricciones ni problemas nuevos.
-- No reduzcas ni agrupes actividades.
-- Conserva todas las actividades estructurales.
-- No inventes datos faltantes; registra gaps/warnings con ubicación exacta.
-- Usa deterministic_validation como baseline obligatorio.
-- La IA solo puede enriquecer contexto, explicar inconsistencias y proponer preguntas de validación.
+    return typeof value === 'string'
+      ? value.trim()
+      : '';
+  };
 
-SALIDA JSON ESTRICTA:
-{
-  "contract": "LMP_B1_STRUCTURAL_VALIDATION",
-  "contract_version": "1.0.0",
-  "stage": "B1",
-  "analysis_type": "lmp_b1_structural_validation",
-  "method": "deterministic_validator_plus_contextual_ai",
-  "lifecycle": "blocked|incomplete|draft|validated",
-  "operational_state": {
-    "valid": true,
-    "lifecycle": "blocked|incomplete|draft|validated",
-    "can_proceed_to_ai": true,
-    "can_proceed_to_VA": false,
-    "requires_manual_review": true
-  },
-  "completeness": {
-    "score": 0,
-    "activity_count": 0,
-    "blocking_count": 0,
-    "warning_count": 0,
-    "supplier_input_count": 0,
-    "output_customer_count": 0
-  },
-  "as_is": {"activities": []},
-  "as_is_process": {
-    "activities": [],
-    "suppliers_inputs": [],
-    "outputs_customers": [],
-    "additional_information": []
-  },
-  "sipoc": {
-    "suppliers": [],
-    "inputs": [],
-    "outputs": [],
-    "customers": [],
-    "actors": [],
-    "documents": []
-  },
-  "validation": {
-    "valid": true,
-    "lifecycle": "blocked|incomplete|draft|validated",
-    "completeness": {"score": 0, "activity_count": 0, "blocking_count": 0, "warning_count": 0},
-    "warnings": [],
-    "blockingIssues": [],
-    "gaps": [],
-    "taxonomy": {
-      "categories": {
-        "activity_completeness": {"label": "Actividades incompletas", "types": []},
-        "flow_relations": {"label": "Relaciones rotas", "types": []},
-        "sipoc_completeness": {"label": "SIPOC incompleto", "types": []},
-        "decision_logic": {"label": "Decisiones incompletas", "types": []},
-        "granularity": {"label": "Pérdida de granularidad", "types": []},
-        "catalog_consistency": {"label": "Inconsistencias de catálogo", "types": []}
-      },
-      "by_category": {},
-      "critical": [],
-      "warning": []
+  return {
+    VA: {
+      label: 'Análisis de valor agregado',
+      promptKey: 'prompt_analysis_VA',
+      stageCode: 'lmp_analysis_VA',
+      instruction: readPrompt('prompt_analysis_VA')
     },
-    "deterministic_engine": "lmp_b1_structural_validator",
-    "prohibited_outputs_removed": true
-  },
-  "gap_schema": {
-    "id": "B1-GAP-001",
-    "type": "",
-    "category": "",
-    "taxonomy_category": "",
-    "level": "critical|warning",
-    "severity": "blocking|warning",
-    "field": "as_is_process.activities[0].actor",
-    "where": "as_is_process.activities[0].actor",
-    "location": {
-      "path": "",
-      "section": "activities|suppliers_inputs|outputs_customers|additional_information|as_is_process",
-      "entity": "",
-      "index": 0,
-      "property": "",
-      "ui_target": {
-        "container_id": "",
-        "row_selector": "",
-        "row_index": 0,
-        "field_hint": ""
-      }
+
+    DESPERDICIOS: {
+      label: 'Análisis de desperdicios',
+      promptKey: 'prompt_analysis_DESPERDICIOS',
+      stageCode: 'lmp_analysis_DESPERDICIOS',
+      instruction: readPrompt('prompt_analysis_DESPERDICIOS')
     },
-    "affectedValue": "",
-    "searchHint": "",
-    "suggestion": "",
-    "correction_hint": "",
-    "autoFix": null,
-    "stage": "B1"
-  },
-  "contextual_enrichment": {
-    "structural_observations": [],
-    "traceability_notes": [],
-    "questions_for_validation": []
-  },
-  "traceability": {
-    "deterministic": true,
-    "side_effect_free": true,
-    "parser": "lmpStructuralParser",
-    "source_activity_count": 0,
-    "normalized_activity_count": 0,
-    "ai_contextual_enrichment_used": true
-  }
-}`;
 
-  const fallbackB2 = `ACTÚA COMO especialista Lean Six Sigma.
+    PROBLEMAS: {
+      label: 'Análisis de problemas',
+      promptKey: 'prompt_analysis_PROBLEMAS',
+      stageCode: 'lmp_analysis_PROBLEMAS',
+      instruction: readPrompt('prompt_analysis_PROBLEMAS')
+    },
 
-OBJETIVO B2:
-Clasificar cada actividad AS IS en VA, NNVA o NVA, con evidencia breve.
+    RESTRICCIONES: {
+      label: 'Análisis de restricciones',
+      promptKey: 'prompt_analysis_RESTRICCIONES',
+      stageCode: 'lmp_analysis_RESTRICCIONES',
+      instruction: readPrompt('prompt_analysis_RESTRICCIONES')
+    },
 
-REGLAS:
-- Usa solo las actividades recibidas.
-- No elimines ni renombres actividades.
-- No propongas mejoras todavía.
-- Devuelve distribución porcentual y detalle por actividad.
-- Usa clasificación estable por actividad: cada actividad debe tener una sola clasificación VA, NNVA o NVA.
-- No devuelvas porcentajes estimados libres; los porcentajes deben derivarse del conteo de actividades clasificadas.
-- Valores extremos de VA (<3% o >25%) solo son aceptables si la evidencia por actividad lo sostiene claramente.
+    QUICK_WINS: {
+      label: 'Análisis de quick wins',
+      promptKey: 'prompt_analysis_QUICK_WINS',
+      stageCode: 'lmp_analysis_QUICK_WINS',
+      instruction: readPrompt('prompt_analysis_QUICK_WINS')
+    },
 
-SALIDA JSON ESTRICTA:
-{
-  "as_is": {"activities": []},
-  "ava": {"distribution": {"VA": 0, "NNVA": 0, "NVA": 0}, "activityAnalysis": [], "evidence": []}
-}`;
-
-  const fallbackB3 = `ACTÚA COMO experto Lean, análisis de desperdicios y diagnóstico operativo.
-
-OBJETIVO B3:
-Detectar desperdicios, problemas, riesgos, dependencias manuales, controles ocultos y evidencias desde el AS IS y el brief.
-
-REGLAS:
-- No diseñes TO BE.
-- No hagas contrato SB.
-- Cada hallazgo debe tener evidencia o actividad relacionada cuando sea posible.
-- Debes identificar entre 5 y 10 desperdicios relevantes.
-- No trunques listas críticas; prioriza evidencia operativa sobre generalidades.
-- No agrupes problemas distintos en un mismo hallazgo.
-
-SALIDA JSON ESTRICTA:
-{
-  "findings": {
-    "wastes": [],
-    "problems": [],
-    "risks": [],
-    "evidence_highlights": [],
-    "manual_dependencies": [],
-    "hidden_controls": [],
-    "contradictions_detected": []
-  }
-}`;
-
-  const fallbackB4 = `ACTÚA COMO especialista TOC, causa raíz y flujo operativo.
-
-OBJETIVO B4:
-Identificar restricciones, cuellos de botella, causas probables y puntos de bloqueo del proceso.
-
-REGLAS:
-- Diferencia restricción real de problema general.
-- No propongas aún el plan TO BE completo.
-- Relaciona restricciones con actividades cuando aplique.
-
-SALIDA JSON ESTRICTA:
-{
-  "findings": {
-    "restrictions": [],
-    "suspected_constraints": [],
-    "bottlenecks": [],
-    "rootCauseHypotheses": [],
-    "controlIssues": [],
-    "dataGaps": []
-  }
-}`;
-
-  const fallbackB5 = `ACTÚA COMO:
-
-- Consultor senior en mejora continua, Lean, Six Sigma, TOC y BPM.
-- Especialista en rediseño operativo aplicado a la industria del proceso.
-- Analista crítico de buenas prácticas operativas y tecnológicas.
-- Consultor capaz de adaptar prácticas de otras industrias cuando sean lógicas y aplicables.
-
-OBJETIVO B5:
-Convertir los hallazgos de B1, B2, B3 y B4 en propuestas de mejora específicas, accionables y defendibles.
-
-B5 NO debe analizar desde cero.
-B5 debe usar los resultados anteriores como fuente de verdad.
-
-FUENTES OBLIGATORIAS:
-- previous_stage_results.B1.as_is.activities
-- previous_stage_results.B2.ava
-- previous_stage_results.B3.findings
-- previous_stage_results.B4.findings
-- brief
-- context.industry
-- context.activity
-- context.processType
-
-REGLAS CRÍTICAS:
-1. PROHIBIDO generar mejoras genéricas.
-No uses recomendaciones vagas como:
-- mejorar comunicación
-- optimizar el proceso
-- automatizar el proceso
-- capacitar al personal
-- hacer seguimiento
-
-Si una idea usa una de esas frases, debe explicar exactamente:
-- qué se implementa
-- en qué actividad aplica
-- cómo funciona
-- qué dato, documento, sistema, rol o control cambia
-- qué buena práctica la respalda
-
-2. TRAZABILIDAD OBLIGATORIA.
-Cada mejora debe vincularse con al menos:
-- una actividad real del AS IS
-- un problema, desperdicio, riesgo, restricción o causa probable de B2-B4
-
-2.1 COBERTURA MÍNIMA OBLIGATORIA.
-No agrupes hallazgos distintos en una sola mejora salvo que compartan la misma causa raíz y exactamente el mismo mecanismo de solución.
-Si B3+B4 contienen más de 8 hallazgos relevantes, genera al menos 6 mejoras.
-Si existen hallazgos sobre cotizaciones, ERP/visibilidad, SLA/especificaciones, sobrecarga, catálogo, aprobación, material no conforme o urgencias, cada tema debe tener su propia mejora.
-Una salida de solo 1 o 2 mejoras es inválida cuando hay múltiples hallazgos.
-
-3. ADAPTACIÓN A INDUSTRIA.
-Cada mejora debe indicar una referencia práctica:
-- buena práctica de la misma industria, o
-- práctica de otra industria adaptada al caso.
-Ejemplos válidos: portales RFQ de retail adaptados a compras industriales; kanban de manufactura aplicado a abastecimiento; workflow aprobatorio de banca adaptado a compras; tracking logístico de e-commerce adaptado a OC.
-
-4. MECANISMO DE SOLUCIÓN.
-No basta con decir qué hacer. Explica cómo se ejecuta.
-
-5. CLASIFICACIÓN CONSULTIVA.
-Clasifica cada mejora como:
-- quick_win
-- gradual
-- strategic
-- automation
-- control
-- redesign
-
-6. PRIORIZACIÓN.
-Incluye impacto, esfuerzo y prioridad argumentada.
-
-ESTRUCTURA OBLIGATORIA DE CADA MEJORA:
-{
-  "id": "",
-  "title": "",
-  "type": "quick_win|gradual|strategic|automation|control|redesign",
-  "applies_to_activity": "",
-  "linked_finding": "",
-  "problem": "",
-  "root_cause": "",
-  "solution": "",
-  "how_it_works": "",
-  "industry_reference": "",
-  "adaptation_logic": "",
-  "expected_impact": "",
-  "impact_level": "low|medium|high",
-  "effort_level": "low|medium|high",
-  "priority_score": "",
-  "implementation_steps": [],
-  "required_roles": [],
-  "required_systems_or_documents": [],
-  "risks": [],
-  "success_indicators": [],
-  "status": "pending"
+    MEJORAS: {
+      label: 'Mejoras propuestas',
+      promptKey: 'prompt_analysis_MEJORAS',
+      stageCode: 'lmp_analysis_MEJORAS',
+      instruction: readPrompt('prompt_analysis_MEJORAS')
+    }
+  };
 }
-
-SALIDA JSON ESTRICTA:
-{
-  "quickWins": [],
-  "improvements": []
-}
-
-VALIDACIÓN FINAL:
-Antes de responder, verifica:
-- ¿Cada mejora está ligada a una actividad real?
-- ¿Cada mejora tiene hallazgo asociado?
-- ¿Cada mejora explica cómo se implementa?
-- ¿Cada mejora está adaptada al contexto/industria?
-- ¿El output alimenta directamente TO BE?
-- Debes proponer entre 6 y 12 mejoras.
-- 1 hallazgo relevante debe generar mínimo 1 mejora trazable, salvo que esté duplicado.
-- No agrupes problemas distintos en una sola mejora.
-
-Si alguna respuesta es NO, corrige antes de responder.`;
-
-  const fallbackB6 = `ACTÚA COMO builder contractual final LMP → SIPOC Builder.
-
-OBJETIVO B6:
-Construir el bloque sipoc_input usando el AS IS validado y los datos SIPOC disponibles.
-
-REGLAS:
-- Devuelve SOLO sipoc_input.
-- No incluyas análisis, métricas ni mejoras.
-- previous y next deben ser arrays.
-- activities debe conservar todas las actividades AS IS.
-
-SALIDA JSON ESTRICTA:
-{
-  "sipoc_input": {
-    "process_code": "",
-    "process_name": "",
-    "purpose": "",
-    "start_event": "",
-    "end_event": "",
-    "notes": "",
-    "suppliers": [],
-    "inputs": [],
-    "outputs": [],
-    "customers": [],
-    "actors": [],
-    "documents": [],
-    "activities": []
-  }
-}`;
-
-return {
-  VA:{
-    label:'Análisis de valor agregado',
-    stageCode:'lmp_analysis_VA',
-    instruction:p('prompt_analysis_VA', fallbackB2)
-  },
-  QUICK_WINS:{
-    label:'Análisis de quick wins',
-    stageCode:'lmp_analysis_QUICK_WINS',
-    instruction:p('prompt_analysis_QUICK_WINS', fallbackB3)
-  },
-  DESPERDICIOS:{
-    label:'Análisis de desperdicios',
-    stageCode:'lmp_analysis_DESPERDICIOS',
-    instruction:p('prompt_analysis_DESPERDICIOS', fallbackB3)
-  },
-  RESTRICCIONES:{
-    label:'Análisis de restricciones',
-    stageCode:'lmp_analysis_RESTRICCIONES',
-    instruction:p('prompt_analysis_RESTRICCIONES', fallbackB4)
-  },
-  PROBLEMAS:{
-    label:'Análisis de problemas',
-    stageCode:'lmp_analysis_PROBLEMAS',
-    instruction:p('prompt_analysis_PROBLEMAS', fallbackB3)
-  },
-  MEJORAS:{
-    label:'Mejoras propuestas',
-    stageCode:'lmp_analysis_MEJORAS',
-    instruction:p('prompt_analysis_MEJORAS', p('prompt_improvements', fallbackB5))
-  }
-};
-}
-
-
+  
 /* =========================================================
    SGMP LMP · FASE 3 OPTIMIZACIÓN DE TOKENS
    Objetivo: enviar a IA solo la evidencia necesaria por etapa.
@@ -18707,18 +18397,6 @@ function lmpResolveB1DeterministicIfValid(){
     return deterministic;
   }
   return null;
-}
-
-function sgmpBuildAnalysisStagePrompt(stageKey){
-  const defs = sgmpGetAnalysisStageDefinitions();
-  const def = defs[stageKey] || defs.B1;
-  const evidencePack = buildEvidencePackForStage(stageKey);
-  const stagePolicy = String(stageKey || '').toUpperCase() === 'B1'
-    ? '\n\nPOLÍTICA OBLIGATORIA B1:\n- B1 solo valida estructura AS IS.\n- B1 no genera AVA, mejoras, quick wins, TO BE, desperdicios, restricciones ni soluciones.\n- Usa deterministic_validation como baseline y conserva sus gaps, warnings, lifecycle y score.\n'
-    : '';
-  const prompt = `${def.instruction}${stagePolicy}\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n- No repitas el contexto completo en campos narrativos.\n- Limita arrays a los elementos de mayor valor operativo salvo que la etapa exija conservar todas las actividades.\n\nINSUMOS COMPACTADOS POR ETAPA:\n${JSON.stringify(evidencePack, null, 2)}`;
-  lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'cargaMsg');
-  return prompt;
 }
 
 function sgmpAssembleStagedAnalysisPayload(){
@@ -20142,28 +19820,99 @@ const ANALYSIS_STAGE_LABELS = {
     for(const c of candidates){ const cleaned = cleanActivities(c); if(cleaned.length >= 2) return cleaned; }
     return [];
   };
-  window.sgmpBuildAnalysisStagePrompt = function(stageKey){
-    const defs = (typeof sgmpGetAnalysisStageDefinitions === 'function') ? sgmpGetAnalysisStageDefinitions() : {};
-    const def = defs[stageKey] || defs.B1 || { instruction:'Responde JSON válido.', stageCode:'lmp_analysis' };
-    const evidencePack = (typeof buildEvidencePackForStage === 'function')
-      ? buildEvidencePackForStage(stageKey)
-      : { compactContext: state.compactContext || state.context || {}, current_stage: stageKey };
-    const stagePolicy = String(stageKey || '').toUpperCase() === 'B1'
-      ? '\n\nPOLÍTICA OBLIGATORIA B1:\n- B1 solo valida estructura AS IS.\n- B1 no genera AVA, mejoras, quick wins, TO BE, desperdicios, restricciones ni soluciones.\n- Usa deterministic_validation como baseline y conserva sus gaps, warnings, lifecycle y score.\n'
-      : '';
-    const prompt = def.instruction + stagePolicy + '\n\nREGLAS GLOBALES SGMP:\n- Responde SOLO JSON válido.\n- No uses markdown.\n- No inventes evidencia.\n- Si falta información, registra warnings o dataGaps.\n- Mantén nombres de campos exactamente como se solicita.\n- No repitas el contexto completo en campos narrativos.\n- Limita arrays a los elementos de mayor valor operativo salvo que la etapa exija conservar todas las actividades.\n\nINSUMOS COMPACTADOS POR ETAPA:\n' + JSON.stringify(evidencePack, null, 2);
-    if(typeof lmpWarnIfPromptTooLarge === 'function') lmpWarnIfPromptTooLarge(String(stageKey || 'B1').toUpperCase(), prompt, 'analysisMsg_' + stageKey);
-    return prompt;
-  };
+  
+window.sgmpBuildAnalysisStagePrompt = function(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
 
+  const definitions =
+    typeof sgmpGetAnalysisStageDefinitions === 'function'
+      ? sgmpGetAnalysisStageDefinitions()
+      : {};
 
-const ANALYSIS_PROMPT_KEY_BY_STAGE = {
-  VA: 'prompt_analysis_VA',
-  DESPERDICIOS: 'prompt_analysis_DESPERDICIOS',
-  PROBLEMAS: 'prompt_analysis_PROBLEMAS',
-  RESTRICCIONES: 'prompt_analysis_RESTRICCIONES',
-  QUICK_WINS: 'prompt_analysis_QUICK_WINS',
-  MEJORAS: 'prompt_analysis_MEJORAS'
+  const definition =
+    definitions[stage];
+
+  if(!definition){
+    throw new Error(
+      'La etapa "' +
+      stage +
+      '" no pertenece al flujo vigente del LMP.'
+    );
+  }
+
+  const promptKey = String(
+    definition.promptKey || ''
+  ).trim();
+
+  const instruction = String(
+    definition.instruction || ''
+  ).trim();
+
+  if(!promptKey){
+    throw new Error(
+      'La etapa "' +
+      stage +
+      '" no tiene promptKey configurado.'
+    );
+  }
+
+  if(!instruction){
+    throw new Error(
+      'No se encontró el prompt "' +
+      promptKey +
+      '" activo y con contenido en Google Sheets.'
+    );
+  }
+
+  if(typeof buildEvidencePackForStage !== 'function'){
+    throw new Error(
+      'No está disponible el constructor del paquete de evidencia.'
+    );
+  }
+
+  const evidencePack =
+    buildEvidencePackForStage(stage);
+
+  if(
+    !evidencePack ||
+    typeof evidencePack !== 'object' ||
+    Array.isArray(evidencePack)
+  ){
+    throw new Error(
+      'No fue posible construir el paquete de evidencia para ' +
+      stage +
+      '.'
+    );
+  }
+
+  /*
+   * El conocimiento metodológico y las reglas pertenecen
+   * exclusivamente al prompt almacenado en Sheets.
+   *
+   * El frontend solo agrega los datos reales del proceso.
+   */
+  const prompt =
+    instruction +
+    '\n\nPAQUETE DE EVIDENCIA DEL PROCESO:\n' +
+    JSON.stringify(
+      evidencePack,
+      null,
+      2
+    );
+
+  if(
+    typeof lmpWarnIfPromptTooLarge === 'function'
+  ){
+    lmpWarnIfPromptTooLarge(
+      stage,
+      prompt,
+      'analysisMsg_' + stage
+    );
+  }
+
+  return prompt;
 };
 
 function analysisStageResultExists(stageKey){
@@ -20217,40 +19966,33 @@ function getLoadedAnalysisPrompt(stageKey){
     .trim()
     .toUpperCase();
 
-  const primaryKey =
+  const promptKey =
     ANALYSIS_PROMPT_KEY_BY_STAGE[stage];
 
-  if(
-    primaryKey &&
-    SGMP_PROMPTS?.[primaryKey] &&
-    String(SGMP_PROMPTS[primaryKey]).trim()
-  ){
-    return {
-      promptKey: primaryKey,
-      promptText: String(
-        SGMP_PROMPTS[primaryKey]
-      ).trim()
-    };
+  if(!promptKey){
+    return null;
   }
 
-  /*
-   * Respaldo permitido únicamente para Mejoras.
-   * Debe contener el mismo texto de prompt_analysis_MEJORAS.
-   */
-  if(
-    stage === 'MEJORAS' &&
-    SGMP_PROMPTS?.prompt_improvements &&
-    String(SGMP_PROMPTS.prompt_improvements).trim()
-  ){
-    return {
-      promptKey: 'prompt_improvements',
-      promptText: String(
-        SGMP_PROMPTS.prompt_improvements
-      ).trim()
-    };
+  const promptStore =
+    typeof SGMP_PROMPTS !== 'undefined' &&
+    SGMP_PROMPTS &&
+    typeof SGMP_PROMPTS === 'object'
+      ? SGMP_PROMPTS
+      : {};
+
+  const promptText =
+    typeof promptStore[promptKey] === 'string'
+      ? promptStore[promptKey].trim()
+      : '';
+
+  if(!promptText){
+    return null;
   }
 
-  return null;
+  return {
+    promptKey,
+    promptText
+  };
 }
 
 window.sgmpEnsureAnalysisStagePrompt = async function(stageKey){
