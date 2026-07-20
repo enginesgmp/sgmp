@@ -21419,7 +21419,6 @@ function lmpClearAnalysisPending_(stageKey){
   }
 }
 
-
 function lmpGetPathValue_(source, path){
   return String(path || '')
     .split('.')
@@ -21431,6 +21430,658 @@ function lmpGetPathValue_(source, path){
     }, source);
 }
 
+function lmpValidateVaStageContract_(parsed){
+  const allowedClassifications = [
+    'VA',
+    'NNVA',
+    'NVA',
+    ''
+  ];
+
+  const allowedActivityTypes = [
+    'OPERATION',
+    'PREPARATION',
+    'CONTROL',
+    'MOVEMENT',
+    'WAIT',
+    'ARCHIVE',
+    ''
+  ];
+
+  const allowedEvidenceSources = [
+    'activity',
+    'additional_information',
+    'actor',
+    'supplier_input',
+    'output_customer',
+    'document',
+    'system',
+    'control',
+    'process_context',
+    'flow_relation'
+  ];
+
+  if(
+    String(parsed.analysis_type || '').trim() !==
+    'value_added_analysis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "value_added_analysis".'
+    );
+  }
+
+  if(
+    String(parsed.methodology || '').trim() !==
+    'Lean_AVA'
+  ){
+    throw new Error(
+      'methodology debe ser "Lean_AVA".'
+    );
+  }
+
+  [
+    'warnings',
+    'dataGaps',
+    'validation.blockingGaps',
+    'validation.warnings'
+  ].forEach(function(path){
+    const value =
+      lmpGetPathValue_(
+        parsed,
+        path
+      );
+
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+  });
+
+  /*
+   * Recupera el AS-IS oficial actualmente validado.
+   */
+  const validatedAsIs =
+    lmpGetValidatedAsIsEvidence_();
+
+  const sourceSteps =
+    safeArray(
+      validatedAsIs.activities
+    );
+
+  const isDecision = function(activity){
+    const type =
+      typeof normalizePromptAType === 'function'
+        ? normalizePromptAType(
+            activity?.type
+          )
+        : String(
+            activity?.type || ''
+          )
+            .trim()
+            .toLowerCase();
+
+    return type === 'decision';
+  };
+
+  const eligibleActivities =
+    sourceSteps.filter(function(activity){
+      return !isDecision(activity);
+    });
+
+  const excludedDecisions =
+    sourceSteps.filter(isDecision);
+
+  /*
+   * Catálogo oficial de actividades ejecutables.
+   */
+  const sourceById =
+    new Map();
+
+  const decisionIds =
+    new Set(
+      excludedDecisions.map(function(activity){
+        return String(
+          activity?.id || ''
+        ).trim();
+      })
+    );
+
+  eligibleActivities.forEach(function(activity, index){
+    const id = String(
+      activity?.id || ''
+    ).trim();
+
+    if(!id){
+      throw new Error(
+        'La actividad ejecutable ' +
+        (index + 1) +
+        ' del AS-IS no tiene ID.'
+      );
+    }
+
+    if(sourceById.has(id)){
+      throw new Error(
+        'El AS-IS contiene el ID duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    sourceById.set(
+      id,
+      {
+        activity,
+
+        expectedSequence:
+          activity?.sequence ??
+          (index + 1)
+      }
+    );
+  });
+
+  const analysisItems =
+    safeArray(
+      parsed.ava?.activityAnalysis
+    );
+
+  const seenIds =
+    new Set();
+
+  const automaticBlockingGaps = [];
+
+  let vaCount = 0;
+  let nnvaCount = 0;
+  let nvaCount = 0;
+  let classifiedCount = 0;
+
+  analysisItems.forEach(function(item, index){
+    const id = String(
+      item?.id || ''
+    ).trim();
+
+    if(!id){
+      throw new Error(
+        'activityAnalysis[' +
+        index +
+        '].id es obligatorio.'
+      );
+    }
+
+    if(seenIds.has(id)){
+      throw new Error(
+        'El ID "' +
+        id +
+        '" está duplicado en activityAnalysis.'
+      );
+    }
+
+    seenIds.add(id);
+
+    if(decisionIds.has(id)){
+      throw new Error(
+        'La decisión "' +
+        id +
+        '" no puede incluirse en el análisis AVA.'
+      );
+    }
+
+    const sourceRecord =
+      sourceById.get(id);
+
+    if(!sourceRecord){
+      throw new Error(
+        'El ID "' +
+        id +
+        '" no corresponde a una actividad ejecutable del AS-IS.'
+      );
+    }
+
+    const sourceActivity =
+      sourceRecord.activity;
+
+    const expectedName = String(
+      sourceActivity?.name || ''
+    ).trim();
+
+    const expectedActor = String(
+      sourceActivity?.actor || ''
+    ).trim();
+
+    const receivedName = String(
+      item?.name || ''
+    ).trim();
+
+    const receivedActor = String(
+      item?.actor || ''
+    ).trim();
+
+    /*
+     * No permite que la IA modifique los datos oficiales
+     * provenientes del AS-IS.
+     */
+    if(receivedName !== expectedName){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" no conserva exactamente su nombre AS-IS.'
+      );
+    }
+
+    if(receivedActor !== expectedActor){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" no conserva exactamente su actor AS-IS.'
+      );
+    }
+
+    if(
+      String(item?.sequence ?? '').trim() !==
+      String(
+        sourceRecord.expectedSequence
+      ).trim()
+    ){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" no conserva su secuencia AS-IS.'
+      );
+    }
+
+    const classification = String(
+      item?.classification || ''
+    )
+      .trim()
+      .toUpperCase();
+
+    const activityType = String(
+      item?.activityType || ''
+    )
+      .trim()
+      .toUpperCase();
+
+    if(
+      !allowedClassifications.includes(
+        classification
+      )
+    ){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" contiene una clasificación AVA no permitida.'
+      );
+    }
+
+    if(
+      !allowedActivityTypes.includes(
+        activityType
+      )
+    ){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" contiene un tipo de actividad no permitido.'
+      );
+    }
+
+    /*
+     * VA únicamente puede ser una operación.
+     */
+    if(
+      classification === 'VA' &&
+      activityType &&
+      activityType !== 'OPERATION'
+    ){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" está clasificada como VA, por lo que su tipo debe ser OPERATION.'
+      );
+    }
+
+    const classificationJustification =
+      String(
+        item?.classificationJustification || ''
+      ).trim();
+
+    const typeJustification =
+      String(
+        item?.typeJustification || ''
+      ).trim();
+
+    if(!Array.isArray(item?.evidence)){
+      throw new Error(
+        'La evidencia de la actividad "' +
+        id +
+        '" debe ser un arreglo.'
+      );
+    }
+
+    const evidence =
+      item.evidence.map(function(
+        entry,
+        evidenceIndex
+      ){
+        if(
+          !entry ||
+          typeof entry !== 'object' ||
+          Array.isArray(entry)
+        ){
+          throw new Error(
+            'La evidencia ' +
+            (evidenceIndex + 1) +
+            ' de la actividad "' +
+            id +
+            '" no es válida.'
+          );
+        }
+
+        const source = String(
+          entry.source || ''
+        ).trim();
+
+        const reference = String(
+          entry.reference || ''
+        ).trim();
+
+        const detail = String(
+          entry.detail || ''
+        ).trim();
+
+        if(
+          source &&
+          !allowedEvidenceSources.includes(
+            source
+          )
+        ){
+          throw new Error(
+            'La evidencia ' +
+            (evidenceIndex + 1) +
+            ' de la actividad "' +
+            id +
+            '" utiliza una fuente no permitida.'
+          );
+        }
+
+        return {
+          source,
+          reference,
+          detail
+        };
+      });
+
+    const hasEvidence =
+      evidence.some(function(entry){
+        return !!entry.detail;
+      });
+
+    const validCombination =
+      classification !== 'VA' ||
+      activityType === 'OPERATION';
+
+    /*
+     * Una actividad incompleta no invalida todo el JSON.
+     * Se conserva para que pueda corregirse en la revisión.
+     */
+    const isComplete = !!(
+      classification &&
+      activityType &&
+      classificationJustification &&
+      typeJustification &&
+      hasEvidence &&
+      validCombination
+    );
+
+    if(isComplete){
+      classifiedCount += 1;
+
+      if(classification === 'VA'){
+        vaCount += 1;
+      }
+
+      if(classification === 'NNVA'){
+        nnvaCount += 1;
+      }
+
+      if(classification === 'NVA'){
+        nvaCount += 1;
+      }
+    }else{
+      automaticBlockingGaps.push(
+        'Actividad ' +
+        id +
+        ': completar clasificación, tipo, justificaciones y evidencia.'
+      );
+    }
+
+    /*
+     * Normalización controlada sin inventar información.
+     */
+    item.id = id;
+
+    item.sequence =
+      sourceRecord.expectedSequence;
+
+    item.name =
+      expectedName;
+
+    item.actor =
+      expectedActor;
+
+    item.classification =
+      classification;
+
+    item.activityType =
+      activityType;
+
+    item.classificationJustification =
+      classificationJustification;
+
+    item.typeJustification =
+      typeJustification;
+
+    item.evidence =
+      evidence;
+  });
+
+  /*
+   * Toda actividad ejecutable debe estar representada.
+   */
+  const missingIds =
+    eligibleActivities
+      .map(function(activity){
+        return String(
+          activity?.id || ''
+        ).trim();
+      })
+      .filter(function(id){
+        return !seenIds.has(id);
+      });
+
+  if(missingIds.length){
+    throw new Error(
+      'Faltan actividades ejecutables en activityAnalysis: ' +
+      missingIds.join(', ') +
+      '.'
+    );
+  }
+
+  if(
+    analysisItems.length !==
+    eligibleActivities.length
+  ){
+    throw new Error(
+      'activityAnalysis debe contener exactamente una entrada por cada actividad ejecutable.'
+    );
+  }
+
+  const round2 = function(value){
+    return Math.round(
+      (
+        Number(value) +
+        Number.EPSILON
+      ) * 100
+    ) / 100;
+  };
+
+  const eligibleTotal =
+    eligibleActivities.length;
+
+  const classifiedTotal =
+    vaCount +
+    nnvaCount +
+    nvaCount;
+
+  const vaPct =
+    classifiedTotal
+      ? round2(
+          vaCount /
+          classifiedTotal *
+          100
+        )
+      : 0;
+
+  const nnvaPct =
+    classifiedTotal
+      ? round2(
+          nnvaCount /
+          classifiedTotal *
+          100
+        )
+      : 0;
+
+  const nvaPct =
+    classifiedTotal
+      ? round2(
+          nvaCount /
+          classifiedTotal *
+          100
+        )
+      : 0;
+
+  const coveragePct =
+    eligibleTotal
+      ? round2(
+          classifiedCount /
+          eligibleTotal *
+          100
+        )
+      : 0;
+
+  /*
+   * Conserva brechas reportadas por la IA y agrega
+   * las brechas detectadas localmente.
+   */
+  const existingBlockingGaps =
+    safeArray(
+      parsed.validation.blockingGaps
+    )
+      .map(function(gap){
+        return typeof gap === 'string'
+          ? gap.trim()
+          : JSON.stringify(gap);
+      })
+      .filter(Boolean);
+
+  const blockingGaps =
+    Array.from(
+      new Set(
+        existingBlockingGaps.concat(
+          automaticBlockingGaps
+        )
+      )
+    );
+
+  const completeCoverage = !!(
+    eligibleTotal > 0 &&
+    analysisItems.length === eligibleTotal &&
+    classifiedCount === eligibleTotal &&
+    blockingGaps.length === 0
+  );
+
+  /*
+   * Los indicadores se recalculan localmente.
+   * No se confía en los conteos devueltos por la IA.
+   */
+  parsed.source_control =
+    Object.assign(
+      {},
+      parsed.source_control,
+      {
+        source_step_count:
+          sourceSteps.length,
+
+        eligible_activity_count:
+          eligibleTotal,
+
+        excluded_decision_count:
+          excludedDecisions.length,
+
+        analyzed_activity_count:
+          analysisItems.length,
+
+        classified_activity_count:
+          classifiedCount,
+
+        preserved_ids:
+          true,
+
+        preserved_names:
+          true,
+
+        preserved_order:
+          true,
+
+        complete_coverage:
+          completeCoverage
+      }
+    );
+
+  parsed.ava.distribution =
+    Object.assign(
+      {},
+      parsed.ava.distribution,
+      {
+        VA:
+          vaCount,
+
+        NNVA:
+          nnvaCount,
+
+        NVA:
+          nvaCount,
+
+        VA_pct:
+          vaPct,
+
+        NNVA_pct:
+          nnvaPct,
+
+        NVA_pct:
+          nvaPct,
+
+        eligible_total:
+          eligibleTotal,
+
+        classified_total:
+          classifiedTotal,
+
+        coverage_pct:
+          coveragePct
+      }
+    );
+
+  parsed.validation.blockingGaps =
+    blockingGaps;
+
+  parsed.validation.canProceed =
+    completeCoverage;
+
+  return parsed;
+}
 
 function lmpValidateAnalysisStageContract_(
   stageKey,
@@ -21678,6 +22329,12 @@ function lmpValidateAnalysisStageContract_(
   ).forEach(
     requireObjectArray
   );
+
+  if(stage === 'VA'){
+  lmpValidateVaStageContract_(
+    parsed
+  );
+}
 
   if(
     stage === 'RESTRICCIONES' &&
