@@ -6871,82 +6871,8 @@ function sgmpAuthAdmin(username, password, onOk, onErr) {
 /* =========================
    ESTADO CENTRAL DEL LMP
 ========================= */
-const state = {
-  metadata: {
-    module: 'LMP',
-    version: '1.0',
-    currentStage: 'inicio',
-    route: null,
-    lastSavedAt: null
-  },
-  context: {
-    company: '',
-    processName: '',
-    processCode: '',
-    owner: '',
-    analyst: '',
-    industry: '',
-    processType: '',
-    activity: '',
-    purpose: '',
-    globalIndicators: []
-  },
-  preInterview: null,
-  interview: null,
-  brief: null,
-  briefReview: { raw:null, approved:false },
-loads: {
-  pre: [],
-  interview: [],
-  interviewTranscript: [],
-  sipoc: [],
-  statusInterview: [],
-  brief: [],
-  docs: []
-},
-  
-master: null,
-
-promptAInput: null,
-promptAOutput: null,
-asIsProcess: null,
-asIsProcessApproved: false,
-
-asis: {
-  activities: [],
-  actors_catalog: [],
-  suppliers_inputs: [],
-  outputs_customers: [],
-  additional_information: []
-},
-
-analysis: null,
-
-analysisStages: {
-  current: 'VA',
-  results: {}
-},
-
-analysisRun: {
-  raw: null,
-  qa: false
-},
-  
-  sb_contract: null,
-  sbContractBuilder: { raw:null, approved:false, validation:null },
-  decision: {
-    route: null
-  },
-  tobe: {
-    improvements: []
-  },
-  results: {
-    sbJson: null,
-    executiveHtml: '',
-    technicalHtml: '',
-    implementationHtml: ''
-  }
-};
+const state =
+  lmpCreateImportBaseState_();
 
 /* =========================
    CONFIG BÁSICA
@@ -12788,83 +12714,284 @@ function deepMerge(target, source){
    DEEP RESET
 ========================= */
 function resetAll(){
-  const fresh = {
-    metadata:{module:'LMP',version:'1.0',currentStage:'inicio',route:null,lastSavedAt:null},
-    context:{company:'',processName:'',processCode:'',owner:'',analyst:'',industry:'',processType:'',activity:'',purpose:'',globalIndicators:[]},
-    preInterview:null,
-    interview:null,
-    brief:null,
-    briefReview:{raw:null,approved:false},
-    loads:{
-  pre:[],
-  interview:[],
-  interviewTranscript:[],
-  sipoc:[],
-  statusInterview:[],
-  docs:[]
-},
-master:null,
+  const freshState =
+    lmpCreateImportBaseState_();
 
-promptAInput:null,
-promptAOutput:null,
-asIsProcess:null,
-asIsProcessApproved:false,
+  /*
+   * Reconstruye el mismo objeto state para conservar todas las
+   * referencias existentes, pero con una estructura limpia.
+   */
+  Object.keys(state)
+    .forEach(function(key){
+      delete state[key];
+    });
 
-asis:{
-  activities:[],
-  actors_catalog:[],
-  suppliers_inputs:[],
-  outputs_customers:[],
-  additional_information:[]
-},
+  Object.assign(
+    state,
+    freshState
+  );
 
-analysis:null,
+  /*
+   * Limpieza general de controles.
+   */
+  qsa(
+    'input[type="text"], ' +
+    'input[type="date"], ' +
+    'input[type="number"], ' +
+    'textarea'
+  ).forEach(function(node){
+    node.value = '';
+  });
 
-analysisStages:{
-  current:'VA',
-  results:{}
-},
+  qsa(
+    'input[type="file"]'
+  ).forEach(function(node){
+    node.value = '';
+  });
 
-analysisRun:{
-  raw:null,
-  qa:false
-},
-    
-    sb_contract:null,
-    sbContractBuilder:{raw:null,approved:false,validation:null},
-    decision:{route:null},
-    tobe:{improvements:[]},
-    results:{sbJson:null,sbValidation:null,executiveHtml:'',technicalHtml:'',implementationHtml:''}
-  };
-  Object.keys(state).forEach(k => delete state[k]);
-  Object.assign(state, fresh);
+  qsa('select')
+    .forEach(function(node){
+      if(node.options.length){
+        node.selectedIndex = 0;
+      }
+    });
 
-  qsa('input[type="text"], input[type="date"], textarea').forEach(el => el.value = '');
-  qsa('input[type="file"]').forEach(el => el.value = '');
-  qsa('select').forEach(el => { if(el.options.length) el.selectedIndex = 0; });
-  qsa('.msg').forEach(clear => { clear.className = 'msg'; clear.textContent = ''; });
-  qsa('.route-card').forEach(c => c.classList.remove('active'));
+  qsa('.route-card')
+    .forEach(function(node){
+      node.classList.remove(
+        'active'
+      );
+    });
 
-  qs('improvementList').innerHTML = '';
-  qs('asisActivities').innerHTML = '';
+  qsa('.msg')
+    .forEach(function(node){
+      node.className = 'msg';
+      node.textContent = '';
+    });
 
-  addAsisActivity();
-  updateTopStatus();
-  if(typeof window.hydratePreparationFromState === 'function'){ window.hydratePreparationFromState(); }
+  /*
+   * Limpieza segura de contenedores HTML que todavía existen.
+   */
+  [
+    'improvementList',
+    'asisActivities',
+    'executiveDoc',
+    'technicalDoc',
+    'implementationView',
+    'resultsFutureFlowView',
+    'resultsDiffView',
+    'resultsBenefitsView',
+    'resultsDocsView'
+  ].forEach(function(id){
+    const node = qs(id);
 
-  ['prepContextPreview','masterPreview','sbJsonView','sbContractPreview','wasteBox','problemBox','qwrBox'].forEach(id => { const el = qs(id); if(el) el.textContent = ''; });
-  ['executiveDoc','technicalDoc','implementationView'].forEach(id => qs(id).innerHTML = '');
-  ['executiveText','technicalText','analysisEditor','masterEditor'].forEach(id => qs(id).value = '');
+    if(node){
+      node.innerHTML = '';
+    }
+  });
 
-  qs('avaKpi').textContent = '0%';
-  qs('nnvaKpi').textContent = '0%';
-  qs('nvaKpi').textContent = '0%';
-  qs('qwKpi').textContent = '0';
-  qs('resKpi').textContent = '0';
+  /*
+   * Limpieza segura de vistas de texto.
+   */
+  [
+    'prepContextPreview',
+    'promptAConsolidatedStatus',
+    'promptAResponsePreview',
+    'sbJsonView',
+    'executiveText',
+    'technicalText',
+    'masterEditor',
+    'briefPromptEditor',
+    'promptAResponseEditor'
+  ].forEach(function(id){
+    const node = qs(id);
 
-  showSection('inicio');
+    if(!node){
+      return;
+    }
+
+    if(
+      node.tagName === 'TEXTAREA' ||
+      node.tagName === 'INPUT'
+    ){
+      node.value = '';
+    }else{
+      node.textContent = '';
+    }
+  });
+
+  const consolidatedStatus =
+    qs('promptAConsolidatedStatus');
+
+  if(consolidatedStatus){
+    consolidatedStatus.textContent =
+      'Aún no se ha consolidado el Prompt A + insumos.';
+  }
+
+  const promptAPreview =
+    qs('promptAResponsePreview');
+
+  if(promptAPreview){
+    promptAPreview.textContent =
+      'Sin JSON generado.';
+
+    promptAPreview.classList.add(
+      'hidden'
+    );
+  }
+
+  /*
+   * Limpia las seis etapas oficiales.
+   */
+  LMP_OFFICIAL_ANALYSIS_STAGES_
+    .forEach(function(stage){
+      [
+        'analysisPrompt_',
+        'analysisResponse_',
+        'analysisResult_'
+      ].forEach(function(prefix){
+        const node =
+          qs(prefix + stage);
+
+        if(node){
+          node.value = '';
+        }
+      });
+
+      const preview =
+        qs(
+          'analysisAccumPreview_' +
+          stage
+        );
+
+      if(preview){
+        preview.textContent = '';
+      }
+
+      const message =
+        qs(
+          'analysisMsg_' +
+          stage
+        );
+
+      if(message){
+        message.className = 'msg';
+        message.textContent = '';
+      }
+    });
+
+  /*
+   * Restablece la validación de Prompt A.
+   */
+  if(
+    typeof resetPromptAValidationState ===
+    'function'
+  ){
+    resetPromptAValidationState(
+      'Aún no se ha validado el JSON.'
+    );
+  }
+
+  /*
+   * Actualiza las vistas de carga.
+   */
+  if(
+    typeof updateLoadKpis ===
+    'function'
+  ){
+    updateLoadKpis();
+  }
+
+  if(
+    typeof refreshLoadViews ===
+    'function'
+  ){
+    refreshLoadViews();
+  }
+
+  if(
+    typeof updateCargaInputsByRoute ===
+    'function'
+  ){
+    updateCargaInputsByRoute();
+  }
+
+  /*
+   * Mantiene el comportamiento actual del constructor:
+   * iniciar con una actividad editable vacía.
+   */
+  if(
+    typeof addAsisActivity ===
+    'function'
+  ){
+    addAsisActivity();
+
+  }else if(
+    typeof renderAsIsActivities ===
+    'function'
+  ){
+    renderAsIsActivities();
+  }
+
+  if(
+    typeof renderAnalysisFromState ===
+    'function'
+  ){
+    renderAnalysisFromState();
+  }
+
+  if(
+    typeof renderImprovements ===
+    'function'
+  ){
+    renderImprovements();
+  }
+
+  if(
+    typeof renderIndicatorsChips ===
+    'function'
+  ){
+    renderIndicatorsChips();
+  }
+
+  if(
+    typeof window.hydratePreparationFromState ===
+    'function'
+  ){
+    window.hydratePreparationFromState();
+  }
+
+  if(
+    typeof window.updatePreparationArtifactsByRoute ===
+    'function'
+  ){
+    window.updatePreparationArtifactsByRoute();
+  }
+
+  if(
+    typeof updateTopStatus ===
+    'function'
+  ){
+    updateTopStatus();
+  }
+
+  /*
+   * addAsisActivity puede generar un mensaje interno.
+   * El reinicio debe terminar sin mensajes residuales.
+   */
+  qsa('.msg')
+    .forEach(function(node){
+      node.className = 'msg';
+      node.textContent = '';
+    });
+
+  if(
+    typeof showSection ===
+    'function'
+  ){
+    showSection('inicio');
+  }
 }
-
 /* =========================
    RESULTADOS AUXILIARES
 ========================= */
