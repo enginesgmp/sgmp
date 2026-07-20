@@ -18251,96 +18251,249 @@ function lmpGetBestActivitiesForStage_(stageKey){
 }
 
 function buildEvidencePackForStage(stageKey){
-  stageKey = String(stageKey || 'B1').toUpperCase();
-  const compact = state.compactContext || saveCompactContextFromBrief() || buildCompactContextFromBrief();
-  const activities = lmpGetBestActivitiesForStage_(stageKey);
-  const b1 = lmpGetStageResult_('B1');
-  const asIsForAnalysis = {
-  activities,
-  suppliers_inputs: safeArray(state.asis?.suppliers_inputs || state.asIsProcess?.as_is_process?.suppliers_inputs),
-  outputs_customers: safeArray(state.asis?.outputs_customers || state.asIsProcess?.as_is_process?.outputs_customers),
-  additional_information: safeArray(state.asis?.additional_information || state.asIsProcess?.as_is_process?.additional_information),
-  source: 'proceso_as_is_editado_guardado'
-};
-  const b2 = lmpGetStageResult_('VA');
-  const b3 = lmpGetStageResult_('QUICK_WINS');
-  const b4 = lmpGetStageResult_('DESPERDICIOS');
-  const b5 = lmpGetStageResult_('RESTRICCIONES');
-  const b6 = lmpGetStageResult_('PROBLEMAS');
+  const requestedStage = String(stageKey || 'VA').trim().toUpperCase();
 
-  const deterministicValidation = stageKey === 'B1' && typeof lmpStructuralValidator === 'function'
-    ? lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: activities }))
-    : null;
+  const stageAliases = {
+    B2: 'VA',
+    B3: 'DESPERDICIOS',
+    B4: 'RESTRICCIONES',
+    B5: 'MEJORAS'
+  };
 
-  const packs = {
-    B1: {
-      current_stage: 'B1',
-      compactContext: compact,
-      source_activity_count: activities.length,
-      source_activities: activities,
-      informationGaps: compact.informationGaps || [],
-      deterministic_validation: deterministicValidation,
-      rules: {
-        preserve_activity_granularity: true,
-        b1_no_ava_no_improvements_no_to_be: true,
-        return_only_valid_json: true
-      }
-    },
-    B2: {
-      current_stage: 'B2',
-      compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
-      source_activity_count: activities.length,
-      source_activities: activities,
-      rules: { analyze_ava_only: true, return_only_valid_json: true }
-    },
-    B3: {
-      current_stage: 'B3',
-      compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
-      ava_result: lmpStageCompactObject_(b2, 4, 25),
-      source_activities: activities,
-      rules: { identify_wastes_problems_and_root_hypotheses: true, return_only_valid_json: true }
-    },
-    B4: {
-      current_stage: 'B4',
-      compactContext: compact,
-      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 40),
-      ava_result: lmpStageCompactObject_(b2, 3, 20),
-      problems_and_wastes: lmpStageCompactObject_(b3, 4, 25),
-      suspectedConstraints: compact.suspectedConstraints || [],
-      rules: { identify_constraints_not_generic_bottlenecks: true, return_only_valid_json: true }
-    },
-    B5: {
-      current_stage: 'B5',
-      compactContext: compact,
-      validated_as_is_summary: lmpStageCompactObject_(asIsForAnalysis, 4, 30),
-      ava_result: lmpStageCompactObject_(b2, 3, 20),
-      problems_and_wastes: lmpStageCompactObject_(b3, 3, 25),
-      restrictions: lmpStageCompactObject_(b4, 4, 25),
-      rules: { propose_prioritized_improvements_only: true, max_items_per_array: 10, return_only_valid_json: true }
-    },
-    B6: {
-      current_stage: 'B6',
-      compactContext: {
-        context: compact.context,
-        purpose: compact.purpose,
-        scope: compact.scope,
-        startEvent: compact.startEvent,
-        endEvent: compact.endEvent,
-        actors: compact.actors,
-        documents: compact.documents,
-        systems: compact.systems,
-        sipoc: compact.sipoc
-      },
-      validated_as_is: lmpStageCompactObject_(asIsForAnalysis, 5, 50),
-      improvements_summary: lmpStageCompactObject_(b5?.improvements || b5?.quickWins || [], 3, 12),
-      existing_contract: lmpStageCompactObject_(b6?.sb_contract || state?.sb_contract || {}, 4, 20),
-      rules: { build_lmp_to_sb_contract_only: true, return_only_valid_json: true }
+  const stage = stageAliases[requestedStage] || requestedStage;
+
+  const promptAInput =
+    state.promptAInput ||
+    (
+      typeof buildPromptAInputPayload === 'function'
+        ? buildPromptAInputPayload()
+        : {}
+    );
+
+  const promptAOutput = state.asIsProcess || {};
+  const promptAProcess = promptAOutput.as_is_process || {};
+
+  const activities = lmpGetBestActivitiesForStage_(stage);
+
+  const processContext = Object.assign(
+    {},
+    promptAInput.context || {},
+    state.context || {}
+  );
+
+  const validatedAsIs = {
+    source_route:
+      promptAProcess.source_route ||
+      promptAInput.source_route ||
+      state.metadata?.route ||
+      '',
+
+    context: processContext,
+
+    actors_catalog: safeArray(
+      state.asis?.actors_catalog ||
+      promptAProcess.actors_catalog ||
+      promptAProcess.actors
+    ),
+
+    suppliers_inputs: safeArray(
+      state.asis?.suppliers_inputs ||
+      promptAProcess.suppliers_inputs
+    ),
+
+    outputs_customers: safeArray(
+      state.asis?.outputs_customers ||
+      promptAProcess.outputs_customers
+    ),
+
+    additional_information: safeArray(
+      state.asis?.additional_information ||
+      promptAProcess.additional_information
+    ),
+
+    activities,
+
+    validation_state: {
+      source: 'proceso_as_is_editado_guardado',
+      activity_count: activities.length,
+      has_actors: safeArray(
+        state.asis?.actors_catalog ||
+        promptAProcess.actors_catalog ||
+        promptAProcess.actors
+      ).length > 0,
+
+      has_suppliers_inputs: safeArray(
+        state.asis?.suppliers_inputs ||
+        promptAProcess.suppliers_inputs
+      ).length > 0,
+
+      has_outputs_customers: safeArray(
+        state.asis?.outputs_customers ||
+        promptAProcess.outputs_customers
+      ).length > 0,
+
+      has_additional_information: safeArray(
+        state.asis?.additional_information ||
+        promptAProcess.additional_information
+      ).length > 0
     }
   };
 
-  return packs[stageKey] || { current_stage: stageKey, compactContext: compact };
+  const avaResult = lmpGetStageResult_('VA');
+  const wastesResult = lmpGetStageResult_('DESPERDICIOS');
+  const problemsResult = lmpGetStageResult_('PROBLEMAS');
+  const restrictionsResult = lmpGetStageResult_('RESTRICCIONES');
+  const quickWinsResult = lmpGetStageResult_('QUICK_WINS');
+
+  const previousStageResults = {
+    VA: {},
+
+    DESPERDICIOS: {
+      VA: avaResult
+    },
+
+    PROBLEMAS: {
+      VA: avaResult,
+      DESPERDICIOS: wastesResult
+    },
+
+    RESTRICCIONES: {
+      VA: avaResult,
+      DESPERDICIOS: wastesResult,
+      PROBLEMAS: problemsResult
+    },
+
+    QUICK_WINS: {
+      VA: avaResult,
+      DESPERDICIOS: wastesResult,
+      PROBLEMAS: problemsResult,
+      RESTRICCIONES: restrictionsResult
+    },
+
+    MEJORAS: {
+      VA: avaResult,
+      DESPERDICIOS: wastesResult,
+      PROBLEMAS: problemsResult,
+      RESTRICCIONES: restrictionsResult,
+      QUICK_WINS: quickWinsResult
+    }
+  };
+
+  const stageRules = {
+    VA: {
+      analyze_only_ava: true,
+      classify_every_activity: true,
+      allowed_classifications: ['VA', 'NNVA', 'NVA'],
+      do_not_generate_wastes: true,
+      do_not_generate_problems: true,
+      do_not_generate_restrictions: true,
+      do_not_generate_improvements: true
+    },
+
+    DESPERDICIOS: {
+      analyze_only_wastes: true,
+      use_ava_result: true,
+      link_each_waste_to_real_activity: true,
+      do_not_generate_problems_as_final_output: true,
+      do_not_generate_restrictions: true,
+      do_not_generate_improvements: true
+    },
+
+    PROBLEMAS: {
+      analyze_only_problems: true,
+      use_ava_and_wastes: true,
+      link_each_problem_to_activity_and_evidence: true,
+      separate_problem_from_cause: true,
+      do_not_generate_restrictions_as_final_output: true,
+      do_not_generate_improvements: true
+    },
+
+    RESTRICCIONES: {
+      analyze_only_restrictions: true,
+      use_ava_wastes_and_problems: true,
+      distinguish_restriction_from_problem: true,
+      link_each_restriction_to_flow_impact: true,
+      do_not_generate_improvements: true
+    },
+
+    QUICK_WINS: {
+      analyze_only_quick_wins: true,
+      use_all_previous_diagnostics: true,
+      require_low_effort_and_fast_execution: true,
+      link_each_quick_win_to_existing_finding: true,
+      do_not_generate_strategic_improvements: true
+    },
+
+    MEJORAS: {
+      analyze_only_improvements: true,
+      use_all_previous_stage_results: true,
+      require_traceability_to_activity_and_finding: true,
+      separate_quick_wins_from_larger_improvements: true,
+      prepare_information_for_to_be: true
+    }
+  };
+
+  if(requestedStage === 'B1'){
+    const deterministicValidation =
+      typeof lmpStructuralValidator === 'function'
+        ? lmpStructuralValidator(
+            lmpBuildB1StructuralInput({
+              source_activities: activities
+            })
+          )
+        : null;
+
+    return {
+      current_stage: 'B1',
+      process_context: processContext,
+      prompt_a_input: promptAInput,
+      prompt_a_output: promptAOutput,
+      validated_as_is: validatedAsIs,
+      deterministic_validation: deterministicValidation,
+      rules: {
+        preserve_activity_granularity: true,
+        validate_structure_only: true,
+        return_only_valid_json: true,
+        do_not_invent_information: true
+      }
+    };
+  }
+
+  return {
+    current_stage: stage,
+
+    flow_order: [
+      'VA',
+      'DESPERDICIOS',
+      'PROBLEMAS',
+      'RESTRICCIONES',
+      'QUICK_WINS',
+      'MEJORAS'
+    ],
+
+    process_context: processContext,
+
+    prompt_a_input: promptAInput,
+
+    prompt_a_output: promptAOutput,
+
+    validated_as_is: validatedAsIs,
+
+    previous_stage_results:
+      previousStageResults[stage] || {},
+
+    rules: Object.assign(
+      {
+        use_all_available_process_information: true,
+        preserve_additional_information: true,
+        preserve_activity_names_and_ids: true,
+        preserve_traceability: true,
+        do_not_invent_information: true,
+        return_only_valid_json: true
+      },
+      stageRules[stage] || {}
+    )
+  };
 }
 
 function lmpEstimatePromptTokens(prompt){
