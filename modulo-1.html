@@ -20229,78 +20229,691 @@ state.analysisStages.current = stageKey;
     }catch(error){ console.error('[LMP ' + stageKey + '] Error:', error); if(typeof showMsg === 'function') showMsg(msgId,'err','No se pudo ejecutar la API para ' + stageKey + '. Puedes pegar una respuesta manual. Detalle: ' + error.message); }
     finally{ if(typeof hideLoader === 'function') hideLoader(); }
   };
-  window.processAnalysisScreenStage = function(stageKey){
-    const msgId = 'analysisMsg_' + stageKey;
-    const responseBox = el('analysisResponse_' + stageKey);
-    const raw = responseBox ? responseBox.value.trim() : '';
-    if(!raw){ if(typeof showMsg === 'function') showMsg(msgId,'warn','No hay respuesta para procesar.'); return; }
-    try{
-      let parsed = (typeof extractJsonFromText === 'function') ? extractJsonFromText(raw) : JSON.parse(raw);
-      if(stageKey === 'B1' && typeof lmpStructuralValidator === 'function' && typeof lmpConsolidateB1WithAi === 'function'){
-        const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput(parsed));
-        parsed = lmpConsolidateB1WithAi(deterministic, parsed);
-      }
-      state.analysisStages = state.analysisStages || { current:'VA', results:{} };
-state.analysisStages.current = stageKey;
-state.analysisStages.results[stageKey] = parsed;
-      const resultBox = el('analysisResult_' + stageKey); if(resultBox) resultBox.value = JSON.stringify(parsed, null, 2);
-      if(stageKey === 'B1'){
-        const acts = (typeof lmpNormalizeStructuralActivities === 'function')
-          ? lmpNormalizeStructuralActivities(parsed?.as_is?.activities || parsed?.activities)
-          : cleanActivities(parsed?.as_is?.activities || parsed?.activities);
-        if(acts.length){ state.asis = state.asis || {}; state.asis.activities = acts; if(typeof renderAsIsActivities === 'function') renderAsIsActivities(); }
-      }
-      const assembled = window.sgmpAssembleStagedAnalysisPayload ? window.sgmpAssembleStagedAnalysisPayload() : {};
-      const normalized = (typeof normalizeAnalysisPayload === 'function') ? normalizeAnalysisPayload(assembled) : assembled;
-      const enriched = (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel(normalized) : normalized;
-      state.analysis = enriched;
-      if(stageKey === 'MEJORAS'){
-        const improvements = arr(enriched.improvements).map(x => (typeof normalizeImprovement === 'function' ? normalizeImprovement(x) : x));
-        state.tobe = state.tobe || {}; state.tobe.improvements = improvements; if(typeof renderImprovements === 'function') renderImprovements();
-      }
-      if(stageKey === 'PROBLEMAS'){
-        const sipocInput = parsed?.sipoc_input || parsed?.sb_contract?.sipoc_input || enriched?.sb_contract?.sipoc_input;
-        if(sipocInput){ state.sb_contract = { sipoc_input: sipocInput }; state.sbContractBuilder = state.sbContractBuilder || {}; state.sbContractBuilder.raw = { sipoc_input: sipocInput }; state.sbContractBuilder.approved = true; }
-      }
-      window.renderAnalysisScreenAccumulated(stageKey);
-      if(typeof renderAnalysisFromState === 'function') renderAnalysisFromState();
-      if(typeof updateTopStatus === 'function') updateTopStatus();
-      if(typeof showMsg === 'function') showMsg(msgId,'ok','Respuesta ' + stageKey + ' procesada correctamente.');
-    }catch(error){ console.error('[LMP process ' + stageKey + '] Error:', error); if(typeof showMsg === 'function') showMsg(msgId,'err','No fue posible procesar ' + stageKey + '. Detalle: ' + error.message); }
-  };
-  window.sgmpAssembleStagedAnalysisPayload = function(){
-    const results = state.analysisStages?.results || {}, b1 = results.B1 || {}, b2 = results.B2 || {}, b3 = results.B3 || {}, b4 = results.B4 || {}, b5 = results.B5 || {}, b6 = results.B6 || {};
-    const completedStages = Object.keys(results).filter(key => results[key]);
-    let activities = completedStages.length === 1 && completedStages[0] === 'B1' && typeof lmpNormalizeStructuralActivities === 'function'
-      ? lmpNormalizeStructuralActivities(b1.as_is?.activities || window.sgmpGetBestAnalysisSourceActivities())
-      : cleanActivities(b2.as_is?.activities || b1.as_is?.activities || window.sgmpGetBestAnalysisSourceActivities());
-    if(completedStages.length === 1 && completedStages[0] === 'B1'){
-      return {
-        contract: b1.contract || 'LMP_B1_STRUCTURAL_VALIDATION',
-        contract_version: b1.contract_version || '1.0.0',
-        stage: 'B1',
-        analysis_type: b1.analysis_type || 'lmp_b1_structural_validation',
-        method: b1.method || 'deterministic_validator_plus_contextual_ai',
-        lifecycle: b1.lifecycle || b1.validation?.lifecycle || '',
-        operational_state: b1.operational_state || {},
-        completeness: b1.completeness || b1.validation?.completeness || {},
-        context: state.context || state.master?.context || {},
-        as_is: { activities },
-        as_is_process: b1.as_is_process || {},
-        sipoc: b1.sipoc || {},
-        validation: b1.validation || {},
-        contextual_enrichment: b1.contextual_enrichment || {},
-        traceability: b1.traceability || {},
-        structural_validation: b1.structural_validation || null
-      };
+
+  
+window.processAnalysisScreenStage = function(stageKey){
+  const stage = String(stageKey || '').trim().toUpperCase();
+  const msgId = 'analysisMsg_' + stage;
+  const responseBox = el('analysisResponse_' + stage);
+
+  const allowedStages = [
+    'B1',
+    'VA',
+    'DESPERDICIOS',
+    'PROBLEMAS',
+    'RESTRICCIONES',
+    'QUICK_WINS',
+    'MEJORAS'
+  ];
+
+  if(!allowedStages.includes(stage)){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'err',
+        'La etapa indicada no es válida: ' + stage
+      );
     }
-    const avaItems = arr(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
-    if(avaItems.length && activities.length){
-      activities = activities.map(a => { const hit = avaItems.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase()); return hit ? Object.assign({}, a, { ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification || a.ava, ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason }) : a; });
+    return;
+  }
+
+  const raw = responseBox
+    ? responseBox.value.trim()
+    : '';
+
+  if(!raw){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'warn',
+        'No hay una respuesta JSON para procesar.'
+      );
     }
-    const mergedFindings = Object.assign({}, b3.findings || {}, b4.findings || {});
-    return (typeof sgmpEnrichAnalysisModel === 'function') ? sgmpEnrichAnalysisModel({ context: state.context || state.master?.context || {}, as_is: { activities }, ava: b2.ava || {}, findings: mergedFindings, quickWins: b5.quickWins || b5.quick_wins || [], improvements: b5.improvements || [], sb_contract: b6.sipoc_input ? { sipoc_input: b6.sipoc_input } : (b6.sb_contract || {}) }) : { as_is:{ activities }, findings: mergedFindings, improvements:b5.improvements || [] };
+    return;
+  }
+
+  try{
+    let parsed = typeof extractJsonFromText === 'function'
+      ? extractJsonFromText(raw)
+      : JSON.parse(raw);
+
+    if(
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ){
+      throw new Error(
+        'La respuesta procesada no contiene un objeto JSON válido.'
+      );
+    }
+
+    /*
+     * Evita procesar accidentalmente la respuesta de una etapa
+     * dentro de otra pantalla.
+     */
+    const declaredStage = String(
+      parsed.stage || ''
+    ).trim().toUpperCase();
+
+    if(
+      declaredStage &&
+      declaredStage !== stage
+    ){
+      throw new Error(
+        'El JSON corresponde a la etapa ' +
+        declaredStage +
+        ', pero se está procesando desde ' +
+        stage +
+        '.'
+      );
+    }
+
+    /*
+     * Compatibilidad temporal con respaldos antiguos que todavía
+     * contengan la etapa estructural B1.
+     */
+    if(
+      stage === 'B1' &&
+      typeof lmpStructuralValidator === 'function' &&
+      typeof lmpConsolidateB1WithAi === 'function'
+    ){
+      const deterministic = lmpStructuralValidator(
+        lmpBuildB1StructuralInput(parsed)
+      );
+
+      parsed = lmpConsolidateB1WithAi(
+        deterministic,
+        parsed
+      );
+    }
+
+    state.analysisStages =
+      state.analysisStages &&
+      typeof state.analysisStages === 'object'
+        ? state.analysisStages
+        : {};
+
+    state.analysisStages.results =
+      state.analysisStages.results &&
+      typeof state.analysisStages.results === 'object'
+        ? state.analysisStages.results
+        : {};
+
+    state.analysisStages.current = stage;
+    state.analysisStages.results[stage] = parsed;
+
+    const resultBox = el(
+      'analysisResult_' + stage
+    );
+
+    if(resultBox){
+      resultBox.value = JSON.stringify(
+        parsed,
+        null,
+        2
+      );
+    }
+
+    /*
+     * B1 se mantiene solamente para compatibilidad con respaldos
+     * anteriores. No forma parte de las seis etapas vigentes.
+     */
+    if(stage === 'B1'){
+      const structuralActivities =
+        typeof lmpNormalizeStructuralActivities === 'function'
+          ? lmpNormalizeStructuralActivities(
+              parsed?.as_is?.activities ||
+              parsed?.activities
+            )
+          : cleanActivities(
+              parsed?.as_is?.activities ||
+              parsed?.activities
+            );
+
+      if(structuralActivities.length){
+        state.asis = state.asis || {};
+        state.asis.activities = structuralActivities;
+
+        if(typeof renderAsIsActivities === 'function'){
+          renderAsIsActivities();
+        }
+      }
+    }
+
+    const assembled =
+      typeof window.sgmpAssembleStagedAnalysisPayload === 'function'
+        ? window.sgmpAssembleStagedAnalysisPayload()
+        : {};
+
+    /*
+     * Después de VA se conservan las clasificaciones dentro de las
+     * actividades AS-IS sin alterar nombres, IDs ni secuencia.
+     */
+    if(
+      stage === 'VA' &&
+      Array.isArray(assembled?.as_is?.activities) &&
+      assembled.as_is.activities.length
+    ){
+      state.asis = state.asis || {};
+
+      state.asis.activities =
+        assembled.as_is.activities.map(function(activity){
+          return Object.assign({}, activity);
+        });
+
+      if(typeof renderAsIsActivities === 'function'){
+        renderAsIsActivities();
+      }
+    }
+
+    /*
+     * No se usa sgmpEnrichAnalysisModel porque pertenece al modelo
+     * B1-B6 anterior y genera hallazgos o mejoras artificiales.
+     */
+    state.analysis = assembled;
+
+    /*
+     * Solo la etapa MEJORAS alimenta las propuestas editables TO-BE.
+     */
+    if(stage === 'MEJORAS'){
+      const improvements = arr(
+        parsed.improvements ||
+        assembled.improvements
+      ).map(function(item){
+        return typeof normalizeImprovement === 'function'
+          ? normalizeImprovement(item)
+          : item;
+      });
+
+      assembled.improvements = improvements;
+      state.analysis = assembled;
+
+      state.tobe = state.tobe || {};
+      state.tobe.improvements = improvements;
+
+      if(typeof renderImprovements === 'function'){
+        renderImprovements();
+      }
+    }
+
+    if(
+      typeof window.renderAnalysisScreenAccumulated === 'function'
+    ){
+      window.renderAnalysisScreenAccumulated(stage);
+    }
+
+    if(typeof renderAnalysisFromState === 'function'){
+      renderAnalysisFromState();
+    }
+
+    if(typeof updateTopStatus === 'function'){
+      updateTopStatus();
+    }
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'ok',
+        'Respuesta de ' +
+        stage +
+        ' procesada y guardada correctamente.'
+      );
+    }
+
+  }catch(error){
+    console.error(
+      '[LMP process ' + stage + '] Error:',
+      error
+    );
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'err',
+        'No fue posible procesar ' +
+        stage +
+        '. Detalle: ' +
+        error.message
+      );
+    }
+  }
+};
+
+
+window.sgmpAssembleStagedAnalysisPayload = function(){
+  const results =
+    state.analysisStages?.results &&
+    typeof state.analysisStages.results === 'object'
+      ? state.analysisStages.results
+      : {};
+
+  const currentStage = String(
+    state.analysisStages?.current || ''
+  ).trim().toUpperCase();
+
+  const b1 = results.B1 || {};
+
+  const vaStage = results.VA || {};
+  const wasteStage = results.DESPERDICIOS || {};
+  const problemStage = results.PROBLEMAS || {};
+  const restrictionStage = results.RESTRICCIONES || {};
+  const quickWinStage = results.QUICK_WINS || {};
+  const improvementStage = results.MEJORAS || {};
+
+  const completedStages = Object.keys(results).filter(function(key){
+    return (
+      results[key] &&
+      typeof results[key] === 'object'
+    );
+  });
+
+  const cloneList = function(value){
+    return arr(value).map(function(item){
+      if(
+        item &&
+        typeof item === 'object' &&
+        !Array.isArray(item)
+      ){
+        return Object.assign({}, item);
+      }
+
+      return item;
+    });
   };
+
+  /*
+   * Compatibilidad exclusiva con respaldos que solo contienen B1.
+   */
+  if(
+    completedStages.length === 1 &&
+    completedStages[0] === 'B1'
+  ){
+    const structuralActivities =
+      typeof lmpNormalizeStructuralActivities === 'function'
+        ? lmpNormalizeStructuralActivities(
+            b1.as_is?.activities ||
+            window.sgmpGetBestAnalysisSourceActivities()
+          )
+        : cleanActivities(
+            b1.as_is?.activities ||
+            window.sgmpGetBestAnalysisSourceActivities()
+          );
+
+    return {
+      contract:
+        b1.contract ||
+        'LMP_B1_STRUCTURAL_VALIDATION',
+
+      contract_version:
+        b1.contract_version ||
+        '1.0.0',
+
+      stage: 'B1',
+
+      analysis_type:
+        b1.analysis_type ||
+        'lmp_b1_structural_validation',
+
+      method:
+        b1.method ||
+        'deterministic_validator_plus_contextual_ai',
+
+      lifecycle:
+        b1.lifecycle ||
+        b1.validation?.lifecycle ||
+        '',
+
+      operational_state:
+        b1.operational_state ||
+        {},
+
+      completeness:
+        b1.completeness ||
+        b1.validation?.completeness ||
+        {},
+
+      context:
+        state.context ||
+        state.master?.context ||
+        {},
+
+      as_is: {
+        activities: structuralActivities
+      },
+
+      as_is_process:
+        b1.as_is_process ||
+        {},
+
+      sipoc:
+        b1.sipoc ||
+        {},
+
+      validation:
+        b1.validation ||
+        {},
+
+      contextual_enrichment:
+        b1.contextual_enrichment ||
+        {},
+
+      traceability:
+        b1.traceability ||
+        {},
+
+      structural_validation:
+        b1.structural_validation ||
+        null
+    };
+  }
+
+  /*
+   * El AS-IS validado es la fuente estructural principal.
+   */
+  let activities = cleanActivities(
+    state.asis?.activities ||
+    window.sgmpGetBestAnalysisSourceActivities()
+  );
+
+  /*
+   * Integra el resultado VA dentro de cada actividad sin modificar
+   * nombre, ID, actor, tipo ni secuencia.
+   */
+  const avaItems = cloneList(
+    vaStage.ava?.activityAnalysis ||
+    vaStage.activityAnalysis
+  );
+
+  if(
+    avaItems.length &&
+    activities.length
+  ){
+    activities = activities.map(function(activity){
+      const activityId = String(
+        activity?.id || ''
+      ).trim();
+
+      const activityName = String(
+        activity?.name || ''
+      ).trim().toLowerCase();
+
+      const hit = avaItems.find(function(item){
+        const itemId = String(
+          item?.id ||
+          item?.activity_id ||
+          ''
+        ).trim();
+
+        const itemName = String(
+          item?.name ||
+          item?.activity ||
+          ''
+        ).trim().toLowerCase();
+
+        if(
+          activityId &&
+          itemId &&
+          activityId === itemId
+        ){
+          return true;
+        }
+
+        return (
+          activityName &&
+          itemName &&
+          activityName === itemName
+        );
+      });
+
+      if(!hit){
+        return Object.assign({}, activity);
+      }
+
+      const classification = String(
+        hit.classification ||
+        hit.ava_classification ||
+        hit.avaClassification ||
+        hit.ava ||
+        ''
+      ).trim().toUpperCase();
+
+      return Object.assign(
+        {},
+        activity,
+        {
+          ava:
+            classification ||
+            activity.ava ||
+            '',
+
+          ava_classification:
+            classification ||
+            activity.ava_classification ||
+            activity.ava ||
+            '',
+
+          ava_reason:
+            hit.justification ||
+            hit.reason ||
+            activity.ava_reason ||
+            '',
+
+          ava_evidence:
+            cloneList(hit.evidence),
+
+          ava_confidence:
+            hit.confidence ||
+            '',
+
+          ava_requires_validation:
+            hit.requires_validation === true,
+
+          ava_validation_question:
+            hit.validation_question ||
+            ''
+        }
+      );
+    });
+  }
+
+  /*
+   * Cada etapa conserva su contrato estructurado.
+   * No se convierten los objetos en textos.
+   */
+  const wastes = cloneList(
+    wasteStage.wastes ||
+    wasteStage.findings?.wastes
+  );
+
+  const problems = cloneList(
+    problemStage.problems ||
+    problemStage.findings?.problems
+  );
+
+  const restrictions = cloneList(
+    restrictionStage.restrictions ||
+    restrictionStage.findings?.restrictions
+  );
+
+  const bottlenecks = cloneList(
+    restrictionStage.bottlenecks ||
+    restrictionStage.findings?.bottlenecks
+  );
+
+  const quickWins = cloneList(
+    quickWinStage.quickWins ||
+    quickWinStage.quick_wins ||
+    quickWinStage.findings?.quickWins
+  );
+
+  const improvements = cloneList(
+    improvementStage.improvements ||
+    improvementStage.mejoras
+  );
+
+  const stageOrder = [
+    'VA',
+    'DESPERDICIOS',
+    'PROBLEMAS',
+    'RESTRICCIONES',
+    'QUICK_WINS',
+    'MEJORAS'
+  ];
+
+  const collectStageArray = function(fieldName){
+    const output = [];
+
+    stageOrder.forEach(function(stageName){
+      cloneList(
+        results[stageName]?.[fieldName]
+      ).forEach(function(item){
+        output.push(item);
+      });
+    });
+
+    return output;
+  };
+
+  const stageValidations = {};
+  const stageSourceControl = {};
+  const stageSummaries = {};
+
+  stageOrder.forEach(function(stageName){
+    const stageResult = results[stageName];
+
+    if(!stageResult){
+      return;
+    }
+
+    stageValidations[stageName] =
+      stageResult.validation ||
+      {};
+
+    stageSourceControl[stageName] =
+      stageResult.source_control ||
+      {};
+
+    stageSummaries[stageName] =
+      stageResult.summary ||
+      {};
+  });
+
+  return {
+    stage:
+      currentStage ||
+      '',
+
+    analysis_type:
+      'lmp_staged_process_analysis',
+
+    methodology:
+      'Lean_SixSigma_TOC_BPM',
+
+    context:
+      state.context ||
+      state.master?.context ||
+      {},
+
+    as_is: {
+      activities,
+
+      actors_catalog: cloneList(
+        state.asis?.actors_catalog
+      ),
+
+      suppliers_inputs: cloneList(
+        state.asis?.suppliers_inputs
+      ),
+
+      outputs_customers: cloneList(
+        state.asis?.outputs_customers
+      ),
+
+      additional_information: cloneList(
+        state.asis?.additional_information
+      )
+    },
+
+    ava:
+      vaStage.ava ||
+      {},
+
+    findings: {
+      wastes,
+      problems,
+      restrictions,
+      bottlenecks,
+      quickWins,
+
+      primaryConstraint:
+        restrictionStage.primaryConstraint ||
+        null
+    },
+
+    /*
+     * Se mantienen también en nivel superior para compatibilidad
+     * con las pantallas existentes del LMP.
+     */
+    wastes,
+    problems,
+    restrictions,
+    bottlenecks,
+    quickWins,
+    improvements,
+
+    primaryConstraint:
+      restrictionStage.primaryConstraint ||
+      null,
+
+    quickWinOutOfScope: cloneList(
+      quickWinStage.outOfScope
+    ),
+
+    findingCoverage: cloneList(
+      improvementStage.findingCoverage
+    ),
+
+    strategicProjects: cloneList(
+      improvementStage.strategicProjects
+    ),
+
+    rejectedIdeas: cloneList(
+      improvementStage.rejectedIdeas
+    ),
+
+    stage_summaries:
+      stageSummaries,
+
+    stage_source_control:
+      stageSourceControl,
+
+    stage_validations:
+      stageValidations,
+
+    warnings:
+      collectStageArray('warnings'),
+
+    dataGaps:
+      collectStageArray('dataGaps'),
+
+    analysis_stages: {
+      VA: vaStage,
+      DESPERDICIOS: wasteStage,
+      PROBLEMAS: problemStage,
+      RESTRICCIONES: restrictionStage,
+      QUICK_WINS: quickWinStage,
+      MEJORAS: improvementStage
+    },
+
+    completed_stages:
+      stageOrder.filter(function(stageName){
+        return !!results[stageName];
+      })
+  };
+};
+
+
+  
   window.renderAnalysisScreenAccumulated = function(stageKey){
     const assembled = window.sgmpAssembleStagedAnalysisPayload();
     const acts = arr(assembled?.as_is?.activities), findings = assembled?.findings || {}, improvements = arr(assembled?.improvements);
