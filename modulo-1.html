@@ -6208,36 +6208,182 @@ var SGMP_STAGE_CONFIG = {};
 window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
 var SGMP_LOADED  = false;
-  try {
-  sessionStorage.removeItem('sgmp_p_LMP');
-} catch(e) {}
 
 function sgmpLoadPrompts(moduleCode, onReady) {
-  var cacheKey = 'sgmp_p_' + moduleCode;
-  try {
-    var cached = sessionStorage.getItem(cacheKey);
-    if (cached) {
-      var arr = JSON.parse(cached);
-      arr.forEach(function(p) { sgmpRegisterPrompt(p); });
-      SGMP_LOADED = true;
-      onReady();
-      return;
-    }
-  } catch(e) {}
+  const normalizedModule = String(moduleCode || 'LMP').trim() || 'LMP';
+  const cacheKey = 'sgmp_p_' + normalizedModule;
+  const cacheTimeKey = cacheKey + '_ts';
+  const cacheMaxAgeMs = 10 * 60 * 1000;
+  const requestTimeoutMs = 15000;
 
-  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-      if (res.ok && res.data && res.data.length) {
-        res.data.forEach(function(p) { sgmpRegisterPrompt(p); });
-        try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
+  let readyExecuted = false;
+  let cachedRows = [];
+
+  function executeReadyOnce() {
+    if (readyExecuted) return;
+    readyExecuted = true;
+
+    try {
+      const result = typeof onReady === 'function' ? onReady() : null;
+
+      if (result && typeof result.catch === 'function') {
+        result.catch(function(error) {
+          console.warn(
+            '[SGMP] Error posterior a la carga inicial de prompts:',
+            error
+          );
+        });
       }
-      SGMP_LOADED = true;
-      onReady();
+    } catch (error) {
+      console.warn(
+        '[SGMP] Error ejecutando callback inicial de prompts:',
+        error
+      );
+    }
+  }
+
+  try {
+    const cachedText = sessionStorage.getItem(cacheKey);
+
+    if (cachedText) {
+      const parsedCache = JSON.parse(cachedText);
+
+      cachedRows = Array.isArray(parsedCache)
+        ? parsedCache
+        : [];
+
+      cachedRows.forEach(function(promptRow) {
+        sgmpRegisterPrompt(promptRow);
+      });
+    }
+  } catch (error) {
+    console.warn('[SGMP] No fue posible leer el caché de prompts.', error);
+    cachedRows = [];
+  }
+
+  if (cachedRows.length) {
+    SGMP_LOADED = true;
+  }
+
+  /*
+   * La interfaz continúa inmediatamente.
+   * La sincronización con Sheets se ejecuta después y no bloquea el módulo.
+   */
+  executeReadyOnce();
+
+  let cacheIsFresh = false;
+
+  try {
+    const lastSync = Number(
+      sessionStorage.getItem(cacheTimeKey) || 0
+    );
+
+    cacheIsFresh =
+      cachedRows.length > 0 &&
+      lastSync > 0 &&
+      Date.now() - lastSync < cacheMaxAgeMs;
+  } catch (error) {
+    cacheIsFresh = false;
+  }
+
+  if (cacheIsFresh) {
+    return;
+  }
+
+  const controller =
+    typeof AbortController === 'function'
+      ? new AbortController()
+      : null;
+
+  const timeoutId = setTimeout(function() {
+    if (controller) controller.abort();
+  }, requestTimeoutMs);
+
+  const url =
+    SGMP_API +
+    '?action=get_prompts&module_code=' +
+    encodeURIComponent(normalizedModule);
+
+  fetch(
+    url,
+    controller ? { signal: controller.signal } : undefined
+  )
+    .then(function(response) {
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
+
+      return response.json();
     })
-    .catch(function() {
+    .then(function(result) {
+      const rows =
+        result &&
+        result.ok !== false &&
+        Array.isArray(result.data)
+          ? result.data
+          : [];
+
+      if (!rows.length) {
+        throw new Error(
+          'La API no devolvió prompts activos para ' +
+          normalizedModule +
+          '.'
+        );
+      }
+
+      rows.forEach(function(promptRow) {
+        sgmpRegisterPrompt(promptRow);
+      });
+
       SGMP_LOADED = true;
-      onReady(); // continúa con prompts vacíos — módulo funciona igual
+
+      try {
+        sessionStorage.setItem(
+          cacheKey,
+          JSON.stringify(rows)
+        );
+
+        sessionStorage.setItem(
+          cacheTimeKey,
+          String(Date.now())
+        );
+      } catch (error) {
+        console.warn(
+          '[SGMP] Los prompts fueron cargados, pero no se guardaron en caché.',
+          error
+        );
+      }
+
+      if (typeof fillFixedDocPrompts === 'function') {
+        fillFixedDocPrompts(true);
+      }
+
+      console.info(
+        '[SGMP] Prompts sincronizados:',
+        rows.length
+      );
+    })
+    .catch(function(error) {
+      if (error && error.name === 'AbortError') {
+        console.warn(
+          '[SGMP] La carga de prompts superó ' +
+          requestTimeoutMs +
+          ' ms. El módulo continuará con caché o fallbacks.'
+        );
+      } else {
+        console.warn(
+          '[SGMP] No fue posible actualizar los prompts. El módulo continuará con caché o fallbacks.',
+          error
+        );
+      }
+
+      /*
+       * Se marca como finalizada para evitar estados de espera indefinidos.
+       */
+      SGMP_LOADED = true;
+    })
+    .finally(function() {
+      clearTimeout(timeoutId);
     });
 }
 
