@@ -16023,9 +16023,22 @@ const issues = safeArray(
   validatePromptAAsIsProcess(normalized)
 );
 
-    state.asIsProcess = normalized;
-    state.brief = normalized;
-    state.briefReview = {
+/*
+ * Conserva una copia independiente del resultado original
+ * validado de Prompt A.
+ *
+ * state.asIsProcess podrá cambiar posteriormente cuando el
+ * usuario edite y guarde el AS-IS.
+ */
+state.promptAOutput =
+  JSON.parse(
+    JSON.stringify(normalized)
+  );
+
+state.asIsProcess = normalized;
+state.brief = normalized;
+
+state.briefReview = {
       raw: normalized,
       approved: true,
       type: 'as_is_process',
@@ -16106,9 +16119,23 @@ const issues = safeArray(
   validatePromptAAsIsProcess(normalized)
 );
     
-    state.asIsProcess = normalized;
-    state.brief = normalized;
-    state.asIsProcessApproved = true;
+/*
+ * Solo registra el resultado original cuando todavía no existe.
+ * Las posteriores ediciones del AS-IS no deben sobrescribirlo.
+ */
+if(
+  !state.promptAOutput ||
+  !state.promptAOutput.as_is_process
+){
+  state.promptAOutput =
+    JSON.parse(
+      JSON.stringify(normalized)
+    );
+}
+
+state.asIsProcess = normalized;
+state.brief = normalized;
+state.asIsProcessApproved = true;
     state.briefReview = {
       raw: normalized,
       approved: true,
@@ -18291,8 +18318,21 @@ function buildEvidencePackForStage(stageKey){
         : {}
     );
 
-  const promptAOutput = state.asIsProcess || {};
-  const promptAProcess = promptAOutput.as_is_process || {};
+const promptAOutput =
+  state.promptAOutput;
+
+if(
+  !promptAOutput ||
+  !promptAOutput.as_is_process
+){
+  throw new Error(
+    'No existe el resultado original validado de Prompt A. ' +
+    'Vuelve a validar el JSON de Prompt A antes de ejecutar los análisis.'
+  );
+}
+
+const promptAProcess =
+  promptAOutput.as_is_process;
 
   const activities = lmpGetBestActivitiesForStage_(stage);
 
