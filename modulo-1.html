@@ -6894,7 +6894,6 @@ const state = {
   preInterview: null,
   interview: null,
   brief: null,
-  compactContext: null,
   briefReview: { raw:null, approved:false },
 loads: {
   pre: [],
@@ -18175,388 +18174,340 @@ function sgmpGetAnalysisStageDefinitions(){
     }
   };
 }
-  
+
 /* =========================================================
-   SGMP LMP · FASE 3 OPTIMIZACIÓN DE TOKENS
-   Objetivo: enviar a IA solo la evidencia necesaria por etapa.
-   No cambia la UI ni la lógica de prompts; compacta el payload.
+   SGMP LMP · EVIDENCIA ÍNTEGRA PARA ANÁLISIS
+   La metodología pertenece exclusivamente a los prompts de Sheets.
+   El frontend solo consolida datos reales y resultados previos.
 ========================================================= */
-function lmpStageSafeArray_(value){
-  if (Array.isArray(value)) return value;
-  if (typeof safeArray === 'function') return safeArray(value);
-  if (value === undefined || value === null || value === '') return [];
-  return [value];
-}
 
-function lmpStageCompactObject_(obj, maxDepth, maxArrayItems){
-  maxDepth = maxDepth === undefined ? 4 : maxDepth;
-  maxArrayItems = maxArrayItems === undefined ? 20 : maxArrayItems;
-  const seen = new WeakSet();
+function lmpCloneJsonEvidence_(value, label){
+  const fieldLabel =
+    String(label || 'evidencia');
 
-  function clean(value, depth){
-    if(value === undefined || value === null) return value;
-    if(typeof value === 'string'){
-      const trimmed = value.trim();
-      return trimmed.length > 1800 ? trimmed.slice(0, 1800) + '...[TRUNCADO]' : trimmed;
-    }
-    if(typeof value !== 'object') return value;
-    if(seen.has(value)) return '[Circular]';
-    seen.add(value);
-    if(depth <= 0) return Array.isArray(value) ? '[Array compactado]' : '[Object compactado]';
-    if(Array.isArray(value)){
-      return value.slice(0, maxArrayItems).map(v => clean(v, depth - 1));
-    }
-    const out = {};
-    Object.keys(value).forEach(k => {
-      const v = value[k];
-      const emptyArray = Array.isArray(v) && !v.length;
-      const emptyObject = v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length;
-      if(v === undefined || v === null || v === '' || emptyArray || emptyObject) return;
-      out[k] = clean(v, depth - 1);
-    });
-    return out;
-  }
-
-  return clean(obj || {}, maxDepth);
-}
-
-function buildCompactContextFromBrief(briefPayload){
-  const raw = briefPayload || state?.briefReview?.raw || state?.brief || {};
-  const brief = (typeof normalizeBriefPayload === 'function') ? normalizeBriefPayload(raw) : raw;
-  const master = state?.master || (typeof mergeMaster === 'function' ? mergeMaster() : {});
-  const ctx = Object.assign({}, state?.context || {}, master?.context || {}, brief?.context || {});
-  const activities = lmpStageSafeArray_(
-    state?.asis?.activities?.length ? state.asis.activities :
-    brief?.as_is?.activities ||
-    brief?.activities_preliminary ||
-    brief?.flowSummary ||
-    (typeof sgmpGetStructuralSourceActivities === 'function' ? sgmpGetStructuralSourceActivities() : [])
-  );
-
-  return lmpStageCompactObject_({
-    context: {
-      company: ctx.company || '',
-      processName: ctx.processName || brief?.processName || '',
-      processCode: ctx.processCode || '',
-      owner: ctx.owner || '',
-      analyst: ctx.analyst || '',
-      industry: ctx.industry || '',
-      processType: ctx.processType || '',
-      activity: ctx.activity || '',
-      purpose: ctx.purpose || brief?.processPurpose || ''
-    },
-    purpose: ctx.purpose || brief?.processPurpose || '',
-    scope: brief?.scope || '',
-    startEvent: brief?.startEvent || '',
-    endEvent: brief?.endEvent || '',
-    actors: brief?.actors || brief?.sipoc?.actors || [],
-    documents: brief?.documents || [],
-    systems: brief?.systems || [],
-    sipoc: brief?.sipoc_preliminary || brief?.sipoc || master?.sipoc || {},
-    mainActivities: activities,
-    mainPainPoints: brief?.mainPainPoints || brief?.findings?.problems || [],
-    informationGaps: brief?.informationGaps || brief?.validation?.blockingGaps || [],
-    visibleRisks: brief?.visibleRisks || brief?.findings?.risks || [],
-    suspectedConstraints: brief?.suspectedConstraints || brief?.preliminaryRestrictions || [],
-    mentionedIndicators: brief?.mentionedIndicators || [],
-    globalIndicators: state?.context?.globalIndicators || []
-  }, 5, 30);
-}
-
-function saveCompactContextFromBrief(){
   try{
-    state.compactContext = buildCompactContextFromBrief(state.briefReview?.raw || state.brief || {});
-    state.metadata = state.metadata || {};
-    state.metadata.lastCompactContextAt = new Date().toISOString();
-    return state.compactContext;
-  }catch(err){
-    console.warn('[LMP Fase 3] No se pudo crear compactContext:', err);
-    return null;
-  }
-}
-
-function lmpGetStageResult_(stageKey){
-  const results = state?.analysisStages?.results || {};
-  return results[stageKey] || results[String(stageKey || '').toUpperCase()] || results[String(stageKey || '').toLowerCase()] || {};
-}
-
-function lmpGetBestActivitiesForStage_(stageKey){
-  const b1 = lmpGetStageResult_('B1');
-  const candidates = [
-    b1?.as_is?.activities,
-    b1?.as_is_process?.activities,
-    state?.asis?.activities,
-    state?.compactContext?.mainActivities,
-    state?.brief?.as_is?.activities,
-    state?.brief?.activities_preliminary,
-    typeof sgmpGetStructuralSourceActivities === 'function' ? sgmpGetStructuralSourceActivities() : []
-  ];
-  for(const c of candidates){
-    const cleaned = (typeof cleanActivities === 'function') ? cleanActivities(c) : lmpStageSafeArray_(c);
-    if(cleaned.length) return cleaned;
-  }
-  return [];
-}
-
-function buildEvidencePackForStage(stageKey){
-  const requestedStage = String(stageKey || 'VA').trim().toUpperCase();
-
-  const stageAliases = {
-    B2: 'VA',
-    B3: 'DESPERDICIOS',
-    B4: 'RESTRICCIONES',
-    B5: 'MEJORAS'
-  };
-
-  const stage = stageAliases[requestedStage] || requestedStage;
-
-  const promptAInput =
-    state.promptAInput ||
-    (
-      typeof buildPromptAInputPayload === 'function'
-        ? buildPromptAInputPayload()
-        : {}
+    const serialized = JSON.stringify(
+      value === undefined
+        ? null
+        : value
     );
 
-const promptAOutput =
-  state.promptAOutput;
+    if(serialized === undefined){
+      throw new Error(
+        'El valor no puede convertirse a JSON.'
+      );
+    }
 
-if(
-  !promptAOutput ||
-  !promptAOutput.as_is_process
-){
-  throw new Error(
-    'No existe el resultado original validado de Prompt A. ' +
-    'Vuelve a validar el JSON de Prompt A antes de ejecutar los análisis.'
+    return JSON.parse(serialized);
+
+  }catch(error){
+    throw new Error(
+      'No fue posible preparar "' +
+      fieldLabel +
+      '" como evidencia JSON. Detalle: ' +
+      error.message
+    );
+  }
+}
+
+
+function lmpGetOfficialAnalysisResult_(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const allowedStages = [
+    'VA',
+    'DESPERDICIOS',
+    'PROBLEMAS',
+    'RESTRICCIONES',
+    'QUICK_WINS',
+    'MEJORAS'
+  ];
+
+  if(!allowedStages.includes(stage)){
+    throw new Error(
+      'La etapa "' +
+      stage +
+      '" no pertenece al flujo oficial de análisis.'
+    );
+  }
+
+  const result =
+    state.analysisStages?.results?.[stage];
+
+  if(
+    !result ||
+    typeof result !== 'object' ||
+    Array.isArray(result)
+  ){
+    return null;
+  }
+
+  return lmpCloneJsonEvidence_(
+    result,
+    'resultado ' + stage
   );
 }
 
-const promptAProcess =
-  promptAOutput.as_is_process;
 
-  const activities = lmpGetBestActivitiesForStage_(stage);
+function lmpGetValidatedAsIsEvidence_(){
+  const currentContract =
+    state.asIsProcess?.as_is_process;
 
-  const processContext = Object.assign(
-    {},
-    promptAInput.context || {},
-    state.context || {}
+  if(
+    !currentContract ||
+    typeof currentContract !== 'object' ||
+    Array.isArray(currentContract)
+  ){
+    throw new Error(
+      'No existe un contrato AS-IS validado y guardado.'
+    );
+  }
+
+  const activities =
+    typeof cleanActivities === 'function'
+      ? cleanActivities(
+          safeArray(state.asis?.activities).length
+            ? state.asis.activities
+            : currentContract.activities
+        )
+      : safeArray(
+          safeArray(state.asis?.activities).length
+            ? state.asis.activities
+            : currentContract.activities
+        );
+
+  if(!activities.length){
+    throw new Error(
+      'El AS-IS validado no contiene actividades.'
+    );
+  }
+
+  const actorsCatalog = safeArray(
+    safeArray(state.asis?.actors_catalog).length
+      ? state.asis.actors_catalog
+      : (
+          currentContract.actors_catalog ||
+          currentContract.actors
+        )
   );
 
-  const validatedAsIs = {
+  const suppliersInputs = safeArray(
+    safeArray(state.asis?.suppliers_inputs).length
+      ? state.asis.suppliers_inputs
+      : currentContract.suppliers_inputs
+  );
+
+  const outputsCustomers = safeArray(
+    safeArray(state.asis?.outputs_customers).length
+      ? state.asis.outputs_customers
+      : currentContract.outputs_customers
+  );
+
+  const additionalInformation = safeArray(
+    safeArray(state.asis?.additional_information).length
+      ? state.asis.additional_information
+      : currentContract.additional_information
+  );
+
+  return {
     source_route:
-      promptAProcess.source_route ||
-      promptAInput.source_route ||
+      currentContract.source_route ||
       state.metadata?.route ||
       '',
 
-    context: processContext,
-
-    actors_catalog: safeArray(
-      state.asis?.actors_catalog ||
-      promptAProcess.actors_catalog ||
-      promptAProcess.actors
+    context: lmpCloneJsonEvidence_(
+      Object.assign(
+        {},
+        state.context || {},
+        currentContract.context || {}
+      ),
+      'contexto del AS-IS validado'
     ),
 
-    suppliers_inputs: safeArray(
-      state.asis?.suppliers_inputs ||
-      promptAProcess.suppliers_inputs
+    actors_catalog: lmpCloneJsonEvidence_(
+      actorsCatalog,
+      'catálogo de actores'
     ),
 
-    outputs_customers: safeArray(
-      state.asis?.outputs_customers ||
-      promptAProcess.outputs_customers
+    suppliers_inputs: lmpCloneJsonEvidence_(
+      suppliersInputs,
+      'proveedores y entradas'
     ),
 
-    additional_information: safeArray(
-      state.asis?.additional_information ||
-      promptAProcess.additional_information
+    outputs_customers: lmpCloneJsonEvidence_(
+      outputsCustomers,
+      'salidas y clientes'
     ),
 
-    activities,
+    additional_information: lmpCloneJsonEvidence_(
+      additionalInformation,
+      'información adicional'
+    ),
+
+    activities: lmpCloneJsonEvidence_(
+      activities,
+      'actividades AS-IS'
+    ),
 
     validation_state: {
-      source: 'proceso_as_is_editado_guardado',
-      activity_count: activities.length,
-      has_actors: safeArray(
-        state.asis?.actors_catalog ||
-        promptAProcess.actors_catalog ||
-        promptAProcess.actors
-      ).length > 0,
+      source:
+        'proceso_as_is_editado_guardado',
 
-      has_suppliers_inputs: safeArray(
-        state.asis?.suppliers_inputs ||
-        promptAProcess.suppliers_inputs
-      ).length > 0,
+      approved:
+        state.asIsProcessApproved === true,
 
-      has_outputs_customers: safeArray(
-        state.asis?.outputs_customers ||
-        promptAProcess.outputs_customers
-      ).length > 0,
+      activity_count:
+        activities.length,
 
-      has_additional_information: safeArray(
-        state.asis?.additional_information ||
-        promptAProcess.additional_information
-      ).length > 0
+      actor_count:
+        actorsCatalog.length,
+
+      supplier_input_count:
+        suppliersInputs.length,
+
+      output_customer_count:
+        outputsCustomers.length,
+
+      additional_information_count:
+        additionalInformation.length
     }
-  };
-
-  const avaResult = lmpGetStageResult_('VA');
-  const wastesResult = lmpGetStageResult_('DESPERDICIOS');
-  const problemsResult = lmpGetStageResult_('PROBLEMAS');
-  const restrictionsResult = lmpGetStageResult_('RESTRICCIONES');
-  const quickWinsResult = lmpGetStageResult_('QUICK_WINS');
-
-  const previousStageResults = {
-    VA: {},
-
-    DESPERDICIOS: {
-      VA: avaResult
-    },
-
-    PROBLEMAS: {
-      VA: avaResult,
-      DESPERDICIOS: wastesResult
-    },
-
-    RESTRICCIONES: {
-      VA: avaResult,
-      DESPERDICIOS: wastesResult,
-      PROBLEMAS: problemsResult
-    },
-
-    QUICK_WINS: {
-      VA: avaResult,
-      DESPERDICIOS: wastesResult,
-      PROBLEMAS: problemsResult,
-      RESTRICCIONES: restrictionsResult
-    },
-
-    MEJORAS: {
-      VA: avaResult,
-      DESPERDICIOS: wastesResult,
-      PROBLEMAS: problemsResult,
-      RESTRICCIONES: restrictionsResult,
-      QUICK_WINS: quickWinsResult
-    }
-  };
-
-  const stageRules = {
-    VA: {
-      analyze_only_ava: true,
-      classify_every_activity: true,
-      allowed_classifications: ['VA', 'NNVA', 'NVA'],
-      do_not_generate_wastes: true,
-      do_not_generate_problems: true,
-      do_not_generate_restrictions: true,
-      do_not_generate_improvements: true
-    },
-
-    DESPERDICIOS: {
-      analyze_only_wastes: true,
-      use_ava_result: true,
-      link_each_waste_to_real_activity: true,
-      do_not_generate_problems_as_final_output: true,
-      do_not_generate_restrictions: true,
-      do_not_generate_improvements: true
-    },
-
-    PROBLEMAS: {
-      analyze_only_problems: true,
-      use_ava_and_wastes: true,
-      link_each_problem_to_activity_and_evidence: true,
-      separate_problem_from_cause: true,
-      do_not_generate_restrictions_as_final_output: true,
-      do_not_generate_improvements: true
-    },
-
-    RESTRICCIONES: {
-      analyze_only_restrictions: true,
-      use_ava_wastes_and_problems: true,
-      distinguish_restriction_from_problem: true,
-      link_each_restriction_to_flow_impact: true,
-      do_not_generate_improvements: true
-    },
-
-    QUICK_WINS: {
-      analyze_only_quick_wins: true,
-      use_all_previous_diagnostics: true,
-      require_low_effort_and_fast_execution: true,
-      link_each_quick_win_to_existing_finding: true,
-      do_not_generate_strategic_improvements: true
-    },
-
-    MEJORAS: {
-      analyze_only_improvements: true,
-      use_all_previous_stage_results: true,
-      require_traceability_to_activity_and_finding: true,
-      separate_quick_wins_from_larger_improvements: true,
-      prepare_information_for_to_be: true
-    }
-  };
-
-  if(requestedStage === 'B1'){
-    const deterministicValidation =
-      typeof lmpStructuralValidator === 'function'
-        ? lmpStructuralValidator(
-            lmpBuildB1StructuralInput({
-              source_activities: activities
-            })
-          )
-        : null;
-
-    return {
-      current_stage: 'B1',
-      process_context: processContext,
-      prompt_a_input: promptAInput,
-      prompt_a_output: promptAOutput,
-      validated_as_is: validatedAsIs,
-      deterministic_validation: deterministicValidation,
-      rules: {
-        preserve_activity_granularity: true,
-        validate_structure_only: true,
-        return_only_valid_json: true,
-        do_not_invent_information: true
-      }
-    };
-  }
-
-  return {
-    current_stage: stage,
-
-    flow_order: [
-      'VA',
-      'DESPERDICIOS',
-      'PROBLEMAS',
-      'RESTRICCIONES',
-      'QUICK_WINS',
-      'MEJORAS'
-    ],
-
-    process_context: processContext,
-
-    prompt_a_input: promptAInput,
-
-    prompt_a_output: promptAOutput,
-
-    validated_as_is: validatedAsIs,
-
-    previous_stage_results:
-      previousStageResults[stage] || {},
-
-    rules: Object.assign(
-      {
-        use_all_available_process_information: true,
-        preserve_additional_information: true,
-        preserve_activity_names_and_ids: true,
-        preserve_traceability: true,
-        do_not_invent_information: true,
-        return_only_valid_json: true
-      },
-      stageRules[stage] || {}
-    )
   };
 }
 
+
+function buildEvidencePackForStage(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const stageSequence = [
+    'VA',
+    'DESPERDICIOS',
+    'PROBLEMAS',
+    'RESTRICCIONES',
+    'QUICK_WINS',
+    'MEJORAS'
+  ];
+
+  const stageIndex =
+    stageSequence.indexOf(stage);
+
+  if(stageIndex < 0){
+    throw new Error(
+      'La etapa "' +
+      stage +
+      '" no pertenece al flujo oficial del LMP.'
+    );
+  }
+
+  /*
+   * No reconstruye silenciosamente la entrada de Prompt A.
+   * Debe utilizar exactamente la entrada consolidada original.
+   */
+  if(
+    !state.promptAInput ||
+    typeof state.promptAInput !== 'object' ||
+    Array.isArray(state.promptAInput)
+  ){
+    throw new Error(
+      'No existe la entrada consolidada original de Prompt A.'
+    );
+  }
+
+  /*
+   * Debe utilizar exclusivamente la respuesta original validada
+   * de Prompt A, separada del AS-IS editado.
+   */
+  if(
+    !state.promptAOutput ||
+    !state.promptAOutput.as_is_process
+  ){
+    throw new Error(
+      'No existe el resultado original validado de Prompt A.'
+    );
+  }
+
+  const previousStageResults = {};
+
+  stageSequence
+    .slice(0, stageIndex)
+    .forEach(function(previousStage){
+      const previousResult =
+        lmpGetOfficialAnalysisResult_(
+          previousStage
+        );
+
+      if(!previousResult){
+        throw new Error(
+          'Falta el resultado procesado de la etapa anterior "' +
+          previousStage +
+          '".'
+        );
+      }
+
+      previousStageResults[previousStage] =
+        previousResult;
+    });
+
+  const validatedAsIs =
+    lmpGetValidatedAsIsEvidence_();
+
+  return {
+    contract:
+      'LMP_ANALYSIS_EVIDENCE_PACK',
+
+    contract_version:
+      '2.0.0',
+
+    current_stage:
+      stage,
+
+    flow_order:
+      stageSequence.slice(),
+
+    process_context:
+      lmpCloneJsonEvidence_(
+        Object.assign(
+          {},
+          state.promptAInput.context || {},
+          state.context || {}
+        ),
+        'contexto del proceso'
+      ),
+
+    prompt_a_input:
+      lmpCloneJsonEvidence_(
+        state.promptAInput,
+        'entrada original de Prompt A'
+      ),
+
+    prompt_a_output:
+      lmpCloneJsonEvidence_(
+        state.promptAOutput,
+        'resultado original de Prompt A'
+      ),
+
+    validated_as_is:
+      validatedAsIs,
+
+    previous_stage_results:
+      previousStageResults,
+
+    traceability: {
+      source_route:
+        validatedAsIs.source_route,
+
+      previous_stages_included:
+        Object.keys(previousStageResults),
+
+      generated_at:
+        new Date().toISOString()
+    }
+  };
+}
+  
 function lmpEstimatePromptTokens(prompt){
   return Math.ceil(String(prompt || '').length / 4);
 }
@@ -18580,74 +18531,11 @@ function lmpWarnIfPromptTooLarge(stageKey, prompt, msgId){
   const metrics = lmpRegisterPromptMetrics(stageKey, prompt, 'stage_prompt');
   const softLimit = 12000;
   if(metrics.estimatedTokens > softLimit){
-    const message = 'El prompt de ' + stageKey + ' está pesado: ' + metrics.estimatedTokens + ' tokens estimados. Se recomienda revisar compactación antes de enviar.';
+    const message =   'El prompt de ' +   stageKey +   ' contiene aproximadamente ' +   metrics.estimatedTokens +   ' tokens. Revise el límite configurado para la etapa antes de enviar.';
     if(typeof showMsg === 'function' && msgId) showMsg(msgId, 'warn', message);
     else console.warn(message);
   }
   return metrics;
-}
-
-function lmpResolveB1DeterministicIfValid(){
-  const activities = lmpGetBestActivitiesForStage_('B1');
-  if(!activities.length || typeof lmpStructuralValidator !== 'function') return null;
-  const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput({ source_activities: activities }));
-  const blocking = lmpStageSafeArray_(deterministic?.blockingIssues || deterministic?.validation?.critical_gaps || []);
-  if(deterministic && deterministic.valid === true && blocking.length === 0){
-    return deterministic;
-  }
-  return null;
-}
-
-function sgmpAssembleStagedAnalysisPayload(){
-  const results = state.analysisStages?.results || {};
-  const b1 = results.B1 || {};
-  const b2 = results.B2 || {};
-  const b3 = results.B3 || {};
-  const b4 = results.B4 || {};
-  const b5 = results.B5 || {};
-  const b6 = results.B6 || {};
-  let activities = safeArray(b2.as_is?.activities || b1.as_is?.activities || state.asis?.activities || state.briefReview?.raw?.as_is?.activities || state.briefReview?.raw?.activities_preliminary).map(a => ({...a}));
-  const completedStages = Object.keys(results).filter(key => results[key]);
-  if(completedStages.length === 1 && completedStages[0] === 'B1'){
-    return {
-      contract: b1.contract || window.LMP_B1_STRUCTURAL_CONTRACT.contract,
-      contract_version: b1.contract_version || window.LMP_B1_STRUCTURAL_CONTRACT.contract_version,
-      stage: 'B1',
-      analysis_type: b1.analysis_type || window.LMP_B1_STRUCTURAL_CONTRACT.analysis_type,
-      method: b1.method || window.LMP_B1_STRUCTURAL_CONTRACT.method,
-      lifecycle: b1.lifecycle || b1.validation?.lifecycle || '',
-      operational_state: b1.operational_state || {},
-      completeness: b1.completeness || b1.validation?.completeness || {},
-      context: state.context || state.master?.context || {},
-      as_is: { activities },
-      as_is_process: b1.as_is_process || {},
-      sipoc: b1.sipoc || {},
-      validation: b1.validation || {},
-      contextual_enrichment: b1.contextual_enrichment || {},
-      traceability: b1.traceability || {},
-      structural_validation: b1.structural_validation || null
-    };
-  }
-  const avaActivityAnalysis = safeArray(b2.ava?.activityAnalysis || b2.ava?.activities || b2.activityAnalysis);
-  if(avaActivityAnalysis.length && activities.length){
-    activities = activities.map(a => {
-      const hit = avaActivityAnalysis.find(x => String(x.id || '').trim() === String(a.id || '').trim() || String(x.name || '').trim().toLowerCase() === String(a.name || '').trim().toLowerCase());
-      return hit ? Object.assign({}, a, {
-        ava_classification: hit.ava_classification || hit.avaClassification || hit.ava || hit.classification || a.ava_classification,
-        ava_reason: hit.reason || hit.evidence || hit.justification || a.ava_reason
-      }) : a;
-    });
-  }
-  const mergedFindings = Object.assign({}, b3.findings || {}, b4.findings || {});
-  return sgmpEnrichAnalysisModel({
-    context: state.context || state.master?.context || {},
-    as_is: { activities },
-    ava: b2.ava || {},
-    findings: mergedFindings,
-    quickWins: b5.quickWins || b5.quick_wins || [],
-    improvements: b5.improvements || [],
-    sb_contract: b6.sipoc_input ? { sipoc_input: b6.sipoc_input } : (b6.sb_contract || {})
-  });
 }
 
 function getSbInputFromAnalysisPayload(parsed){
