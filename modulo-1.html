@@ -21082,6 +21082,406 @@ if(!loadedPrompt){
 };
 
 
+window.__LMP_ANALYSIS_PENDING__ =
+  window.__LMP_ANALYSIS_PENDING__ || Object.create(null);
+
+
+function lmpAnalysisStageName_(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  return typeof getAnalysisStageDisplayName === 'function'
+    ? getAnalysisStageDisplayName(stage)
+    : stage;
+}
+
+
+function lmpClearAnalysisPending_(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  delete window.__LMP_ANALYSIS_PENDING__[stage];
+
+  const button =
+    el('btnSaveAnalysisStage_' + stage);
+
+  if(button){
+    button.disabled = true;
+  }
+}
+
+
+function lmpGetPathValue_(source, path){
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce(function(current, key){
+      return current == null
+        ? undefined
+        : current[key];
+    }, source);
+}
+
+
+function lmpValidateAnalysisStageContract_(
+  stageKey,
+  rawText
+){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const raw =
+    String(rawText || '').trim();
+
+  if(!ANALYSIS_STAGE_SEQUENCE.includes(stage)){
+    throw new Error(
+      'La etapa indicada no pertenece al flujo vigente.'
+    );
+  }
+
+  if(!raw){
+    throw new Error(
+      'No existe una respuesta JSON para validar.'
+    );
+  }
+
+  const parsed =
+    typeof extractJsonFromText === 'function'
+      ? extractJsonFromText(raw)
+      : JSON.parse(raw);
+
+  if(
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed)
+  ){
+    throw new Error(
+      'La respuesta no contiene un objeto JSON válido.'
+    );
+  }
+
+  const declaredStage = String(
+    parsed.stage || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  if(!declaredStage){
+    throw new Error(
+      'El JSON no contiene el campo obligatorio "stage".'
+    );
+  }
+
+  if(declaredStage !== stage){
+    throw new Error(
+      'El JSON corresponde a la etapa ' +
+      declaredStage +
+      ', pero se está validando desde ' +
+      stage +
+      '.'
+    );
+  }
+
+  if(
+    typeof getMissingPreviousAnalysisStages ===
+    'function'
+  ){
+    const missingStages =
+      getMissingPreviousAnalysisStages(stage);
+
+    if(missingStages.length){
+      throw new Error(
+        'Primero debes guardar: ' +
+        missingStages
+          .map(lmpAnalysisStageName_)
+          .join(', ') +
+        '.'
+      );
+    }
+  }
+
+  const requireString = function(path){
+    const value =
+      lmpGetPathValue_(
+        parsed,
+        path
+      );
+
+    if(
+      typeof value !== 'string' ||
+      !value.trim()
+    ){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" es obligatorio.'
+      );
+    }
+  };
+
+  const requireObject = function(path){
+    const value =
+      lmpGetPathValue_(
+        parsed,
+        path
+      );
+
+    if(
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un objeto.'
+      );
+    }
+  };
+
+  const requireObjectArray = function(path){
+    const value =
+      lmpGetPathValue_(
+        parsed,
+        path
+      );
+
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+
+    value.forEach(function(item, index){
+      if(
+        !item ||
+        typeof item !== 'object' ||
+        Array.isArray(item)
+      ){
+        throw new Error(
+          'El elemento ' +
+          (index + 1) +
+          ' de "' +
+          path +
+          '" no es un objeto válido.'
+        );
+      }
+    });
+  };
+
+  /*
+   * Validación exclusivamente estructural.
+   * No evalúa pertinencia, calidad ni profundidad metodológica.
+   */
+  requireString(
+    'analysis_type'
+  );
+
+  requireObject(
+    'source_control'
+  );
+
+  requireObject(
+    'validation'
+  );
+
+  const structuralRules = {
+    VA: {
+      objects: [
+        'ava',
+        'ava.distribution'
+      ],
+
+      arrays: [
+        'ava.activityAnalysis'
+      ]
+    },
+
+    DESPERDICIOS: {
+      arrays: [
+        'wastes'
+      ]
+    },
+
+    PROBLEMAS: {
+      arrays: [
+        'problems'
+      ]
+    },
+
+    RESTRICCIONES: {
+      arrays: [
+        'restrictions',
+        'bottlenecks'
+      ]
+    },
+
+    QUICK_WINS: {
+      arrays: [
+        'quickWins',
+        'outOfScope'
+      ]
+    },
+
+    MEJORAS: {
+      arrays: [
+        'improvements',
+        'findingCoverage'
+      ]
+    }
+  };
+
+  if(
+    stage === 'RESTRICCIONES' &&
+    parsed.bottlenecks === undefined
+  ){
+    parsed.bottlenecks = [];
+  }
+
+  if(
+    stage === 'QUICK_WINS' &&
+    parsed.outOfScope === undefined
+  ){
+    parsed.outOfScope = [];
+  }
+
+  if(
+    stage === 'MEJORAS' &&
+    parsed.findingCoverage === undefined
+  ){
+    parsed.findingCoverage = [];
+  }
+
+  const rules =
+    structuralRules[stage] || {};
+
+  safeArray(
+    rules.objects
+  ).forEach(
+    requireObject
+  );
+
+  safeArray(
+    rules.arrays
+  ).forEach(
+    requireObjectArray
+  );
+
+  if(
+    stage === 'RESTRICCIONES' &&
+    parsed.primaryConstraint !== null &&
+    (
+      !parsed.primaryConstraint ||
+      typeof parsed.primaryConstraint !== 'object' ||
+      Array.isArray(
+        parsed.primaryConstraint
+      )
+    )
+  ){
+    throw new Error(
+      'primaryConstraint debe ser un objeto o null.'
+    );
+  }
+
+  return JSON.parse(
+    JSON.stringify(parsed)
+  );
+}
+
+
+function lmpInvalidateAnalysisAfter_(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const index =
+    ANALYSIS_STAGE_SEQUENCE.indexOf(stage);
+
+  const invalidated = [];
+
+  if(index < 0){
+    return invalidated;
+  }
+
+  state.analysisStages =
+    state.analysisStages || {
+      current: 'VA',
+      results: {}
+    };
+
+  state.analysisStages.results =
+    state.analysisStages.results || {};
+
+  ANALYSIS_STAGE_SEQUENCE
+    .slice(index + 1)
+    .forEach(function(nextStage){
+      if(
+        state.analysisStages.results[
+          nextStage
+        ]
+      ){
+        invalidated.push(
+          nextStage
+        );
+      }
+
+      delete state.analysisStages.results[
+        nextStage
+      ];
+
+      lmpClearAnalysisPending_(
+        nextStage
+      );
+
+      [
+        'analysisPrompt_',
+        'analysisResponse_',
+        'analysisResult_'
+      ].forEach(function(prefix){
+        const node =
+          el(prefix + nextStage);
+
+        if(node){
+          node.value = '';
+        }
+      });
+
+      const preview =
+        el(
+          'analysisAccumPreview_' +
+          nextStage
+        );
+
+      if(preview){
+        preview.textContent = '';
+      }
+    });
+
+  if(
+    invalidated.includes('MEJORAS')
+  ){
+    state.tobe =
+      state.tobe || {};
+
+    state.tobe.improvements = [];
+
+    if(
+      typeof renderImprovements ===
+      'function'
+    ){
+      renderImprovements();
+    }
+  }
+
+  return invalidated;
+}
+
+
 window.runAnalysisScreenStage = async function(stageKey){
   const stage = String(stageKey || '')
     .trim()
@@ -21090,77 +21490,59 @@ window.runAnalysisScreenStage = async function(stageKey){
   const msgId =
     'analysisMsg_' + stage;
 
-if(
-  !ANALYSIS_STAGE_SEQUENCE.includes(stage)
-){
-  if(typeof showMsg === 'function'){
-    showMsg(
-      msgId,
-      'err',
-      'La etapa "' +
-      stage +
-      '" no pertenece al flujo vigente del LMP.'
-    );
+  if(!ANALYSIS_STAGE_SEQUENCE.includes(stage)){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'err',
+        'La etapa indicada no pertenece al flujo vigente.'
+      );
+    }
+
+    return '';
   }
 
-  return;
-}
-  
   try{
-    state.analysisStages =
-      state.analysisStages &&
-      typeof state.analysisStages === 'object'
-        ? state.analysisStages
-        : {
-            current: 'VA',
-            results: {}
-          };
-
-    state.analysisStages.results =
-      state.analysisStages.results &&
-      typeof state.analysisStages.results === 'object'
-        ? state.analysisStages.results
-        : {};
-
-    state.analysisStages.current = stage;
-
     const missingStages =
-      getMissingPreviousAnalysisStages(stage);
+      getMissingPreviousAnalysisStages(
+        stage
+      );
 
     if(missingStages.length){
       throw new Error(
-        'Primero debes procesar: ' +
+        'Primero debes guardar: ' +
         missingStages
-          .map(getAnalysisStageDisplayName)
+          .map(lmpAnalysisStageName_)
           .join(', ') +
         '.'
       );
     }
 
-    /*
-     * Espera la carga del prompt oficial antes de consolidar
-     * o enviar cualquier información a la IA.
-     */
-    await window.sgmpEnsureAnalysisStagePrompt(stage);
-
     const prompt =
-      await window.generateAnalysisScreenPrompt(stage);
+      el(
+        'analysisPrompt_' +
+        stage
+      )?.value.trim() || '';
 
     if(!prompt){
-      return;
+      throw new Error(
+        'Primero consolida y genera el prompt de esta etapa.'
+      );
     }
 
-    const definitions =
-      typeof sgmpGetAnalysisStageDefinitions === 'function'
-        ? sgmpGetAnalysisStageDefinitions()
-        : {};
-
     const definition =
-      definitions[stage];
+      (
+        typeof sgmpGetAnalysisStageDefinitions ===
+        'function'
+          ? sgmpGetAnalysisStageDefinitions()
+          : {}
+      )[stage];
 
     if(
       !definition ||
-      !String(definition.stageCode || '').trim()
+      !String(
+        definition.stageCode || ''
+      ).trim()
     ){
       throw new Error(
         'No existe stageCode configurado para ' +
@@ -21169,29 +21551,24 @@ if(
       );
     }
 
+    lmpClearAnalysisPending_(
+      stage
+    );
+
     if(typeof showLoader === 'function'){
       showLoader(
         'Ejecutando ' +
-        getAnalysisStageDisplayName(stage) +
+        lmpAnalysisStageName_(stage) +
         ' con IA...',
-        'Procesando la etapa individual y conservando la trazabilidad acumulada.'
+        'La respuesta se cargará para validación estructural.'
       );
     }
 
-    if(typeof showMsg === 'function'){
-      showMsg(
-        msgId,
-        'ok',
-        'Ejecutando IA para ' +
-        getAnalysisStageDisplayName(stage) +
-        '...'
+    const result =
+      await sgmpCallAI(
+        definition.stageCode,
+        prompt
       );
-    }
-
-    const result = await sgmpCallAI(
-      definition.stageCode,
-      prompt
-    );
 
     const text =
       typeof sgmpAIResultText === 'function'
@@ -21208,17 +21585,30 @@ if(
     }
 
     const responseBox =
-      el('analysisResponse_' + stage);
+      el(
+        'analysisResponse_' +
+        stage
+      );
 
     if(responseBox){
       responseBox.value = text;
     }
 
-    window.processAnalysisScreenStage(stage);
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'ok',
+        'JSON recibido. Valida su estructura antes de guardar la etapa.'
+      );
+    }
+
+    return text;
 
   }catch(error){
     console.error(
-      '[LMP ' + stage + '] Error:',
+      '[LMP ' +
+      stage +
+      '] Error:',
       error
     );
 
@@ -21226,12 +21616,14 @@ if(
       showMsg(
         msgId,
         'err',
-        'No fue posible ejecutar ' +
-        getAnalysisStageDisplayName(stage) +
+        'No fue posible generar el JSON de ' +
+        lmpAnalysisStageName_(stage) +
         '. Detalle: ' +
         error.message
       );
     }
+
+    return '';
 
   }finally{
     if(typeof hideLoader === 'function'){
@@ -21240,641 +21632,165 @@ if(
   }
 };
 
-window.processAnalysisScreenStage = function(
-  stageKey,
-  sourceMode
-){
+
+window.processAnalysisScreenStage = function(stageKey){
   const stage = String(stageKey || '')
     .trim()
     .toUpperCase();
 
-  const mode =
-    String(sourceMode || 'response')
-      .trim()
-      .toLowerCase() === 'result'
-        ? 'result'
-        : 'response';
+  const msgId =
+    'analysisMsg_' + stage;
+
+  const raw =
+    el(
+      'analysisResponse_' +
+      stage
+    )?.value.trim() || '';
+
+  try{
+    const parsed =
+      lmpValidateAnalysisStageContract_(
+        stage,
+        raw
+      );
+
+    window.__LMP_ANALYSIS_PENDING__[stage] = {
+      raw,
+      parsed
+    };
+
+    const resultBox =
+      el(
+        'analysisResult_' +
+        stage
+      );
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          parsed,
+          null,
+          2
+        );
+    }
+
+    const saveButton =
+      el(
+        'btnSaveAnalysisStage_' +
+        stage
+      );
+
+    if(saveButton){
+      saveButton.disabled = false;
+    }
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'ok',
+        'La estructura JSON de ' +
+        lmpAnalysisStageName_(stage) +
+        ' es válida. La etapa todavía no ha sido guardada.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    lmpClearAnalysisPending_(
+      stage
+    );
+
+    console.error(
+      '[LMP validate ' +
+      stage +
+      '] Error:',
+      error
+    );
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'err',
+        'El JSON de ' +
+        lmpAnalysisStageName_(stage) +
+        ' no cumple la estructura esperada. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.saveValidatedAnalysisStage = function(stageKey){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
 
   const msgId =
     'analysisMsg_' + stage;
 
-  const sourceBox =
-    el(
-      (
-        mode === 'result'
-          ? 'analysisResult_'
-          : 'analysisResponse_'
-      ) +
-      stage
-    );
-
-  const sourceLabel =
-    mode === 'result'
-      ? 'resultado corregido'
-      : 'respuesta de la IA';
-
-  const allowedStages =
-    ANALYSIS_STAGE_SEQUENCE;
-
-if(!allowedStages.includes(stage)){
-  if(typeof showMsg === 'function'){
-    showMsg(
-      msgId,
-      'err',
-      'La etapa indicada no es válida: ' +
-      stage
-    );
-  }
-
-  return false;
-}
-
-const raw =
-  sourceBox
-    ? sourceBox.value.trim()
-    : '';
-
-if(!raw){
-  if(typeof showMsg === 'function'){
-    showMsg(
-      msgId,
-      'warn',
-      'No hay un ' +
-      sourceLabel +
-      ' para validar y guardar.'
-    );
-  }
-
-  return false;
-}
-
   try{
-    let parsed =
-      typeof extractJsonFromText === 'function'
-        ? extractJsonFromText(raw)
-        : JSON.parse(raw);
+    const pending =
+      window.__LMP_ANALYSIS_PENDING__[stage];
 
-    if(
-      !parsed ||
-      typeof parsed !== 'object' ||
-      Array.isArray(parsed)
-    ){
+    if(!pending){
       throw new Error(
-        'La respuesta no contiene un objeto JSON válido.'
+        'Primero valida la estructura JSON de esta etapa.'
       );
     }
 
-    const declaredStage = String(
-      parsed.stage || ''
-    )
-      .trim()
-      .toUpperCase();
+    const currentRaw =
+      el(
+        'analysisResponse_' +
+        stage
+      )?.value.trim() || '';
 
-    /*
-     * Para las seis etapas vigentes el campo stage es obligatorio.
-     */
-if(!declaredStage){
+    if(currentRaw !== pending.raw){
+      lmpClearAnalysisPending_(
+        stage
+      );
+
       throw new Error(
-        'El JSON no contiene el campo obligatorio "stage".'
-      );
-    }
-
-    if(
-      declaredStage &&
-      declaredStage !== stage
-    ){
-      throw new Error(
-        'El JSON corresponde a la etapa ' +
-        declaredStage +
-        ', pero se está procesando desde ' +
-        stage +
-        '.'
-      );
-    }
-
-    /*
-     * Impide procesar manualmente una etapa fuera del orden
-     * de la bola de nieve.
-     */
-if(
-  typeof getMissingPreviousAnalysisStages === 'function'
-){
-      const missingStages =
-        getMissingPreviousAnalysisStages(stage);
-
-      if(missingStages.length){
-        throw new Error(
-          'Primero debes procesar: ' +
-          missingStages
-            .map(function(stageName){
-              return typeof getAnalysisStageDisplayName === 'function'
-                ? getAnalysisStageDisplayName(stageName)
-                : stageName;
-            })
-            .join(', ') +
-          '.'
-        );
-      }
-    }
-
-    const requireObject = function(value, fieldName){
-      if(
-        !value ||
-        typeof value !== 'object' ||
-        Array.isArray(value)
-      ){
-        throw new Error(
-          'El campo "' +
-          fieldName +
-          '" debe ser un objeto.'
-        );
-      }
-
-      return value;
-    };
-
-    const requireArray = function(value, fieldName){
-      if(!Array.isArray(value)){
-        throw new Error(
-          'El campo "' +
-          fieldName +
-          '" debe ser un arreglo.'
-        );
-      }
-
-      return value;
-    };
-
-    const requireString = function(value, fieldName){
-      if(
-        typeof value !== 'string' ||
-        !value.trim()
-      ){
-        throw new Error(
-          'El campo "' +
-          fieldName +
-          '" es obligatorio.'
-        );
-      }
-
-      return value.trim();
-    };
-
-    const validateObjectArray = function(list, fieldName){
-      list.forEach(function(item, index){
-        if(
-          !item ||
-          typeof item !== 'object' ||
-          Array.isArray(item)
-        ){
-          throw new Error(
-            'El elemento ' +
-            (index + 1) +
-            ' de "' +
-            fieldName +
-            '" no es un objeto válido.'
-          );
-        }
-      });
-    };
-
-/*
- * Validación contractual mínima común para las seis
- * etapas oficiales.
- */
-requireString(
-  parsed.analysis_type,
-  'analysis_type'
-);
-
-requireObject(
-  parsed.source_control,
-  'source_control'
-);
-
-requireObject(
-  parsed.validation,
-  'validation'
-);
-    /*
-     * Validación específica por etapa.
-     */
-    if(stage === 'VA'){
-      const ava = requireObject(
-        parsed.ava,
-        'ava'
-      );
-
-      requireObject(
-        ava.distribution,
-        'ava.distribution'
-      );
-
-      const activityAnalysis = requireArray(
-        ava.activityAnalysis,
-        'ava.activityAnalysis'
-      );
-
-      validateObjectArray(
-        activityAnalysis,
-        'ava.activityAnalysis'
-      );
-
-      const sourceActivities =
-        typeof cleanActivities === 'function'
-          ? cleanActivities(
-              state.asis?.activities ||
-              []
-            )
-          : arr(
-              state.asis?.activities
-            );
-
-      if(
-        sourceActivities.length &&
-        activityAnalysis.length !== sourceActivities.length
-      ){
-        throw new Error(
-          'La cobertura VA es incompleta. Se recibieron ' +
-          sourceActivities.length +
-          ' actividades AS-IS, pero el JSON analiza ' +
-          activityAnalysis.length +
-          '.'
-        );
-      }
-
-      const allowedClassifications = [
-        'VA',
-        'NNVA',
-        'NVA'
-      ];
-
-      const seenActivities =
-        new Set();
-
-      activityAnalysis.forEach(function(item, index){
-        const classification = String(
-          item.classification || ''
-        )
-          .trim()
-          .toUpperCase();
-
-        if(
-          !allowedClassifications.includes(
-            classification
-          )
-        ){
-          throw new Error(
-            'La actividad ' +
-            (index + 1) +
-            ' tiene una clasificación AVA inválida: "' +
-            classification +
-            '".'
-          );
-        }
-
-        const itemId = String(
-          item.id ||
-          item.activity_id ||
-          ''
-        ).trim();
-
-        const itemName = String(
-          item.name ||
-          item.activity ||
-          ''
-        )
-          .trim()
-          .toLowerCase();
-
-        const identity =
-          itemId ||
-          itemName;
-
-        if(!identity){
-          throw new Error(
-            'La actividad ' +
-            (index + 1) +
-            ' no contiene ID ni nombre.'
-          );
-        }
-
-        if(seenActivities.has(identity)){
-          throw new Error(
-            'La actividad "' +
-            identity +
-            '" aparece duplicada en ava.activityAnalysis.'
-          );
-        }
-
-        seenActivities.add(identity);
-      });
-    }
-
-    if(stage === 'DESPERDICIOS'){
-      const wastes = requireArray(
-        parsed.wastes,
-        'wastes'
-      );
-
-      validateObjectArray(
-        wastes,
-        'wastes'
-      );
-
-      const allowedWasteTypes = [
-        'espera',
-        'transporte',
-        'movimiento',
-        'sobreproceso',
-        'inventario',
-        'defectos_reproceso',
-        'sobreproduccion',
-        'talento_no_aprovechado',
-        'informacion_fragmentada'
-      ];
-
-      wastes.forEach(function(item, index){
-        const wasteType = String(
-          item.wasteType || ''
-        ).trim();
-
-        if(
-          !allowedWasteTypes.includes(wasteType)
-        ){
-          throw new Error(
-            'El desperdicio ' +
-            (index + 1) +
-            ' tiene un wasteType inválido: "' +
-            wasteType +
-            '".'
-          );
-        }
-      });
-    }
-
-    if(stage === 'PROBLEMAS'){
-      const problems = requireArray(
-        parsed.problems,
-        'problems'
-      );
-
-      validateObjectArray(
-        problems,
-        'problems'
-      );
-
-      const allowedPriorities = [
-        'alta',
-        'media',
-        'baja'
-      ];
-
-      problems.forEach(function(item, index){
-        const priority = String(
-          item.priority || ''
-        )
-          .trim()
-          .toLowerCase();
-
-        if(
-          priority &&
-          !allowedPriorities.includes(priority)
-        ){
-          throw new Error(
-            'El problema ' +
-            (index + 1) +
-            ' tiene una prioridad inválida: "' +
-            priority +
-            '".'
-          );
-        }
-      });
-    }
-
-    if(stage === 'RESTRICCIONES'){
-      const restrictions = requireArray(
-        parsed.restrictions,
-        'restrictions'
-      );
-
-      validateObjectArray(
-        restrictions,
-        'restrictions'
-      );
-
-      if(
-        parsed.bottlenecks === undefined
-      ){
-        parsed.bottlenecks = [];
-      }
-
-      requireArray(
-        parsed.bottlenecks,
-        'bottlenecks'
-      );
-
-      if(
-        parsed.primaryConstraint !== null &&
-        (
-          !parsed.primaryConstraint ||
-          typeof parsed.primaryConstraint !== 'object' ||
-          Array.isArray(parsed.primaryConstraint)
-        )
-      ){
-        throw new Error(
-          'primaryConstraint debe ser un objeto o null.'
-        );
-      }
-    }
-
-    if(stage === 'QUICK_WINS'){
-      const quickWins = requireArray(
-        parsed.quickWins,
-        'quickWins'
-      );
-
-      validateObjectArray(
-        quickWins,
-        'quickWins'
-      );
-
-      quickWins.forEach(function(item, index){
-        const effort = String(
-          item.effort_level || ''
-        )
-          .trim()
-          .toLowerCase();
-
-        if(effort !== 'low'){
-          throw new Error(
-            'El quick win ' +
-            (index + 1) +
-            ' no tiene effort_level "low".'
-          );
-        }
-
-        const implementationDays = Number(
-          item.implementation_days
-        );
-
-        if(
-          !Number.isFinite(implementationDays) ||
-          implementationDays < 0 ||
-          implementationDays > 30
-        ){
-          throw new Error(
-            'El quick win ' +
-            (index + 1) +
-            ' tiene implementation_days inválido.'
-          );
-        }
-      });
-
-      if(parsed.outOfScope === undefined){
-        parsed.outOfScope = [];
-      }
-
-      requireArray(
-        parsed.outOfScope,
-        'outOfScope'
-      );
-    }
-
-    if(stage === 'MEJORAS'){
-      const improvements = requireArray(
-        parsed.improvements,
-        'improvements'
-      );
-
-      validateObjectArray(
-        improvements,
-        'improvements'
-      );
-
-      const allowedModes = [
-        'Modo A',
-        'Modo B'
-      ];
-
-      improvements.forEach(function(item, index){
-        if(
-          !allowedModes.includes(
-            String(item.mode || '').trim()
-          )
-        ){
-          throw new Error(
-            'La mejora ' +
-            (index + 1) +
-            ' tiene un modo inválido.'
-          );
-        }
-
-        if(
-          String(item.status || '').trim() !== 'pending'
-        ){
-          throw new Error(
-            'La mejora ' +
-            (index + 1) +
-            ' debe tener status "pending".'
-          );
-        }
-      });
-
-      if(parsed.findingCoverage === undefined){
-        parsed.findingCoverage = [];
-      }
-
-      requireArray(
-        parsed.findingCoverage,
-        'findingCoverage'
+        'La respuesta cambió después de validarse. Valida nuevamente antes de guardar.'
       );
     }
 
     state.analysisStages =
-      state.analysisStages &&
-      typeof state.analysisStages === 'object'
-        ? state.analysisStages
-        : {};
+      state.analysisStages || {
+        current: 'VA',
+        results: {}
+      };
 
     state.analysisStages.results =
-      state.analysisStages.results &&
-      typeof state.analysisStages.results === 'object'
-        ? state.analysisStages.results
-        : {};
+      state.analysisStages.results || {};
 
-    /*
-     * Si una etapa anterior se reprocesa, elimina todos los
-     * resultados posteriores porque ya no son trazables al
-     * nuevo resultado.
-     */
-    const invalidatedStages = [];
+    const invalidated =
+      lmpInvalidateAnalysisAfter_(
+        stage
+      );
 
- if(
-  typeof ANALYSIS_STAGE_SEQUENCE !== 'undefined'
-){
-      const currentIndex =
-        ANALYSIS_STAGE_SEQUENCE.indexOf(stage);
-
-      if(currentIndex >= 0){
-        ANALYSIS_STAGE_SEQUENCE
-          .slice(currentIndex + 1)
-          .forEach(function(nextStage){
-            if(
-              state.analysisStages.results[nextStage]
-            ){
-              invalidatedStages.push(nextStage);
-            }
-
-            delete state.analysisStages.results[nextStage];
-
-            [
-              'analysisPrompt_',
-              'analysisResponse_',
-              'analysisResult_'
-            ].forEach(function(prefix){
-              const node =
-                el(prefix + nextStage);
-
-              if(node){
-                node.value = '';
-              }
-            });
-
-            const preview =
-              el(
-                'analysisAccumPreview_' +
-                nextStage
-              );
-
-            if(preview){
-              preview.textContent = '';
-            }
-          });
-      }
-    }
-
-    if(
-      invalidatedStages.includes('MEJORAS')
-    ){
-      state.tobe =
-        state.tobe || {};
-
-      state.tobe.improvements = [];
-
-      if(typeof renderImprovements === 'function'){
-        renderImprovements();
-      }
-    }
+    const parsed =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
 
     state.analysisStages.current =
       stage;
 
-    state.analysisStages.results[stage] =
-      parsed;
+    state.analysisStages.results[
+      stage
+    ] = parsed;
 
     const resultBox =
-      el('analysisResult_' + stage);
+      el(
+        'analysisResult_' +
+        stage
+      );
 
     if(resultBox){
       resultBox.value =
@@ -21886,47 +21802,25 @@ requireObject(
     }
 
     const assembled =
-      typeof window.sgmpAssembleStagedAnalysisPayload === 'function'
+      typeof window.sgmpAssembleStagedAnalysisPayload ===
+      'function'
         ? window.sgmpAssembleStagedAnalysisPayload()
         : {};
-
-    if(
-      stage === 'VA' &&
-      Array.isArray(
-        assembled?.as_is?.activities
-      ) &&
-      assembled.as_is.activities.length
-    ){
-      state.asis =
-        state.asis || {};
-
-      state.asis.activities =
-        assembled.as_is.activities.map(
-          function(activity){
-            return Object.assign(
-              {},
-              activity
-            );
-          }
-        );
-
-      if(typeof renderAsIsActivities === 'function'){
-        renderAsIsActivities();
-      }
-    }
 
     state.analysis =
       assembled;
 
     if(stage === 'MEJORAS'){
-      const improvements = arr(
-        parsed.improvements ||
-        assembled.improvements
-      ).map(function(item){
-        return typeof normalizeImprovement === 'function'
-          ? normalizeImprovement(item)
-          : item;
-      });
+      const improvements =
+        arr(
+          parsed.improvements ||
+          assembled.improvements
+        ).map(function(item){
+          return typeof normalizeImprovement ===
+            'function'
+            ? normalizeImprovement(item)
+            : item;
+        });
 
       assembled.improvements =
         improvements;
@@ -21940,125 +21834,389 @@ requireObject(
       state.tobe.improvements =
         improvements;
 
-      if(typeof renderImprovements === 'function'){
+      if(
+        typeof renderImprovements ===
+        'function'
+      ){
         renderImprovements();
       }
     }
 
-if(
-  typeof renderAnalysisFromState ===
-  'function'
-){
-  renderAnalysisFromState();
-}
+    if(
+      typeof renderAnalysisFromState ===
+      'function'
+    ){
+      renderAnalysisFromState();
+    }
 
-    if(typeof updateTopStatus === 'function'){
+    if(
+      typeof updateTopStatus ===
+      'function'
+    ){
       updateTopStatus();
     }
 
-const stageDisplayName =
-  typeof getAnalysisStageDisplayName ===
-    'function'
-    ? getAnalysisStageDisplayName(stage)
-    : stage;
+    lmpClearAnalysisPending_(
+      stage
+    );
 
-let successMessage =
-  mode === 'result'
-    ? (
-        'Resultado corregido de ' +
-        stageDisplayName +
-        ' validado y guardado correctamente.'
-      )
-    : (
-        'Respuesta de ' +
-        stageDisplayName +
-        ' procesada y guardada correctamente.'
-      );
+    let message =
+      lmpAnalysisStageName_(stage) +
+      ' guardado correctamente y habilitado para la bola de nieve.';
 
-    if(invalidatedStages.length){
-      successMessage +=
+    if(invalidated.length){
+      message +=
         ' Se invalidaron las etapas posteriores: ' +
-        invalidatedStages
-          .map(function(stageName){
-            return typeof getAnalysisStageDisplayName === 'function'
-              ? getAnalysisStageDisplayName(stageName)
-              : stageName;
-          })
+        invalidated
+          .map(lmpAnalysisStageName_)
           .join(', ') +
         '.';
     }
 
-if(typeof showMsg === 'function'){
-  showMsg(
-    msgId,
-    invalidatedStages.length
-      ? 'warn'
-      : 'ok',
-    successMessage
-  );
-}
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        invalidated.length
+          ? 'warn'
+          : 'ok',
+        message
+      );
+    }
 
-return true;
+    return true;
 
   }catch(error){
     console.error(
-      '[LMP process ' + stage + '] Error:',
+      '[LMP save ' +
+      stage +
+      '] Error:',
       error
     );
 
-if(typeof showMsg === 'function'){
-  showMsg(
-    msgId,
-    'err',
-    (
-      mode === 'result'
-        ? 'No fue posible guardar el resultado corregido de '
-        : 'No fue posible procesar la respuesta de '
-    ) +
-    (
-      typeof getAnalysisStageDisplayName ===
-        'function'
-        ? getAnalysisStageDisplayName(stage)
-        : stage
-    ) +
-    '. Detalle: ' +
-    error.message
-  );
-}
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'err',
+        'No fue posible guardar ' +
+        lmpAnalysisStageName_(stage) +
+        '. Detalle: ' +
+        error.message
+      );
+    }
 
-return false;
-
-    
-  }
-};
-
-window.saveEditedAnalysisStage = function(stageKey){
-  return window.processAnalysisScreenStage(
-    stageKey,
-    'result'
-  );
-};
-
-
-window.saveAnalysisStageAndContinue = function(
-  stageKey,
-  sectionId
-){
-  const saved =
-    window.saveEditedAnalysisStage(
-      stageKey
-    );
-
-  if(saved !== true){
     return false;
   }
-
-  if(typeof goToNext === 'function'){
-    goToNext(sectionId);
-  }
-
-  return true;
 };
+
+
+window.lmpInitializeAnalysisStageWorkflowUi = function(){
+  ANALYSIS_STAGE_SEQUENCE.forEach(function(stage){
+    const section =
+      document.querySelector(
+        '[data-analysis-stage="' +
+        stage +
+        '"]'
+      );
+
+    const cards =
+      section?.querySelector(
+        '.cards'
+      );
+
+    if(
+      !section ||
+      !cards
+    ){
+      return;
+    }
+
+    const currentValues = {
+      prompt:
+        el(
+          'analysisPrompt_' +
+          stage
+        )?.value || '',
+
+      response:
+        el(
+          'analysisResponse_' +
+          stage
+        )?.value || '',
+
+      result:
+        el(
+          'analysisResult_' +
+          stage
+        )?.value || ''
+    };
+
+    const preview =
+      el(
+        'analysisAccumPreview_' +
+        stage
+      );
+
+    const summaryCard =
+      preview?.closest('article') ||
+      null;
+
+    const label =
+      lmpAnalysisStageName_(stage);
+
+    if(summaryCard){
+      summaryCard.classList.add(
+        'analysis-summary-card'
+      );
+    }
+
+    cards.innerHTML = '';
+
+    if(summaryCard){
+      cards.appendChild(
+        summaryCard
+      );
+    }
+
+    const promptCard =
+      document.createElement(
+        'article'
+      );
+
+    promptCard.className =
+      'card half analysis-prompt-card';
+
+    promptCard.innerHTML = `
+      <h3>Prompt · ${label}</h3>
+
+      <p>
+        Consolida el AS-IS validado y los resultados guardados
+        de las etapas anteriores.
+      </p>
+
+      <div
+        class="actions"
+        style="border-top:none;padding-top:0;margin-top:14px"
+      >
+        <div class="actions-left">
+          <button
+            class="btn"
+            type="button"
+            onclick="generateAnalysisScreenPrompt('${stage}')"
+          >
+            1. Consolidar y generar prompt
+          </button>
+
+          <button
+            class="btn-ghost"
+            type="button"
+            onclick="copyTextFromId(
+              'analysisPrompt_${stage}',
+              'analysisMsg_${stage}',
+              'Prompt de ${label} copiado correctamente.'
+            )"
+          >
+            2. Copiar prompt
+          </button>
+        </div>
+      </div>
+
+      <textarea
+        id="analysisPrompt_${stage}"
+        placeholder="Aquí aparecerá el prompt consolidado de ${label}."
+        style="width:100%;min-height:360px;padding:14px"
+      ></textarea>
+    `;
+
+    const responseCard =
+      document.createElement(
+        'article'
+      );
+
+    responseCard.className =
+      'card half analysis-response-card';
+
+    responseCard.innerHTML = `
+      <h3>Respuesta JSON · ${label}</h3>
+
+      <p>
+        La API puede generar la respuesta automáticamente.
+        También puedes pegar aquí un JSON obtenido con una IA externa.
+      </p>
+
+      <div
+        class="actions"
+        style="border-top:none;padding-top:0;margin-top:14px"
+      >
+        <div class="actions-left">
+          <button
+            class="btn-ok"
+            type="button"
+            onclick="runAnalysisScreenStage('${stage}')"
+          >
+            3. Generar JSON con IA
+          </button>
+        </div>
+      </div>
+
+      <textarea
+        id="analysisResponse_${stage}"
+        placeholder="Aquí aparecerá o se pegará la respuesta JSON de ${label}."
+        style="width:100%;min-height:360px;padding:14px"
+      ></textarea>
+
+      <div class="actions">
+        <div class="actions-left">
+          <button
+            class="btn-warn"
+            type="button"
+            onclick="processAnalysisScreenStage('${stage}')"
+          >
+            4. Validar estructura JSON
+          </button>
+        </div>
+      </div>
+
+      <div
+        class="msg"
+        id="analysisMsg_${stage}"
+      ></div>
+    `;
+
+    const resultCard =
+      document.createElement(
+        'article'
+      );
+
+    resultCard.className =
+      'card analysis-json-card';
+
+    resultCard.innerHTML = `
+      <h3>JSON validado · ${label}</h3>
+
+      <p>
+        Vista técnica temporal. Después se reemplazará por la
+        presentación estructurada y editable propia de esta etapa.
+      </p>
+
+      <textarea
+        id="analysisResult_${stage}"
+        class="analysis-json-output"
+        readonly
+        placeholder="El JSON validado aparecerá aquí."
+      ></textarea>
+
+      <div class="actions">
+        <div class="actions-left">
+          <button
+            class="btn-ok"
+            id="btnSaveAnalysisStage_${stage}"
+            type="button"
+            onclick="saveValidatedAnalysisStage('${stage}')"
+            disabled
+          >
+            5. Guardar etapa
+          </button>
+        </div>
+      </div>
+    `;
+
+    cards.append(
+      promptCard,
+      responseCard,
+      resultCard
+    );
+
+    const promptBox =
+      el(
+        'analysisPrompt_' +
+        stage
+      );
+
+    const responseBox =
+      el(
+        'analysisResponse_' +
+        stage
+      );
+
+    const resultBox =
+      el(
+        'analysisResult_' +
+        stage
+      );
+
+    if(promptBox){
+      promptBox.value =
+        currentValues.prompt;
+    }
+
+    if(responseBox){
+      responseBox.value =
+        currentValues.response;
+
+      responseBox.addEventListener(
+        'input',
+        function(){
+          lmpClearAnalysisPending_(
+            stage
+          );
+        }
+      );
+    }
+
+    if(resultBox){
+      const storedResult =
+        state.analysisStages
+          ?.results
+          ?.[stage];
+
+      resultBox.value =
+        currentValues.result ||
+        (
+          storedResult
+            ? JSON.stringify(
+                storedResult,
+                null,
+                2
+              )
+            : ''
+        );
+    }
+
+    const navigation =
+      Array.from(
+        section.children
+      ).find(function(child){
+        return child.classList
+          ?.contains('actions');
+      });
+
+    if(navigation){
+      navigation.innerHTML = `
+        <div class="actions-left">
+          <button
+            class="btn-ghost"
+            type="button"
+            onclick="goToPrev('${section.id}')"
+          >
+            Volver
+          </button>
+        </div>
+
+        <div class="actions-right">
+          <button
+            class="btn"
+            type="button"
+            onclick="goToNext('${section.id}')"
+          >
+            Continuar
+          </button>
+        </div>
+      `;
+    }
+  });
+};
+
+window.lmpInitializeAnalysisStageWorkflowUi();
   
 window.sgmpAssembleStagedAnalysisPayload = function(){
   const rawResults =
