@@ -6395,137 +6395,296 @@ function sgmpCleanKey(value){
     .trim();
 }
 
-function sgmpRegisterPrompt(p) {
-  if(!p) return;
+function sgmpRegisterPrompt(promptRow){
+  if(
+    !promptRow ||
+    typeof promptRow !== 'object'
+  ){
+    return false;
+  }
 
   const promptKey = sgmpCleanKey(
-    p.prompt_key ||
-    p.promptKey ||
-    p.prompt_code ||
-    p.promptCode ||
-    p.key ||
+    promptRow.prompt_key ||
+    promptRow.promptKey ||
+    promptRow.prompt_code ||
+    promptRow.promptCode ||
+    promptRow.key ||
     ''
   );
 
-  if(!promptKey) return;
+  if(!promptKey){
+    return false;
+  }
+
+  const stageCode = sgmpCleanKey(
+    promptRow.stage_code ||
+    promptRow.stageCode ||
+    promptRow.stage ||
+    promptRow.prompt_stage ||
+    promptKey
+  );
+
+  const enabledValue =
+    promptRow.enabled ??
+    promptRow.is_enabled ??
+    promptRow.active;
+
+  const hasEnabledValue =
+    enabledValue !== undefined &&
+    enabledValue !== null &&
+    String(enabledValue).trim() !== '';
+
+  const isEnabled =
+    !hasEnabledValue ||
+    [
+      'YES',
+      'SI',
+      'SÍ',
+      'TRUE',
+      '1',
+      'ON'
+    ].includes(
+      String(enabledValue)
+        .trim()
+        .toUpperCase()
+    );
+
+  /*
+   * Si Sheets devuelve una fila deshabilitada, elimina cualquier
+   * valor anterior que pudiera permanecer cargado en memoria.
+   */
+  if(!isEnabled){
+    delete SGMP_PROMPTS[promptKey];
+    delete SGMP_PROMPT_META[promptKey];
+
+    if(stageCode){
+      delete SGMP_STAGE_CONFIG[stageCode];
+    }
+
+    return false;
+  }
 
   const promptText = String(
-    p.prompt_text ||
-    p.promptText ||
-    p.prompt ||
-    p.text ||
-    p.content ||
+    promptRow.prompt_text ||
+    promptRow.promptText ||
+    promptRow.prompt ||
+    promptRow.text ||
+    promptRow.content ||
     ''
   ).trim();
 
-  if(!promptText) return;
+  /*
+   * Una fila vacía no constituye un prompt válido.
+   */
+  if(!promptText){
+    delete SGMP_PROMPTS[promptKey];
+    delete SGMP_PROMPT_META[promptKey];
 
-  SGMP_PROMPTS[promptKey] = promptText;
-  SGMP_PROMPT_META[promptKey] = p;
+    if(stageCode){
+      delete SGMP_STAGE_CONFIG[stageCode];
+    }
 
-  var stageMap = {
-    prompt_A: 'prompt_A',
-    prompt_a: 'prompt_A',
-    prompt_brief: 'lmp_brief',
-    prompt_analysis: 'lmp_analysis',
-    prompt_sb_contract_builder: 'lmp_sb_contract'
-  };
+    return false;
+  }
 
-  var stage = sgmpCleanKey(
-    p.stage_code ||
-    p.stageCode ||
-    p.stage ||
-    p.prompt_stage ||
-    stageMap[promptKey] ||
-    ''
-  );
+  SGMP_PROMPTS[promptKey] =
+    promptText;
 
-  if(stage) SGMP_STAGE_CONFIG[stage] = p;
+  SGMP_PROMPT_META[promptKey] =
+    promptRow;
+
+  if(stageCode){
+    SGMP_STAGE_CONFIG[stageCode] =
+      promptRow;
+  }
+
+  return true;
 }
 
-// Obtener prompt — nunca falla, devuelve fallback si no hay nada
-async function sgmpEnsurePromptsLoaded(moduleCode){
-  try{
-    moduleCode = moduleCode || 'LMP';
 
-    if(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim()){
-      return true;
+async function sgmpEnsurePromptsLoaded(moduleCode){
+  const normalizedModule = String(
+    moduleCode || 'LMP'
+  ).trim() || 'LMP';
+
+  const requiredPromptKey =
+    'prompt_A';
+
+  const cacheKey =
+    'sgmp_p_' + normalizedModule;
+
+  const cacheTimeKey =
+    cacheKey + '_ts';
+
+  const requestTimeoutMs =
+    15000;
+
+  const hasExactPromptA = function(){
+    return !!(
+      typeof SGMP_PROMPTS[requiredPromptKey] === 'string' &&
+      SGMP_PROMPTS[requiredPromptKey].trim()
+    );
+  };
+
+  /*
+   * Solo acepta la clave exacta prompt_A.
+   */
+  if(hasExactPromptA()){
+    return true;
+  }
+
+  /*
+   * Intenta recuperar filas desde el caché sin eliminarlo.
+   */
+  try{
+    const cachedText =
+      sessionStorage.getItem(cacheKey);
+
+    if(cachedText){
+      const cachedRows =
+        JSON.parse(cachedText);
+
+      if(Array.isArray(cachedRows)){
+        cachedRows.forEach(function(promptRow){
+          sgmpRegisterPrompt(promptRow);
+        });
+      }
+    }
+  }catch(cacheError){
+    console.warn(
+      '[LMP] No fue posible leer el caché de prompts.',
+      cacheError
+    );
+  }
+
+  if(hasExactPromptA()){
+    return true;
+  }
+
+  const controller =
+    typeof AbortController === 'function'
+      ? new AbortController()
+      : null;
+
+  const timeoutId = setTimeout(function(){
+    if(controller){
+      controller.abort();
+    }
+  }, requestTimeoutMs);
+
+  try{
+    const url =
+      SGMP_API +
+      '?action=get_prompts&module_code=' +
+      encodeURIComponent(normalizedModule);
+
+    const response = await fetch(
+      url,
+      controller
+        ? { signal: controller.signal }
+        : undefined
+    );
+
+    if(!response.ok){
+      throw new Error(
+        'HTTP ' + response.status
+      );
     }
 
-    try {
-      sessionStorage.removeItem('sgmp_p_' + moduleCode);
-    } catch(e) {}
+    const payload =
+      await response.json();
 
-    const url = SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode);
-    const response = await fetch(url);
-    const text = await response.text();
-    const parsed = text ? JSON.parse(text) : {};
-    const rows = Array.isArray(parsed?.data) ? parsed.data : [];
+    const rows =
+      payload &&
+      payload.ok !== false &&
+      Array.isArray(payload.data)
+        ? payload.data
+        : [];
 
-    rows.forEach(function(p){
-      if(typeof sgmpRegisterPrompt === 'function'){
-        sgmpRegisterPrompt(p);
-      }
+    rows.forEach(function(promptRow){
+      sgmpRegisterPrompt(promptRow);
     });
 
-    if(!(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim())){
-      const fallbackPromptA = rows.find(function(p){
-        const key = sgmpCleanKey(p.prompt_key || p.promptKey || p.prompt_code || p.key || '');
-        const stage = sgmpCleanKey(p.stage_code || p.stageCode || p.stage || '');
-        const label = String(p.prompt_label || p.promptLabel || '').toLowerCase();
-        const text = String(p.prompt_text || p.promptText || p.prompt || p.text || '');
+    SGMP_LOADED = true;
 
-        return (
-          key.toLowerCase() === 'prompt_a' ||
-          stage.toLowerCase() === 'prompt_a' ||
-          label.includes('prompt a') ||
-          (text.includes('{{MASTER_JSON}}') && text.includes('as_is_process'))
-        );
-      });
+    try{
+      sessionStorage.setItem(
+        cacheKey,
+        JSON.stringify(rows)
+      );
 
-      if(fallbackPromptA){
-        SGMP_PROMPTS.prompt_A = String(
-          fallbackPromptA.prompt_text ||
-          fallbackPromptA.promptText ||
-          fallbackPromptA.prompt ||
-          fallbackPromptA.text ||
-          ''
-        ).trim();
-
-        SGMP_PROMPT_META.prompt_A = fallbackPromptA;
-        SGMP_STAGE_CONFIG.prompt_A = fallbackPromptA;
-      }
+      sessionStorage.setItem(
+        cacheTimeKey,
+        String(Date.now())
+      );
+    }catch(cacheError){
+      console.warn(
+        '[LMP] Los prompts fueron cargados, pero no fue posible actualizar el caché.',
+        cacheError
+      );
     }
 
-    try {
-      sessionStorage.setItem('sgmp_p_' + moduleCode, JSON.stringify(rows));
-    } catch(e) {}
+    if(!hasExactPromptA()){
+      console.error(
+        '[LMP] No se encontró la clave exacta prompt_A activa y con contenido.',
+        {
+          module_code: normalizedModule,
+          received_prompt_keys: rows.map(function(row){
+            return sgmpCleanKey(
+              row.prompt_key ||
+              row.promptKey ||
+              row.prompt_code ||
+              row.key ||
+              ''
+            );
+          })
+        }
+      );
 
-    if(!(SGMP_PROMPTS?.prompt_A && String(SGMP_PROMPTS.prompt_A).trim())){
-      console.warn('PROMPTS recibidos desde API, pero ninguno fue reconocido como prompt_A.', {
-        url,
-        total_rows: rows.length,
-        keys: rows.map(r => ({
-          module_code: r.module_code,
-          prompt_key: r.prompt_key,
-          stage_code: r.stage_code,
-          enabled: r.enabled,
-          label: r.prompt_label
-        }))
-      });
       return false;
     }
 
     return true;
 
   }catch(error){
-    console.error('Error cargando prompt_A desde Sheets/API:', error);
+    if(
+      error &&
+      error.name === 'AbortError'
+    ){
+      console.error(
+        '[LMP] La consulta de prompt_A superó ' +
+        requestTimeoutMs +
+        ' ms.'
+      );
+    }else{
+      console.error(
+        '[LMP] No fue posible cargar prompt_A desde Sheets/API.',
+        error
+      );
+    }
+
     return false;
+
+  }finally{
+    clearTimeout(timeoutId);
   }
 }
-  
-function sgmpPrompt(key, fallback) {
-  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
+
+
+function sgmpPrompt(key){
+  const promptKey =
+    sgmpCleanKey(key);
+
+  if(!promptKey){
+    return '';
+  }
+
+  const promptText =
+    SGMP_PROMPTS[promptKey];
+
+  return typeof promptText === 'string'
+    ? promptText.trim()
+    : '';
 }
 
 function sgmpYes(value){
