@@ -6904,12 +6904,34 @@ loads: {
   brief: [],
   docs: []
 },
-  master: null,
-  asis: {
-    activities: []
-  },
-  analysis: null,
-  analysisRun: { raw:null, qa:false },
+  
+master: null,
+
+promptAInput: null,
+promptAOutput: null,
+asIsProcess: null,
+asIsProcessApproved: false,
+
+asis: {
+  activities: [],
+  actors_catalog: [],
+  suppliers_inputs: [],
+  outputs_customers: [],
+  additional_information: []
+},
+
+analysis: null,
+
+analysisStages: {
+  current: 'VA',
+  results: {}
+},
+
+analysisRun: {
+  raw: null,
+  qa: false
+},
+  
   sb_contract: null,
   sbContractBuilder: { raw:null, approved:false, validation:null },
   decision: {
@@ -6935,7 +6957,7 @@ sgmpLoadPrompts('LMP', async function() {
   if(typeof fillFixedDocPrompts === 'function') fillFixedDocPrompts(true);
 });
 
-const stageOrder = [   'inicio',   'preparacion',   'documentacion_existente',   'carga',   'asis',   'analisis_b1',   'analisis_va',   'analisis_quick_wins',   'analisis_desperdicios',   'analisis_restricciones',   'analisis_problemas',   'decision',   'tobe',   'resultados' ];
+const stageOrder = [   'inicio',   'preparacion',   'documentacion_existente',   'carga',   'asis',   'analisis_va',   'analisis_desperdicios',   'analisis_problemas',   'analisis_restricciones',   'analisis_quick_wins',   'analisis_mejoras',   'decision',   'tobe',   'resultados',   'outputs' ];
 
 const preQuestionMap = {
   'Operativo': [
@@ -8200,26 +8222,534 @@ function downloadDocJson(textareaId, filename, msgId){
     showMsg(msgId,'err','El JSON no es válido: ' + error.message);
   }
 }
+const LMP_OFFICIAL_ANALYSIS_STAGES_ = [
+  'VA',
+  'DESPERDICIOS',
+  'PROBLEMAS',
+  'RESTRICCIONES',
+  'QUICK_WINS',
+  'MEJORAS'
+];
 
-function mergeLoadedState(loaded){
-  const defaults = JSON.parse(JSON.stringify(state));
-  const merged = deepMerge(defaults, loaded);
+const LMP_ANALYSIS_SECTION_BY_STAGE_ = {
+  VA: 'analisis_va',
+  DESPERDICIOS: 'analisis_desperdicios',
+  PROBLEMAS: 'analisis_problemas',
+  RESTRICCIONES: 'analisis_restricciones',
+  QUICK_WINS: 'analisis_quick_wins',
+  MEJORAS: 'analisis_mejoras'
+};
 
-  Object.keys(state).forEach(k => delete state[k]);
-  Object.assign(state, merged);
 
-  if(!state.metadata) state.metadata = {};
-  if(!state.metadata.currentStage) state.metadata.currentStage = 'inicio';
+function lmpCreateImportBaseState_(){
+  return {
+    metadata: {
+      module: 'LMP',
+      version: '1.0',
+      currentStage: 'inicio',
+      route: null,
+      workRoute: null,
+      loadMode: null,
+      lastSavedAt: null,
+      analysisRequiresRevalidation: false
+    },
 
-  const resolvedRoute = resolveLmpWorkRouteFromBackup(loaded);
+    context: {
+      company: '',
+      processName: '',
+      processCode: '',
+      owner: '',
+      analyst: '',
+      industry: '',
+      processType: '',
+      activity: '',
+      purpose: '',
+      observation: '',
+      globalIndicators: []
+    },
 
-state.metadata.route = resolvedRoute;
-state.metadata.workRoute = resolvedRoute;
+    preInterview: null,
+    interview: null,
+    brief: null,
 
-if(!state.metadata.loadMode){
-  state.metadata.loadMode = 'backup';
+    briefReview: {
+      raw: null,
+      approved: false
+    },
+
+    loads: {
+      pre: [],
+      interview: [],
+      interviewTranscript: [],
+      sipoc: [],
+      statusInterview: [],
+      brief: [],
+      docs: []
+    },
+
+    master: null,
+
+    promptAInput: null,
+    promptAOutput: null,
+    asIsProcess: null,
+    asIsProcessApproved: false,
+
+    asis: {
+      activities: [],
+      actors_catalog: [],
+      suppliers_inputs: [],
+      outputs_customers: [],
+      additional_information: []
+    },
+
+    analysis: null,
+
+    analysisStages: {
+      current: 'VA',
+      results: {}
+    },
+
+    analysisRun: {
+      raw: null,
+      qa: false
+    },
+
+    sb_contract: null,
+
+    sbContractBuilder: {
+      raw: null,
+      approved: false,
+      validation: null
+    },
+
+    decision: {
+      route: null
+    },
+
+    tobe: {
+      improvements: []
+    },
+
+    results: {
+      sbJson: null,
+      sbValidation: null,
+      executiveHtml: '',
+      technicalHtml: '',
+      implementationHtml: '',
+      documentProposal: null,
+      integrationPayload: null,
+      tobeImprovements: []
+    }
+  };
+}
+
+
+function lmpSanitizeImportedAnalysisStages_(analysisStages){
+  const source =
+    analysisStages &&
+    typeof analysisStages === 'object' &&
+    !Array.isArray(analysisStages)
+      ? analysisStages
+      : {};
+
+  const sourceResults =
+    source.results &&
+    typeof source.results === 'object' &&
+    !Array.isArray(source.results)
+      ? source.results
+      : {};
+
+  const sanitizedResults = {};
+
+  /*
+   * Conserva solamente una secuencia consecutiva.
+   * Si falta una etapa, elimina todas las posteriores.
+   */
+  for(
+    const stage of LMP_OFFICIAL_ANALYSIS_STAGES_
+  ){
+    const result =
+      sourceResults[stage];
+
+    const isValidResult = !!(
+      result &&
+      typeof result === 'object' &&
+      !Array.isArray(result) &&
+      Object.keys(result).length
+    );
+
+    if(!isValidResult){
+      break;
+    }
+
+    sanitizedResults[stage] =
+      JSON.parse(
+        JSON.stringify(result)
+      );
+  }
+
+  const completedCount =
+    Object.keys(sanitizedResults).length;
+
+  const requestedCurrent = String(
+    source.current || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  const requestedIndex =
+    LMP_OFFICIAL_ANALYSIS_STAGES_
+      .indexOf(requestedCurrent);
+
+  let current = '';
+
+  /*
+   * Permite restaurar la última etapa completada o la siguiente
+   * etapa pendiente, pero nunca saltar etapas.
+   */
+  if(
+    requestedIndex >= 0 &&
+    requestedIndex <= completedCount
+  ){
+    current = requestedCurrent;
+  }else{
+    current =
+      LMP_OFFICIAL_ANALYSIS_STAGES_[
+        Math.min(
+          completedCount,
+          LMP_OFFICIAL_ANALYSIS_STAGES_.length - 1
+        )
+      ];
+  }
+
+  return {
+    current: current || 'VA',
+    results: sanitizedResults
+  };
+}
+
+
+function lmpClearDerivedProcessState_(message){
+  state.master = null;
+
+  state.promptAInput = null;
+  state.promptAOutput = null;
+  state.asIsProcess = null;
+  state.asIsProcessApproved = false;
+
+  state.brief = null;
+
+  state.briefReview = {
+    raw: null,
+    approved: false
+  };
+
+  state.asis = {
+    activities: [],
+    actors_catalog: [],
+    suppliers_inputs: [],
+    outputs_customers: [],
+    additional_information: []
+  };
+
+  state.analysis = null;
+
+  state.analysisStages = {
+    current: 'VA',
+    results: {}
+  };
+
+  state.analysisRun = {
+    raw: null,
+    qa: false
+  };
+
+  state.sb_contract = null;
+
+  state.sbContractBuilder = {
+    raw: null,
+    approved: false,
+    validation: null
+  };
+
+  state.decision = {
+    route: null
+  };
+
+  state.tobe = {
+    improvements: []
+  };
+
+  state.results = {
+    sbJson: null,
+    sbValidation: null,
+    executiveHtml: '',
+    technicalHtml: '',
+    implementationHtml: '',
+    documentProposal: null,
+    integrationPayload: null,
+    tobeImprovements: []
+  };
+
+  state.metadata =
+    state.metadata || {};
+
+  state.metadata.currentStage =
+    'carga';
+
+  state.metadata.analysisRequiresRevalidation =
+    true;
+
+  state.metadata.lastSavedAt =
+    new Date().toISOString();
+
+  [
+    'masterEditor',
+    'briefPromptEditor',
+    'promptAResponseEditor'
+  ].forEach(function(id){
+    const node = qs(id);
+
+    if(node){
+      node.value = '';
+    }
+  });
+
+  LMP_OFFICIAL_ANALYSIS_STAGES_
+    .forEach(function(stage){
+      [
+        'analysisPrompt_',
+        'analysisResponse_',
+        'analysisResult_'
+      ].forEach(function(prefix){
+        const node =
+          qs(prefix + stage);
+
+        if(node){
+          node.value = '';
+        }
+      });
+
+      const preview =
+        qs(
+          'analysisAccumPreview_' +
+          stage
+        );
+
+      if(preview){
+        preview.textContent = '';
+      }
+    });
+
+  if(
+    typeof resetPromptAValidationState === 'function'
+  ){
+    resetPromptAValidationState(
+      message ||
+      'Los insumos cambiaron. Consolida y genera un nuevo JSON AS-IS.'
+    );
+  }
+
+  if(
+    typeof renderAsIsActivities === 'function'
+  ){
+    renderAsIsActivities();
+  }
+
+  if(
+    typeof renderAnalysisFromState === 'function'
+  ){
+    renderAnalysisFromState();
+  }
+
+  if(
+    typeof renderImprovements === 'function'
+  ){
+    renderImprovements();
+  }
+
+  if(
+    typeof updateTopStatus === 'function'
+  ){
+    updateTopStatus();
+  }
 }
   
+
+function mergeLoadedState(loaded){
+  if(
+    !loaded ||
+    typeof loaded !== 'object' ||
+    Array.isArray(loaded)
+  ){
+    throw new Error(
+      'El respaldo no contiene un objeto de estado LMP válido.'
+    );
+  }
+
+  const imported =
+    JSON.parse(
+      JSON.stringify(loaded)
+    );
+
+  /*
+   * Utiliza un estado limpio como base.
+   * Nunca utiliza el proceso actualmente abierto.
+   */
+  const merged =
+    deepMerge(
+      lmpCreateImportBaseState_(),
+      imported
+    );
+
+  merged.analysisStages =
+    lmpSanitizeImportedAnalysisStages_(
+      imported.analysisStages
+    );
+
+  const hasPromptAInput = !!(
+    merged.promptAInput &&
+    typeof merged.promptAInput === 'object' &&
+    !Array.isArray(merged.promptAInput)
+  );
+
+  const hasPromptAOutput = !!(
+    merged.promptAOutput &&
+    merged.promptAOutput.as_is_process
+  );
+
+  /*
+   * Los respaldos antiguos sin ambas evidencias pueden
+   * restaurar el AS-IS, pero no continuar la bola de nieve.
+   */
+  if(
+    !hasPromptAInput ||
+    !hasPromptAOutput
+  ){
+    merged.analysisStages = {
+      current: 'VA',
+      results: {}
+    };
+
+    merged.analysis = null;
+
+    merged.metadata.analysisRequiresRevalidation =
+      true;
+  }else{
+    merged.metadata.analysisRequiresRevalidation =
+      false;
+  }
+
+  const resolvedRoute =
+    resolveLmpWorkRouteFromBackup(
+      imported
+    );
+
+  merged.metadata.route =
+    resolvedRoute;
+
+  merged.metadata.workRoute =
+    resolvedRoute;
+
+  merged.metadata.loadMode =
+    merged.metadata.loadMode ||
+    'backup';
+
+  const activities =
+    safeArray(
+      merged.asis?.activities
+    ).filter(
+      isMeaningfulAsisActivity
+    );
+
+  merged.asis =
+    merged.asis &&
+    typeof merged.asis === 'object'
+      ? merged.asis
+      : {};
+
+  merged.asis.activities =
+    activities;
+
+  let requestedStage = String(
+    merged.metadata.currentStage || ''
+  ).trim();
+
+  /*
+   * No restaura pantallas B1–B6.
+   */
+  if(
+    requestedStage === 'analisis_b1' ||
+    /^analisis_b[2-6]$/i.test(requestedStage)
+  ){
+    requestedStage =
+      activities.length
+        ? 'asis'
+        : 'inicio';
+  }
+
+  const requestedIsAnalysis =
+    requestedStage.startsWith(
+      'analisis_'
+    );
+
+  if(requestedIsAnalysis){
+    requestedStage =
+      LMP_ANALYSIS_SECTION_BY_STAGE_[
+        merged.analysisStages.current
+      ] ||
+      (
+        activities.length
+          ? 'asis'
+          : 'inicio'
+      );
+  }
+
+  if(
+    !stageOrder.includes(requestedStage)
+  ){
+    if(
+      Object.keys(
+        merged.analysisStages.results
+      ).length
+    ){
+      requestedStage =
+        LMP_ANALYSIS_SECTION_BY_STAGE_[
+          merged.analysisStages.current
+        ] ||
+        'analisis_va';
+
+    }else if(activities.length){
+      requestedStage =
+        'asis';
+
+    }else{
+      const hasLoads = Object.values(
+        merged.loads || {}
+      ).some(function(items){
+        return safeArray(items).length;
+      });
+
+      requestedStage =
+        hasLoads
+          ? 'carga'
+          : 'inicio';
+    }
+  }
+
+  merged.metadata.currentStage =
+    requestedStage;
+
+  Object.keys(state)
+    .forEach(function(key){
+      delete state[key];
+    });
+
+  Object.assign(
+    state,
+    merged
+  );
+
   cleanEmptyAsisActivities();
 }
 
@@ -12273,10 +12803,33 @@ function resetAll(){
   statusInterview:[],
   docs:[]
 },
-    master:null,
-    asis:{activities:[]},
-    analysis:null,
-    analysisRun:{raw:null,qa:false},
+master:null,
+
+promptAInput:null,
+promptAOutput:null,
+asIsProcess:null,
+asIsProcessApproved:false,
+
+asis:{
+  activities:[],
+  actors_catalog:[],
+  suppliers_inputs:[],
+  outputs_customers:[],
+  additional_information:[]
+},
+
+analysis:null,
+
+analysisStages:{
+  current:'VA',
+  results:{}
+},
+
+analysisRun:{
+  raw:null,
+  qa:false
+},
+    
     sb_contract:null,
     sbContractBuilder:{raw:null,approved:false,validation:null},
     decision:{route:null},
@@ -13935,61 +14488,6 @@ function renderLmpB1OperationalState(result, issues){
   }
 }
 
-function lmpB1CurrentGateResult(){
-  const storedB1 = state.analysisStages?.results?.B1;
-  if(storedB1?.operational_state || storedB1?.validation || storedB1?.lifecycle){
-    const lifecycle = storedB1.lifecycle || storedB1.validation?.lifecycle || storedB1.operational_state?.lifecycle || 'blocked';
-    const completeness = storedB1.completeness || storedB1.validation?.completeness || {};
-    const gaps = safeArray(storedB1.validation?.gaps || storedB1.gaps);
-    const blockingCount = Number(completeness.blocking_count ?? gaps.filter(issue => issue.level === 'critical').length);
-    const warningCount = Number(completeness.warning_count ?? gaps.filter(issue => issue.level !== 'critical').length);
-    const score = Number(completeness.score || 0);
-    const decision = storedB1.operational_state?.decision
-      ? storedB1.operational_state
-      : lmpB1OperationalDecision(lifecycle, blockingCount, warningCount, score);
-    return {
-      source: 'processed_b1',
-      lifecycle,
-      score,
-      blocking_count: blockingCount,
-      warning_count: warningCount,
-      can_proceed_to_VA: decision.can_proceed_to_VA,
-      reason: decision.reason || storedB1.operational_state?.reason || ''
-    };
-  }
-
-  const deterministic = lmpStructuralValidator(lmpBuildB1StructuralInput());
-  return {
-    source: 'deterministic_b1',
-    lifecycle: deterministic.lifecycle,
-    score: Number(deterministic.completeness?.score || 0),
-    blocking_count: Number(deterministic.completeness?.blocking_count || 0),
-    warning_count: Number(deterministic.completeness?.warning_count || 0),
-    can_proceed_to_VA: !!deterministic.operational_state?.can_proceed_to_VA,
-    reason: deterministic.operational_state?.reason || lmpB1OperationalMessage(deterministic),
-    deterministic
-  };
-}
-
-function lmpB1CanProceedToB2(showFeedback = true){
-  const gate = lmpB1CurrentGateResult();
-
-  if(gate.deterministic && typeof renderLmpB1StructuralStatus === 'function'){
-    window.__LMP_B1_STRUCTURAL_STATUS_SIGNATURE__ = '';
-    renderLmpB1StructuralStatus();
-  }
-
-  if(showFeedback && gate.blocking_count > 0 && typeof showMsg === 'function'){
-    showMsg(
-      'asisBuilderMsg',
-      'warn',
-      `Hay ${gate.blocking_count} vacío(s) estructural(es). Puedes continuar, pero conviene revisarlos antes de generar entregables finales.`
-    );
-  }
-
-  return true;
-}
-
 window.lmpB1CanProceedToB2 = lmpB1CanProceedToB2;
 
 function renderLmpB1StructuralStatus(){
@@ -14464,72 +14962,126 @@ function refreshLoadViews(){
 }
 
 function removeLoadedItem(type, index){
-  state.loads = state.loads || {};
+  state.loads =
+    state.loads || {};
 
-  if(!Array.isArray(state.loads[type])) return;
+  if(
+    !Array.isArray(state.loads[type]) ||
+    index < 0 ||
+    index >= state.loads[type].length
+  ){
+    return;
+  }
 
-  state.loads[type].splice(index, 1);
+  state.loads[type].splice(
+    index,
+    1
+  );
+
+  lmpClearDerivedProcessState_(
+    'Se retiró un insumo. Consolida nuevamente Prompt A y genera un nuevo JSON AS-IS.'
+  );
 
   updateLoadKpis();
   refreshLoadViews();
 
-  if(typeof refreshCargaFlowState === 'function'){
-    refreshCargaFlowState();
-  }
+  showMsg(
+    'cargaMsg',
+    'warn',
+    'Insumo retirado. Los resultados derivados anteriores fueron invalidados.'
+  );
 }
 
+
 function clearLoadsGroup(type){
+  state.loads =
+    state.loads || {};
+
+  let removedCount = 0;
+
   if(type === 'docs'){
+    removedCount =
+      safeArray(
+        state.loads.docs
+      ).length;
+
     state.loads.docs = [];
   }
 
   if(type === 'pre'){
+    removedCount =
+      safeArray(
+        state.loads.pre
+      ).length;
+
     state.loads.pre = [];
   }
 
   if(type === 'interview'){
+    removedCount =
+      safeArray(state.loads.interview).length +
+      safeArray(state.loads.interviewTranscript).length +
+      safeArray(state.loads.sipoc).length +
+      safeArray(state.loads.statusInterview).length;
+
     state.loads.interview = [];
     state.loads.interviewTranscript = [];
     state.loads.sipoc = [];
     state.loads.statusInterview = [];
   }
 
+  if(!removedCount){
+    return;
+  }
+
+  lmpClearDerivedProcessState_(
+    'Se eliminó un grupo de insumos. Consolida nuevamente Prompt A.'
+  );
+
   updateLoadKpis();
   refreshLoadViews();
 
-  if(typeof refreshCargaFlowState === 'function'){
-    refreshCargaFlowState();
-  }
+  showMsg(
+    'cargaMsg',
+    'warn',
+    'Grupo de insumos eliminado. Los resultados derivados anteriores fueron invalidados.'
+  );
 }
 
+
 function clearAllLoads(){
-  state.loads = state.loads || {};
+  state.loads = {
+    pre: [],
+    interview: [],
+    interviewTranscript: [],
+    sipoc: [],
+    statusInterview: [],
+    brief: [],
+    docs: []
+  };
 
-  state.loads.pre = [];
-  state.loads.interview = [];
-  state.loads.interviewTranscript = [];
-  state.loads.sipoc = [];
-  state.loads.statusInterview = [];
-  state.loads.docs = [];
+  lmpClearDerivedProcessState_(
+    'Carga eliminada. Agrega nuevos insumos antes de consolidar Prompt A.'
+  );
 
-  state.master = null;
-
-  if(qs('masterEditor')) qs('masterEditor').value = '';
-
-  const promptABox = qs('promptAInputEditor') || qs('briefPromptEditor');
-  if(promptABox) promptABox.value = '';
-
-  const promptAResponseBox = qs('promptAResponseEditor') || qs('promptAResponseEditor');
-  if(promptAResponseBox) promptAResponseBox.value = '';
+  qsa('input[type="file"]')
+    .forEach(function(input){
+      input.value = '';
+    });
 
   updateLoadKpis();
   refreshLoadViews();
 
-  if(typeof refreshCargaFlowState === 'function'){
-    refreshCargaFlowState();
+  if(qs('promptAConsolidatedStatus')){
+    qs('promptAConsolidatedStatus').textContent =
+      'Aún no se ha consolidado la información.';
   }
 
-  showMsg('cargaMsg','ok','Carga limpiada correctamente.');
+  showMsg(
+    'cargaMsg',
+    'ok',
+    'Carga y resultados derivados eliminados correctamente.'
+  );
 }
 
 function copyTextFromId(id,msgId,okMsg){
@@ -16810,20 +17362,50 @@ const loaded = {
     if(input) input.value = '';
   });
 
-  state.promptAInput = null;
-  resetPromptAValidationState('Insumos cargados. Consolida y genera un nuevo JSON AS-IS antes de validar.');
+if(!totalLoaded){
+  if(window.__LMP_LAST_LOAD_ERROR__){
+    showMsg(
+      'cargaMsg',
+      'err',
+      window.__LMP_LAST_LOAD_ERROR__
+    );
 
-  if(qs('promptAConsolidatedStatus')){
-    qs('promptAConsolidatedStatus').textContent = 'Aún no se ha consolidado la información.';
+    return;
   }
-  renderAnalysisValidation();
-  refreshCargaFlowState();
 
-  if(!totalLoaded){
-    if(window.__LMP_LAST_LOAD_ERROR__){
-      showMsg('cargaMsg','err', window.__LMP_LAST_LOAD_ERROR__);
-      return;
-    }
+  showMsg(
+    'cargaMsg',
+    'warn',
+    'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
+  );
+
+  return;
+}
+
+/*
+ * Solo invalida el proceso cuando realmente ingresaron
+ * nuevos archivos.
+ */
+lmpClearDerivedProcessState_(
+  'Se cargaron nuevos insumos. Consolida Prompt A y genera un nuevo JSON AS-IS.'
+);
+
+if(qs('promptAConsolidatedStatus')){
+  qs('promptAConsolidatedStatus').textContent =
+    'Aún no se ha consolidado la información.';
+}
+
+if(
+  typeof renderAnalysisValidation === 'function'
+){
+  renderAnalysisValidation();
+}
+
+if(
+  typeof refreshCargaFlowState === 'function'
+){
+  refreshCargaFlowState();
+}
 
     showMsg(
       'cargaMsg',
