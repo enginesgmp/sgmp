@@ -14488,8 +14488,6 @@ function renderLmpB1OperationalState(result, issues){
   }
 }
 
-window.lmpB1CanProceedToB2 = lmpB1CanProceedToB2;
-
 function renderLmpB1StructuralStatus(){
   if(typeof qs !== 'function') return null;
 
@@ -17305,120 +17303,188 @@ async function loadTxtInputFiles(inputId, targetType, fixedType){
 }
 
 async function loadAllInputs(){
-  state.loads = state.loads || {};
-  state.loads.pre = state.loads.pre || [];
-  state.loads.interview = state.loads.interview || [];
-  state.loads.interviewTranscript = state.loads.interviewTranscript || [];
-  state.loads.sipoc = state.loads.sipoc || [];
-  state.loads.statusInterview = state.loads.statusInterview || [];
-  state.loads.docs = state.loads.docs || [];
+  state.loads =
+    state.loads || {};
 
-  window.__LMP_LAST_LOAD_ERROR__ = '';
+  state.loads.pre =
+    state.loads.pre || [];
 
-updateCargaInputsByRoute();
+  state.loads.interview =
+    state.loads.interview || [];
 
-const isEnabled = (id) => {
-  const input = qs(id);
-  return !!input && !input.disabled;
-};
+  state.loads.interviewTranscript =
+    state.loads.interviewTranscript || [];
 
-const loaded = {
-  interview: isEnabled('fileInterview')
-    ? await loadInstrumentFiles('interview')
-    : [],
+  state.loads.sipoc =
+    state.loads.sipoc || [];
 
-  pre: isEnabled('filePre')
-    ? await loadInstrumentFiles('pre')
-    : [],
+  state.loads.statusInterview =
+    state.loads.statusInterview || [];
 
-  transcript: isEnabled('fileInterviewTranscript')
-    ? await loadTxtInputFiles('fileInterviewTranscript', 'interviewTranscript', 'transcripcion_entrevista')
-    : [],
+  state.loads.docs =
+    state.loads.docs || [];
 
-  sipoc: isEnabled('fileSipoc')
-    ? await loadInstrumentFiles('sipoc')
-    : [],
+  window.__LMP_LAST_LOAD_ERROR__ =
+    '';
 
-  status: isEnabled('fileStatusInterview')
-    ? await loadInstrumentFiles('statusInterview')
-    : [],
+  updateCargaInputsByRoute();
 
-  docs: await loadTxtInputFiles('docFiles', 'docs', 'archivo_adicional')
-};
+  const isEnabled = function(id){
+    const input =
+      qs(id);
+
+    return !!(
+      input &&
+      !input.disabled
+    );
+  };
+
+  const loaded = {
+    interview:
+      isEnabled('fileInterview')
+        ? await loadInstrumentFiles(
+            'interview'
+          )
+        : [],
+
+    pre:
+      isEnabled('filePre')
+        ? await loadInstrumentFiles(
+            'pre'
+          )
+        : [],
+
+    transcript:
+      isEnabled('fileInterviewTranscript')
+        ? await loadTxtInputFiles(
+            'fileInterviewTranscript',
+            'interviewTranscript',
+            'transcripcion_entrevista'
+          )
+        : [],
+
+    sipoc:
+      isEnabled('fileSipoc')
+        ? await loadInstrumentFiles(
+            'sipoc'
+          )
+        : [],
+
+    status:
+      isEnabled('fileStatusInterview')
+        ? await loadInstrumentFiles(
+            'statusInterview'
+          )
+        : [],
+
+    docs:
+      await loadTxtInputFiles(
+        'docFiles',
+        'docs',
+        'archivo_adicional'
+      )
+  };
 
   const totalLoaded =
-    safeArray(loaded.interview).length +
-    safeArray(loaded.pre).length +
-    safeArray(loaded.transcript).length +
-    safeArray(loaded.sipoc).length +
-    safeArray(loaded.status).length +
-    safeArray(loaded.docs).length;
+    safeArray(
+      loaded.interview
+    ).length +
+    safeArray(
+      loaded.pre
+    ).length +
+    safeArray(
+      loaded.transcript
+    ).length +
+    safeArray(
+      loaded.sipoc
+    ).length +
+    safeArray(
+      loaded.status
+    ).length +
+    safeArray(
+      loaded.docs
+    ).length;
 
   updateLoadKpis();
   refreshLoadViews();
 
-  ['filePre','fileInterview','fileInterviewTranscript','fileSipoc','fileStatusInterview','docFiles'].forEach(id => {
-    const input = qs(id);
-    if(input) input.value = '';
+  [
+    'filePre',
+    'fileInterview',
+    'fileInterviewTranscript',
+    'fileSipoc',
+    'fileStatusInterview',
+    'docFiles'
+  ].forEach(function(id){
+    const input =
+      qs(id);
+
+    if(input){
+      input.value = '';
+    }
   });
 
-if(!totalLoaded){
-  if(window.__LMP_LAST_LOAD_ERROR__){
-    showMsg(
-      'cargaMsg',
-      'err',
-      window.__LMP_LAST_LOAD_ERROR__
-    );
+  /*
+   * No invalida el proceso cuando el usuario pulsa el botón
+   * sin haber seleccionado archivos.
+   */
+  if(!totalLoaded){
+    if(window.__LMP_LAST_LOAD_ERROR__){
+      showMsg(
+        'cargaMsg',
+        'err',
+        window.__LMP_LAST_LOAD_ERROR__
+      );
 
-    return;
-  }
-
-  showMsg(
-    'cargaMsg',
-    'warn',
-    'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
-  );
-
-  return;
-}
-
-/*
- * Solo invalida el proceso cuando realmente ingresaron
- * nuevos archivos.
- */
-lmpClearDerivedProcessState_(
-  'Se cargaron nuevos insumos. Consolida Prompt A y genera un nuevo JSON AS-IS.'
-);
-
-if(qs('promptAConsolidatedStatus')){
-  qs('promptAConsolidatedStatus').textContent =
-    'Aún no se ha consolidado la información.';
-}
-
-if(
-  typeof renderAnalysisValidation === 'function'
-){
-  renderAnalysisValidation();
-}
-
-if(
-  typeof refreshCargaFlowState === 'function'
-){
-  refreshCargaFlowState();
-}
+      return;
+    }
 
     showMsg(
       'cargaMsg',
       'warn',
       'No se detectaron archivos nuevos para cargar. Selecciona al menos un JSON o TXT antes de cargar insumos.'
     );
+
     return;
+  }
+
+  /*
+   * Solo invalida los resultados derivados cuando realmente
+   * ingresaron nuevos archivos.
+   */
+  lmpClearDerivedProcessState_(
+    'Se cargaron nuevos insumos. Consolida Prompt A y genera un nuevo JSON AS-IS.'
+  );
+
+  if(
+    qs('promptAConsolidatedStatus')
+  ){
+    qs(
+      'promptAConsolidatedStatus'
+    ).textContent =
+      'Aún no se ha consolidado la información.';
+  }
+
+  if(
+    typeof renderAnalysisValidation ===
+    'function'
+  ){
+    renderAnalysisValidation();
+  }
+
+  if(
+    typeof refreshCargaFlowState ===
+    'function'
+  ){
+    refreshCargaFlowState();
   }
 
   showMsg(
     'cargaMsg',
     'ok',
-    `Insumos cargados correctamente. Total cargado en esta acción: ${totalLoaded}.`
+    'Insumos cargados correctamente. Total cargado en esta acción: ' +
+    totalLoaded +
+    '.'
   );
 }
 
