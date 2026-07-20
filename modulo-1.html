@@ -19508,8 +19508,7 @@ function lmpGetValidatedAsIsEvidence_(){
     }
   };
 }
-
-
+  
 function buildEvidencePackForStage(stageKey){
   const stage = String(stageKey || '')
     .trim()
@@ -19536,32 +19535,9 @@ function buildEvidencePackForStage(stageKey){
   }
 
   /*
-   * No reconstruye silenciosamente la entrada de Prompt A.
-   * Debe utilizar exactamente la entrada consolidada original.
+   * Recupera exclusivamente los resultados oficiales
+   * de las etapas anteriores para construir la bola de nieve.
    */
-  if(
-    !state.promptAInput ||
-    typeof state.promptAInput !== 'object' ||
-    Array.isArray(state.promptAInput)
-  ){
-    throw new Error(
-      'No existe la entrada consolidada original de Prompt A.'
-    );
-  }
-
-  /*
-   * Debe utilizar exclusivamente la respuesta original validada
-   * de Prompt A, separada del AS-IS editado.
-   */
-  if(
-    !state.promptAOutput ||
-    !state.promptAOutput.as_is_process
-  ){
-    throw new Error(
-      'No existe el resultado original validado de Prompt A.'
-    );
-  }
-
   const previousStageResults = {};
 
   stageSequence
@@ -19584,15 +19560,48 @@ function buildEvidencePackForStage(stageKey){
         previousResult;
     });
 
+  /*
+   * El AS-IS corregido, validado y guardado es la fuente
+   * oficial del proceso para todas las etapas de análisis.
+   */
   const validatedAsIs =
     lmpGetValidatedAsIsEvidence_();
+
+  if(
+    validatedAsIs?.validation_state?.approved !== true
+  ){
+    throw new Error(
+      'El proceso AS-IS debe estar validado y guardado antes de ejecutar los análisis.'
+    );
+  }
+
+  /*
+   * Preparación y contexto siempre viajan completos.
+   * No se reconstruyen desde los insumos originales de Prompt A.
+   */
+  const processContext =
+    state.context &&
+    typeof state.context === 'object' &&
+    !Array.isArray(state.context)
+      ? Object.assign(
+          {},
+          state.context,
+          {
+            source_route:
+              validatedAsIs.source_route
+          }
+        )
+      : {
+          source_route:
+            validatedAsIs.source_route
+        };
 
   return {
     contract:
       'LMP_ANALYSIS_EVIDENCE_PACK',
 
     contract_version:
-      '2.0.0',
+      '3.0.0',
 
     current_stage:
       stage,
@@ -19600,35 +19609,44 @@ function buildEvidencePackForStage(stageKey){
     flow_order:
       stageSequence.slice(),
 
+    /*
+     * Preparación y contexto completos del proceso.
+     */
     process_context:
       lmpCloneJsonEvidence_(
-        Object.assign(
-          {},
-          state.promptAInput.context || {},
-          state.context || {}
-        ),
-        'contexto del proceso'
+        processContext,
+        'preparación y contexto'
       ),
 
-    prompt_a_input:
-      lmpCloneJsonEvidence_(
-        state.promptAInput,
-        'entrada original de Prompt A'
-      ),
-
-    prompt_a_output:
-      lmpCloneJsonEvidence_(
-        state.promptAOutput,
-        'resultado original de Prompt A'
-      ),
-
+    /*
+     * AS-IS oficial:
+     * - actores;
+     * - entradas y proveedores;
+     * - salidas y clientes;
+     * - actividades y decisiones;
+     * - información adicional;
+     * - estado de validación.
+     */
     validated_as_is:
       validatedAsIs,
 
+    /*
+     * Resultados oficiales anteriores.
+     * Para VA será un objeto vacío.
+     */
     previous_stage_results:
       previousStageResults,
 
     traceability: {
+      source_authority:
+        'validated_as_is',
+
+      raw_inputs_included:
+        false,
+
+      prompt_a_history_included:
+        false,
+
       source_route:
         validatedAsIs.source_route,
 
