@@ -19901,12 +19901,17 @@ const ANALYSIS_STAGE_LABELS = {
     }
     return out;
   }
-  window.sgmpGetBestAnalysisSourceActivities = function(){
-    const brief = (window.state && (state.briefReview?.raw || state.brief)) || {};
-    const candidates = [brief?.as_is?.activities, brief?.activities_preliminary, state?.brief?.as_is?.activities, state?.brief?.activities_preliminary, state?.analysisStages?.results?.B1?.as_is?.activities, state?.asis?.activities, (typeof sgmpGetStructuralSourceActivities === 'function' ? sgmpGetStructuralSourceActivities() : [])];
-    for(const c of candidates){ const cleaned = cleanActivities(c); if(cleaned.length >= 2) return cleaned; }
-    return [];
-  };
+
+window.sgmpGetBestAnalysisSourceActivities = function(){
+  const currentActivities =
+    safeArray(state.asis?.activities).length
+      ? state.asis.activities
+      : state.asIsProcess?.as_is_process?.activities;
+
+  return cleanActivities(
+    currentActivities
+  );
+};
   
 window.sgmpBuildAnalysisStagePrompt = function(stageKey){
   const stage = String(stageKey || '')
@@ -20087,13 +20092,6 @@ window.sgmpEnsureAnalysisStagePrompt = async function(stageKey){
     .trim()
     .toUpperCase();
 
-  /*
-   * B1 se conserva únicamente para compatibilidad histórica.
-   */
-  if(stage === 'B1'){
-    return true;
-  }
-
   const requiredPromptKey =
     ANALYSIS_PROMPT_KEY_BY_STAGE[stage];
 
@@ -20232,11 +20230,9 @@ window.generateAnalysisScreenPrompt = async function(stageKey){
 
   const msgId =
     'analysisMsg_' + stage;
-
-  if(
-    stage !== 'B1' &&
-    !ANALYSIS_STAGE_SEQUENCE.includes(stage)
-  ){
+if(
+  !ANALYSIS_STAGE_SEQUENCE.includes(stage)
+){
     if(typeof showMsg === 'function'){
       showMsg(
         msgId,
@@ -20328,10 +20324,7 @@ window.generateAnalysisScreenPrompt = async function(stageKey){
     const loadedPrompt =
       getLoadedAnalysisPrompt(stage);
 
-    if(
-      stage !== 'B1' &&
-      !loadedPrompt
-    ){
+if(!loadedPrompt){
       throw new Error(
         'El prompt oficial no quedó disponible después de la sincronización.'
       );
@@ -20395,6 +20388,22 @@ window.runAnalysisScreenStage = async function(stageKey){
   const msgId =
     'analysisMsg_' + stage;
 
+if(
+  !ANALYSIS_STAGE_SEQUENCE.includes(stage)
+){
+  if(typeof showMsg === 'function'){
+    showMsg(
+      msgId,
+      'err',
+      'La etapa "' +
+      stage +
+      '" no pertenece al flujo vigente del LMP.'
+    );
+  }
+
+  return;
+}
+  
   try{
     state.analysisStages =
       state.analysisStages &&
@@ -20412,68 +20421,6 @@ window.runAnalysisScreenStage = async function(stageKey){
         : {};
 
     state.analysisStages.current = stage;
-
-    /*
-     * Compatibilidad temporal con el validador estructural B1.
-     */
-    if(
-      stage === 'B1' &&
-      typeof lmpResolveB1DeterministicIfValid === 'function'
-    ){
-      const deterministicOnly =
-        lmpResolveB1DeterministicIfValid();
-
-      if(deterministicOnly){
-        state.analysisStages.results.B1 =
-          deterministicOnly;
-
-        const resultBox =
-          el('analysisResult_B1');
-
-        if(resultBox){
-          resultBox.value = JSON.stringify(
-            deterministicOnly,
-            null,
-            2
-          );
-        }
-
-        const responseBox =
-          el('analysisResponse_B1');
-
-        if(responseBox){
-          responseBox.value = JSON.stringify(
-            deterministicOnly,
-            null,
-            2
-          );
-        }
-
-        if(
-          deterministicOnly.as_is &&
-          deterministicOnly.as_is.activities
-        ){
-          state.asis = state.asis || {};
-
-          state.asis.activities =
-            deterministicOnly.as_is.activities;
-
-          if(typeof renderAsIsActivities === 'function'){
-            renderAsIsActivities();
-          }
-        }
-
-        if(typeof showMsg === 'function'){
-          showMsg(
-            msgId,
-            'ok',
-            'B1 validado con el motor determinístico. No se consumieron tokens de IA.'
-          );
-        }
-
-        return;
-      }
-    }
 
     const missingStages =
       getMissingPreviousAnalysisStages(stage);
@@ -20602,15 +20549,8 @@ window.processAnalysisScreenStage = function(stageKey){
   const responseBox =
     el('analysisResponse_' + stage);
 
-  const allowedStages = [
-    'B1',
-    'VA',
-    'DESPERDICIOS',
-    'PROBLEMAS',
-    'RESTRICCIONES',
-    'QUICK_WINS',
-    'MEJORAS'
-  ];
+const allowedStages =
+  ANALYSIS_STAGE_SEQUENCE;
 
   if(!allowedStages.includes(stage)){
     if(typeof showMsg === 'function'){
@@ -20666,10 +20606,7 @@ window.processAnalysisScreenStage = function(stageKey){
     /*
      * Para las seis etapas vigentes el campo stage es obligatorio.
      */
-    if(
-      stage !== 'B1' &&
-      !declaredStage
-    ){
+if(!declaredStage){
       throw new Error(
         'El JSON no contiene el campo obligatorio "stage".'
       );
@@ -20692,10 +20629,9 @@ window.processAnalysisScreenStage = function(stageKey){
      * Impide procesar manualmente una etapa fuera del orden
      * de la bola de nieve.
      */
-    if(
-      stage !== 'B1' &&
-      typeof getMissingPreviousAnalysisStages === 'function'
-    ){
+if(
+  typeof getMissingPreviousAnalysisStages === 'function'
+){
       const missingStages =
         getMissingPreviousAnalysisStages(stage);
 
@@ -21130,26 +21066,6 @@ window.processAnalysisScreenStage = function(stageKey){
       );
     }
 
-    /*
-     * Compatibilidad temporal con respaldos B1.
-     */
-    if(
-      stage === 'B1' &&
-      typeof lmpStructuralValidator === 'function' &&
-      typeof lmpConsolidateB1WithAi === 'function'
-    ){
-      const deterministic =
-        lmpStructuralValidator(
-          lmpBuildB1StructuralInput(parsed)
-        );
-
-      parsed =
-        lmpConsolidateB1WithAi(
-          deterministic,
-          parsed
-        );
-    }
-
     state.analysisStages =
       state.analysisStages &&
       typeof state.analysisStages === 'object'
@@ -21169,10 +21085,9 @@ window.processAnalysisScreenStage = function(stageKey){
      */
     const invalidatedStages = [];
 
-    if(
-      stage !== 'B1' &&
-      typeof ANALYSIS_STAGE_SEQUENCE !== 'undefined'
-    ){
+ if(
+  typeof ANALYSIS_STAGE_SEQUENCE !== 'undefined'
+){
       const currentIndex =
         ANALYSIS_STAGE_SEQUENCE.indexOf(stage);
 
@@ -21243,31 +21158,6 @@ window.processAnalysisScreenStage = function(stageKey){
           null,
           2
         );
-    }
-
-    if(stage === 'B1'){
-      const structuralActivities =
-        typeof lmpNormalizeStructuralActivities === 'function'
-          ? lmpNormalizeStructuralActivities(
-              parsed?.as_is?.activities ||
-              parsed?.activities
-            )
-          : cleanActivities(
-              parsed?.as_is?.activities ||
-              parsed?.activities
-            );
-
-      if(structuralActivities.length){
-        state.asis =
-          state.asis || {};
-
-        state.asis.activities =
-          structuralActivities;
-
-        if(typeof renderAsIsActivities === 'function'){
-          renderAsIsActivities();
-        }
-      }
     }
 
     const assembled =
@@ -21404,21 +21294,12 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
     state.analysisStages?.current || ''
   ).trim().toUpperCase();
 
-  const b1 = results.B1 || {};
-
   const vaStage = results.VA || {};
   const wasteStage = results.DESPERDICIOS || {};
   const problemStage = results.PROBLEMAS || {};
   const restrictionStage = results.RESTRICCIONES || {};
   const quickWinStage = results.QUICK_WINS || {};
   const improvementStage = results.MEJORAS || {};
-
-  const completedStages = Object.keys(results).filter(function(key){
-    return (
-      results[key] &&
-      typeof results[key] === 'object'
-    );
-  });
 
   const cloneList = function(value){
     return arr(value).map(function(item){
@@ -21434,13 +21315,6 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
     });
   };
 
-  /*
-   * Compatibilidad exclusiva con respaldos que solo contienen B1.
-   */
-  if(
-    completedStages.length === 1 &&
-    completedStages[0] === 'B1'
-  ){
     const structuralActivities =
       typeof lmpNormalizeStructuralActivities === 'function'
         ? lmpNormalizeStructuralActivities(
@@ -21486,9 +21360,11 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
         {},
 
       context:
-        state.context ||
-        state.master?.context ||
-        {},
+context:
+  lmpCloneJsonEvidence_(
+    validatedAsIs.context,
+    'contexto del análisis'
+  ),
 
       as_is: {
         activities: structuralActivities
@@ -21523,10 +21399,20 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
   /*
    * El AS-IS validado es la fuente estructural principal.
    */
-  let activities = cleanActivities(
-    state.asis?.activities ||
-    window.sgmpGetBestAnalysisSourceActivities()
+const validatedAsIs =
+  typeof lmpGetValidatedAsIsEvidence_ === 'function'
+    ? lmpGetValidatedAsIsEvidence_()
+    : null;
+
+if(!validatedAsIs){
+  throw new Error(
+    'No existe evidencia AS-IS validada para ensamblar el análisis.'
   );
+}
+
+let activities = cleanActivities(
+  validatedAsIs.activities
+);
 
   /*
    * Integra el resultado VA dentro de cada actividad sin modificar
@@ -21730,21 +21616,22 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
     as_is: {
       activities,
 
-      actors_catalog: cloneList(
-        state.asis?.actors_catalog
-      ),
+actors_catalog: cloneList(
+  validatedAsIs.actors_catalog
+),
 
-      suppliers_inputs: cloneList(
-        state.asis?.suppliers_inputs
-      ),
+suppliers_inputs: cloneList(
+  validatedAsIs.suppliers_inputs
+),
 
-      outputs_customers: cloneList(
-        state.asis?.outputs_customers
-      ),
+outputs_customers: cloneList(
+  validatedAsIs.outputs_customers
+),
 
-      additional_information: cloneList(
-        state.asis?.additional_information
-      )
+additional_information: cloneList(
+  validatedAsIs.additional_information
+)
+      
     },
 
     ava:
@@ -21849,76 +21736,6 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
   const improvements = arr(
     assembled?.improvements
   );
-
-  /*
-   * Compatibilidad temporal con respaldos estructurales B1.
-   */
-  if(stage === 'B1'){
-    const b1 =
-      state.analysisStages?.results?.B1 ||
-      assembled ||
-      {};
-
-    const completeness =
-      b1.completeness ||
-      b1.validation?.completeness ||
-      assembled?.completeness ||
-      {};
-
-    const gaps = arr(
-      b1.validation?.gaps ||
-      b1.gaps ||
-      assembled?.validation?.gaps
-    );
-
-    const blocking = Number(
-      completeness.blocking_count ??
-      gaps.filter(function(issue){
-        return String(issue?.level || '')
-          .trim()
-          .toLowerCase() === 'critical';
-      }).length
-    );
-
-    const score = Number(
-      completeness.score || 0
-    );
-
-    const lifecycle =
-      b1.lifecycle ||
-      b1.validation?.lifecycle ||
-      b1.operational_state?.lifecycle ||
-      assembled?.lifecycle ||
-      'blocked';
-
-    [
-      ['stageActsKpi_', activities.length],
-      ['stageImpKpi_', score + '%'],
-      ['stageQwKpi_', gaps.length],
-      ['stageResKpi_', blocking],
-      ['stageNvaKpi_', lifecycle]
-    ].forEach(function(entry){
-      const node = el(entry[0] + stage);
-
-      if(node){
-        node.textContent = entry[1];
-      }
-    });
-
-    const b1Preview = el(
-      'analysisAccumPreview_' + stage
-    );
-
-    if(b1Preview){
-      b1Preview.textContent = JSON.stringify(
-        assembled,
-        null,
-        2
-      );
-    }
-
-    return;
-  }
 
   const distribution =
     assembled?.ava?.distribution &&
