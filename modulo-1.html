@@ -11339,18 +11339,6 @@ function saveAsIsAndContinue(){
    - No debe limpiarse mientras el objetivo sea estabilizar Inicio → Proceso AS-IS.
 */
 
-function saveAnalysisAndContinue(){
-  try{
-    if(qs('analysisEditor').value.trim()){
-      state.analysis = JSON.parse(qs('analysisEditor').value);
-    } else if(!state.analysis){
-      runAnalysis();
-    }
-    goToNext('analisis');
-  }catch(error){
-    showMsg('analysisMsg','err',`La salida del análisis no es válida. Detalle: ${error.message}`);
-  }
-}
 
 /* =========================
    DECISIÓN
@@ -12665,11 +12653,6 @@ function syncVisibleStage(){
     }
   }
   if(active === 'asis'){   collectAsisActivities();   cleanEmptyAsisActivities(); }
-  if(active === 'analisis'){
-    if(qs('analysisEditor').value.trim()){
-      try{ state.analysis = JSON.parse(qs('analysisEditor').value); }catch(e){}
-    }
-  }
   if(active === 'tobe') collectImprovements();
   state.metadata.lastSavedAt = new Date().toISOString();
 }
@@ -12991,12 +12974,6 @@ function resetAll(){
   ){
     showSection('inicio');
   }
-}
-/* =========================
-   RESULTADOS AUXILIARES
-========================= */
-function continueFromAnalysisIfNeeded(){
-  if(!state.analysis) runAnalysis();
 }
 
 /* =========================
@@ -19634,77 +19611,145 @@ function applyIAResponseAndContinue(){
 }
 
 function renderAnalysisFromState(){
-  if(!state.analysis) return;
+  const officialStages =
+    typeof LMP_OFFICIAL_ANALYSIS_STAGES_ !== 'undefined' &&
+    Array.isArray(LMP_OFFICIAL_ANALYSIS_STAGES_)
+      ? LMP_OFFICIAL_ANALYSIS_STAGES_.slice()
+      : [
+          'VA',
+          'DESPERDICIOS',
+          'PROBLEMAS',
+          'RESTRICCIONES',
+          'QUICK_WINS',
+          'MEJORAS'
+        ];
 
-  const data = state.analysis.raw || state.analysis;
+  const results =
+    state.analysisStages?.results &&
+    typeof state.analysisStages.results === 'object' &&
+    !Array.isArray(state.analysisStages.results)
+      ? state.analysisStages.results
+      : {};
 
-  if(qs('analysisEditor')){
-    qs('analysisEditor').value = JSON.stringify(data, null, 2);
+  const completedStages =
+    officialStages.filter(function(stage){
+      const result =
+        results[stage];
+
+      return !!(
+        result &&
+        typeof result === 'object' &&
+        !Array.isArray(result) &&
+        Object.keys(result).length
+      );
+    });
+
+  /*
+   * Sin etapas procesadas no existe un análisis consolidado.
+   */
+  if(!completedStages.length){
+    state.analysis = null;
+    return null;
   }
 
-  const toArray = (value) => {
-    if(Array.isArray(value)) return value;
-    if(value === undefined || value === null || value === '') return [];
-    return [value];
-  };
+  if(
+    typeof window.sgmpAssembleStagedAnalysisPayload !==
+    'function'
+  ){
+    console.error(
+      '[LMP] No está disponible el ensamblador oficial de análisis.'
+    );
 
-  const labelItem = (x) => {
-    if(typeof x === 'string') return x;
-    return x.title || x.problem || x.waste || x.restriction || x.quickWin || x.name || x.description || x.summary || JSON.stringify(x);
-  };
+    return null;
+  }
 
-  const fmtList = (arr) => {
-    return toArray(arr).map(labelItem).filter(Boolean).join('\n');
-  };
+  let assembled;
 
-  const ava = data.ava || {};
-  const dist = ava.distribution || {};
-  const avaSummary = ava.summary || {};
+  try{
+    assembled =
+      window.sgmpAssembleStagedAnalysisPayload();
 
-  let VA_pct = Number(dist.VA_pct || 0);
-  let NNVA_pct = Number(dist.NNVA_pct || 0);
-  let NVA_pct = Number(dist.NVA_pct || 0);
+  }catch(error){
+    console.error(
+      '[LMP renderAnalysisFromState] No fue posible ensamblar el análisis.',
+      error
+    );
 
-  if(!VA_pct && !NNVA_pct && !NVA_pct){
-    const vaCount = toArray(avaSummary.value_added).length;
-    const nnvaCount =
-      toArray(avaSummary.necessary_non_value_added).length +
-      toArray(avaSummary.business_value_added).length;
-    const nvaCount = toArray(avaSummary.non_value_added).length;
+    return null;
+  }
 
-    const total = vaCount + nnvaCount + nvaCount;
+  if(
+    !assembled ||
+    typeof assembled !== 'object' ||
+    Array.isArray(assembled)
+  ){
+    console.error(
+      '[LMP] El ensamblador no devolvió un contrato válido.'
+    );
 
-    if(total > 0){
-      VA_pct = Math.round((vaCount / total) * 1000) / 10;
-      NNVA_pct = Math.round((nnvaCount / total) * 1000) / 10;
-      NVA_pct = Math.round((nvaCount / total) * 1000) / 10;
+    return null;
+  }
+
+  state.analysis =
+    assembled;
+
+  /*
+   * Restaura la vista acumulada de todas las etapas
+   * realmente procesadas.
+   */
+  if(
+    typeof window.renderAnalysisScreenAccumulated ===
+    'function'
+  ){
+    completedStages.forEach(function(stage){
+      window.renderAnalysisScreenAccumulated(
+        stage
+      );
+    });
+  }
+
+  /*
+   * Al restaurar un respaldo, recupera las mejoras solamente
+   * cuando todavía no existen decisiones del usuario.
+   */
+  if(
+    completedStages.includes('MEJORAS') &&
+    !safeArray(
+      state.tobe?.improvements
+    ).length
+  ){
+    const improvements =
+      safeArray(
+        assembled.improvements
+      ).map(function(item){
+        return typeof normalizeImprovement ===
+          'function'
+          ? normalizeImprovement(item)
+          : item;
+      });
+
+    state.tobe =
+      state.tobe || {};
+
+    state.tobe.improvements =
+      improvements;
+
+    if(
+      typeof renderImprovements ===
+      'function'
+    ){
+      renderImprovements();
     }
   }
 
-  const findings = data.findings || {};
-
-  const wastes = toArray(findings.wastes || data.wastes || []);
-  const problems = toArray(findings.problems || data.problems || []);
-  const quickWins = toArray(findings.quickWins || findings.quick_wins || data.quickWins || []);
-  const restrictions = toArray(findings.restrictions || findings.constraints || data.restrictions || data.constraints || []);
-  const improvements = toArray(data.improvements || state.analysis?.improvements || []);
-
-  if(qs('avaKpi')) qs('avaKpi').textContent = `${VA_pct}%`;
-  if(qs('nnvaKpi')) qs('nnvaKpi').textContent = `${NNVA_pct}%`;
-  if(qs('nvaKpi')) qs('nvaKpi').textContent = `${NVA_pct}%`;
-
-  if(qs('qwKpi')) qs('qwKpi').textContent = quickWins.length;
-  if(qs('resKpi')) qs('resKpi').textContent = restrictions.length;
-
-  if(qs('wasteBox')) qs('wasteBox').textContent = fmtList(wastes);
-  if(qs('problemBox')) qs('problemBox').textContent = fmtList(problems);
-
-  if(qs('qwrBox')){
-    qs('qwrBox').textContent =
-      'Quick wins:\n' + fmtList(quickWins) +
-      '\n\nRestricciones:\n' + fmtList(restrictions) +
-      '\n\nMejoras detectadas:\n' + fmtList(improvements);
+  if(
+    typeof updateTopStatus ===
+    'function'
+  ){
+    updateTopStatus();
   }
+
+  return assembled;
 }
 
 function hydrateAsIsFromMaster(){
@@ -19729,31 +19774,6 @@ function hydrateAsIsFromMaster(){
   renderAsIsActivities();
   updateTopStatus();
   return false;
-}
-
-function runAnalysis(){
-  if(state.analysis && state.analysis.activities?.length){
-    renderAnalysisFromState();
-    showMsg('analysisMsg','ok','Se mostró el análisis cargado desde la IA.');
-    return;
-  }
-  collectAsisActivities();
-  const acts = state.asis.activities;
-  if(!acts.length){ showMsg('analysisMsg','warn','No hay actividades para analizar.'); return; }
-  const total = acts.length;
-  const va = acts.filter(a => a.ava === 'VA').length;
-  const nnva = acts.filter(a => a.ava === 'NNVA').length;
-  const nva = acts.filter(a => a.ava === 'NVA').length;
-  const wasteList = [], problemList = [], quickWins = [], constraints = [];
-  acts.forEach(a => {
-    splitItems(a.wastes).forEach(w => uniquePush(wasteList, `${w} · ${a.name}`));
-    splitItems(a.problems).forEach(p => uniquePush(problemList, `${p} · ${a.name}`));
-    if(a.quickWin === 'Sí') uniquePush(quickWins, `${a.name}${a.problems ? ' · ' + a.problems : ''}`);
-    if(a.constraint === 'Sí') uniquePush(constraints, `${a.name}${a.problems ? ' · ' + a.problems : ''}`);
-  });
-  state.analysis = { process:{name:state.context.processName || '', code:state.context.processCode || '', purpose:state.context.purpose || ''}, summary:{ totalActivities:total, ava:{VA_pct:Math.round((va/total)*100), NNVA_pct:Math.round((nnva/total)*100), NVA_pct:Math.round((nva/total)*100)}, wastesCount:wasteList.length, problemsCount:problemList.length, quickWinsCount:quickWins.length, constraintsCount:constraints.length }, wastes:wasteList, problems:problemList, quickWins, constraints, activities:acts, improvements:[] };
-  renderAnalysisFromState();
-  showMsg('analysisMsg','ok','Análisis generado correctamente.');
 }
 
 function continueFromDecision(){
@@ -21995,17 +22015,12 @@ if(
       }
     }
 
-    if(
-      typeof window.renderAnalysisScreenAccumulated === 'function'
-    ){
-      window.renderAnalysisScreenAccumulated(
-        stage
-      );
-    }
-
-    if(typeof renderAnalysisFromState === 'function'){
-      renderAnalysisFromState();
-    }
+if(
+  typeof renderAnalysisFromState ===
+  'function'
+){
+  renderAnalysisFromState();
+}
 
     if(typeof updateTopStatus === 'function'){
       updateTopStatus();
