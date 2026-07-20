@@ -15850,57 +15850,6 @@ function renderStructuredAsIsValidation(){
   refreshCargaFlowState();
 }
   
-function evaluateAnalysisCompleteness(data){
-  const issues = [];
-  if(!data && !state.analysis && !state.asis?.activities?.length && !state.master){
-    return ['No existe análisis procesado.'];
-  }
-
-  const candidates = [
-    data,
-    state.analysis?.raw,
-    state.analysis,
-    state.analysisRun?.raw,
-    state.master,
-    state.master?.sb_contract,
-    state.master?.sb_contract?.sipoc_input,
-    { activities: state.asis?.activities || [] },
-    state.briefReview?.raw
-  ];
-  const acts = candidates.flatMap(candidate => extractAsIsActivitiesFromPayload(candidate));
-  const sourceActs = [
-    state.master,
-    ...(state.loads?.pre || []),
-    ...(state.loads?.interview || []),
-    ...(state.loads?.brief || [])
-  ].flatMap(candidate => sgmpCollectActivitiesFromPayload(candidate));
-  const expectedCount = Math.max(
-    safeArray(state.master?.activities).length,
-    sourceActs.length
-  );
-
-  if(!acts.length) {
-    issues.push('No se detectaron actividades AS IS.');
-  }
-  if(expectedCount > 10 && acts.length < 10){
-    issues.push(`Validación dura: se detectaron ${expectedCount} actividades fuente, pero el análisis/AS IS solo contiene ${acts.length}. Reprocesa el análisis o revisa el JSON antes de avanzar.`);
-  }
-  if(expectedCount > 0 && acts.length > 0 && acts.length < Math.min(expectedCount, 10)){
-    issues.push(`Cobertura insuficiente de actividades: AS IS contiene ${acts.length} de ${expectedCount} actividades detectadas en fuente.`);
-  }
-
-  return issues;
-}
-function renderAnalysisValidation(){
-  const raw = state.analysisRun?.raw || state.analysis?.raw || state.analysis || state.master || (state.asis?.activities?.length ? { activities: state.asis.activities } : null);
-  const issues = evaluateAnalysisCompleteness(raw);
-  const msgId = 'analysisValidationMsg';
-  if(!raw){ showMsg(msgId,'warn','Estado: análisis incompleto. Aún no se ha procesado un JSON maestro.'); return issues; }
-  if(issues.length){ showMsg(msgId,'warn','Estado: análisis incompleto. Revisa o reanaliza:\n- ' + issues.join('\n- ')); }
-  else { showMsg(msgId,'ok','Estado: análisis por bloques disponible. Continúa con la etapa correspondiente.'); }
-  return issues;
-}
-
 function buildPromptAPrompt(master){
   const inputPayload = master || buildPromptAInputPayload();
   const inputText = JSON.stringify(inputPayload, null, 2);
@@ -15908,7 +15857,8 @@ function buildPromptAPrompt(master){
   let promptFromSheets = '';
 
   if(typeof sgmpPrompt === 'function'){
-    promptFromSheets = sgmpPrompt('prompt_A', null) || '';
+    promptFromSheets =
+  sgmpPrompt('prompt_A') || '';
   }
 
   if(!String(promptFromSheets || '').trim()){
@@ -17814,13 +17764,6 @@ async function loadAllInputs(){
   }
 
   if(
-    typeof renderAnalysisValidation ===
-    'function'
-  ){
-    renderAnalysisValidation();
-  }
-
-  if(
     typeof refreshCargaFlowState ===
     'function'
   ){
@@ -19437,27 +19380,6 @@ function lmpWarnIfPromptTooLarge(stageKey, prompt, msgId){
     else console.warn(message);
   }
   return metrics;
-}
-
-function applyIAResponseAndContinue(){
-  if(!(state.briefReview && state.briefReview.approved)){
-    showMsg('iaMsg','warn','Debes aprobar el Brief antes de aplicar el análisis al LMP.');
-    return;
-  }
-  if(!(state.analysis && state.analysis.raw)){
-    showMsg('iaMsg','warn','Procesa primero el análisis maestro.');
-    return;
-  }
-  hydrateAsIsFromMaster();
-  const analysisIssues = renderAnalysisValidation();
-  if(analysisIssues.length){
-    showMsg('iaMsg','warn','No puedes aplicar al LMP mientras el análisis siga incompleto.');
-    return;
-  }
-  hydrateAsIsFromMaster();
-  renderAnalysisFromState();
-  goToNext('carga');
-  // Las mejoras se cargan/renderizan al entrar a TO BE para evitar estados parciales o desincronizados.
 }
 
 function renderAnalysisFromState(){
