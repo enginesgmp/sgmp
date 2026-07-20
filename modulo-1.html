@@ -22890,14 +22890,129 @@ window.sgmpAssembleStagedAnalysisPayload = function(){
     if(!txt){ if(typeof showMsg === 'function') showMsg('analysisMsg_' + stageKey,'warn','No hay resultado para descargar.'); return; }
     const blob = new Blob([txt], {type:'application/json;charset=utf-8'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'LMP_' + stageKey + '_resultado.json'; a.click(); URL.revokeObjectURL(a.href);
   };
-  const oldShowSection = window.showSection;
-  window.showSection = function(id){
-    if(id === 'analisis') id = 'analisis_va';
-    if(typeof oldShowSection === 'function'){ oldShowSection(id); }
-    else{ document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === id)); document.querySelectorAll('.step-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === id)); }
-    const key = ANALYSIS_KEY_BY_SECTION[id];
-    if(key){ state.analysisStages = state.analysisStages || { current:key, results:{} }; state.analysisStages.current = key; if(!el('analysisPrompt_' + key)?.value) window.generateAnalysisScreenPrompt(key); window.renderAnalysisScreenAccumulated(key); }
-  };
+  
+const oldShowSection =
+  window.showSection;
+
+
+window.showSection = function(id){
+  let sectionId =
+    String(id || '').trim();
+
+  if(sectionId === 'analisis'){
+    sectionId =
+      'analisis_va';
+  }
+
+  if(
+    typeof oldShowSection ===
+    'function'
+  ){
+    oldShowSection(
+      sectionId
+    );
+
+  }else{
+    document
+      .querySelectorAll('.section')
+      .forEach(function(section){
+        section.classList.toggle(
+          'active',
+          section.id === sectionId
+        );
+      });
+
+    document
+      .querySelectorAll('.step-btn')
+      .forEach(function(button){
+        button.classList.toggle(
+          'active',
+          button.dataset.target ===
+            sectionId
+        );
+      });
+  }
+
+  const stage =
+    ANALYSIS_KEY_BY_SECTION[
+      sectionId
+    ];
+
+  if(!stage){
+    return;
+  }
+
+  state.analysisStages =
+    state.analysisStages || {
+      current: stage,
+      results: {}
+    };
+
+  state.analysisStages.results =
+    state.analysisStages.results || {};
+
+  state.analysisStages.current =
+    stage;
+
+  /*
+   * Entrar a una etapa no genera el prompt.
+   * La generación ocurre únicamente mediante el botón 1.
+   */
+  if(
+    typeof window.renderAnalysisScreenAccumulated ===
+    'function'
+  ){
+    window.renderAnalysisScreenAccumulated(
+      stage
+    );
+  }
+
+  /*
+   * Restaura visualmente el resultado oficial guardado,
+   * por ejemplo después de cargar un respaldo.
+   */
+  const storedResult =
+    state.analysisStages
+      .results[
+        stage
+      ];
+
+  const resultBox =
+    el(
+      'analysisResult_' +
+      stage
+    );
+
+  if(
+    resultBox &&
+    storedResult &&
+    typeof storedResult === 'object' &&
+    !Array.isArray(storedResult)
+  ){
+    resultBox.value =
+      JSON.stringify(
+        storedResult,
+        null,
+        2
+      );
+  }
+
+  /*
+   * Guardar solo se habilita después de una nueva validación.
+   */
+  const saveButton =
+    el(
+      'btnSaveAnalysisStage_' +
+      stage
+    );
+
+  if(saveButton){
+    saveButton.disabled =
+      !window
+        .__LMP_ANALYSIS_PENDING__
+        ?.[stage];
+  }
+};
   
 /* SGMP CLEANUP NOTE:
    CAPA FINAL DE OVERRIDE / FLUJO ANALÍTICO SGMP.
@@ -22930,20 +23045,185 @@ window.labelStage = function(id){
     outputs:'Outputs SGMP'
   }[id] || id;
 };
-  window.goToNext = function(current){
-    if(typeof syncVisibleStage === 'function') syncVisibleStage();
-    if(current === 'carga' && typeof updateCargaInputsByRoute === 'function'){
-  updateCargaInputsByRoute();
-}
-    if(current === 'preparacion'){ showSection('carga'); return; }
-    if(current === 'documentacion_existente'){ showSection('carga'); return; }
-    if(current === 'asis'){ showSection('analisis_va'); return; }
-    if(current === 'analisis_mejoras'){ showSection('decision'); return; }
-    if(current === 'decision'){ if(typeof continueFromDecision === 'function') continueFromDecision(); return; }
-    if(current === 'tobe'){ showSection('resultados'); return; }
-    if(current === 'resultados'){ showSection('outputs'); return; }
-    const idx = ANALYSIS_SCREEN_ORDER.indexOf(current); if(idx >= 0 && ANALYSIS_SCREEN_ORDER[idx+1]) showSection(ANALYSIS_SCREEN_ORDER[idx+1]);
-  };
+  
+window.goToNext = function(current){
+  const currentSection =
+    String(current || '').trim();
+
+  if(
+    typeof syncVisibleStage ===
+    'function'
+  ){
+    syncVisibleStage();
+  }
+
+  if(
+    currentSection === 'carga' &&
+    typeof updateCargaInputsByRoute ===
+      'function'
+  ){
+    updateCargaInputsByRoute();
+  }
+
+  if(currentSection === 'preparacion'){
+    showSection('carga');
+    return true;
+  }
+
+  if(
+    currentSection ===
+    'documentacion_existente'
+  ){
+    showSection('carga');
+    return true;
+  }
+
+  if(currentSection === 'asis'){
+    showSection(
+      'analisis_va'
+    );
+
+    return true;
+  }
+
+  /*
+   * Toda etapa analítica debe estar guardada antes
+   * de permitir avanzar.
+   */
+  const analysisStage =
+    ANALYSIS_KEY_BY_SECTION[
+      currentSection
+    ];
+
+  if(analysisStage){
+    const savedResult =
+      state.analysisStages
+        ?.results
+        ?.[analysisStage];
+
+    const isSaved = !!(
+      savedResult &&
+      typeof savedResult ===
+        'object' &&
+      !Array.isArray(
+        savedResult
+      ) &&
+      Object.keys(
+        savedResult
+      ).length
+    );
+
+    if(!isSaved){
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          analysisStage,
+          'warn',
+          'Primero valida la estructura y guarda ' +
+          (
+            typeof lmpAnalysisStageName_ ===
+              'function'
+              ? lmpAnalysisStageName_(
+                  analysisStage
+                )
+              : analysisStage
+          ) +
+          ' antes de continuar.'
+        );
+      }
+
+      return false;
+    }
+
+    if(
+      analysisStage ===
+      'MEJORAS'
+    ){
+      showSection(
+        'decision'
+      );
+
+      return true;
+    }
+
+    const currentIndex =
+      ANALYSIS_SCREEN_ORDER
+        .indexOf(
+          currentSection
+        );
+
+    const nextSection =
+      currentIndex >= 0
+        ? ANALYSIS_SCREEN_ORDER[
+            currentIndex + 1
+          ]
+        : '';
+
+    if(nextSection){
+      showSection(
+        nextSection
+      );
+
+      return true;
+    }
+
+    return false;
+  }
+
+  if(currentSection === 'decision'){
+    if(
+      typeof continueFromDecision ===
+      'function'
+    ){
+      continueFromDecision();
+    }
+
+    return true;
+  }
+
+  if(currentSection === 'tobe'){
+    showSection(
+      'resultados'
+    );
+
+    return true;
+  }
+
+  if(currentSection === 'resultados'){
+    showSection(
+      'outputs'
+    );
+
+    return true;
+  }
+
+  const currentIndex =
+    ANALYSIS_SCREEN_ORDER
+      .indexOf(
+        currentSection
+      );
+
+  const nextSection =
+    currentIndex >= 0
+      ? ANALYSIS_SCREEN_ORDER[
+          currentIndex + 1
+        ]
+      : '';
+
+  if(nextSection){
+    showSection(
+      nextSection
+    );
+
+    return true;
+  }
+
+  return false;
+};
+  
   window.goToPrev = function(current){
     if(typeof syncVisibleStage === 'function') syncVisibleStage();
     if(current === 'documentacion_existente'){ showSection('preparacion'); return; }
