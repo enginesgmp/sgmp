@@ -19117,58 +19117,118 @@ function sgmpBuildRestrictionSupplements(data){
 }
 
 function sgmpNormalizeAvaDeterministic(data){
-  const d = data || {};
-  const acts = safeArray(d.as_is?.activities || d.activities || state?.asis?.activities);
-  const rawAva = d.ava || {};
-  const activityAnalysis = safeArray(rawAva.activityAnalysis || rawAva.activities || d.activityAnalysis || d.analysis?.activityAnalysis);
-  const classify = (value) => {
-    const t = String(value || '').toUpperCase().replace(/\s+/g,'').trim();
-    if(t.includes('NNVA')) return 'NNVA';
-    if(t.includes('NVA')) return 'NVA';
-    if(t === 'VA' || t.includes('VALORAGREGADO')) return 'VA';
-    return '';
-  };
-  const byId = new Map();
-  const byName = new Map();
-  activityAnalysis.forEach(x => {
-    const cls = classify(x.classification || x.ava_classification || x.avaClassification || x.ava || x.type);
-    if(!cls) return;
-    const item = Object.assign({}, x, { classification: cls, ava_classification: cls });
-    if(x.id) byId.set(String(x.id).trim(), item);
-    if(x.name || x.activity) byName.set(String(x.name || x.activity).trim().toLowerCase(), item);
-  });
-  let counts = { VA:0, NNVA:0, NVA:0 };
-  const normalizedAnalysis = [];
-  acts.forEach((a, idx) => {
-    const id = String(a.id || '').trim();
-    const nm = String(a.name || a.activity || a.title || '').trim().toLowerCase();
-    const hit = (id && byId.get(id)) || (nm && byName.get(nm));
-    const cls = classify(hit?.classification || hit?.ava_classification || a.ava_classification || a.avaClassification || a.ava || a.classification) || 'NNVA';
-    counts[cls] = (counts[cls] || 0) + 1;
-    normalizedAnalysis.push({
-      id: a.id || hit?.id || ('ACT-' + String(idx+1).padStart(2,'0')),
-      name: a.name || a.activity || a.title || hit?.name || '',
-      actor: a.actor || a.role || hit?.actor || '',
-      classification: cls,
-      ava_classification: cls,
-      justification: hit?.justification || hit?.reason || hit?.evidence || a.ava_reason || 'Clasificación calculada desde la evidencia disponible del AS IS.'
-    });
-  });
-  const total = Math.max(acts.length, 1);
-  d.ava = Object.assign({}, rawAva, {
-    distribution: {
-      VA: counts.VA,
-      NNVA: counts.NNVA,
-      NVA: counts.NVA,
-      VA_pct: Math.round((counts.VA / total) * 100),
-      NNVA_pct: Math.round((counts.NNVA / total) * 100),
-      NVA_pct: Math.round((counts.NVA / total) * 100),
-      total: acts.length,
-      counts: counts,
-      calculation_method: 'deterministic_by_activity_classification'
-    },
-    activityAnalysis: normalizedAnalysis
-  });
+  const d =
+    data &&
+    typeof data === 'object' &&
+    !Array.isArray(data)
+      ? data
+      : {};
+
+  const rawAva =
+    d.ava &&
+    typeof d.ava === 'object' &&
+    !Array.isArray(d.ava)
+      ? d.ava
+      : {};
+
+  const activityAnalysis =
+    safeArray(
+      rawAva.activityAnalysis
+    );
+
+  d.ava = Object.assign(
+    {},
+    rawAva,
+    {
+      activityAnalysis:
+        activityAnalysis.map(function(item){
+          const source =
+            item &&
+            typeof item === 'object' &&
+            !Array.isArray(item)
+              ? item
+              : {};
+
+          return Object.assign(
+            {},
+            source,
+            {
+              id:
+                String(
+                  source.id || ''
+                ).trim(),
+
+              sequence:
+                source.sequence ?? '',
+
+              name:
+                String(
+                  source.name || ''
+                ).trim(),
+
+              actor:
+                String(
+                  source.actor || ''
+                ).trim(),
+
+              classification:
+                String(
+                  source.classification || ''
+                )
+                  .trim()
+                  .toUpperCase(),
+
+              activityType:
+                String(
+                  source.activityType || ''
+                )
+                  .trim()
+                  .toUpperCase(),
+
+              classificationJustification:
+                String(
+                  source.classificationJustification || ''
+                ).trim(),
+
+              typeJustification:
+                String(
+                  source.typeJustification || ''
+                ).trim(),
+
+              evidence:
+                safeArray(
+                  source.evidence
+                ).map(function(evidence){
+                  const evidenceSource =
+                    evidence &&
+                    typeof evidence === 'object' &&
+                    !Array.isArray(evidence)
+                      ? evidence
+                      : {};
+
+                  return {
+                    source:
+                      String(
+                        evidenceSource.source || ''
+                      ).trim(),
+
+                    reference:
+                      String(
+                        evidenceSource.reference || ''
+                      ).trim(),
+
+                    detail:
+                      String(
+                        evidenceSource.detail || ''
+                      ).trim()
+                  };
+                })
+            }
+          );
+        })
+    }
+  );
+
   return d;
 }
 
