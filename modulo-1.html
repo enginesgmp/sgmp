@@ -2865,7 +2865,7 @@ border-left:5px solid #8ED3E8 !important;
 /* ANÁLISIS · JSON técnico y resumen superior */
 .analysis-stage-section .analysis-summary-card{
   order:-20 !important;
-  border-left:5px solid #00C2FF !important;
+  border-left:0 !important;
   background:linear-gradient(135deg,#F4FAFF,#FFFFFF) !important;
 }
 
@@ -19296,6 +19296,19 @@ function sgmpEnrichAnalysisModel(data){
 }
 
 function sgmpGetAnalysisStageDefinitions(){
+  const registry =
+    window.SGMP_ANALYSIS_STAGE_REGISTRY &&
+    typeof window.SGMP_ANALYSIS_STAGE_REGISTRY === 'object'
+      ? window.SGMP_ANALYSIS_STAGE_REGISTRY
+      : {};
+
+  const sequence =
+    Array.isArray(
+      window.SGMP_ANALYSIS_STAGE_SEQUENCE
+    )
+      ? window.SGMP_ANALYSIS_STAGE_SEQUENCE
+      : LMP_OFFICIAL_ANALYSIS_STAGES_;
+
   const promptStore =
     typeof SGMP_PROMPTS !== 'undefined' &&
     SGMP_PROMPTS &&
@@ -19305,9 +19318,13 @@ function sgmpGetAnalysisStageDefinitions(){
 
   const definitions = {};
 
-  ANALYSIS_STAGE_SEQUENCE.forEach(function(stage){
+  sequence.forEach(function(stage){
     const config =
-      ANALYSIS_STAGE_REGISTRY[stage];
+      registry[stage];
+
+    if(!config){
+      return;
+    }
 
     const promptText =
       typeof promptStore[config.promptKey] ===
@@ -20830,6 +20847,12 @@ const ANALYSIS_STAGE_CODE_BY_STAGE = Object.freeze({
   MEJORAS:
     ANALYSIS_STAGE_REGISTRY.MEJORAS.stageCode
 });
+
+window.SGMP_ANALYSIS_STAGE_REGISTRY =
+  ANALYSIS_STAGE_REGISTRY;
+
+window.SGMP_ANALYSIS_STAGE_SEQUENCE =
+  ANALYSIS_STAGE_SEQUENCE;
   
   function el(id){ return document.getElementById(id); }
   function arr(v){ return Array.isArray(v) ? v : (v ? [v] : []); }
@@ -22156,6 +22179,89 @@ window.saveValidatedAnalysisStage = function(stageKey){
   }
 };
 
+window.saveAnalysisStageAndContinue = function(
+  stageKey,
+  sectionId
+){
+  const stage = String(stageKey || '')
+    .trim()
+    .toUpperCase();
+
+  const msgId =
+    'analysisMsg_' + stage;
+
+  const pending =
+    window.__LMP_ANALYSIS_PENDING__[
+      stage
+    ];
+
+  /*
+   * Existe un nuevo JSON validado pendiente de guardar.
+   */
+  if(pending){
+    const saved =
+      window.saveValidatedAnalysisStage(
+        stage
+      );
+
+    if(saved !== true){
+      return false;
+    }
+
+    if(typeof window.goToNext === 'function'){
+      return window.goToNext(
+        sectionId
+      );
+    }
+
+    return true;
+  }
+
+  const savedResult =
+    state.analysisStages
+      ?.results
+      ?.[stage];
+
+  const responseText =
+    el(
+      'analysisResponse_' +
+      stage
+    )?.value.trim() || '';
+
+  /*
+   * Permite continuar desde un respaldo cuando la etapa
+   * ya estaba oficialmente guardada y no existe una nueva
+   * respuesta pendiente.
+   */
+  if(
+    savedResult &&
+    typeof savedResult === 'object' &&
+    !Array.isArray(savedResult) &&
+    Object.keys(savedResult).length &&
+    !responseText
+  ){
+    if(typeof window.goToNext === 'function'){
+      return window.goToNext(
+        sectionId
+      );
+    }
+
+    return true;
+  }
+
+  if(typeof showMsg === 'function'){
+    showMsg(
+      msgId,
+      'warn',
+      responseText
+        ? 'Primero valida el JSON pegado o generado antes de guardar y continuar.'
+        : 'Primero genera o pega una respuesta JSON, valida su estructura y luego guarda la etapa.'
+    );
+  }
+
+  return false;
+};  
+
 window.lmpInitializeAnalysisStageWorkflowUi = function(){
   ANALYSIS_STAGE_SEQUENCE.forEach(function(stage){
     const section =
@@ -22188,12 +22294,6 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
         el(
           'analysisResponse_' +
           stage
-        )?.value || '',
-
-      result:
-        el(
-          'analysisResult_' +
-          stage
         )?.value || ''
     };
 
@@ -22204,11 +22304,14 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
       );
 
     const summaryCard =
-      preview?.closest('article') ||
-      null;
+      preview?.closest(
+        'article'
+      ) || null;
 
     const label =
-      lmpAnalysisStageName_(stage);
+      lmpAnalysisStageName_(
+        stage
+      );
 
     if(summaryCard){
       summaryCard.classList.add(
@@ -22219,8 +22322,7 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
     cards.innerHTML = '';
 
     /*
-     * Conserva el resumen acumulado existente como
-     * primer bloque de cada etapa.
+     * Conserva el resumen y sus KPI actuales.
      */
     if(summaryCard){
       cards.appendChild(
@@ -22292,8 +22394,7 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
 
       <p>
         Genera el JSON con la API o pega aquí la respuesta obtenida
-        fuera del LMP. Luego valida únicamente su estructura antes
-        de guardar la etapa.
+        fuera del LMP. Luego valida únicamente su estructura.
       </p>
 
       <div
@@ -22338,61 +22439,9 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
       ></div>
     `;
 
-    const resultCard =
-      document.createElement(
-        'article'
-      );
-
-    resultCard.className =
-      'card analysis-json-card';
-
-    resultCard.innerHTML = `
-      <h3>Estado del JSON validado · ${label}</h3>
-
-      <p>
-        Esta vista técnica es temporal. La presentación estructurada
-        y los campos editables propios de esta etapa se definirán
-        posteriormente.
-      </p>
-
-      <div class="field-grid">
-        <div class="field w-12">
-          <label>JSON validado de la etapa</label>
-
-          <textarea
-            id="analysisResult_${stage}"
-            class="analysis-json-output"
-            readonly
-            placeholder="El JSON validado aparecerá aquí."
-          ></textarea>
-        </div>
-      </div>
-
-      <div
-        class="actions"
-        style="justify-content:center"
-      >
-        <div
-          class="actions-left"
-          style="justify-content:center"
-        >
-          <button
-            class="btn-ok"
-            id="btnSaveAnalysisStage_${stage}"
-            type="button"
-            onclick="saveValidatedAnalysisStage('${stage}')"
-            disabled
-          >
-            Guardar etapa
-          </button>
-        </div>
-      </div>
-    `;
-
     cards.append(
       promptCard,
-      responseCard,
-      resultCard
+      responseCard
     );
 
     const promptBox =
@@ -22407,16 +22456,6 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
         stage
       );
 
-    const resultBox =
-      el(
-        'analysisResult_' +
-        stage
-      );
-
-    /*
-     * Restaura el contenido que existía antes
-     * de reconstruir visualmente la sección.
-     */
     if(promptBox){
       promptBox.value =
         currentValues.prompt;
@@ -22429,30 +22468,15 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
       responseBox.addEventListener(
         'input',
         function(){
+          /*
+           * Si el contenido cambia después de validarse,
+           * debe validarse nuevamente.
+           */
           lmpClearAnalysisPending_(
             stage
           );
         }
       );
-    }
-
-    if(resultBox){
-      const storedResult =
-        state.analysisStages
-          ?.results
-          ?.[stage];
-
-      resultBox.value =
-        currentValues.result ||
-        (
-          storedResult
-            ? JSON.stringify(
-                storedResult,
-                null,
-                2
-              )
-            : ''
-        );
     }
 
     const navigation =
@@ -22479,15 +22503,19 @@ window.lmpInitializeAnalysisStageWorkflowUi = function(){
           <button
             class="btn"
             type="button"
-            onclick="goToNext('${section.id}')"
+            onclick="saveAnalysisStageAndContinue(
+              '${stage}',
+              '${section.id}'
+            )"
           >
-            Continuar
+            Guardar y continuar
           </button>
         </div>
       `;
     }
   });
 };
+  
 window.lmpInitializeAnalysisStageWorkflowUi();
   
 window.sgmpAssembleStagedAnalysisPayload = function(){
