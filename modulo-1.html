@@ -21284,139 +21284,100 @@ if(
 };
 
 window.sgmpAssembleStagedAnalysisPayload = function(){
-  const results =
+  const rawResults =
     state.analysisStages?.results &&
-    typeof state.analysisStages.results === 'object'
+    typeof state.analysisStages.results === 'object' &&
+    !Array.isArray(state.analysisStages.results)
       ? state.analysisStages.results
       : {};
 
-  const currentStage = String(
-    state.analysisStages?.current || ''
-  ).trim().toUpperCase();
+  const stageOrder =
+    Array.isArray(ANALYSIS_STAGE_SEQUENCE)
+      ? ANALYSIS_STAGE_SEQUENCE.slice()
+      : [
+          'VA',
+          'DESPERDICIOS',
+          'PROBLEMAS',
+          'RESTRICCIONES',
+          'QUICK_WINS',
+          'MEJORAS'
+        ];
 
-  const vaStage = results.VA || {};
-  const wasteStage = results.DESPERDICIOS || {};
-  const problemStage = results.PROBLEMAS || {};
-  const restrictionStage = results.RESTRICCIONES || {};
-  const quickWinStage = results.QUICK_WINS || {};
-  const improvementStage = results.MEJORAS || {};
+  const requestedCurrentStage = String(
+    state.analysisStages?.current || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  const currentStage =
+    stageOrder.includes(requestedCurrentStage)
+      ? requestedCurrentStage
+      : '';
 
   const cloneList = function(value){
     return arr(value).map(function(item){
-      if(
-        item &&
-        typeof item === 'object' &&
-        !Array.isArray(item)
-      ){
-        return Object.assign({}, item);
-      }
-
-      return item;
+      return lmpCloneJsonEvidence_(
+        item,
+        'elemento del análisis'
+      );
     });
   };
 
-    const structuralActivities =
-      typeof lmpNormalizeStructuralActivities === 'function'
-        ? lmpNormalizeStructuralActivities(
-            b1.as_is?.activities ||
-            window.sgmpGetBestAnalysisSourceActivities()
-          )
-        : cleanActivities(
-            b1.as_is?.activities ||
-            window.sgmpGetBestAnalysisSourceActivities()
-          );
+  const getStageResult = function(stageName){
+    const value =
+      rawResults[stageName];
 
-    return {
-      contract:
-        b1.contract ||
-        'LMP_B1_STRUCTURAL_VALIDATION',
+    if(
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ){
+      return {};
+    }
 
-      contract_version:
-        b1.contract_version ||
-        '1.0.0',
+    return lmpCloneJsonEvidence_(
+      value,
+      'resultado ' + stageName
+    );
+  };
 
-      stage: 'B1',
+  const vaStage =
+    getStageResult('VA');
 
-      analysis_type:
-        b1.analysis_type ||
-        'lmp_b1_structural_validation',
+  const wasteStage =
+    getStageResult('DESPERDICIOS');
 
-      method:
-        b1.method ||
-        'deterministic_validator_plus_contextual_ai',
+  const problemStage =
+    getStageResult('PROBLEMAS');
 
-      lifecycle:
-        b1.lifecycle ||
-        b1.validation?.lifecycle ||
-        '',
+  const restrictionStage =
+    getStageResult('RESTRICCIONES');
 
-      operational_state:
-        b1.operational_state ||
-        {},
+  const quickWinStage =
+    getStageResult('QUICK_WINS');
 
-      completeness:
-        b1.completeness ||
-        b1.validation?.completeness ||
-        {},
+  const improvementStage =
+    getStageResult('MEJORAS');
 
-      context:
-context:
-  lmpCloneJsonEvidence_(
-    validatedAsIs.context,
-    'contexto del análisis'
-  ),
+  const validatedAsIs =
+    typeof lmpGetValidatedAsIsEvidence_ === 'function'
+      ? lmpGetValidatedAsIsEvidence_()
+      : null;
 
-      as_is: {
-        activities: structuralActivities
-      },
-
-      as_is_process:
-        b1.as_is_process ||
-        {},
-
-      sipoc:
-        b1.sipoc ||
-        {},
-
-      validation:
-        b1.validation ||
-        {},
-
-      contextual_enrichment:
-        b1.contextual_enrichment ||
-        {},
-
-      traceability:
-        b1.traceability ||
-        {},
-
-      structural_validation:
-        b1.structural_validation ||
-        null
-    };
+  if(!validatedAsIs){
+    throw new Error(
+      'No existe evidencia AS-IS validada para ensamblar el análisis.'
+    );
   }
 
-  /*
-   * El AS-IS validado es la fuente estructural principal.
-   */
-const validatedAsIs =
-  typeof lmpGetValidatedAsIsEvidence_ === 'function'
-    ? lmpGetValidatedAsIsEvidence_()
-    : null;
-
-if(!validatedAsIs){
-  throw new Error(
-    'No existe evidencia AS-IS validada para ensamblar el análisis.'
-  );
-}
-
-let activities = cleanActivities(
-  validatedAsIs.activities
-);
+  let activities =
+    cleanActivities(
+      validatedAsIs.activities
+    );
 
   /*
-   * Integra el resultado VA dentro de cada actividad sin modificar
-   * nombre, ID, actor, tipo ni secuencia.
+   * Integra la clasificación VA en las actividades sin cambiar
+   * su identidad, nombre, actor ni secuencia.
    */
   const avaItems = cloneList(
     vaStage.ava?.activityAnalysis ||
@@ -21434,9 +21395,11 @@ let activities = cleanActivities(
 
       const activityName = String(
         activity?.name || ''
-      ).trim().toLowerCase();
+      )
+        .trim()
+        .toLowerCase();
 
-      const hit = avaItems.find(function(item){
+      const match = avaItems.find(function(item){
         const itemId = String(
           item?.id ||
           item?.activity_id ||
@@ -21447,7 +21410,9 @@ let activities = cleanActivities(
           item?.name ||
           item?.activity ||
           ''
-        ).trim().toLowerCase();
+        )
+          .trim()
+          .toLowerCase();
 
         if(
           activityId &&
@@ -21457,24 +21422,29 @@ let activities = cleanActivities(
           return true;
         }
 
-        return (
+        return !!(
           activityName &&
           itemName &&
           activityName === itemName
         );
       });
 
-      if(!hit){
-        return Object.assign({}, activity);
+      if(!match){
+        return Object.assign(
+          {},
+          activity
+        );
       }
 
       const classification = String(
-        hit.classification ||
-        hit.ava_classification ||
-        hit.avaClassification ||
-        hit.ava ||
+        match.classification ||
+        match.ava_classification ||
+        match.avaClassification ||
+        match.ava ||
         ''
-      ).trim().toUpperCase();
+      )
+        .trim()
+        .toUpperCase();
 
       return Object.assign(
         {},
@@ -21492,33 +21462,31 @@ let activities = cleanActivities(
             '',
 
           ava_reason:
-            hit.justification ||
-            hit.reason ||
+            match.justification ||
+            match.reason ||
             activity.ava_reason ||
             '',
 
           ava_evidence:
-            cloneList(hit.evidence),
+            cloneList(
+              match.evidence
+            ),
 
           ava_confidence:
-            hit.confidence ||
+            match.confidence ||
             '',
 
           ava_requires_validation:
-            hit.requires_validation === true,
+            match.requires_validation === true,
 
           ava_validation_question:
-            hit.validation_question ||
+            match.validation_question ||
             ''
         }
       );
     });
   }
 
-  /*
-   * Cada etapa conserva su contrato estructurado.
-   * No se convierten los objetos en textos.
-   */
   const wastes = cloneList(
     wasteStage.wastes ||
     wasteStage.findings?.wastes
@@ -21550,23 +21518,32 @@ let activities = cleanActivities(
     improvementStage.mejoras
   );
 
-  const stageOrder = [
-    'VA',
-    'DESPERDICIOS',
-    'PROBLEMAS',
-    'RESTRICCIONES',
-    'QUICK_WINS',
-    'MEJORAS'
-  ];
+  const collectStageArray = function(fieldNames){
+    const names =
+      Array.isArray(fieldNames)
+        ? fieldNames
+        : [fieldNames];
 
-  const collectStageArray = function(fieldName){
     const output = [];
 
     stageOrder.forEach(function(stageName){
-      cloneList(
-        results[stageName]?.[fieldName]
-      ).forEach(function(item){
-        output.push(item);
+      const result =
+        rawResults[stageName];
+
+      if(
+        !result ||
+        typeof result !== 'object' ||
+        Array.isArray(result)
+      ){
+        return;
+      }
+
+      names.forEach(function(fieldName){
+        cloneList(
+          result[fieldName]
+        ).forEach(function(item){
+          output.push(item);
+        });
       });
     });
 
@@ -21576,31 +21553,35 @@ let activities = cleanActivities(
   const stageValidations = {};
   const stageSourceControl = {};
   const stageSummaries = {};
+  const analysisStages = {};
 
   stageOrder.forEach(function(stageName){
-    const stageResult = results[stageName];
+    const result =
+      getStageResult(stageName);
 
-    if(!stageResult){
+    analysisStages[stageName] =
+      result;
+
+    if(!Object.keys(result).length){
       return;
     }
 
     stageValidations[stageName] =
-      stageResult.validation ||
+      result.validation ||
       {};
 
     stageSourceControl[stageName] =
-      stageResult.source_control ||
+      result.source_control ||
       {};
 
     stageSummaries[stageName] =
-      stageResult.summary ||
+      result.summary ||
       {};
   });
 
   return {
     stage:
-      currentStage ||
-      '',
+      currentStage,
 
     analysis_type:
       'lmp_staged_process_analysis',
@@ -21609,29 +21590,41 @@ let activities = cleanActivities(
       'Lean_SixSigma_TOC_BPM',
 
     context:
-      state.context ||
-      state.master?.context ||
-      {},
+      lmpCloneJsonEvidence_(
+        validatedAsIs.context,
+        'contexto del análisis'
+      ),
 
     as_is: {
-      activities,
+      activities:
+        lmpCloneJsonEvidence_(
+          activities,
+          'actividades del análisis'
+        ),
 
-actors_catalog: cloneList(
-  validatedAsIs.actors_catalog
-),
+      actors_catalog:
+        lmpCloneJsonEvidence_(
+          validatedAsIs.actors_catalog,
+          'actores del análisis'
+        ),
 
-suppliers_inputs: cloneList(
-  validatedAsIs.suppliers_inputs
-),
+      suppliers_inputs:
+        lmpCloneJsonEvidence_(
+          validatedAsIs.suppliers_inputs,
+          'proveedores y entradas del análisis'
+        ),
 
-outputs_customers: cloneList(
-  validatedAsIs.outputs_customers
-),
+      outputs_customers:
+        lmpCloneJsonEvidence_(
+          validatedAsIs.outputs_customers,
+          'salidas y clientes del análisis'
+        ),
 
-additional_information: cloneList(
-  validatedAsIs.additional_information
-)
-      
+      additional_information:
+        lmpCloneJsonEvidence_(
+          validatedAsIs.additional_information,
+          'información adicional del análisis'
+        )
     },
 
     ava:
@@ -21650,10 +21643,6 @@ additional_information: cloneList(
         null
     },
 
-    /*
-     * Se mantienen también en nivel superior para compatibilidad
-     * con las pantallas existentes del LMP.
-     */
     wastes,
     problems,
     restrictions,
@@ -21665,21 +21654,25 @@ additional_information: cloneList(
       restrictionStage.primaryConstraint ||
       null,
 
-    quickWinOutOfScope: cloneList(
-      quickWinStage.outOfScope
-    ),
+    quickWinOutOfScope:
+      cloneList(
+        quickWinStage.outOfScope
+      ),
 
-    findingCoverage: cloneList(
-      improvementStage.findingCoverage
-    ),
+    findingCoverage:
+      cloneList(
+        improvementStage.findingCoverage
+      ),
 
-    strategicProjects: cloneList(
-      improvementStage.strategicProjects
-    ),
+    strategicProjects:
+      cloneList(
+        improvementStage.strategicProjects
+      ),
 
-    rejectedIdeas: cloneList(
-      improvementStage.rejectedIdeas
-    ),
+    rejectedIdeas:
+      cloneList(
+        improvementStage.rejectedIdeas
+      ),
 
     stage_summaries:
       stageSummaries,
@@ -21691,27 +21684,33 @@ additional_information: cloneList(
       stageValidations,
 
     warnings:
-      collectStageArray('warnings'),
+      collectStageArray(
+        'warnings'
+      ),
 
     dataGaps:
-      collectStageArray('dataGaps'),
+      collectStageArray([
+        'dataGaps',
+        'data_gaps'
+      ]),
 
-    analysis_stages: {
-      VA: vaStage,
-      DESPERDICIOS: wasteStage,
-      PROBLEMAS: problemStage,
-      RESTRICCIONES: restrictionStage,
-      QUICK_WINS: quickWinStage,
-      MEJORAS: improvementStage
-    },
+    analysis_stages:
+      analysisStages,
 
     completed_stages:
       stageOrder.filter(function(stageName){
-        return !!results[stageName];
+        const result =
+          rawResults[stageName];
+
+        return !!(
+          result &&
+          typeof result === 'object' &&
+          !Array.isArray(result) &&
+          Object.keys(result).length
+        );
       })
   };
 };
-
 
  window.renderAnalysisScreenAccumulated = function(stageKey){
   const stage = String(stageKey || '')
