@@ -23573,7 +23573,6 @@ if(typeof showMsg === 'function'){
   }
 };
 
-
 window.saveValidatedAnalysisStage = function(stageKey){
   const stage = String(stageKey || '')
     .trim()
@@ -23608,6 +23607,261 @@ window.saveValidatedAnalysisStage = function(stageKey){
       );
     }
 
+    let parsed =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    /*
+     * Para VA, la revisión editable es la fuente final
+     * que debe almacenarse.
+     */
+    if(stage === 'VA'){
+      const reviewCard =
+        el(
+          'analysisVaReview_VA'
+        );
+
+      if(!reviewCard){
+        throw new Error(
+          'No está disponible la revisión editable de AVA. Valida nuevamente el JSON.'
+        );
+      }
+
+      const reviewItems =
+        Array.from(
+          reviewCard.querySelectorAll(
+            '.analysis-va-item[data-va-id]'
+          )
+        );
+
+      if(!reviewItems.length){
+        throw new Error(
+          'La revisión AVA no contiene actividades ejecutables.'
+        );
+      }
+
+      const reviewById =
+        new Map();
+
+      reviewItems.forEach(function(reviewItem){
+        const id = String(
+          reviewItem.dataset.vaId || ''
+        ).trim();
+
+        if(id){
+          reviewById.set(
+            id,
+            reviewItem
+          );
+        }
+      });
+
+      parsed.ava =
+        parsed.ava &&
+        typeof parsed.ava === 'object' &&
+        !Array.isArray(parsed.ava)
+          ? parsed.ava
+          : {};
+
+      parsed.ava.activityAnalysis =
+        safeArray(
+          parsed.ava.activityAnalysis
+        ).map(function(item){
+          const id = String(
+            item?.id || ''
+          ).trim();
+
+          const reviewItem =
+            reviewById.get(id);
+
+          if(!reviewItem){
+            throw new Error(
+              'No se encontró la actividad "' +
+              id +
+              '" dentro de la revisión AVA.'
+            );
+          }
+
+          const readField = function(fieldName){
+            return String(
+              reviewItem.querySelector(
+                '[data-va-field="' +
+                fieldName +
+                '"]'
+              )?.value || ''
+            ).trim();
+          };
+
+          const classification =
+            readField('classification')
+              .toUpperCase();
+
+          const activityType =
+            readField('activityType')
+              .toUpperCase();
+
+          const classificationJustification =
+            readField(
+              'classificationJustification'
+            );
+
+          const typeJustification =
+            readField(
+              'typeJustification'
+            );
+
+          const evidenceLines =
+            readField('evidence')
+              .split(/\r?\n/)
+              .map(function(line){
+                return line.trim();
+              })
+              .filter(Boolean);
+
+          /*
+           * Conserva la fuente y referencia originales
+           * cuando la evidencia ya provenía de la IA.
+           */
+          const originalEvidence =
+            Array.isArray(
+              reviewItem.__lmpVaOriginalEvidence
+            )
+              ? reviewItem
+                  .__lmpVaOriginalEvidence
+              : safeArray(
+                  item?.evidence
+                );
+
+          const evidence =
+            evidenceLines.map(function(
+              detail,
+              evidenceIndex
+            ){
+              /*
+               * Primero busca la evidencia por contenido.
+               * Si fue editada, conserva la metadata por posición.
+               */
+              const exactOriginal =
+                originalEvidence.find(
+                  function(entry){
+                    return String(
+                      entry?.detail || ''
+                    ).trim() === detail;
+                  }
+                );
+
+              const original =
+                exactOriginal ||
+                originalEvidence[
+                  evidenceIndex
+                ] ||
+                {};
+
+              return {
+                source:
+                  String(
+                    original?.source ||
+                    'activity'
+                  ).trim(),
+
+                reference:
+                  String(
+                    original?.reference ||
+                    id
+                  ).trim(),
+
+                detail
+              };
+            });
+
+          return Object.assign(
+            {},
+            item,
+            {
+              id,
+              classification,
+              activityType,
+              classificationJustification,
+              typeJustification,
+              evidence
+            }
+          );
+        });
+
+      /*
+       * Elimina las brechas generadas antes de la revisión
+       * y vuelve a calcularlas desde los campos actuales.
+       */
+      parsed.validation =
+        parsed.validation &&
+        typeof parsed.validation === 'object' &&
+        !Array.isArray(parsed.validation)
+          ? parsed.validation
+          : {};
+
+      parsed.validation.blockingGaps = [];
+      parsed.validation.canProceed = false;
+
+      parsed =
+        lmpValidateVaStageContract_(
+          parsed
+        );
+
+      /*
+       * No permite guardar si alguna actividad ejecutable
+       * continúa incompleta.
+       */
+      if(
+        parsed.validation?.canProceed !== true
+      ){
+        const firstIncomplete =
+          reviewCard.querySelector(
+            '.analysis-va-item.is-incomplete'
+          );
+
+        if(firstIncomplete){
+          firstIncomplete.open = true;
+
+          firstIncomplete.scrollIntoView({
+            behavior:
+              'smooth',
+
+            block:
+              'center'
+          });
+        }
+
+        const gapCount =
+          safeArray(
+            parsed.validation?.blockingGaps
+          ).length;
+
+        throw new Error(
+          'Completa la revisión AVA antes de guardar. ' +
+          gapCount +
+          (
+            gapCount === 1
+              ? ' actividad requiere revisión.'
+              : ' actividades requieren revisión.'
+          )
+        );
+      }
+
+      /*
+       * Actualiza el resultado pendiente con la versión
+       * reconstruida desde la interfaz.
+       */
+      window.__LMP_ANALYSIS_PENDING__[
+        stage
+      ].parsed =
+        JSON.parse(
+          JSON.stringify(parsed)
+        );
+    }
+
     state.analysisStages =
       state.analysisStages || {
         current: 'VA',
@@ -23617,16 +23871,13 @@ window.saveValidatedAnalysisStage = function(stageKey){
     state.analysisStages.results =
       state.analysisStages.results || {};
 
+    /*
+     * Las etapas posteriores solo se invalidan después
+     * de completar correctamente la revisión actual.
+     */
     const invalidated =
       lmpInvalidateAnalysisAfter_(
         stage
-      );
-
-    const parsed =
-      JSON.parse(
-        JSON.stringify(
-          pending.parsed
-        )
       );
 
     state.analysisStages.current =
