@@ -20231,11 +20231,44 @@ function renderAnalysisFromState(){
       );
     });
 
+  const vaReviewCard =
+    document.getElementById(
+      'analysisVaReview_VA'
+    );
+
+  if(vaReviewCard){
+    vaReviewCard.remove();
+  }
+
   /*
-   * Sin etapas procesadas no existe un análisis consolidado.
+   * El estado temporal no forma parte del respaldo.
+   * Se reconstruye únicamente desde resultados oficiales.
+   */
+  window.__LMP_ANALYSIS_PENDING__ =
+    window.__LMP_ANALYSIS_PENDING__ ||
+    Object.create(null);
+
+  delete window
+    .__LMP_ANALYSIS_PENDING__
+    .VA;
+
+  const vaSaveButton =
+    document.getElementById(
+      'btnSaveAnalysisStage_VA'
+    );
+
+  if(vaSaveButton){
+    vaSaveButton.disabled =
+      true;
+  }
+
+  /*
+   * Sin etapas guardadas no existe análisis consolidado.
    */
   if(!completedStages.length){
-    state.analysis = null;
+    state.analysis =
+      null;
+
     return null;
   }
 
@@ -20281,8 +20314,7 @@ function renderAnalysisFromState(){
     assembled;
 
   /*
-   * Restaura los indicadores acumulados de todas
-   * las etapas oficialmente guardadas.
+   * Restaura los indicadores acumulados.
    */
   if(
     typeof window.renderAnalysisScreenAccumulated ===
@@ -20297,9 +20329,6 @@ function renderAnalysisFromState(){
 
   /*
    * Restaura AVA como resultado editable.
-   *
-   * Esto permite modificar y volver a guardar una etapa
-   * recuperada desde respaldo sin ejecutar nuevamente la IA.
    */
   const storedVaResult =
     results.VA &&
@@ -20336,45 +20365,53 @@ function renderAnalysisFromState(){
         restoredRaw;
     }
 
-    window.__LMP_ANALYSIS_PENDING__ =
-      window.__LMP_ANALYSIS_PENDING__ ||
-      {};
-
-    window.__LMP_ANALYSIS_PENDING__.VA = {
-      raw:
-        restoredRaw,
-
-      parsed:
-        JSON.parse(
-          JSON.stringify(
-            restoredParsed
-          )
-        )
-    };
+    let restoredReview =
+      null;
 
     if(
-      typeof lmpRenderVaReview_ ===
+      typeof window.lmpRenderVaReview_ ===
       'function'
     ){
-      lmpRenderVaReview_(
-        restoredParsed
-      );
+      restoredReview =
+        window.lmpRenderVaReview_(
+          restoredParsed
+        );
     }
 
-    const saveButton =
-      document.getElementById(
-        'btnSaveAnalysisStage_VA'
-      );
+    /*
+     * Solo habilita el guardado cuando la revisión
+     * fue reconstruida correctamente.
+     */
+    if(restoredReview){
+      window
+        .__LMP_ANALYSIS_PENDING__
+        .VA = {
+          raw:
+            restoredRaw,
 
-    if(saveButton){
-      saveButton.disabled =
-        false;
+          parsed:
+            JSON.parse(
+              JSON.stringify(
+                restoredParsed
+              )
+            )
+        };
+
+      if(vaSaveButton){
+        vaSaveButton.disabled =
+          false;
+      }
+
+    }else{
+      console.error(
+        '[LMP] No fue posible reconstruir la revisión editable de AVA.'
+      );
     }
   }
 
   /*
-   * Al restaurar un respaldo, recupera las mejoras solamente
-   * cuando todavía no existen decisiones del usuario.
+   * Restaura mejoras únicamente cuando el usuario todavía
+   * no ha registrado decisiones sobre ellas.
    */
   if(
     completedStages.includes('MEJORAS') &&
@@ -24512,8 +24549,9 @@ const summaryCard =
       <h3>JSON estructurado generado por IA · ${label}</h3>
 
       <p>
-        Genera el JSON con la API o pega aquí la respuesta obtenida
-        fuera del LMP. Luego valida únicamente su estructura.
+Genera el JSON con la API o pega aquí la respuesta obtenida
+fuera del LMP. Luego valida su estructura y prepara el
+resultado para la revisión editable.
       </p>
 
       <div
