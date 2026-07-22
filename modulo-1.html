@@ -7596,15 +7596,14 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
             Descargar JSON SB
           </button>
 
-          <button
-            class="btn"
-            id="btnOpenSBFromLMP"
-            onclick="openSBFromLMP()"
-            type="button"
-            disabled
-          >
-            Abrir en SIPOC Builder
-          </button>
+<button
+  class="btn"
+  id="btnOpenSBFromLMP"
+  onclick="openSBFromLMP()"
+  type="button"
+>
+  Abrir SIPOC Builder
+</button>
         </div>
       </div>
 
@@ -15067,10 +15066,9 @@ function setSBOutputActionsEnabled(enabled){
 
   if(openButton){
     openButton.disabled =
-      !enabled;
+      false;
   }
 }
-
 
 function renderSBOutputState(){
   const view =
@@ -15322,169 +15320,47 @@ function downloadSBJson(){
 
 
 /* =========================
-   HANDOFF LMP -> SB
+   ABRIR SIPOC BUILDER
 ========================= */
 
-const SGMP_SB_HANDOFF_URL =
+const SGMP_SB_URL =
   'https://enginesgmp.github.io/sgmp/modulo-2.html';
 
 
-function getSBContractForHandoff(){
-  const contract =
-    state?.results?.sbJson || null;
-
-  if(!contract){
-    showOutputsMsg(
-      'warn',
-      'Genera primero el JSON SB antes de abrir el SIPOC Builder.'
-    );
-
-    return null;
-  }
-
-  const validation =
-    validateSipocContract(
-      contract.sipoc_input
-    );
-
-  if(
-    validation.errors.length
-  ){
-    setSBOutputActionsEnabled(
-      false
-    );
-
-    showOutputsMsg(
-      'err',
-      'No se puede abrir SIPOC Builder porque el contrato contiene errores:\n- ' +
-      validation.errors.join('\n- ')
-    );
-
-    return null;
-  }
-
-  return contract;
-}
-
-
-function buildSBHandoffPayload(contract){
-  const sp =
-    contract?.sipoc_input || null;
-
-  if(!sp){
-    throw new Error(
-      'El contrato no contiene sipoc_input.'
-    );
-  }
-
-  return {
-    ...contract,
-
-    _handoff_meta: {
-      contract_code:
-        'LMP_TO_SB',
-
-      source_module:
-        'LMP',
-
-      target_module:
-        'SB',
-
-      source_page:
-        'modulo-1',
-
-      generated_at:
-        new Date().toISOString(),
-
-      process_code:
-        sp.process_code || '',
-
-      process_name:
-        sp.process_name || '',
-
-      storage_keys: [
-        'SGMP_SB_INPUT',
-        'SGMP_LMP_TO_SB',
-        'SGMP_LMP_TO_SB_CONTRACT'
-      ]
-    }
-  };
-}
-
-
 function openSBFromLMP(){
-  try{
-    const contract =
-      getSBContractForHandoff();
-
-    if(!contract){
-      return;
-    }
-
-    const payload =
-      buildSBHandoffPayload(
-        contract
-      );
-
-    const text =
-      JSON.stringify(
-        payload
-      );
-
-    localStorage.setItem(
-      'SGMP_SB_INPUT',
-      text
-    );
-
-    localStorage.setItem(
-      'SGMP_LMP_TO_SB',
-      text
-    );
-
-    localStorage.setItem(
-      'SGMP_LMP_TO_SB_CONTRACT',
-      text
-    );
+  /*
+   * Elimina cualquier handoff anterior.
+   */
+  [
+    'SGMP_SB_INPUT',
+    'SGMP_LMP_TO_SB',
+    'SGMP_LMP_TO_SB_CONTRACT'
+  ].forEach(key => {
+    localStorage.removeItem(key);
 
     try{
-      sessionStorage.setItem(
-        'SGMP_SB_INPUT',
-        text
-      );
-
-      sessionStorage.setItem(
-        'SGMP_LMP_TO_SB',
-        text
-      );
-
-      sessionStorage.setItem(
-        'SGMP_LMP_TO_SB_CONTRACT',
-        text
-      );
+      sessionStorage.removeItem(key);
     }catch(_){}
+  });
 
-const targetUrl =
-  SGMP_SB_HANDOFF_URL;
-
-window.location.assign(
-  targetUrl
-);
-
-return;
-
-    showOutputsMsg(
-      'ok',
-      'JSON SB enviado y SIPOC Builder abierto correctamente.'
+  /*
+   * Se omite noopener para que la nueva pestaña
+   * conserve la sesión SGMP.
+   */
+  const opened =
+    window.open(
+      SGMP_SB_URL,
+      '_blank'
     );
-  }catch(error){
+
+  if(!opened){
     showOutputsMsg(
-      'err',
-      'No fue posible abrir SIPOC Builder: ' +
-      error.message
+      'warn',
+      'El navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes e inténtalo nuevamente.'
     );
   }
 }
-
+  
 function copyDocumentProposalJson(){
   if(!state.results.documentProposal){
     showMsg('resultsMsg','warn','Genera primero los resultados.');
