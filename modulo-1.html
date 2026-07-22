@@ -24068,8 +24068,819 @@ function lmpRenderVaReview_(parsed){
  * Expone el renderizador para que la restauración global
  * pueda reconstruir la revisión AVA desde un respaldo.
  */
+/*
+ * AVA · Guardado individual y control de cambios por tarjeta.
+ * Se agrega sobre el renderizador vigente sin modificar su contrato.
+ */
+function lmpVaReadReviewItem_(reviewItem, sourceItem){
+  const id = String(
+    reviewItem?.dataset?.vaId ||
+    sourceItem?.id ||
+    ''
+  ).trim();
+
+  const read = function(field){
+    return String(
+      reviewItem?.querySelector(
+        '[data-va-field="' + field + '"]'
+      )?.value || ''
+    ).trim();
+  };
+
+  const classification =
+    read('classification').toUpperCase();
+
+  const activityType =
+    read('activityType').toUpperCase();
+
+  const classificationJustification =
+    read('classificationJustification');
+
+  const typeJustification =
+    read('typeJustification');
+
+  const evidenceLines =
+    read('evidence')
+      .split(/\r?\n/)
+      .map(function(line){
+        return line.trim();
+      })
+      .filter(Boolean);
+
+  const originalEvidence =
+    Array.isArray(
+      reviewItem?.__lmpVaOriginalEvidence
+    )
+      ? reviewItem.__lmpVaOriginalEvidence
+      : safeArray(sourceItem?.evidence);
+
+  const evidence = evidenceLines.map(function(
+    detail,
+    index
+  ){
+    const exact = originalEvidence.find(
+      function(entry){
+        return String(
+          entry?.detail || ''
+        ).trim() === detail;
+      }
+    );
+
+    const original =
+      exact ||
+      originalEvidence[index] ||
+      {};
+
+    return {
+      source: String(
+        original?.source || 'activity'
+      ).trim(),
+
+      reference: String(
+        original?.reference || id
+      ).trim(),
+
+      detail
+    };
+  });
+
+  const isComplete = !!(
+    classification &&
+    activityType &&
+    classificationJustification &&
+    typeJustification &&
+    evidence.length &&
+    (
+      classification !== 'VA' ||
+      activityType === 'OPERATION'
+    )
+  );
+
+  const item = Object.assign(
+    {},
+    sourceItem || {},
+    {
+      id,
+      classification,
+      activityType,
+      classificationJustification,
+      typeJustification,
+      evidence
+    }
+  );
+
+  return {
+    item,
+    isComplete,
+
+    snapshot: JSON.stringify({
+      classification,
+      activityType,
+      classificationJustification,
+      typeJustification,
+      evidence
+    })
+  };
+}
+
+
+function lmpVaFindReviewItem_(activityId){
+  const id = String(
+    activityId || ''
+  ).trim();
+
+  return Array.from(
+    el('analysisVaReview_VA')
+      ?.querySelectorAll(
+        '.analysis-va-item[data-va-id]'
+      ) || []
+  ).find(function(item){
+    return String(
+      item.dataset.vaId || ''
+    ).trim() === id;
+  }) || null;
+}
+
+
+function lmpVaEnsurePendingState_(){
+  window.__LMP_ANALYSIS_PENDING__ =
+    window.__LMP_ANALYSIS_PENDING__ ||
+    Object.create(null);
+
+  if(
+    window.__LMP_ANALYSIS_PENDING__.VA
+  ){
+    return window
+      .__LMP_ANALYSIS_PENDING__
+      .VA;
+  }
+
+  const official =
+    state.analysisStages
+      ?.results
+      ?.VA;
+
+  if(
+    !official ||
+    typeof official !== 'object' ||
+    Array.isArray(official) ||
+    !Object.keys(official).length
+  ){
+    throw new Error(
+      'No existe un resultado AVA validado para iniciar la edición.'
+    );
+  }
+
+  const parsed = JSON.parse(
+    JSON.stringify(official)
+  );
+
+  const raw = JSON.stringify(
+    parsed,
+    null,
+    2
+  );
+
+  window.__LMP_ANALYSIS_PENDING__.VA = {
+    raw,
+    parsed
+  };
+
+  const responseBox =
+    el('analysisResponse_VA');
+
+  if(responseBox){
+    responseBox.value = raw;
+  }
+
+  const stageButton =
+    el('btnSaveAnalysisStage_VA');
+
+  if(stageButton){
+    stageButton.disabled = false;
+  }
+
+  return window
+    .__LMP_ANALYSIS_PENDING__
+    .VA;
+}
+
+
+function lmpVaRefreshReviewItemState_(reviewItem){
+  const sourceItem =
+    reviewItem?.__lmpVaSourceItem ||
+    {};
+
+  const data =
+    lmpVaReadReviewItem_(
+      reviewItem,
+      sourceItem
+    );
+
+  const isSaved = !!(
+    data.isComplete &&
+    reviewItem.__lmpVaSavedSnapshot &&
+    reviewItem.__lmpVaSavedSnapshot ===
+      data.snapshot
+  );
+
+  const hasPendingChanges = !!(
+    data.isComplete &&
+    !isSaved
+  );
+
+  const classificationBadge =
+    reviewItem.querySelector(
+      '[data-va-summary-classification]'
+    );
+
+  const typeBadge =
+    reviewItem.querySelector(
+      '[data-va-summary-type]'
+    );
+
+  const stateBadge =
+    reviewItem.querySelector(
+      '[data-va-summary-state]'
+    );
+
+  const message =
+    reviewItem.querySelector(
+      '[data-va-save-message]'
+    );
+
+  const button =
+    reviewItem.querySelector(
+      '[data-va-save-button]'
+    );
+
+  if(classificationBadge){
+    classificationBadge.textContent =
+      lmpVaClassificationLabel_(
+        data.item.classification
+      );
+  }
+
+  if(typeBadge){
+    typeBadge.textContent =
+      lmpVaActivityTypeLabel_(
+        data.item.activityType
+      );
+  }
+
+  reviewItem.classList.remove(
+    'is-saved',
+    'has-pending-changes',
+    'is-incomplete',
+    'is-save-error'
+  );
+
+  if(!data.isComplete){
+    reviewItem.classList.add(
+      'is-incomplete'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Incompleta';
+    }
+
+    if(message){
+      message.textContent =
+        'Completa clasificación, tipo, justificaciones y evidencia.';
+    }
+
+    if(button){
+      button.disabled = true;
+      button.textContent =
+        'Guardar actividad';
+    }
+
+  }else if(isSaved){
+    reviewItem.classList.add(
+      'is-saved'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Guardada';
+    }
+
+    if(message){
+      message.textContent =
+        'La actividad está guardada dentro de la revisión AVA.';
+    }
+
+    if(button){
+      button.disabled = true;
+      button.textContent =
+        'Actividad guardada';
+    }
+
+  }else{
+    reviewItem.classList.add(
+      'has-pending-changes'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Cambios pendientes';
+    }
+
+    if(message){
+      message.textContent =
+        'Guarda esta actividad para incorporar sus cambios a la revisión.';
+    }
+
+    if(button){
+      button.disabled = false;
+      button.textContent =
+        'Guardar actividad';
+    }
+  }
+
+  return {
+    data,
+    isComplete: data.isComplete,
+    isSaved,
+    hasPendingChanges
+  };
+}
+
+
+window.lmpSaveVaActivity_ = function(
+  activityId,
+  options
+){
+  const settings = Object.assign(
+    {
+      silent: false,
+      closeAfterSave: true,
+      scrollOnError: true
+    },
+    options || {}
+  );
+
+  const id = String(
+    activityId || ''
+  ).trim();
+
+  const reviewItem =
+    lmpVaFindReviewItem_(id);
+
+  try{
+    if(!reviewItem){
+      throw new Error(
+        'No se encontró la actividad AVA "' +
+        id +
+        '".'
+      );
+    }
+
+    const pending =
+      lmpVaEnsurePendingState_();
+
+    const activities =
+      safeArray(
+        pending.parsed
+          ?.ava
+          ?.activityAnalysis
+      );
+
+    const index = activities.findIndex(
+      function(item){
+        return String(
+          item?.id || ''
+        ).trim() === id;
+      }
+    );
+
+    if(index < 0){
+      throw new Error(
+        'La actividad "' +
+        id +
+        '" no existe en el resultado AVA pendiente.'
+      );
+    }
+
+    const readResult =
+      lmpVaReadReviewItem_(
+        reviewItem,
+        activities[index]
+      );
+
+    if(!readResult.isComplete){
+      throw new Error(
+        'Completa clasificación, tipo, justificaciones y evidencia antes de guardar.'
+      );
+    }
+
+    const parsed = JSON.parse(
+      JSON.stringify(
+        pending.parsed
+      )
+    );
+
+    parsed.ava.activityAnalysis[index] =
+      readResult.item;
+
+    parsed.validation =
+      parsed.validation &&
+      typeof parsed.validation === 'object' &&
+      !Array.isArray(parsed.validation)
+        ? parsed.validation
+        : {};
+
+    /*
+     * Recalcula las brechas desde el estado vigente.
+     */
+    parsed.validation.blockingGaps = [];
+    parsed.validation.canProceed = false;
+
+    const validated =
+      lmpValidateVaStageContract_(
+        parsed
+      );
+
+    pending.parsed = JSON.parse(
+      JSON.stringify(validated)
+    );
+
+    const savedItem =
+      validated.ava.activityAnalysis[index];
+
+    reviewItem.__lmpVaSourceItem =
+      JSON.parse(
+        JSON.stringify(savedItem)
+      );
+
+    reviewItem.__lmpVaOriginalEvidence =
+      JSON.parse(
+        JSON.stringify(
+          savedItem.evidence || []
+        )
+      );
+
+    reviewItem.__lmpVaSavedSnapshot =
+      readResult.snapshot;
+
+    const resultBox =
+      el('analysisResult_VA');
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          validated,
+          null,
+          2
+        );
+    }
+
+    const stageButton =
+      el('btnSaveAnalysisStage_VA');
+
+    if(stageButton){
+      stageButton.disabled = false;
+    }
+
+    lmpVaRefreshReviewItemState_(
+      reviewItem
+    );
+
+    if(settings.closeAfterSave){
+      reviewItem.open = false;
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg === 'function'
+    ){
+      showMsg(
+        'analysisMsg_VA',
+        'ok',
+        'Actividad ' +
+        id +
+        ' guardada en la revisión AVA. Guarda la etapa completa para incorporarla al respaldo.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(reviewItem){
+      reviewItem.classList.add(
+        'is-save-error'
+      );
+
+      reviewItem.open = true;
+
+      const badge =
+        reviewItem.querySelector(
+          '[data-va-summary-state]'
+        );
+
+      const message =
+        reviewItem.querySelector(
+          '[data-va-save-message]'
+        );
+
+      if(badge){
+        badge.textContent =
+          'Incompleta';
+      }
+
+      if(message){
+        message.textContent =
+          error.message;
+      }
+
+      if(settings.scrollOnError){
+        reviewItem.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg === 'function'
+    ){
+      showMsg(
+        'analysisMsg_VA',
+        'err',
+        'No fue posible guardar la actividad ' +
+        (id || 'AVA') +
+        '. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.lmpSavePendingVaActivities_ = function(options){
+  const settings = Object.assign(
+    {
+      closeAfterSave: true,
+      scrollOnError: true
+    },
+    options || {}
+  );
+
+  const reviewItems = Array.from(
+    el('analysisVaReview_VA')
+      ?.querySelectorAll(
+        '.analysis-va-item[data-va-id]'
+      ) || []
+  );
+
+  if(!reviewItems.length){
+    return {
+      ok: false,
+      savedCount: 0,
+      incompleteId: '',
+      error:
+        'No está disponible la revisión editable de AVA.'
+    };
+  }
+
+  let savedCount = 0;
+
+  for(const reviewItem of reviewItems){
+    const status =
+      lmpVaRefreshReviewItemState_(
+        reviewItem
+      );
+
+    const id = String(
+      reviewItem.dataset.vaId || ''
+    ).trim();
+
+    if(!status.isComplete){
+      reviewItem.open = true;
+
+      if(settings.scrollOnError){
+        reviewItem.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }
+
+      return {
+        ok: false,
+        savedCount,
+        incompleteId: id,
+        error:
+          'La actividad ' +
+          id +
+          ' está incompleta.'
+      };
+    }
+
+    if(status.hasPendingChanges){
+      const saved =
+        window.lmpSaveVaActivity_(
+          id,
+          {
+            silent: true,
+
+            closeAfterSave:
+              settings.closeAfterSave,
+
+            scrollOnError:
+              settings.scrollOnError
+          }
+        );
+
+      if(!saved){
+        return {
+          ok: false,
+          savedCount,
+          incompleteId: id,
+          error:
+            'No fue posible guardar la actividad ' +
+            id +
+            '.'
+        };
+      }
+
+      savedCount += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    savedCount,
+    incompleteId: '',
+    error: ''
+  };
+};
+
+
+function lmpEnhanceVaReview_(reviewCard, parsed){
+  if(!reviewCard){
+    return null;
+  }
+
+  const itemsById = new Map(
+    safeArray(
+      parsed?.ava?.activityAnalysis
+    ).map(function(item){
+      return [
+        String(item?.id || '').trim(),
+        item
+      ];
+    })
+  );
+
+  const official =
+    state.analysisStages
+      ?.results
+      ?.VA;
+
+  const isOfficialRestore = !!(
+    !window.__LMP_ANALYSIS_PENDING__
+      ?.VA &&
+    official &&
+    typeof official === 'object' &&
+    !Array.isArray(official) &&
+    JSON.stringify(official) ===
+      JSON.stringify(parsed)
+  );
+
+  const reviewItems = Array.from(
+    reviewCard.querySelectorAll(
+      '.analysis-va-item[data-va-id]'
+    )
+  );
+
+  reviewItems.forEach(function(reviewItem){
+    const id = String(
+      reviewItem.dataset.vaId || ''
+    ).trim();
+
+    const sourceItem =
+      itemsById.get(id) ||
+      {};
+
+    reviewItem.__lmpVaSourceItem =
+      JSON.parse(
+        JSON.stringify(sourceItem)
+      );
+
+    reviewItem.__lmpVaOriginalEvidence =
+      JSON.parse(
+        JSON.stringify(
+          safeArray(sourceItem.evidence)
+        )
+      );
+
+    if(
+      !reviewItem.querySelector(
+        '[data-va-save-button]'
+      )
+    ){
+      const body =
+        reviewItem.querySelector(
+          '.analysis-va-body'
+        );
+
+      body?.insertAdjacentHTML(
+        'beforeend',
+        `
+          <div class="analysis-va-actions">
+            <div
+              class="analysis-va-save-message"
+              data-va-save-message
+            ></div>
+
+            <button
+              class="analysis-va-save-button"
+              data-va-save-button
+              type="button"
+            >
+              Guardar actividad
+            </button>
+          </div>
+        `
+      );
+    }
+
+    const initial =
+      lmpVaReadReviewItem_(
+        reviewItem,
+        sourceItem
+      );
+
+    reviewItem.__lmpVaSavedSnapshot =
+      isOfficialRestore &&
+      initial.isComplete
+        ? initial.snapshot
+        : '';
+
+    if(isOfficialRestore){
+      reviewItem.open = false;
+    }
+
+    const refresh = function(){
+      lmpVaRefreshReviewItemState_(
+        reviewItem
+      );
+    };
+
+    reviewItem
+      .querySelectorAll(
+        '[data-va-field]'
+      )
+      .forEach(function(input){
+        input.addEventListener(
+          input.tagName === 'SELECT'
+            ? 'change'
+            : 'input',
+          refresh
+        );
+      });
+
+    const button =
+      reviewItem.querySelector(
+        '[data-va-save-button]'
+      );
+
+    button?.addEventListener(
+      'click',
+      function(event){
+        event.preventDefault();
+        event.stopPropagation();
+
+        window.lmpSaveVaActivity_(
+          id
+        );
+      }
+    );
+
+    refresh();
+  });
+
+  return reviewCard;
+}
+
+
+const lmpRenderVaReviewBase_ =
+  lmpRenderVaReview_;
+
+lmpRenderVaReview_ = function(parsed){
+  return lmpEnhanceVaReview_(
+    lmpRenderVaReviewBase_(parsed),
+    parsed
+  );
+};
+
 window.lmpRenderVaReview_ =
   lmpRenderVaReview_;
+  
 
 window.processAnalysisScreenStage = function(stageKey){
   const stage = String(stageKey || '')
@@ -24180,7 +24991,7 @@ window.saveValidatedAnalysisStage = function(stageKey){
     'analysisMsg_' + stage;
 
   try{
-    const pending =
+        const pending =
       window.__LMP_ANALYSIS_PENDING__[stage];
 
     if(!pending){
@@ -24189,12 +25000,46 @@ window.saveValidatedAnalysisStage = function(stageKey){
       );
     }
 
+    /*
+     * AVA debe guardar automáticamente todas las tarjetas
+     * completas que todavía tengan cambios pendientes.
+     *
+     * Si existe una actividad incompleta, el guardado masivo
+     * la abre, desplaza la pantalla hacia ella y bloquea
+     * el guardado oficial de la etapa.
+     */
+    if(stage === 'VA'){
+      if(
+        typeof window.lmpSavePendingVaActivities_ !==
+        'function'
+      ){
+        throw new Error(
+          'No está disponible el guardado masivo de actividades AVA.'
+        );
+      }
+
+      const massSave =
+        window.lmpSavePendingVaActivities_({
+          closeAfterSave: true,
+          scrollOnError: true
+        });
+
+      if(
+        !massSave ||
+        massSave.ok !== true
+      ){
+        throw new Error(
+          massSave?.error ||
+          'No fue posible guardar todas las actividades AVA pendientes.'
+        );
+      }
+    }
+
     const currentRaw =
       el(
         'analysisResponse_' +
         stage
       )?.value.trim() || '';
-
     if(currentRaw !== pending.raw){
       lmpClearAnalysisPending_(
         stage
