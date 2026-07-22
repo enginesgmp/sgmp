@@ -25058,13 +25058,24 @@ window.runAnalysisScreenStage = async function(stageKey){
     }
 
     /*
-     * Evita mostrar tarjetas correspondientes a una
-     * ejecución anterior mientras se genera un nuevo JSON.
+     * Evita mostrar una revisión anterior mientras
+     * se genera un nuevo JSON para la etapa.
      */
-    if(stage === 'VA'){
+    const reviewIdByStage = {
+      VA:
+        'analysisVaReview_VA',
+
+      DESPERDICIOS:
+        'analysisWasteReview_DESPERDICIOS'
+    };
+
+    const previousReviewId =
+      reviewIdByStage[stage];
+
+    if(previousReviewId){
       const previousReview =
         el(
-          'analysisVaReview_VA'
+          previousReviewId
         );
 
       if(previousReview){
@@ -25072,6 +25083,10 @@ window.runAnalysisScreenStage = async function(stageKey){
       }
     }
 
+    if(stage === 'DESPERDICIOS'){
+      window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+        Object.create(null);
+    }
     if(typeof showMsg === 'function'){
       showMsg(
         msgId,
@@ -25141,51 +25156,88 @@ window.runAnalysisScreenStage = async function(stageKey){
     let restoredPreviousResult =
       false;
 
+    let restoredPreviousLabel =
+      '';
+
     /*
-     * Si falla una nueva ejecución AVA, reconstruye
+     * Si falla una nueva ejecución, reconstruye
      * visualmente el último resultado oficial guardado.
-     * No lo convierte nuevamente en resultado pendiente.
+     *
+     * El resultado restaurado no se convierte en
+     * resultado pendiente y no puede sobrescribirse
+     * sin una nueva validación.
      */
-    if(stage === 'VA'){
-      const officialVa =
+    const restoreConfigByStage = {
+      VA: {
+        resultKey:
+          'VA',
+
+        renderer:
+          'lmpRenderVaReview_',
+
+        label:
+          'AVA'
+      },
+
+      DESPERDICIOS: {
+        resultKey:
+          'DESPERDICIOS',
+
+        renderer:
+          'lmpRenderWasteReview_',
+
+        label:
+          'Desperdicios'
+      }
+    };
+
+    const restoreConfig =
+      restoreConfigByStage[stage];
+
+    if(restoreConfig){
+      const officialResult =
         state.analysisStages
           ?.results
-          ?.VA;
+          ?.[restoreConfig.resultKey];
 
       if(
-        officialVa &&
-        typeof officialVa === 'object' &&
-        !Array.isArray(officialVa) &&
-        Object.keys(officialVa).length
+        officialResult &&
+        typeof officialResult === 'object' &&
+        !Array.isArray(officialResult) &&
+        Object.keys(officialResult).length
       ){
+        const officialJson =
+          JSON.stringify(
+            officialResult,
+            null,
+            2
+          );
+
         if(responseBox){
           responseBox.value =
-            JSON.stringify(
-              officialVa,
-              null,
-              2
-            );
+            officialJson;
         }
 
         if(resultBox){
           resultBox.value =
-            JSON.stringify(
-              officialVa,
-              null,
-              2
-            );
+            officialJson;
         }
 
-        if(
-          typeof window.lmpRenderVaReview_ ===
-          'function'
-        ){
-          window.lmpRenderVaReview_(
-            officialVa
+        const renderer =
+          window[
+            restoreConfig.renderer
+          ];
+
+        if(typeof renderer === 'function'){
+          renderer(
+            officialResult
           );
 
           restoredPreviousResult =
             true;
+
+          restoredPreviousLabel =
+            restoreConfig.label;
         }
       }
     }
@@ -25200,9 +25252,14 @@ window.runAnalysisScreenStage = async function(stageKey){
         error.message +
         (
           restoredPreviousResult
-            ? ' Se restauró visualmente el último AVA oficial guardado.'
+            ? (
+                ' Se restauró visualmente el último resultado oficial de ' +
+                restoredPreviousLabel +
+                '.'
+              )
             : ''
         )
+        
       );
     }
 
