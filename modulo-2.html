@@ -2484,75 +2484,701 @@ function normalizeCatalogItems(items) {
   return out;
 }
 
-function toArrayOfCleanStrings(v) {
-  if (Array.isArray(v)) return v.map(x => normalizeText(x)).filter(Boolean);
-  const s = normalizeText(v);
-  return s ? [s] : [];
+function sbUnique(values){
+  const result = [];
+  const seen = new Set();
+
+  (Array.isArray(values) ? values : [values])
+    .forEach(value => {
+      const text = normalizeText(value || '');
+      const key = text.toLowerCase();
+
+      if(!text || seen.has(key)) return;
+
+      seen.add(key);
+      result.push(text);
+    });
+
+  return result;
 }
 
-function normActs(acts) {
-  const arr = Array.isArray(acts) ? acts : [];
-  return arr.map((a, idx) => ({
-    order: Number(a.order || a.sequence || a.seq || idx + 1) || idx + 1,
-    name: normalizeText(a.name || a.activity_name || ''),
-    type: normalizeText(a.type || 'operation').toLowerCase(),
-    actor: normalizeText(a.actor || a.actor_id || ''),
-    lane: normalizeText(a.lane || a.swimlane || a.actor || a.actor_id || ''),
-    document: normalizeText(a.document || ''),
-    previous: toArrayOfCleanStrings(a.previous),
-    next: toArrayOfCleanStrings(a.next),
-    branch_label: normalizeText(a.branch_label || a.branchLabel || a.route_label || a.routeLabel || ''),
-    route_label: normalizeText(a.route_label || a.routeLabel || a.branch_label || a.branchLabel || ''),
-    ext_suppliers: normalizeCatalogItems(a.ext_suppliers || a.suppliers || []),
-    ext_inputs: normalizeCatalogItems(a.ext_inputs || a.inputs || []),
-    ext_outputs: normalizeCatalogItems(a.ext_outputs || a.outputs || []),
-    ext_customers: normalizeCatalogItems(a.ext_customers || a.customers || []),
-    is_start: !!a.is_start,
-    is_end: !!a.is_end,
-    note: normalizeNoteText(a.note || a.notes || ''),
-    observations: normalizeNoteText(a.observations || a.observaciones || '')
-  }));
+
+function sbRelationName(value){
+  if(typeof value === 'string'){
+    return normalizeText(value);
+  }
+
+  if(!value || typeof value !== 'object'){
+    return '';
+  }
+
+  return normalizeText(
+    value.activity_name ||
+    value.activity ||
+    value.name ||
+    value.target_name ||
+    value.target ||
+    ''
+  );
 }
 
-function looksLikeSerializedJson(text) {
-  const s = String(text || '').trim();
-  if (!s) return false;
-  return (s.startsWith('{') && s.endsWith('}')) || /"totalActivities"|"ava"|"wastesCount"/.test(s);
+
+function sbRelationLabel(value){
+  if(!value || typeof value !== 'object'){
+    return '';
+  }
+
+  return normalizeText(
+    value.label ||
+    value.connector ||
+    value.branch_label ||
+    value.route_label ||
+    ''
+  );
 }
 
-function normalizeIncomingPayload(parsed) {
-  const finalSipoc = parsed?.final_outputs?.sipoc_builder || parsed?.finalOutputs?.sipoc_builder || parsed?.finalOutputs?.sipocBuilder || parsed?.outputs?.sipoc_builder;
-  const directSipoc = parsed?.sipoc_builder || parsed?.sipocBuilder;
-  const sourceBlock = parsed?.sipoc_input
-    ? 'sipoc_input'
-    : (finalSipoc ? 'final_outputs.sipoc_builder' : (directSipoc ? 'sipoc_builder' : (parsed?.structured_process ? 'structured_process' : 'root')));
-  const sp = parsed?.sipoc_input
-    || finalSipoc?.sipoc_input
-    || finalSipoc
-    || directSipoc?.sipoc_input
-    || directSipoc
-    || parsed?.structured_process
-    || parsed
-    || {};
+
+function sbCatalogItemName(value, keys){
+  if(typeof value === 'string'){
+    return normalizeText(value);
+  }
+
+  if(!value || typeof value !== 'object'){
+    return '';
+  }
+
+  for(const key of keys){
+    const text = normalizeText(value[key] || '');
+
+    if(text){
+      return text;
+    }
+  }
+
+  return '';
+}
+
+
+function sbNormalizeActivityType(value){
+  const type = normalizeText(value || '').toLowerCase();
+
+  if(
+    type === 'decision' ||
+    type === 'decisión'
+  ){
+    return 'decision';
+  }
+
+  if(type === 'control'){
+    return 'control';
+  }
+
+  if(type === 'document'){
+    return 'document';
+  }
+
+  if(type === 'end'){
+    return 'end';
+  }
+
+  return 'operation';
+}
+
+
+function normActs(acts, options = {}){
+  const arr =
+    Array.isArray(acts) ? acts : [];
+
+  const actorById =
+    options.actorById || new Map();
+
+  const notes =
+    Array.isArray(options.notes)
+      ? options.notes
+      : [];
+
+  const suppliersByInput =
+    options.suppliersByInput || new Map();
+
+  const customersByOutput =
+    options.customersByOutput || new Map();
+
+  return arr.map((activity, index) => {
+    const previousRaw =
+      Array.isArray(activity.previous)
+        ? activity.previous
+        : [];
+
+    const nextRaw =
+      Array.isArray(activity.next)
+        ? activity.next
+        : [];
+
+    const previous =
+      sbUnique(
+        previousRaw.map(sbRelationName)
+      );
+
+    const next =
+      sbUnique(
+        nextRaw.map(sbRelationName)
+      );
+
+    const inputs =
+      sbUnique(
+        (
+          activity.ext_inputs ||
+          activity.inputs_used ||
+          activity.inputs ||
+          []
+        ).map(value =>
+          sbCatalogItemName(
+            value,
+            ['name', 'input']
+          )
+        )
+      );
+
+    const outputs =
+      sbUnique(
+        (
+          activity.ext_outputs ||
+          activity.outputs_generated ||
+          activity.outputs ||
+          []
+        ).map(value =>
+          sbCatalogItemName(
+            value,
+            ['name', 'output']
+          )
+        )
+      );
+
+    const suppliers =
+      sbUnique([
+        ...(activity.ext_suppliers || []),
+
+        ...inputs.flatMap(input =>
+          suppliersByInput.get(
+            input.toLowerCase()
+          ) || []
+        )
+      ]);
+
+    const customers =
+      sbUnique([
+        ...(activity.ext_customers || []),
+
+        ...outputs.flatMap(output =>
+          customersByOutput.get(
+            output.toLowerCase()
+          ) || []
+        )
+      ]);
+
+    const actor =
+      normalizeText(activity.actor || '') ||
+      actorById.get(
+        normalizeText(
+          activity.actor_lane_id || ''
+        )
+      ) ||
+      '';
+
+    const noteIds =
+      new Set(
+        Array.isArray(activity.note_ids)
+          ? activity.note_ids.map(String)
+          : []
+      );
+
+    const linkedNotes =
+      notes
+        .filter(note =>
+          noteIds.has(String(note.id || '')) ||
+          (
+            activity.id &&
+            note.activity_id === activity.id
+          ) ||
+          (
+            note.activity_name &&
+            normalizeText(note.activity_name)
+              .toLowerCase() ===
+            normalizeText(activity.name)
+              .toLowerCase()
+          )
+        )
+        .map(note =>
+          normalizeText(
+            note.text ||
+            note.content ||
+            ''
+          )
+        )
+        .filter(Boolean);
+
+    const routes =
+      nextRaw
+        .map(relation => {
+          const name =
+            sbRelationName(relation);
+
+          const label =
+            sbRelationLabel(relation);
+
+          return name && label
+            ? `${label} → ${name}`
+            : '';
+        })
+        .filter(Boolean);
+
+    const note =
+      sbUnique([
+        activity.note || '',
+        activity.notes || '',
+        ...linkedNotes,
+        routes.length
+          ? `Rutas: ${routes.join('; ')}`
+          : ''
+      ]).join('\n');
+
+    const branchLabels =
+      sbUnique(
+        nextRaw.map(sbRelationLabel)
+      );
+
+    return {
+      id:
+        normalizeText(
+          activity.id ||
+          `ACT-${String(index + 1).padStart(3, '0')}`
+        ),
+
+      order:
+        Number(
+          activity.order ||
+          activity.sequence ||
+          index + 1
+        ) || index + 1,
+
+      name:
+        normalizeText(
+          activity.name ||
+          activity.activity_name ||
+          ''
+        ),
+
+      type:
+        sbNormalizeActivityType(
+          activity.type
+        ),
+
+      actor,
+
+      lane: actor,
+
+      document:
+        normalizeText(
+          activity.document || ''
+        ),
+
+      previous,
+      next,
+
+      previous_relations:
+        previousRaw.map(relation => ({
+          activity:
+            sbRelationName(relation),
+
+          label:
+            sbRelationLabel(relation)
+        })).filter(item => item.activity),
+
+      next_relations:
+        nextRaw.map(relation => ({
+          activity:
+            sbRelationName(relation),
+
+          label:
+            sbRelationLabel(relation)
+        })).filter(item => item.activity),
+
+      branch_label:
+        normalizeText(
+          activity.branch_label || ''
+        ) ||
+        branchLabels.join(' / '),
+
+      route_label:
+        normalizeText(
+          activity.route_label || ''
+        ),
+
+      ext_suppliers:
+        suppliers,
+
+      ext_inputs:
+        inputs,
+
+      ext_outputs:
+        outputs,
+
+      ext_customers:
+        customers,
+
+      is_start:
+        typeof activity.is_start === 'boolean'
+          ? activity.is_start
+          : previous.length === 0,
+
+      is_end:
+        typeof activity.is_end === 'boolean'
+          ? activity.is_end
+          : next.length === 0,
+
+      note,
+
+      observations:
+        normalizeNoteText(
+          activity.observations ||
+          activity.observaciones ||
+          ''
+        )
+    };
+  });
+}
+
+
+function looksLikeSerializedJson(text){
+  const value =
+    String(text || '').trim();
+
+  if(!value){
+    return false;
+  }
+
+  return (
+    value.startsWith('{') &&
+    value.endsWith('}')
+  ) ||
+  /"totalActivities"|"ava"|"wastesCount"/
+    .test(value);
+}
+
+
+function normalizeIncomingPayload(parsed){
+  const finalSipoc =
+    parsed?.final_outputs?.sipoc_builder ||
+    parsed?.finalOutputs?.sipoc_builder ||
+    parsed?.finalOutputs?.sipocBuilder ||
+    parsed?.outputs?.sipoc_builder;
+
+  const directSipoc =
+    parsed?.sipoc_builder ||
+    parsed?.sipocBuilder;
+
+  const sp =
+    parsed?.sipoc_input ||
+    finalSipoc?.sipoc_input ||
+    finalSipoc ||
+    directSipoc?.sipoc_input ||
+    directSipoc ||
+    parsed?.structured_process ||
+    parsed ||
+    {};
+
+  const isLmpV3 =
+    parsed?.contract_code === 'LMP_TO_SB' &&
+    String(
+      parsed?.contract_version || ''
+    ).startsWith('3');
+
+  const suppliersInputs =
+    sp?.lanes?.suppliers_inputs ||
+    sp?.suppliers_inputs ||
+    [];
+
+  const actorLanes =
+    sp?.lanes?.actors ||
+    sp?.actors ||
+    [];
+
+  const outputsCustomers =
+    sp?.lanes?.outputs_customers ||
+    sp?.outputs_customers ||
+    [];
+
+  const clarifyingNotes =
+    Array.isArray(sp.clarifying_notes)
+      ? sp.clarifying_notes
+      : [];
+
+  const actorById =
+    new Map();
+
+  actorLanes.forEach(actor => {
+    if(
+      actor &&
+      typeof actor === 'object'
+    ){
+      actorById.set(
+        normalizeText(actor.id || ''),
+        normalizeText(actor.name || '')
+      );
+    }
+  });
+
+  const suppliersByInput =
+    new Map();
+
+  suppliersInputs.forEach(row => {
+    const input =
+      sbCatalogItemName(
+        row,
+        ['input', 'name']
+      );
+
+    const supplier =
+      sbCatalogItemName(
+        row,
+        ['supplier']
+      );
+
+    if(!input || !supplier) return;
+
+    const key =
+      input.toLowerCase();
+
+    suppliersByInput.set(
+      key,
+      sbUnique([
+        ...(suppliersByInput.get(key) || []),
+        supplier
+      ])
+    );
+  });
+
+  const customersByOutput =
+    new Map();
+
+  outputsCustomers.forEach(row => {
+    const output =
+      sbCatalogItemName(
+        row,
+        ['output', 'name']
+      );
+
+    const customer =
+      sbCatalogItemName(
+        row,
+        ['customer']
+      );
+
+    if(!output || !customer) return;
+
+    const key =
+      output.toLowerCase();
+
+    customersByOutput.set(
+      key,
+      sbUnique([
+        ...(customersByOutput.get(key) || []),
+        customer
+      ])
+    );
+  });
+
+  const suppliers =
+    suppliersInputs.length
+      ? sbUnique(
+          suppliersInputs.map(row =>
+            sbCatalogItemName(
+              row,
+              ['supplier']
+            )
+          )
+        )
+      : normalizeCatalogItems(
+          sp.catalogs?.suppliers ||
+          sp.suppliers ||
+          []
+        );
+
+  const inputs =
+    suppliersInputs.length
+      ? sbUnique(
+          suppliersInputs.map(row =>
+            sbCatalogItemName(
+              row,
+              ['input', 'name']
+            )
+          )
+        )
+      : normalizeCatalogItems(
+          sp.catalogs?.inputs ||
+          sp.inputs ||
+          []
+        );
+
+  const outputs =
+    outputsCustomers.length
+      ? sbUnique(
+          outputsCustomers.map(row =>
+            sbCatalogItemName(
+              row,
+              ['output', 'name']
+            )
+          )
+        )
+      : normalizeCatalogItems(
+          sp.catalogs?.outputs ||
+          sp.outputs ||
+          []
+        );
+
+  const customers =
+    outputsCustomers.length
+      ? sbUnique(
+          outputsCustomers.map(row =>
+            sbCatalogItemName(
+              row,
+              ['customer']
+            )
+          )
+        )
+      : normalizeCatalogItems(
+          sp.catalogs?.customers ||
+          sp.customers ||
+          []
+        );
+
+  const actors =
+    actorLanes.length
+      ? sbUnique(
+          actorLanes.map(actor =>
+            sbCatalogItemName(
+              actor,
+              ['name', 'actor']
+            )
+          )
+        )
+      : normalizeCatalogItems(
+          sp.catalogs?.actors ||
+          sp.actors ||
+          []
+        );
+
   const normalized = {
-    process_code: normalizeText(sp.process_code || sp.processCode || ''),
-    process_name: normalizeText(sp.process_name || sp.processName || ''),
-    purpose: normalizeText(sp.purpose || sp.finality || ''),
-    start_event: normalizeText(sp.start_event || sp.startEvent || ''),
-    end_event: normalizeText(sp.end_event || sp.endEvent || ''),
-    notes: normalizeNoteText(sp.notes || ''),
-    suppliers: normalizeCatalogItems(sp.catalogs?.suppliers || sp.suppliers || []),
-    inputs: normalizeCatalogItems(sp.catalogs?.inputs || sp.inputs || []),
-    outputs: normalizeCatalogItems(sp.catalogs?.outputs || sp.outputs || []),
-    customers: normalizeCatalogItems(sp.catalogs?.customers || sp.customers || []),
-    actors: normalizeCatalogItems(sp.catalogs?.actors || sp.actors || []),
-    documents: normalizeCatalogItems(sp.catalogs?.documents || sp.documents || []),
-    layout_hints: sp.layout_hints || sp.layoutHints || parsed?.layout_hints || parsed?.layoutHints || {},
-    activities: normActs(sp.activities || [])
-  };
-  return { ok:true, sourceBlock, normalized, warnings:[], errors:[] };
-}
+    process_code:
+      normalizeText(
+        sp.process_code ||
+        sp.processCode ||
+        ''
+      ),
 
+    process_name:
+      normalizeText(
+        sp.process_name ||
+        sp.processName ||
+        ''
+      ),
+
+    purpose:
+      normalizeText(
+        sp.purpose ||
+        sp.finality ||
+        ''
+      ),
+
+    start_event:
+      normalizeText(
+        sp.start_event ||
+        sp.startEvent ||
+        ''
+      ),
+
+    end_event:
+      normalizeText(
+        sp.end_event ||
+        sp.endEvent ||
+        ''
+      ),
+
+    notes:
+      normalizeNoteText(
+        sp.notes ||
+        clarifyingNotes
+          .filter(note =>
+            !note.activity_id &&
+            !note.activity_name
+          )
+          .map(note => note.text || '')
+          .filter(Boolean)
+          .join('\n')
+      ),
+
+    suppliers,
+    inputs,
+    outputs,
+    customers,
+    actors,
+
+    documents:
+      normalizeCatalogItems(
+        sp.catalogs?.documents ||
+        sp.documents ||
+        []
+      ),
+
+    layout_hints:
+      sp.layout_hints ||
+      sp.layoutHints ||
+      parsed?.layout_hints ||
+      parsed?.layoutHints ||
+      {},
+
+    activities:
+      normActs(
+        sp.activities || [],
+        {
+          actorById,
+          notes:
+            clarifyingNotes,
+          suppliersByInput,
+          customersByOutput
+        }
+      )
+  };
+
+  return {
+    ok: true,
+
+    sourceBlock:
+      isLmpV3
+        ? 'lmp_to_sb_v3'
+        : (
+          parsed?.sipoc_input
+            ? 'sipoc_input'
+            : (
+              finalSipoc
+                ? 'final_outputs.sipoc_builder'
+                : (
+                  directSipoc
+                    ? 'sipoc_builder'
+                    : (
+                      parsed?.structured_process
+                        ? 'structured_process'
+                        : 'root'
+                    )
+                )
+            )
+        ),
+
+    normalized,
+    warnings: [],
+    errors: []
+  };
+}
 
 function sourceLabel(sourceKey) {
   const map = {
