@@ -13868,86 +13868,677 @@ function mergeOutputsCustomers(rows){
   return Array.from(map.values()).filter(row => row.output || row.customers.length);
 }
   
+function sbIsPendingValue(value){
+  const normalized = lmpLower(
+    normalizeContractString(value || '')
+  );
+
+  return [
+    '',
+    'pendiente_validacion',
+    'pendiente validacion',
+    'sin definir',
+    'no definido'
+  ].includes(normalized);
+}
+
+
+function sbDedupePairRows(
+  rows,
+  leftKey,
+  rightKey,
+  prefix
+){
+  const seen = new Set();
+
+  return safeArray(rows)
+    .map(row => ({
+      [leftKey]:
+        normalizeContractString(
+          row?.[leftKey] || ''
+        ),
+
+      [rightKey]:
+        normalizeContractString(
+          row?.[rightKey] || ''
+        )
+    }))
+    .filter(
+      row =>
+        row[leftKey] ||
+        row[rightKey]
+    )
+    .filter(row => {
+      const key =
+        lmpLower(row[leftKey]) +
+        '::' +
+        lmpLower(row[rightKey]);
+
+      if(seen.has(key)){
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .map((row, index) => ({
+      id:
+        prefix +
+        '-' +
+        String(index + 1).padStart(
+          3,
+          '0'
+        ),
+
+      ...row
+    }));
+}
+
+
+function sbBuildClarifyingNotes(
+  sourceActivities,
+  activityIdByName
+){
+  const notes = [];
+
+  const addNote = ({
+    activityName = '',
+    title = '',
+    text = '',
+    type = 'nota_aclaratoria',
+    source = 'asis'
+  }) => {
+    const normalizedText =
+      normalizeContractString(
+        text || ''
+      );
+
+    if(!normalizedText){
+      return;
+    }
+
+    const normalizedActivityName =
+      normalizeContractString(
+        activityName || ''
+      );
+
+    notes.push({
+      id:
+        'NOTE-' +
+        String(notes.length + 1).padStart(
+          3,
+          '0'
+        ),
+
+      activity_id:
+        activityIdByName.get(
+          lmpLower(
+            normalizedActivityName
+          )
+        ) || '',
+
+      activity_name:
+        normalizedActivityName,
+
+      title:
+        normalizeContractString(
+          title || ''
+        ) || 'Nota aclaratoria',
+
+      text:
+        normalizedText,
+
+      type:
+        normalizeContractString(
+          type || ''
+        ) || 'nota_aclaratoria',
+
+      source:
+        normalizeContractString(
+          source || ''
+        ) || 'asis'
+    });
+  };
+
+  safeArray(
+    sourceActivities
+  ).forEach(activity => {
+    safeArray(
+      activity?.clarifying_notes
+    ).forEach((note, index) => {
+      addNote({
+        activityName:
+          activity.name,
+
+        title:
+          'Nota aclaratoria ' +
+          String(index + 1),
+
+        text:
+          note,
+
+        type:
+          'nota_aclaratoria',
+
+        source:
+          activity.source || 'asis'
+      });
+    });
+
+    if(
+      normalizeContractString(
+        activity?.observations || ''
+      )
+    ){
+      addNote({
+        activityName:
+          activity.name,
+
+        title:
+          'Observación',
+
+        text:
+          activity.observations,
+
+        type:
+          'observacion',
+
+        source:
+          activity.source || 'asis'
+      });
+    }
+  });
+
+  /*
+   * Se excluye información analítica que no debe
+   * viajar hacia SIPOC Builder.
+   */
+  const excludedTypes =
+    new Set([
+      'problema',
+      'desperdicio',
+      'restriccion',
+      'quick_win',
+      'oportunidad_mejora',
+      'ava',
+      'riesgo',
+      'automatizacion',
+      'digitalizacion'
+    ]);
+
+  safeArray(
+    state.asis?.additional_information
+  ).forEach(info => {
+    const type =
+      lmpLower(
+        normalizeContractString(
+          info?.type || ''
+        )
+      );
+
+    if(excludedTypes.has(type)){
+      return;
+    }
+
+    addNote({
+      activityName:
+        info?.related_activity || '',
+
+      title:
+        info?.title ||
+        'Información aclaratoria',
+
+      text:
+        info?.content || '',
+
+      type:
+        info?.type ||
+        'nota_contextual',
+
+      source:
+        info?.source ||
+        'asis'
+    });
+  });
+
+  return notes;
+}
+
+
 function buildSipocContract(){
-  const ctx = state.context || {};
-  const activities = buildSipocActivities();
+  const context =
+    getResolvedContext();
 
-  const suppliersInputsFromActivities = activities.flatMap(activity =>
-    normalizeActivityInputList(activity.inputs_used).map(row => ({
-      supplier: normalizeCatalogValue(row.supplier || 'pendiente_validacion'),
-      inputs: [normalizeCatalogValue(row.input || 'pendiente_validacion')],
-      source: 'activity_inputs',
-      editable: true
-    }))
-  );
+  const sourceActivities =
+    buildSipocActivities();
 
-  const outputsCustomersFromActivities = activities.flatMap(activity =>
-    normalizeActivityOutputList(activity.outputs_generated).map(row => ({
-      output: normalizeCatalogValue(row.output || 'pendiente_validacion'),
-      customers: [normalizeCatalogValue(row.customer || 'pendiente_validacion')],
-      source: 'activity_outputs',
-      editable: true
-    }))
-  );
+  /*
+   * Proveedores y entradas.
+   */
+  const supplierInputRows = [];
 
-  const suppliersInputs = mergeSuppliersInputs([
-    ...safeArray(state.asis?.suppliers_inputs),
-    ...suppliersInputsFromActivities
-  ]);
+  safeArray(
+    state.asis?.suppliers_inputs
+  ).forEach(row => {
+    const supplier =
+      normalizeContractString(
+        row?.supplier || ''
+      );
 
-  const outputsCustomers = mergeOutputsCustomers([
-    ...safeArray(state.asis?.outputs_customers),
-    ...outputsCustomersFromActivities
-  ]);
+    safeArray(
+      row?.inputs ||
+      row?.input
+    ).forEach(value => {
+      const input =
+        normalizeContractString(
+          value || ''
+        );
 
-  const suppliers = dedupeCatalog(suppliersInputs.map(row => row.supplier));
-  const inputs = dedupeCatalog(suppliersInputs.flatMap(row => safeArray(row.inputs)));
-  const outputs = dedupeCatalog(outputsCustomers.map(row => row.output));
-  const customers = dedupeCatalog(outputsCustomers.flatMap(row => safeArray(row.customers)));
-  const actors = dedupeCatalog(activities.map(activity => activity.actor));
-  const documents = dedupeCatalog(activities.map(activity => activity.document));
+      if(input){
+        supplierInputRows.push({
+          supplier,
+          input
+        });
+      }
+    });
+  });
 
-  const artifacts = typeof buildFinalArtifacts === 'function'
-    ? buildFinalArtifacts()
-    : {};
+  /*
+   * Toda entrada utilizada por una actividad debe
+   * existir también en los carriles SIPOC.
+   */
+  sourceActivities.forEach(activity => {
+    safeArray(
+      activity?.inputs_used
+    ).forEach(row => {
+      const input =
+        normalizeContractString(
+          row?.input || ''
+        );
+
+      if(!input){
+        return;
+      }
+
+      const exists =
+        supplierInputRows.some(
+          item =>
+            lmpLower(item.input) ===
+            lmpLower(input)
+        );
+
+      if(!exists){
+        supplierInputRows.push({
+          supplier:
+            'pendiente_validacion',
+
+          input
+        });
+      }
+    });
+  });
+
+  /*
+   * Salidas y clientes.
+   */
+  const outputCustomerRows = [];
+
+  safeArray(
+    state.asis?.outputs_customers
+  ).forEach(row => {
+    const output =
+      normalizeContractString(
+        row?.output || ''
+      );
+
+    safeArray(
+      row?.customers ||
+      row?.customer
+    ).forEach(value => {
+      const customer =
+        normalizeContractString(
+          value || ''
+        );
+
+      if(output){
+        outputCustomerRows.push({
+          output,
+          customer
+        });
+      }
+    });
+  });
+
+  /*
+   * Toda salida generada por una actividad debe
+   * existir también en los carriles SIPOC.
+   */
+  sourceActivities.forEach(activity => {
+    safeArray(
+      activity?.outputs_generated
+    ).forEach(row => {
+      const output =
+        normalizeContractString(
+          row?.output || ''
+        );
+
+      if(!output){
+        return;
+      }
+
+      const exists =
+        outputCustomerRows.some(
+          item =>
+            lmpLower(item.output) ===
+            lmpLower(output)
+        );
+
+      if(!exists){
+        outputCustomerRows.push({
+          output,
+          customer:
+            'pendiente_validacion'
+        });
+      }
+    });
+  });
+
+  const suppliersInputs =
+    sbDedupePairRows(
+      supplierInputRows,
+      'supplier',
+      'input',
+      'SI'
+    );
+
+  const outputsCustomers =
+    sbDedupePairRows(
+      outputCustomerRows,
+      'output',
+      'customer',
+      'OC'
+    );
+
+  /*
+   * Todos los actores declarados y utilizados
+   * se convierten en carriles internos.
+   */
+  const actorNames = [
+    ...safeArray(
+      state.asis?.actors_catalog
+    ).map(actor =>
+      typeof actor === 'string'
+        ? actor
+        : actor?.name || ''
+    ),
+
+    ...sourceActivities.map(
+      activity => activity.actor
+    )
+  ];
+
+  const actorSeen =
+    new Set();
+
+  const actors =
+    actorNames
+      .map(name =>
+        normalizeContractString(
+          name || ''
+        )
+      )
+      .filter(Boolean)
+      .filter(name => {
+        const key =
+          lmpLower(name);
+
+        if(actorSeen.has(key)){
+          return false;
+        }
+
+        actorSeen.add(key);
+        return true;
+      })
+      .map((name, index) => ({
+        id:
+          'LANE-' +
+          String(index + 1).padStart(
+            3,
+            '0'
+          ),
+
+        name
+      }));
+
+  /*
+   * Los IDs del contrato se generan según el orden
+   * vigente del flujo AS-IS.
+   */
+  const activityCatalog =
+    sourceActivities.map(
+      (activity, index) => ({
+        id:
+          'ACT-' +
+          String(index + 1).padStart(
+            3,
+            '0'
+          ),
+
+        sequence:
+          index + 1,
+
+        name:
+          normalizeContractString(
+            activity.name || ''
+          )
+      })
+    );
+
+  const activityIdByName =
+    new Map(
+      activityCatalog.map(
+        activity => [
+          lmpLower(activity.name),
+          activity.id
+        ]
+      )
+    );
+
+  const actorIdByName =
+    new Map(
+      actors.map(
+        actor => [
+          lmpLower(actor.name),
+          actor.id
+        ]
+      )
+    );
+
+  const clarifyingNotes =
+    sbBuildClarifyingNotes(
+      sourceActivities,
+      activityIdByName
+    );
+
+  const activities =
+    sourceActivities.map(
+      (activity, index) => {
+        const ref =
+          activityCatalog[index];
+
+        const previous =
+          safeArray(
+            activity.previous
+          ).map(row => {
+            const activityName =
+              normalizeContractString(
+                row?.activity || ''
+              );
+
+            return {
+              activity_id:
+                activityIdByName.get(
+                  lmpLower(activityName)
+                ) || '',
+
+              activity_name:
+                activityName,
+
+              label:
+                normalizeContractString(
+                  row?.connector || ''
+                )
+            };
+          });
+
+        const next =
+          safeArray(
+            activity.next
+          ).map(row => {
+            const activityName =
+              normalizeContractString(
+                row?.activity || ''
+              );
+
+            return {
+              activity_id:
+                activityIdByName.get(
+                  lmpLower(activityName)
+                ) || '',
+
+              activity_name:
+                activityName,
+
+              label:
+                normalizeContractString(
+                  row?.connector || ''
+                )
+            };
+          });
+
+        const inputs =
+          safeArray(
+            activity.inputs_used
+          ).map(row => ({
+            name:
+              normalizeContractString(
+                row?.input || ''
+              ),
+
+            label:
+              normalizeContractString(
+                row?.connector || ''
+              )
+          }));
+
+        const outputs =
+          safeArray(
+            activity.outputs_generated
+          ).map(row => ({
+            name:
+              normalizeContractString(
+                row?.output || ''
+              ),
+
+            label:
+              normalizeContractString(
+                row?.connector || ''
+              )
+          }));
+
+        return {
+          id:
+            ref.id,
+
+          sequence:
+            ref.sequence,
+
+          name:
+            ref.name,
+
+          actor_lane_id:
+            actorIdByName.get(
+              lmpLower(
+                activity.actor || ''
+              )
+            ) || '',
+
+          actor:
+            normalizeContractString(
+              activity.actor || ''
+            ),
+
+          type:
+            canonicalActivityType(
+              activity.type || ''
+            ),
+
+          previous,
+          next,
+          inputs,
+          outputs,
+
+          note_ids:
+            clarifyingNotes
+              .filter(
+                note =>
+                  note.activity_id ===
+                  ref.id
+              )
+              .map(
+                note => note.id
+              )
+        };
+      }
+    );
 
   return {
-    contract_version: '2.0',
-    source_module: 'lmp',
-    target_module: 'sipoc_builder',
-    generated_at: new Date().toISOString(),
+    contract_code:
+      'LMP_TO_SB',
+
+    contract_version:
+      '3.0',
+
+    source_module:
+      'LMP',
+
+    target_module:
+      'SIPOC_BUILDER',
+
+    generated_at:
+      new Date().toISOString(),
 
     sipoc_input: {
-      process_code: normalizeContractString(ctx.processCode || ''),
-      process_name: normalizeContractString(ctx.processName || ''),
-      purpose: normalizeContractString(ctx.purpose || ''),
-      notes: typeof buildSipocNotes === 'function' ? buildSipocNotes() : '',
+      process_code:
+        normalizeContractString(
+          context.processCode || ''
+        ),
 
-      suppliers,
-      inputs,
-      outputs,
-      customers,
-      actors,
-      documents,
+      process_name:
+        normalizeContractString(
+          context.processName || ''
+        ),
 
-      suppliers_inputs: suppliersInputs,
-      outputs_customers: outputsCustomers,
-      activities
-    },
+      purpose:
+        normalizeContractString(
+          context.purpose || ''
+        ),
 
-    analysis_metrics: typeof buildAnalysisMetrics === 'function'
-      ? buildAnalysisMetrics()
-      : {},
+      lanes: {
+        suppliers_inputs:
+          suppliersInputs,
 
-    to_be_package: {
-      mode_a: artifacts.modeA || null,
-      mode_b: artifacts.modeB || null,
-      document_proposal: artifacts.documentProposal || null,
-      integration_input: artifacts.integrationInput || null,
-      integration_analysis_base: artifacts.integrationAnalysisBase || null
-    },
+        actors,
 
-    integration_input: artifacts.integrationInput || {}
+        outputs_customers:
+          outputsCustomers
+      },
+
+      activities,
+
+      clarifying_notes:
+        clarifyingNotes
+    }
   };
 }
 
