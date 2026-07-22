@@ -1953,62 +1953,403 @@ function buildFallbackInternalEdges(){
 }
   
 function buildFallbackPeripheralEdges(){
-  const idMap = parseIdReference();
-  const sp = S.sp || {};
-  const acts = Array.isArray(sp.activities) ? sp.activities.slice() : [];
-  const ordered = acts.map((a, idx) => Object.assign({}, a, { __idx:idx, order:Number(a.order || a.sequence || idx + 1) || idx + 1 }))
-    .sort((a,b) => (a.order-b.order) || (a.__idx-b.__idx));
+  const idMap =
+    parseIdReference();
+
+  const sp =
+    S.sp || {};
+
+  const activities =
+    Array.isArray(sp.activities)
+      ? sp.activities.slice()
+      : [];
+
+  const ordered =
+    activities
+      .map((activity, index) => ({
+        ...activity,
+
+        __idx:
+          index,
+
+        order:
+          Number(
+            activity.order ||
+            activity.sequence ||
+            index + 1
+          ) || index + 1
+      }))
+      .sort(
+        (a, b) =>
+          (a.order - b.order) ||
+          (a.__idx - b.__idx)
+      );
+
   const edges = [];
   const seen = new Set();
-  const addRaw = (prefix, source, target, label) => {
-    if(!source || !target || source === target) return;
-    const key = source + '->' + target;
-    if(seen.has(key)) return;
+
+  const add = (
+    prefix,
+    sourceId,
+    targetId,
+    label
+  ) => {
+    if(
+      !sourceId ||
+      !targetId ||
+      sourceId === targetId
+    ){
+      return;
+    }
+
+    const key =
+      sourceId +
+      '->' +
+      targetId;
+
+    if(seen.has(key)){
+      return;
+    }
+
     seen.add(key);
-    edges.push(edgeCell(prefix + '_' + edges.length + '_' + source + '_' + target, source, target, label || ''));
+
+    edges.push(
+      edgeCell(
+        prefix +
+        '_' +
+        edges.length +
+        '_' +
+        sourceId +
+        '_' +
+        targetId,
+
+        sourceId,
+        targetId,
+        label || ''
+      )
+    );
   };
-  const start = ordered.find(a => a.is_start) || ordered[0];
-  const end = [...ordered].reverse().find(a => a.is_end) || ordered[ordered.length-1];
 
-  // Suppliers -> Inputs según catálogo del builder cuando exista relación proveedor/entrada
-  (S.cats && S.cats.suppliers ? S.cats.suppliers : []).forEach(sup => {
-    const sid = firstExistingId(idMap.suppliers, [sup.name]);
-    const iid = firstExistingId(idMap.inputs, [sup.input]);
-    addRaw('sgmp_f3_sup_in', sid, iid, '');
+
+  /*
+   * 1. Proveedor → Entrada
+   */
+  const supplierInputLinks =
+    Array.isArray(
+      sp.supplier_input_links
+    )
+      ? sp.supplier_input_links
+      : [];
+
+  const effectiveSupplierLinks =
+    supplierInputLinks.length
+      ? supplierInputLinks
+      : (
+          S.cats?.suppliers || []
+        )
+          .map(item => ({
+            supplier:
+              normalizeText(
+                item.name
+              ),
+
+            input:
+              normalizeText(
+                item.input
+              )
+          }))
+          .filter(link =>
+            link.supplier &&
+            link.input
+          );
+
+  effectiveSupplierLinks.forEach(
+    link => {
+      add(
+        'sgmp_f3_supplier_input',
+
+        firstExistingId(
+          idMap.suppliers,
+          [link.supplier]
+        ),
+
+        firstExistingId(
+          idMap.inputs,
+          [link.input]
+        ),
+
+        ''
+      );
+    }
+  );
+
+
+  /*
+   * 2. Entrada → Actividad
+   */
+  let explicitInputConnections = 0;
+
+  ordered.forEach(activity => {
+    const activityId =
+      activityIdByName(
+        idMap,
+        activity.name
+      );
+
+    const relations =
+      Array.isArray(
+        activity.input_relations
+      ) &&
+      activity.input_relations.length
+        ? activity.input_relations
+        : asNameArray(
+            activity.ext_inputs ||
+            activity.inputs
+          ).map(name => ({
+            name,
+            label: ''
+          }));
+
+    relations.forEach(relation => {
+      const inputName =
+        normalizeText(
+          relation?.name ||
+          relation?.input ||
+          ''
+        );
+
+      if(!inputName){
+        return;
+      }
+
+      const inputId =
+        firstExistingId(
+          idMap.inputs,
+          [inputName]
+        );
+
+      if(inputId && activityId){
+        explicitInputConnections += 1;
+      }
+
+      add(
+        'sgmp_f3_input_activity',
+
+        inputId,
+        activityId,
+
+        normalizeText(
+          relation?.label || ''
+        )
+      );
+    });
   });
 
-  // Inputs -> actividad inicial o actividades con ext_inputs declarados
-  ordered.forEach(a => {
-    const targetAct = activityIdByName(idMap, a.name);
-    asNameArray(a.ext_inputs || a.inputs).forEach(inp => addRaw('sgmp_f3_in_act', firstExistingId(idMap.inputs, [inp]), targetAct, ''));
-  });
-  if(!edges.some(e => /sgmp_f3_in_act/.test(e)) && start){
-    asNameArray(start.ext_inputs && start.ext_inputs.length ? start.ext_inputs : sp.inputs).slice(0, 4)
-      .forEach(inp => addRaw('sgmp_f3_in_start', firstExistingId(idMap.inputs, [inp]), activityIdByName(idMap, start.name), ''));
+
+  /*
+   * Fallback controlado:
+   * solo cuando ninguna actividad declara entradas.
+   */
+  if(
+    explicitInputConnections === 0 &&
+    ordered.length
+  ){
+    const startActivities =
+      ordered.filter(
+        activity =>
+          activity.is_start
+      );
+
+    const targets =
+      startActivities.length
+        ? startActivities
+        : [ordered[0]];
+
+    targets.forEach(activity => {
+      asNameArray(
+        sp.inputs
+      ).forEach(inputName => {
+        add(
+          'sgmp_f3_input_start',
+
+          firstExistingId(
+            idMap.inputs,
+            [inputName]
+          ),
+
+          activityIdByName(
+            idMap,
+            activity.name
+          ),
+
+          ''
+        );
+      });
+    });
   }
 
-  // Actividades -> Outputs
-  ordered.forEach(a => {
-    const sourceAct = activityIdByName(idMap, a.name);
-    asNameArray(a.ext_outputs || a.outputs).forEach(out => addRaw('sgmp_f3_act_out', sourceAct, firstExistingId(idMap.outputs, [out]), ''));
+
+  /*
+   * 3. Actividad → Salida
+   */
+  let explicitOutputConnections = 0;
+
+  ordered.forEach(activity => {
+    const activityId =
+      activityIdByName(
+        idMap,
+        activity.name
+      );
+
+    const relations =
+      Array.isArray(
+        activity.output_relations
+      ) &&
+      activity.output_relations.length
+        ? activity.output_relations
+        : asNameArray(
+            activity.ext_outputs ||
+            activity.outputs
+          ).map(name => ({
+            name,
+            label: ''
+          }));
+
+    relations.forEach(relation => {
+      const outputName =
+        normalizeText(
+          relation?.name ||
+          relation?.output ||
+          ''
+        );
+
+      if(!outputName){
+        return;
+      }
+
+      const outputId =
+        firstExistingId(
+          idMap.outputs,
+          [outputName]
+        );
+
+      if(activityId && outputId){
+        explicitOutputConnections += 1;
+      }
+
+      add(
+        'sgmp_f3_activity_output',
+
+        activityId,
+        outputId,
+
+        normalizeText(
+          relation?.label || ''
+        )
+      );
+    });
   });
-  if(!edges.some(e => /sgmp_f3_act_out/.test(e)) && end){
-    asNameArray(end.ext_outputs && end.ext_outputs.length ? end.ext_outputs : sp.outputs).slice(0, 4)
-      .forEach(out => addRaw('sgmp_f3_end_out', activityIdByName(idMap, end.name), firstExistingId(idMap.outputs, [out]), ''));
+
+
+  /*
+   * Fallback controlado:
+   * solo cuando ninguna actividad declara salidas.
+   */
+  if(
+    explicitOutputConnections === 0 &&
+    ordered.length
+  ){
+    const endActivities =
+      ordered.filter(
+        activity =>
+          activity.is_end
+      );
+
+    const sources =
+      endActivities.length
+        ? endActivities
+        : [
+            ordered[
+              ordered.length - 1
+            ]
+          ];
+
+    sources.forEach(activity => {
+      asNameArray(
+        sp.outputs
+      ).forEach(outputName => {
+        add(
+          'sgmp_f3_end_output',
+
+          activityIdByName(
+            idMap,
+            activity.name
+          ),
+
+          firstExistingId(
+            idMap.outputs,
+            [outputName]
+          ),
+
+          ''
+        );
+      });
+    });
   }
 
-  // Outputs -> Customers según catálogo del builder cuando exista relación cliente/salida
-  (S.cats && S.cats.customers ? S.cats.customers : []).forEach(cus => {
-    const oid = firstExistingId(idMap.outputs, [cus.output]);
-    const cid = firstExistingId(idMap.customers, [cus.name]);
-    addRaw('sgmp_f3_out_cus', oid, cid, '');
-  });
-  if(!edges.some(e => /sgmp_f3_out_cus/.test(e))){
-    const outs = asNameArray(sp.outputs);
-    const cuss = asNameArray(sp.customers);
-    const n = Math.min(outs.length, cuss.length, 4);
-    for(let i=0;i<n;i++) addRaw('sgmp_f3_out_cus_fb', firstExistingId(idMap.outputs, [outs[i]]), firstExistingId(idMap.customers, [cuss[i]]), '');
-  }
+
+  /*
+   * 4. Salida → Cliente
+   */
+  const outputCustomerLinks =
+    Array.isArray(
+      sp.output_customer_links
+    )
+      ? sp.output_customer_links
+      : [];
+
+  const effectiveCustomerLinks =
+    outputCustomerLinks.length
+      ? outputCustomerLinks
+      : (
+          S.cats?.customers || []
+        )
+          .map(item => ({
+            output:
+              normalizeText(
+                item.output
+              ),
+
+            customer:
+              normalizeText(
+                item.name
+              )
+          }))
+          .filter(link =>
+            link.output &&
+            link.customer
+          );
+
+  effectiveCustomerLinks.forEach(
+    link => {
+      add(
+        'sgmp_f3_output_customer',
+
+        firstExistingId(
+          idMap.outputs,
+          [link.output]
+        ),
+
+        firstExistingId(
+          idMap.customers,
+          [link.customer]
+        ),
+
+        ''
+      );
+    }
+  );
+
   return edges;
 }
   
@@ -2076,25 +2417,82 @@ function ensureInternalEdges(
   return true;
 }
   
-function ensurePeripheralEdges(sourceId, targetId, vldId, stageLabel){
-  const baseEdges = countXMLEdges($(sourceId) ? $(sourceId).value : '');
-  let xml = $(targetId) ? $(targetId).value : '';
-  if(countXMLEdges(xml) === 0) {
-    const internal = buildFallbackInternalEdges();
-    const mergedInternal = insertEdgesIntoXML(xml, internal);
-    if(mergedInternal) xml = $(targetId).value = mergedInternal;
+function ensurePeripheralEdges(
+  sourceId,
+  targetId,
+  vldId,
+  stageLabel
+){
+  const target =
+    $(targetId);
+
+  if(
+    !target ||
+    !target.value.trim()
+  ){
+    return false;
   }
-  if(countXMLEdges(xml) > baseEdges) return true;
-  const edges = buildFallbackPeripheralEdges();
-  const merged = insertEdgesIntoXML(xml, edges);
-  if(merged && merged !== xml){
-    $(targetId).value = merged;
-    validateXML(targetId, vldId);
-    gMsg('warn', stageLabel + ': la IA no agregó conexiones SIPOC periféricas. Se generaron conectores mínimos con ext_inputs/ext_outputs y catálogos S-I-O-C.');
+
+  /*
+   * Primero garantiza que F3 mantenga
+   * todas las conexiones internas de F2.
+   */
+  ensureInternalEdges(
+    targetId,
+    vldId,
+    stageLabel
+  );
+
+  const xml =
+    target.value;
+
+  const expectedEdges =
+    buildFallbackPeripheralEdges();
+
+  if(!expectedEdges.length){
     return true;
   }
-  return false;
+
+  const edgesBefore =
+    countXMLEdges(xml);
+
+  const merged =
+    insertEdgesIntoXML(
+      xml,
+      expectedEdges
+    );
+
+  if(!merged){
+    return false;
+  }
+
+  if(merged !== xml){
+    target.value =
+      merged;
+
+    validateXML(
+      targetId,
+      vldId
+    );
+
+    const edgesAfter =
+      countXMLEdges(merged);
+
+    gMsg(
+      'warn',
+      stageLabel +
+      ': se completaron ' +
+      Math.max(
+        0,
+        edgesAfter - edgesBefore
+      ) +
+      ' conexiones SIPOC faltantes respetando Proveedor → Entrada → Actividad → Salida → Cliente.'
+    );
+  }
+
+  return true;
 }
+  
 function repairEdgesOnlyResponse(sourceId, targetId, vldId, stageLabel){
   const aiXML = $(targetId) ? $(targetId).value : '';
   const baseXML = $(sourceId) ? $(sourceId).value : '';
