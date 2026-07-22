@@ -3934,6 +3934,185 @@ border-left:5px solid #8ED3E8 !important;
   }
 </style>
 
+<style id="sgmp-analysis-waste-actions-layer">
+  /* DESPERDICIOS · Acciones y estados de guardado */
+
+  .analysis-waste-head-actions{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+
+  .analysis-waste-add-button{
+    min-height:34px;
+    padding:7px 12px;
+    border:1px solid #0B2E59;
+    border-radius:10px;
+    background:#0B2E59;
+    color:#FFFFFF;
+    font-family:inherit;
+    font-size:.76rem;
+    font-weight:900;
+    cursor:pointer;
+  }
+
+  .analysis-waste-add-button:hover{
+    background:#123E73;
+  }
+
+  .analysis-waste-item.is-saved{
+    border-left-color:#27AE60;
+    background:
+      linear-gradient(
+        180deg,
+        #FFFFFF,
+        #FBFFFC
+      );
+  }
+
+  .analysis-waste-item.has-pending-changes{
+    border-left-color:#1A56DB;
+    background:
+      linear-gradient(
+        180deg,
+        #FFFFFF,
+        #FAFCFF
+      );
+  }
+
+  .analysis-waste-item.is-incomplete{
+    border-left-color:#F2994A;
+  }
+
+  .analysis-waste-item.is-saved
+  > .analysis-waste-summary{
+    background:
+      linear-gradient(
+        135deg,
+        #F1FBF5,
+        #FFFFFF
+      );
+  }
+
+  .analysis-waste-item.has-pending-changes
+  > .analysis-waste-summary{
+    background:
+      linear-gradient(
+        135deg,
+        #F1F6FF,
+        #FFFFFF
+      );
+  }
+
+  .analysis-waste-item.is-saved
+  .analysis-waste-state{
+    background:rgba(39,174,96,.09);
+    border-color:rgba(39,174,96,.22);
+    color:#1E6B3D;
+  }
+
+  .analysis-waste-item.has-pending-changes
+  .analysis-waste-state{
+    background:rgba(26,86,219,.08);
+    border-color:rgba(26,86,219,.20);
+    color:#1749A6;
+  }
+
+  .analysis-waste-actions{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:9px;
+    margin-top:13px;
+    padding-top:12px;
+    border-top:1px solid rgba(11,46,89,.08);
+  }
+
+  .analysis-waste-save-message{
+    flex:1 1 auto;
+    min-width:0;
+    color:#5B6F8A;
+    font-size:.74rem;
+    font-weight:750;
+    line-height:1.3;
+  }
+
+  .analysis-waste-item.is-saved
+  .analysis-waste-save-message{
+    color:#1E6B3D;
+  }
+
+  .analysis-waste-item.has-pending-changes
+  .analysis-waste-save-message{
+    color:#1749A6;
+  }
+
+  .analysis-waste-item.is-incomplete
+  .analysis-waste-save-message{
+    color:#8A570D;
+  }
+
+  .analysis-waste-save-button,
+  .analysis-waste-delete-button{
+    flex:0 0 auto;
+    min-height:36px;
+    padding:8px 13px;
+    border-radius:10px;
+    font-family:inherit;
+    font-size:.76rem;
+    font-weight:900;
+    cursor:pointer;
+  }
+
+  .analysis-waste-save-button{
+    border:1px solid #0B2E59;
+    background:#0B2E59;
+    color:#FFFFFF;
+  }
+
+  .analysis-waste-save-button:hover{
+    background:#123E73;
+  }
+
+  .analysis-waste-save-button:disabled{
+    cursor:not-allowed;
+    border-color:#AAB7C7;
+    background:#AAB7C7;
+    opacity:.78;
+  }
+
+  .analysis-waste-delete-button{
+    border:1px solid rgba(192,57,43,.34);
+    background:#FFFFFF;
+    color:#A93226;
+  }
+
+  .analysis-waste-delete-button:hover{
+    background:rgba(192,57,43,.06);
+  }
+
+  @media(max-width:680px){
+    .analysis-waste-head-actions{
+      width:100%;
+      justify-content:flex-start;
+    }
+
+    .analysis-waste-actions{
+      flex-direction:column;
+      align-items:stretch;
+    }
+
+    .analysis-waste-save-button,
+    .analysis-waste-delete-button{
+      width:100%;
+    }
+  }
+</style>
+  
+
 <style id="sgmp-lmp-fase2-ux-safe-layer">
   
 .workspace{
@@ -26522,6 +26701,1372 @@ function lmpRenderWasteReview_(parsed){
  * Expone el renderizador para restauración,
  * navegación y guardado posterior.
  */
+  
+function lmpWasteReviewSnapshot_(data){
+  return JSON.stringify({
+    wasteType:
+      String(
+        data?.wasteType || ''
+      )
+        .trim()
+        .toUpperCase(),
+
+    relatedActivityIds:
+      safeArray(
+        data?.relatedActivityIds
+      )
+        .map(function(id){
+          return String(id || '').trim();
+        })
+        .filter(Boolean),
+
+    description:
+      String(
+        data?.description || ''
+      ).trim(),
+
+    justification:
+      String(
+        data?.justification || ''
+      ).trim()
+  });
+}
+
+
+function lmpWasteReadReviewItem_(
+  reviewItem,
+  sourceItem
+){
+  const id = String(
+    reviewItem?.dataset?.wasteId ||
+    sourceItem?.id ||
+    ''
+  ).trim();
+
+  const wasteType = String(
+    reviewItem?.querySelector(
+      '[data-waste-field="wasteType"]'
+    )?.value || ''
+  )
+    .trim()
+    .toUpperCase();
+
+  const activitySelect =
+    reviewItem?.querySelector(
+      '[data-waste-field="relatedActivityIds"]'
+    );
+
+  const relatedActivityIds =
+    Array.from(
+      activitySelect?.selectedOptions || []
+    )
+      .map(function(option){
+        return String(
+          option.value || ''
+        ).trim();
+      })
+      .filter(Boolean);
+
+  const description = String(
+    reviewItem?.querySelector(
+      '[data-waste-field="description"]'
+    )?.value || ''
+  ).trim();
+
+  const justification = String(
+    reviewItem?.querySelector(
+      '[data-waste-field="justification"]'
+    )?.value || ''
+  ).trim();
+
+  const originalEvidence =
+    safeArray(
+      reviewItem
+        ?.__lmpWasteOriginalEvidence ||
+      sourceItem?.evidence
+    )
+      .map(function(entry){
+        return {
+          source:
+            String(
+              entry?.source || ''
+            ).trim(),
+
+          reference:
+            String(
+              entry?.reference || ''
+            ).trim(),
+
+          detail:
+            String(
+              entry?.detail || ''
+            ).trim()
+        };
+      });
+
+  const completeEvidence =
+    originalEvidence.filter(function(entry){
+      return !!(
+        entry.source &&
+        entry.reference &&
+        entry.detail
+      );
+    });
+
+  /*
+   * Para hallazgos agregados manualmente se genera
+   * trazabilidad mínima desde datos escritos por el usuario.
+   */
+  const evidence =
+    completeEvidence.length
+      ? completeEvidence
+      : (
+          relatedActivityIds.length &&
+          description
+            ? [
+                {
+                  source:
+                    'activity',
+
+                  reference:
+                    relatedActivityIds.join(
+                      ' '
+                    ),
+
+                  detail:
+                    description
+                }
+              ]
+            : []
+        );
+
+  const item = Object.assign(
+    {},
+    sourceItem || {},
+    {
+      id,
+      wasteType,
+      relatedActivityIds,
+      description,
+      justification,
+      evidence
+    }
+  );
+
+  const isComplete = !!(
+    wasteType &&
+    relatedActivityIds.length &&
+    description &&
+    justification
+  );
+
+  return {
+    item,
+    isComplete,
+
+    snapshot:
+      lmpWasteReviewSnapshot_(
+        item
+      )
+  };
+}
+
+
+function lmpWasteFindReviewItem_(wasteId){
+  const id = String(
+    wasteId || ''
+  ).trim();
+
+  return Array.from(
+    el(
+      'analysisWasteReview_DESPERDICIOS'
+    )?.querySelectorAll(
+      '.analysis-waste-item[data-waste-id]'
+    ) || []
+  ).find(function(item){
+    return String(
+      item.dataset.wasteId || ''
+    ).trim() === id;
+  }) || null;
+}
+
+
+function lmpWasteEnsurePending_(){
+  window.__LMP_ANALYSIS_PENDING__ =
+    window.__LMP_ANALYSIS_PENDING__ ||
+    Object.create(null);
+
+  if(
+    window.__LMP_ANALYSIS_PENDING__
+      .DESPERDICIOS
+  ){
+    return window
+      .__LMP_ANALYSIS_PENDING__
+      .DESPERDICIOS;
+  }
+
+  const official =
+    state.analysisStages
+      ?.results
+      ?.DESPERDICIOS;
+
+  if(
+    !official ||
+    typeof official !== 'object' ||
+    Array.isArray(official) ||
+    !Object.keys(official).length
+  ){
+    throw new Error(
+      'No existe un resultado de Desperdicios validado para iniciar la edición.'
+    );
+  }
+
+  const parsed =
+    JSON.parse(
+      JSON.stringify(
+        official
+      )
+    );
+
+  const raw =
+    JSON.stringify(
+      parsed,
+      null,
+      2
+    );
+
+  window.__LMP_ANALYSIS_PENDING__
+    .DESPERDICIOS = {
+      raw,
+      parsed,
+
+      /*
+       * Impide limpiar los estados guardados
+       * al editar un resultado restaurado.
+       */
+      __wasteReviewInitialized:
+        true
+    };
+
+  const responseBox =
+    el(
+      'analysisResponse_DESPERDICIOS'
+    );
+
+  if(responseBox){
+    responseBox.value =
+      raw;
+  }
+
+  const stageButton =
+    el(
+      'btnSaveAnalysisStage_DESPERDICIOS'
+    );
+
+  if(stageButton){
+    stageButton.disabled =
+      false;
+  }
+
+  return window
+    .__LMP_ANALYSIS_PENDING__
+    .DESPERDICIOS;
+}
+
+
+function lmpWasteUpdateResultBox_(parsed){
+  const resultBox =
+    el(
+      'analysisResult_DESPERDICIOS'
+    );
+
+  if(resultBox){
+    resultBox.value =
+      JSON.stringify(
+        parsed,
+        null,
+        2
+      );
+  }
+
+  const stageButton =
+    el(
+      'btnSaveAnalysisStage_DESPERDICIOS'
+    );
+
+  if(stageButton){
+    stageButton.disabled =
+      false;
+  }
+}
+
+
+function lmpWasteRevalidateCandidate_(candidate){
+  candidate.validation =
+    candidate.validation &&
+    typeof candidate.validation === 'object' &&
+    !Array.isArray(
+      candidate.validation
+    )
+      ? candidate.validation
+      : {};
+
+  /*
+   * Elimina brechas calculadas sobre una versión anterior.
+   * El validador las reconstruirá con la versión vigente.
+   */
+  candidate.validation.blockingGaps =
+    [];
+
+  candidate.validation.canProceed =
+    false;
+
+  return lmpValidateWasteStageContract_(
+    candidate
+  );
+}
+
+
+function lmpWasteRefreshCounter_(){
+  const reviewCard =
+    el(
+      'analysisWasteReview_DESPERDICIOS'
+    );
+
+  if(!reviewCard){
+    return;
+  }
+
+  const items =
+    Array.from(
+      reviewCard.querySelectorAll(
+        '.analysis-waste-item[data-waste-id]'
+      )
+    );
+
+  const savedCount =
+    items.filter(function(item){
+      return item.classList.contains(
+        'is-saved'
+      );
+    }).length;
+
+  const counter =
+    reviewCard.querySelector(
+      '.analysis-waste-review-counter'
+    );
+
+  if(counter){
+    counter.textContent =
+      items.length
+        ? (
+            savedCount +
+            ' de ' +
+            items.length +
+            ' guardados'
+          )
+        : '0 hallazgos';
+  }
+}
+
+
+function lmpWasteRefreshReviewItemState_(
+  reviewItem
+){
+  const sourceItem =
+    reviewItem
+      ?.__lmpWasteSourceItem ||
+    {};
+
+  const data =
+    lmpWasteReadReviewItem_(
+      reviewItem,
+      sourceItem
+    );
+
+  window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ ||
+    Object.create(null);
+
+  const savedSnapshot =
+    window
+      .__LMP_WASTE_SAVED_SNAPSHOTS__[
+        data.item.id
+      ] || '';
+
+  const isSaved = !!(
+    data.isComplete &&
+    savedSnapshot &&
+    savedSnapshot ===
+      data.snapshot
+  );
+
+  const hasPendingChanges = !!(
+    data.isComplete &&
+    !isSaved
+  );
+
+  reviewItem.classList.remove(
+    'is-complete',
+    'is-saved',
+    'has-pending-changes',
+    'is-incomplete'
+  );
+
+  const typeLabel =
+    reviewItem.querySelector(
+      '[data-waste-summary-type-label]'
+    );
+
+  const descriptionLabel =
+    reviewItem.querySelector(
+      '[data-waste-summary-description]'
+    );
+
+  const activitiesBadge =
+    reviewItem.querySelector(
+      '[data-waste-summary-activities]'
+    );
+
+  const stateBadge =
+    reviewItem.querySelector(
+      '[data-waste-summary-state]'
+    );
+
+  const message =
+    reviewItem.querySelector(
+      '[data-waste-save-message]'
+    );
+
+  const saveButton =
+    reviewItem.querySelector(
+      '[data-waste-save-button]'
+    );
+
+  if(typeLabel){
+    typeLabel.textContent =
+      lmpWasteTypeLabel_(
+        data.item.wasteType
+      );
+  }
+
+  if(descriptionLabel){
+    descriptionLabel.textContent =
+      data.item.description ||
+      'Sin descripción';
+  }
+
+  if(activitiesBadge){
+    activitiesBadge.textContent =
+      data.item.relatedActivityIds.length +
+      (
+        data.item.relatedActivityIds.length === 1
+          ? ' actividad'
+          : ' actividades'
+      );
+  }
+
+  if(!data.isComplete){
+    reviewItem.classList.add(
+      'is-incomplete'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Incompleta';
+    }
+
+    if(message){
+      message.textContent =
+        'Completa tipo, actividades relacionadas, descripción y justificación.';
+    }
+
+    if(saveButton){
+      saveButton.disabled =
+        true;
+
+      saveButton.textContent =
+        'Guardar desperdicio';
+    }
+
+  }else if(isSaved){
+    reviewItem.classList.add(
+      'is-complete',
+      'is-saved'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Guardada';
+    }
+
+    if(message){
+      message.textContent =
+        'El hallazgo está guardado dentro de la revisión.';
+    }
+
+    if(saveButton){
+      saveButton.disabled =
+        true;
+
+      saveButton.textContent =
+        'Desperdicio guardado';
+    }
+
+  }else{
+    reviewItem.classList.add(
+      'is-complete',
+      'has-pending-changes'
+    );
+
+    if(stateBadge){
+      stateBadge.textContent =
+        'Cambios pendientes';
+    }
+
+    if(message){
+      message.textContent =
+        'Guarda el hallazgo para incorporar sus cambios a la revisión.';
+    }
+
+    if(saveButton){
+      saveButton.disabled =
+        false;
+
+      saveButton.textContent =
+        'Guardar desperdicio';
+    }
+  }
+
+  lmpWasteRefreshCounter_();
+
+  return {
+    data,
+    isComplete:
+      data.isComplete,
+
+    isSaved,
+
+    hasPendingChanges
+  };
+}
+
+
+function lmpWasteRefreshEvidenceView_(
+  reviewItem,
+  evidence
+){
+  const evidenceList =
+    reviewItem?.querySelector(
+      '.analysis-waste-evidence-list'
+    );
+
+  const evidenceSummary =
+    reviewItem?.querySelector(
+      '.analysis-waste-evidence > summary'
+    );
+
+  const items =
+    safeArray(evidence);
+
+  if(evidenceSummary){
+    evidenceSummary.textContent =
+      'Evidencia interna · ' +
+      items.length +
+      (
+        items.length === 1
+          ? ' registro'
+          : ' registros'
+      );
+  }
+
+  if(!evidenceList){
+    return;
+  }
+
+  evidenceList.innerHTML =
+    items.length
+      ? items.map(function(entry, index){
+          return `
+            <div class="analysis-waste-evidence-entry">
+              <strong>
+                Evidencia ${index + 1}
+                ·
+                ${escapeHtml(
+                  entry?.source ||
+                  'Sin fuente'
+                )}
+              </strong>
+
+              <span>
+                Referencia:
+                ${escapeHtml(
+                  entry?.reference ||
+                  'Sin referencia'
+                )}
+              </span>
+
+              <span>
+                ${escapeHtml(
+                  entry?.detail ||
+                  'Sin detalle'
+                )}
+              </span>
+            </div>
+          `;
+        }).join('')
+      : `
+          <div class="analysis-waste-evidence-entry">
+            <strong>
+              Evidencia interna pendiente
+            </strong>
+
+            <span>
+              El hallazgo no contiene evidencia registrada.
+            </span>
+          </div>
+        `;
+}
+
+
+window.lmpSaveWasteFinding_ = function(
+  wasteId,
+  options
+){
+  const settings =
+    Object.assign(
+      {
+        silent:
+          false,
+
+        closeAfterSave:
+          true,
+
+        scrollOnError:
+          true
+      },
+      options || {}
+    );
+
+  const id = String(
+    wasteId || ''
+  ).trim();
+
+  const reviewItem =
+    lmpWasteFindReviewItem_(
+      id
+    );
+
+  try{
+    if(!reviewItem){
+      throw new Error(
+        'No se encontró el hallazgo "' +
+        id +
+        '".'
+      );
+    }
+
+    const pending =
+      lmpWasteEnsurePending_();
+
+    const wastes =
+      safeArray(
+        pending.parsed?.wastes
+      );
+
+    const index =
+      wastes.findIndex(function(item){
+        return String(
+          item?.id || ''
+        ).trim() === id;
+      });
+
+    if(index < 0){
+      throw new Error(
+        'El hallazgo "' +
+        id +
+        '" no existe en el JSON pendiente.'
+      );
+    }
+
+    const readResult =
+      lmpWasteReadReviewItem_(
+        reviewItem,
+        wastes[index]
+      );
+
+    if(!readResult.isComplete){
+      throw new Error(
+        'Completa tipo, actividades relacionadas, descripción y justificación.'
+      );
+    }
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.wastes[index] =
+      readResult.item;
+
+    const validated =
+      lmpWasteRevalidateCandidate_(
+        candidate
+      );
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    const savedItem =
+      validated.wastes[index];
+
+    reviewItem.__lmpWasteSourceItem =
+      JSON.parse(
+        JSON.stringify(
+          savedItem
+        )
+      );
+
+    reviewItem.__lmpWasteOriginalEvidence =
+      JSON.parse(
+        JSON.stringify(
+          savedItem.evidence || []
+        )
+      );
+
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+      window.__LMP_WASTE_SAVED_SNAPSHOTS__ ||
+      Object.create(null);
+
+    window
+      .__LMP_WASTE_SAVED_SNAPSHOTS__[
+        id
+      ] =
+        readResult.snapshot;
+
+    lmpWasteUpdateResultBox_(
+      validated
+    );
+
+    lmpWasteRefreshEvidenceView_(
+      reviewItem,
+      savedItem.evidence
+    );
+
+    lmpWasteRefreshReviewItemState_(
+      reviewItem
+    );
+
+    if(settings.closeAfterSave){
+      reviewItem.open =
+        false;
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg === 'function'
+    ){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'ok',
+        'Hallazgo ' +
+        id +
+        ' guardado dentro de la revisión. Guarda la etapa completa para incorporarlo al respaldo.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(reviewItem){
+      reviewItem.open =
+        true;
+
+      if(settings.scrollOnError){
+        reviewItem.scrollIntoView({
+          behavior:
+            'smooth',
+
+          block:
+            'center'
+        });
+      }
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg === 'function'
+    ){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'err',
+        'No fue posible guardar el hallazgo. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.lmpAddWasteFinding_ = function(){
+  try{
+    const pending =
+      lmpWasteEnsurePending_();
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.wastes =
+      safeArray(
+        candidate.wastes
+      );
+
+    const nextId =
+      'W-' +
+      String(
+        candidate.wastes.length + 1
+      ).padStart(
+        3,
+        '0'
+      );
+
+    candidate.wastes.push({
+      id:
+        nextId,
+
+      wasteType:
+        '',
+
+      relatedActivityIds:
+        [],
+
+      description:
+        '',
+
+      justification:
+        '',
+
+      evidence:
+        []
+    });
+
+    const validated =
+      lmpWasteRevalidateCandidate_(
+        candidate
+      );
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    lmpWasteUpdateResultBox_(
+      validated
+    );
+
+    window.lmpRenderWasteReview_(
+      validated
+    );
+
+    const newItem =
+      lmpWasteFindReviewItem_(
+        nextId
+      );
+
+    if(newItem){
+      newItem.open =
+        true;
+
+      newItem.scrollIntoView({
+        behavior:
+          'smooth',
+
+        block:
+          'center'
+      });
+    }
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'warn',
+        'Se agregó el hallazgo ' +
+        nextId +
+        '. Completa sus campos antes de guardar la etapa.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'err',
+        'No fue posible agregar el desperdicio. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.lmpDeleteWasteFinding_ = function(
+  wasteId
+){
+  const id = String(
+    wasteId || ''
+  ).trim();
+
+  const confirmed =
+    window.confirm(
+      '¿Eliminar el hallazgo ' +
+      id +
+      '? Los IDs posteriores se reorganizarán.'
+    );
+
+  if(!confirmed){
+    return false;
+  }
+
+  try{
+    const pending =
+      lmpWasteEnsurePending_();
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    const currentWastes =
+      safeArray(
+        candidate.wastes
+      );
+
+    const deleteIndex =
+      currentWastes.findIndex(
+        function(item){
+          return String(
+            item?.id || ''
+          ).trim() === id;
+        }
+      );
+
+    if(deleteIndex < 0){
+      throw new Error(
+        'El hallazgo no existe en el JSON pendiente.'
+      );
+    }
+
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+      window.__LMP_WASTE_SAVED_SNAPSHOTS__ ||
+      Object.create(null);
+
+    const previousSnapshots =
+      window
+        .__LMP_WASTE_SAVED_SNAPSHOTS__;
+
+    currentWastes.splice(
+      deleteIndex,
+      1
+    );
+
+    const nextSnapshots =
+      Object.create(null);
+
+    currentWastes.forEach(function(
+      item,
+      index
+    ){
+      const previousId = String(
+        item?.id || ''
+      ).trim();
+
+      const nextId =
+        'W-' +
+        String(index + 1).padStart(
+          3,
+          '0'
+        );
+
+      item.id =
+        nextId;
+
+      if(previousSnapshots[previousId]){
+        nextSnapshots[nextId] =
+          previousSnapshots[previousId];
+      }
+    });
+
+    candidate.wastes =
+      currentWastes;
+
+    const validated =
+      lmpWasteRevalidateCandidate_(
+        candidate
+      );
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+      nextSnapshots;
+
+    lmpWasteUpdateResultBox_(
+      validated
+    );
+
+    window.lmpRenderWasteReview_(
+      validated
+    );
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'ok',
+        'Hallazgo eliminado. Los IDs y el resumen fueron recalculados.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(typeof showMsg === 'function'){
+      showMsg(
+        'analysisMsg_DESPERDICIOS',
+        'err',
+        'No fue posible eliminar el desperdicio. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+function lmpEnhanceWasteReview_(
+  reviewCard,
+  parsed
+){
+  if(!reviewCard){
+    return null;
+  }
+
+  window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ ||
+    Object.create(null);
+
+  const pending =
+    window.__LMP_ANALYSIS_PENDING__
+      ?.DESPERDICIOS;
+
+  /*
+   * Una nueva validación inicia sin tarjetas guardadas.
+   * Agregar o eliminar utiliza el mismo pending y conserva estados.
+   */
+  if(
+    pending &&
+    pending.__wasteReviewInitialized !==
+      true
+  ){
+    window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+      Object.create(null);
+
+    pending.__wasteReviewInitialized =
+      true;
+  }
+
+  const official =
+    state.analysisStages
+      ?.results
+      ?.DESPERDICIOS;
+
+  const isOfficialRestore = !!(
+    !pending &&
+    official &&
+    typeof official === 'object' &&
+    !Array.isArray(official) &&
+    JSON.stringify(official) ===
+      JSON.stringify(parsed)
+  );
+
+  const head =
+    reviewCard.querySelector(
+      '.analysis-waste-review-head'
+    );
+
+  const counter =
+    reviewCard.querySelector(
+      '.analysis-waste-review-counter'
+    );
+
+  if(
+    head &&
+    !head.querySelector(
+      '[data-waste-add-button]'
+    )
+  ){
+    const actions =
+      document.createElement(
+        'div'
+      );
+
+    actions.className =
+      'analysis-waste-head-actions';
+
+    if(counter){
+      actions.appendChild(
+        counter
+      );
+    }
+
+    const addButton =
+      document.createElement(
+        'button'
+      );
+
+    addButton.type =
+      'button';
+
+    addButton.className =
+      'analysis-waste-add-button';
+
+    addButton.dataset.wasteAddButton =
+      '1';
+
+    addButton.textContent =
+      'Agregar desperdicio';
+
+    addButton.addEventListener(
+      'click',
+      window.lmpAddWasteFinding_
+    );
+
+    actions.appendChild(
+      addButton
+    );
+
+    head.appendChild(
+      actions
+    );
+  }
+
+  const sourceById =
+    new Map(
+      safeArray(
+        parsed?.wastes
+      ).map(function(item){
+        return [
+          String(
+            item?.id || ''
+          ).trim(),
+          item
+        ];
+      })
+    );
+
+  const reviewItems =
+    Array.from(
+      reviewCard.querySelectorAll(
+        '.analysis-waste-item[data-waste-id]'
+      )
+    );
+
+  reviewItems.forEach(function(
+    reviewItem
+  ){
+    const id = String(
+      reviewItem.dataset.wasteId || ''
+    ).trim();
+
+    const sourceItem =
+      sourceById.get(id) ||
+      {};
+
+    reviewItem.__lmpWasteSourceItem =
+      JSON.parse(
+        JSON.stringify(
+          sourceItem
+        )
+      );
+
+    reviewItem.__lmpWasteOriginalEvidence =
+      JSON.parse(
+        JSON.stringify(
+          safeArray(
+            sourceItem.evidence
+          )
+        )
+      );
+
+    const initial =
+      lmpWasteReadReviewItem_(
+        reviewItem,
+        sourceItem
+      );
+
+    if(
+      isOfficialRestore &&
+      initial.isComplete
+    ){
+      window
+        .__LMP_WASTE_SAVED_SNAPSHOTS__[
+          id
+        ] =
+          initial.snapshot;
+
+      reviewItem.open =
+        false;
+    }
+
+    const body =
+      reviewItem.querySelector(
+        '.analysis-waste-body'
+      );
+
+    if(
+      body &&
+      !body.querySelector(
+        '[data-waste-save-button]'
+      )
+    ){
+      body.insertAdjacentHTML(
+        'beforeend',
+        `
+          <div class="analysis-waste-actions">
+            <div
+              class="analysis-waste-save-message"
+              data-waste-save-message
+            ></div>
+
+            <button
+              class="analysis-waste-delete-button"
+              data-waste-delete-button
+              type="button"
+            >
+              Eliminar
+            </button>
+
+            <button
+              class="analysis-waste-save-button"
+              data-waste-save-button
+              type="button"
+            >
+              Guardar desperdicio
+            </button>
+          </div>
+        `
+      );
+    }
+
+    const refreshFromUser = function(){
+      /*
+       * Editar una etapa restaurada crea nuevamente
+       * un resultado pendiente sin modificar aún el oficial.
+       */
+      if(
+        !window.__LMP_ANALYSIS_PENDING__
+          ?.DESPERDICIOS
+      ){
+        lmpWasteEnsurePending_();
+      }
+
+      lmpWasteRefreshReviewItemState_(
+        reviewItem
+      );
+    };
+
+    reviewItem
+      .querySelectorAll(
+        '[data-waste-field]'
+      )
+      .forEach(function(input){
+        input.addEventListener(
+          input.tagName === 'SELECT'
+            ? 'change'
+            : 'input',
+          refreshFromUser
+        );
+      });
+
+    reviewItem
+      .querySelector(
+        '[data-waste-save-button]'
+      )
+      ?.addEventListener(
+        'click',
+        function(event){
+          event.preventDefault();
+          event.stopPropagation();
+
+          window.lmpSaveWasteFinding_(
+            id
+          );
+        }
+      );
+
+    reviewItem
+      .querySelector(
+        '[data-waste-delete-button]'
+      )
+      ?.addEventListener(
+        'click',
+        function(event){
+          event.preventDefault();
+          event.stopPropagation();
+
+          window.lmpDeleteWasteFinding_(
+            id
+          );
+        }
+      );
+
+    lmpWasteRefreshReviewItemState_(
+      reviewItem
+    );
+  });
+
+  lmpWasteRefreshCounter_();
+
+  return reviewCard;
+}
+
+
+const lmpRenderWasteReviewBase_ =
+  lmpRenderWasteReview_;
+
+lmpRenderWasteReview_ = function(parsed){
+  return lmpEnhanceWasteReview_(
+    lmpRenderWasteReviewBase_(
+      parsed
+    ),
+    parsed
+  );
+};
+
 window.lmpRenderWasteReview_ =
   lmpRenderWasteReview_;
   
@@ -27412,16 +28957,31 @@ responseBox.addEventListener(
       stage
     );
 
-    if(stage === 'VA'){
-      const reviewCard =
-        el(
-          'analysisVaReview_VA'
-        );
+if(stage === 'VA'){
+  const reviewCard =
+    el(
+      'analysisVaReview_VA'
+    );
 
-      if(reviewCard){
-        reviewCard.remove();
-      }
-    }
+  if(reviewCard){
+    reviewCard.remove();
+  }
+}
+
+if(stage === 'DESPERDICIOS'){
+  const reviewCard =
+    el(
+      'analysisWasteReview_DESPERDICIOS'
+    );
+
+  if(reviewCard){
+    reviewCard.remove();
+  }
+
+  window.__LMP_WASTE_SAVED_SNAPSHOTS__ =
+    Object.create(null);
+}
+    
   }
 );
 
