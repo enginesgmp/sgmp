@@ -4936,37 +4936,491 @@ ${args[0] || ''}`;
   return 'Prompt no disponible. Revisa configuración o conexión de prompts.';
 }
 
+function replacePromptToken(
+  text,
+  token,
+  value
+){
+  return String(text || '')
+    .split(token)
+    .join(
+      String(
+        value == null
+          ? ''
+          : value
+      )
+    );
+}
+
+
+function buildSBFlowPromptContext(sp){
+  const activities =
+    Array.isArray(sp?.activities)
+      ? sp.activities
+      : [];
+
+  return {
+    process_code:
+      normalizeText(
+        sp?.process_code || ''
+      ),
+
+    process_name:
+      normalizeText(
+        sp?.process_name || ''
+      ),
+
+    purpose:
+      normalizeText(
+        sp?.purpose || ''
+      ),
+
+    actors:
+      Array.isArray(sp?.actors)
+        ? sp.actors
+        : [],
+
+    activities:
+      activities.map(
+        (activity, index) => ({
+          id:
+            normalizeText(
+              activity.id ||
+              `ACT-${String(index + 1)
+                .padStart(3, '0')}`
+            ),
+
+          order:
+            Number(
+              activity.order ||
+              activity.sequence ||
+              index + 1
+            ) || index + 1,
+
+          name:
+            normalizeText(
+              activity.name || ''
+            ),
+
+          type:
+            normalizeText(
+              activity.type ||
+              'operation'
+            ),
+
+          actor:
+            normalizeText(
+              activity.actor ||
+              activity.lane ||
+              ''
+            ),
+
+          previous:
+            asNameArray(
+              activity.previous
+            ),
+
+          next:
+            asNameArray(
+              activity.next
+            ),
+
+          previous_relations:
+            Array.isArray(
+              activity.previous_relations
+            )
+              ? activity.previous_relations
+              : [],
+
+          next_relations:
+            Array.isArray(
+              activity.next_relations
+            )
+              ? activity.next_relations
+              : [],
+
+          is_start:
+            Boolean(
+              activity.is_start
+            ),
+
+          is_end:
+            Boolean(
+              activity.is_end
+            ),
+
+          note:
+            normalizeNoteText(
+              activity.note || ''
+            )
+        })
+      )
+  };
+}
+
+
+function buildSBSipocPromptContext(sp){
+  const activities =
+    Array.isArray(sp?.activities)
+      ? sp.activities
+      : [];
+
+  const inputActivityLinks = [];
+  const activityOutputLinks = [];
+
+  activities.forEach(activity => {
+    const inputRelations =
+      Array.isArray(
+        activity.input_relations
+      ) &&
+      activity.input_relations.length
+        ? activity.input_relations
+        : asNameArray(
+            activity.ext_inputs
+          ).map(name => ({
+            name,
+            label: ''
+          }));
+
+    inputRelations.forEach(relation => {
+      const input =
+        normalizeText(
+          relation?.name ||
+          relation?.input ||
+          ''
+        );
+
+      if(!input){
+        return;
+      }
+
+      inputActivityLinks.push({
+        input,
+
+        activity:
+          normalizeText(
+            activity.name || ''
+          ),
+
+        label:
+          normalizeText(
+            relation?.label || ''
+          )
+      });
+    });
+
+
+    const outputRelations =
+      Array.isArray(
+        activity.output_relations
+      ) &&
+      activity.output_relations.length
+        ? activity.output_relations
+        : asNameArray(
+            activity.ext_outputs
+          ).map(name => ({
+            name,
+            label: ''
+          }));
+
+    outputRelations.forEach(relation => {
+      const output =
+        normalizeText(
+          relation?.name ||
+          relation?.output ||
+          ''
+        );
+
+      if(!output){
+        return;
+      }
+
+      activityOutputLinks.push({
+        activity:
+          normalizeText(
+            activity.name || ''
+          ),
+
+        output,
+
+        label:
+          normalizeText(
+            relation?.label || ''
+          )
+      });
+    });
+  });
+
+  return {
+    suppliers:
+      Array.isArray(sp?.suppliers)
+        ? sp.suppliers
+        : [],
+
+    inputs:
+      Array.isArray(sp?.inputs)
+        ? sp.inputs
+        : [],
+
+    outputs:
+      Array.isArray(sp?.outputs)
+        ? sp.outputs
+        : [],
+
+    customers:
+      Array.isArray(sp?.customers)
+        ? sp.customers
+        : [],
+
+    supplier_input_links:
+      Array.isArray(
+        sp?.supplier_input_links
+      )
+        ? sp.supplier_input_links
+        : [],
+
+    input_activity_links:
+      inputActivityLinks,
+
+    activity_output_links:
+      activityOutputLinks,
+
+    output_customer_links:
+      Array.isArray(
+        sp?.output_customer_links
+      )
+        ? sp.output_customer_links
+        : []
+  };
+}
+  
+
 function getPrompt(key, ...args) {
-  // 1. Config manual del usuario (mayor prioridad)
-  var c = S.cfg.prompts[key];
-  if (c && c.trim()) return c;
-  // 2. Prompt del Sheet con variables reemplazadas
-  var sheetKey = 'prompt_' + key;
-  var sheetPrompt = sgmpPrompt(sheetKey, '');
-  if (sheetPrompt) {
-    var sp = S.sp || {};
-    if (key === 'f2' || key === 'f3' || key === 'f4') {
-      sheetPrompt = sheetPrompt
-        .replace('{{process_name}}', sp.process_name || '')
-        .replace('{{actors}}', (sp.actors || []).join(', '))
-        .replace('{{suppliers}}', (sp.suppliers || []).join(', '))
-        .replace('{{inputs}}', (sp.inputs || []).join(', '))
-        .replace('{{outputs}}', (sp.outputs || []).join(', '))
-        .replace('{{customers}}', (sp.customers || []).join(', '))
-        .replace('{{idRef}}', args[2] || '')
-        .replace('{{xmlF1}}', args[0] || '')
-        .replace('{{xmlF2}}', args[0] || '');
-    } else if (key === 'f1') {
-      sheetPrompt = sheetPrompt
-        .replace('{{idRef}}', args[1] || '')
-        .replace('{{tplXml}}', args[0] || '');
-    } else if (key === 'p0') {
-      sheetPrompt = sheetPrompt
-        .replace('{{content}}', args[0] || '');
+  /*
+   * 1. Configuración manual local.
+   */
+  const customPrompt =
+    S.cfg.prompts[key];
+
+  if(
+    customPrompt &&
+    customPrompt.trim()
+  ){
+    return customPrompt;
+  }
+
+
+  /*
+   * 2. Prompt administrado desde Sheet.
+   */
+  const sheetKey =
+    'prompt_' + key;
+
+  let sheetPrompt =
+    sgmpPrompt(
+      sheetKey,
+      ''
+    );
+
+  if(sheetPrompt){
+    const sp =
+      S.sp || {};
+
+    const originalTemplate =
+      sheetPrompt;
+
+    const flowContext =
+      JSON.stringify(
+        buildSBFlowPromptContext(sp),
+        null,
+        2
+      );
+
+    const sipocContext =
+      JSON.stringify(
+        buildSBSipocPromptContext(sp),
+        null,
+        2
+      );
+
+    const fullContext =
+      JSON.stringify(
+        sp,
+        null,
+        2
+      );
+
+
+    /*
+     * Resolver correctamente el XML
+     * correspondiente a cada etapa.
+     */
+    const templateXml =
+      key === 'f1'
+        ? args[0] || ''
+        : S.tplXml || '';
+
+    const xmlF1 =
+      key === 'f2'
+        ? args[0] || ''
+        : S.xmlF1 || '';
+
+    const xmlF2 =
+      key === 'f3'
+        ? args[0] || ''
+        : S.xmlF2 || '';
+
+    const xmlF3 =
+      key === 'f4'
+        ? args[0] || ''
+        : S.xmlF3 || '';
+
+    const idReference =
+      key === 'f1'
+        ? args[1] || ''
+        : args[2] || S.idRef || '';
+
+
+    const replacements = {
+      '{{content}}':
+        key === 'p0'
+          ? args[0] || ''
+          : '',
+
+      '{{process_code}}':
+        sp.process_code || '',
+
+      '{{process_name}}':
+        sp.process_name || '',
+
+      '{{purpose}}':
+        sp.purpose || '',
+
+      '{{actors}}':
+        (sp.actors || [])
+          .join(', '),
+
+      '{{suppliers}}':
+        (sp.suppliers || [])
+          .join(', '),
+
+      '{{inputs}}':
+        (sp.inputs || [])
+          .join(', '),
+
+      '{{outputs}}':
+        (sp.outputs || [])
+          .join(', '),
+
+      '{{customers}}':
+        (sp.customers || [])
+          .join(', '),
+
+      '{{activities_json}}':
+        JSON.stringify(
+          sp.activities || [],
+          null,
+          2
+        ),
+
+      '{{flow_relations}}':
+        flowContext,
+
+      '{{sipoc_relations}}':
+        sipocContext,
+
+      '{{context_json}}':
+        fullContext,
+
+      '{{idRef}}':
+        idReference,
+
+      '{{tplXml}}':
+        templateXml,
+
+      '{{xmlF1}}':
+        xmlF1,
+
+      '{{xmlF2}}':
+        xmlF2,
+
+      '{{xmlF3}}':
+        xmlF3
+    };
+
+
+    Object.entries(
+      replacements
+    ).forEach(
+      ([token, value]) => {
+        sheetPrompt =
+          replacePromptToken(
+            sheetPrompt,
+            token,
+            value
+          );
+      }
+    );
+
+
+    /*
+     * Compatibilidad temporal:
+     * si el prompt vigente del Sheet todavía
+     * no contiene los nuevos placeholders,
+     * se añade el contexto automáticamente.
+     */
+    if(
+      key === 'f2' &&
+      !originalTemplate.includes(
+        '{{flow_relations}}'
+      ) &&
+      !originalTemplate.includes(
+        '{{context_json}}'
+      )
+    ){
+      sheetPrompt +=
+        '\n\nCONTEXTO RELACIONAL OBLIGATORIO DEL FLUJO INTERNO:\n' +
+        flowContext;
     }
+
+
+    if(
+      key === 'f3' &&
+      !originalTemplate.includes(
+        '{{sipoc_relations}}'
+      ) &&
+      !originalTemplate.includes(
+        '{{context_json}}'
+      )
+    ){
+      sheetPrompt +=
+        '\n\nRELACIONES SIPOC OBLIGATORIAS:\n' +
+        sipocContext;
+    }
+
+
+    if(
+      key === 'f4' &&
+      !originalTemplate.includes(
+        '{{context_json}}'
+      )
+    ){
+      sheetPrompt +=
+        '\n\nCONTEXTO DEL PROCESO QUE DEBE PRESERVARSE:\n' +
+        fullContext;
+    }
+
     return sheetPrompt;
   }
-  return defaultPrompt(key, ...args);
+
+
+  /*
+   * 3. Fallback interno del HTML.
+   */
+  return defaultPrompt(
+    key,
+    ...args
+  );
 }
 
 // Prompts gestionados desde SGMP Sheet
