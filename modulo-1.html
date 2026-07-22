@@ -23188,6 +23188,18 @@ window.runAnalysisScreenStage = async function(stageKey){
     return '';
   }
 
+  const responseBox =
+    el(
+      'analysisResponse_' +
+      stage
+    );
+
+  const resultBox =
+    el(
+      'analysisResult_' +
+      stage
+    );
+
   try{
     const missingStages =
       getMissingPreviousAnalysisStages(
@@ -23237,9 +23249,47 @@ window.runAnalysisScreenStage = async function(stageKey){
       );
     }
 
+    /*
+     * Elimina únicamente el resultado temporal.
+     * El resultado oficial almacenado en state se conserva
+     * hasta que el nuevo análisis sea validado y guardado.
+     */
     lmpClearAnalysisPending_(
       stage
     );
+
+    if(responseBox){
+      responseBox.value = '';
+    }
+
+    if(resultBox){
+      resultBox.value = '';
+    }
+
+    /*
+     * Evita mostrar tarjetas correspondientes a una
+     * ejecución anterior mientras se genera un nuevo JSON.
+     */
+    if(stage === 'VA'){
+      const previousReview =
+        el(
+          'analysisVaReview_VA'
+        );
+
+      if(previousReview){
+        previousReview.remove();
+      }
+    }
+
+    if(typeof showMsg === 'function'){
+      showMsg(
+        msgId,
+        'warn',
+        'Generando un nuevo JSON de ' +
+        lmpAnalysisStageName_(stage) +
+        '. El resultado oficial anterior se conservará hasta que el nuevo análisis sea validado y guardado.'
+      );
+    }
 
     if(typeof showLoader === 'function'){
       showLoader(
@@ -23270,21 +23320,20 @@ window.runAnalysisScreenStage = async function(stageKey){
       );
     }
 
-    const responseBox =
-      el(
-        'analysisResponse_' +
-        stage
-      );
-
     if(responseBox){
-      responseBox.value = text;
+      responseBox.value =
+        text;
     }
 
+    /*
+     * El JSON recibido todavía no es un resultado oficial.
+     * Debe pasar por validación y revisión.
+     */
     if(typeof showMsg === 'function'){
       showMsg(
         msgId,
         'ok',
-        'JSON recibido. Valida su estructura antes de guardar la etapa.'
+        'JSON recibido. Presiona “Validar y preparar revisión” antes de guardar la etapa.'
       );
     }
 
@@ -23298,6 +23347,58 @@ window.runAnalysisScreenStage = async function(stageKey){
       error
     );
 
+    let restoredPreviousResult =
+      false;
+
+    /*
+     * Si falla una nueva ejecución AVA, reconstruye
+     * visualmente el último resultado oficial guardado.
+     * No lo convierte nuevamente en resultado pendiente.
+     */
+    if(stage === 'VA'){
+      const officialVa =
+        state.analysisStages
+          ?.results
+          ?.VA;
+
+      if(
+        officialVa &&
+        typeof officialVa === 'object' &&
+        !Array.isArray(officialVa) &&
+        Object.keys(officialVa).length
+      ){
+        if(responseBox){
+          responseBox.value =
+            JSON.stringify(
+              officialVa,
+              null,
+              2
+            );
+        }
+
+        if(resultBox){
+          resultBox.value =
+            JSON.stringify(
+              officialVa,
+              null,
+              2
+            );
+        }
+
+        if(
+          typeof window.lmpRenderVaReview_ ===
+          'function'
+        ){
+          window.lmpRenderVaReview_(
+            officialVa
+          );
+
+          restoredPreviousResult =
+            true;
+        }
+      }
+    }
+
     if(typeof showMsg === 'function'){
       showMsg(
         msgId,
@@ -23305,7 +23406,12 @@ window.runAnalysisScreenStage = async function(stageKey){
         'No fue posible generar el JSON de ' +
         lmpAnalysisStageName_(stage) +
         '. Detalle: ' +
-        error.message
+        error.message +
+        (
+          restoredPreviousResult
+            ? ' Se restauró visualmente el último AVA oficial guardado.'
+            : ''
+        )
       );
     }
 
