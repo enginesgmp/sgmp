@@ -1768,30 +1768,190 @@ function activityIdByName(idMap, name){
   const key = normalizeText(name).toLowerCase();
   return idMap.activities[key] ? idMap.activities[key].id : '';
 }
+  
+function sbInternalRelations(activity){
+  const explicitRelations =
+    Array.isArray(activity?.next_relations)
+      ? activity.next_relations
+          .map(relation => ({
+            activity:
+              normalizeText(
+                relation?.activity ||
+                relation?.activity_name ||
+                relation?.name ||
+                ''
+              ),
+
+            label:
+              normalizeText(
+                relation?.label ||
+                relation?.connector ||
+                relation?.branch_label ||
+                relation?.route_label ||
+                ''
+              )
+          }))
+          .filter(relation =>
+            relation.activity
+          )
+      : [];
+
+  if(explicitRelations.length){
+    return explicitRelations;
+  }
+
+  return asNameArray(
+    activity?.next
+  ).map(activityName => ({
+    activity:
+      activityName,
+
+    label:
+      ''
+  }));
+}
+
+
 function buildFallbackInternalEdges(){
-  const idMap = parseIdReference();
-  const acts = Array.isArray(S.sp && S.sp.activities) ? S.sp.activities.slice() : [];
-  if(!acts.length) return [];
-  const ordered = acts.map((a, idx) => Object.assign({}, a, { __idx:idx, order:Number(a.order || a.sequence || idx + 1) || idx + 1 }))
-    .sort((a,b) => (a.order-b.order) || (a.__idx-b.__idx));
+  const idMap =
+    parseIdReference();
+
+  const acts =
+    Array.isArray(
+      S.sp?.activities
+    )
+      ? S.sp.activities.slice()
+      : [];
+
+  if(!acts.length){
+    return [];
+  }
+
+  const ordered =
+    acts
+      .map((activity, index) => ({
+        ...activity,
+
+        __idx:
+          index,
+
+        order:
+          Number(
+            activity.order ||
+            activity.sequence ||
+            index + 1
+          ) || index + 1
+      }))
+      .sort(
+        (a, b) =>
+          (a.order - b.order) ||
+          (a.__idx - b.__idx)
+      );
+
   const edges = [];
   const seen = new Set();
-  const add = (fromName, toName, label) => {
-    const s = activityIdByName(idMap, fromName);
-    const t = activityIdByName(idMap, toName);
-    if(!s || !t || s === t) return;
-    const key = s + '->' + t;
-    if(seen.has(key)) return;
+
+  const add = (
+    fromName,
+    toName,
+    label
+  ) => {
+    const sourceId =
+      activityIdByName(
+        idMap,
+        fromName
+      );
+
+    const targetId =
+      activityIdByName(
+        idMap,
+        toName
+      );
+
+    if(
+      !sourceId ||
+      !targetId ||
+      sourceId === targetId
+    ){
+      return;
+    }
+
+    const key =
+      sourceId +
+      '->' +
+      targetId;
+
+    if(seen.has(key)){
+      return;
+    }
+
     seen.add(key);
-    edges.push(edgeCell('sgmp_f2_edge_' + edges.length + '_' + s + '_' + t, s, t, label || ''));
+
+    edges.push(
+      edgeCell(
+        'sgmp_f2_edge_' +
+        edges.length +
+        '_' +
+        sourceId +
+        '_' +
+        targetId,
+
+        sourceId,
+        targetId,
+        label || ''
+      )
+    );
   };
-  ordered.forEach((a, idx) => {
-    const nexts = asNameArray(a.next);
-    if(nexts.length) nexts.forEach(n => add(a.name, n, a.branch_label || a.route_label || ''));
-    else if(idx < ordered.length - 1) add(a.name, ordered[idx+1].name, '');
-  });
+
+  const hasDeclaredConnections =
+    ordered.some(activity =>
+      sbInternalRelations(
+        activity
+      ).length > 0
+    );
+
+  ordered.forEach(
+    (activity, index) => {
+      const relations =
+        sbInternalRelations(
+          activity
+        );
+
+      if(relations.length){
+        relations.forEach(
+          relation => {
+            add(
+              activity.name,
+              relation.activity,
+              relation.label
+            );
+          }
+        );
+
+        return;
+      }
+
+      /*
+       * Solo se genera secuencia por orden cuando
+       * ninguna actividad declara conexiones.
+       */
+      if(
+        !hasDeclaredConnections &&
+        !activity.is_end &&
+        index < ordered.length - 1
+      ){
+        add(
+          activity.name,
+          ordered[index + 1].name,
+          ''
+        );
+      }
+    }
+  );
+
   return edges;
 }
+  
 function buildFallbackPeripheralEdges(){
   const idMap = parseIdReference();
   const sp = S.sp || {};
@@ -1851,19 +2011,71 @@ function buildFallbackPeripheralEdges(){
   }
   return edges;
 }
-function ensureInternalEdges(targetId, vldId, stageLabel){
-  const xml = $(targetId) ? $(targetId).value : '';
-  if(countXMLEdges(xml) > 0) return true;
-  const edges = buildFallbackInternalEdges();
-  const merged = insertEdgesIntoXML(xml, edges);
-  if(merged && merged !== xml){
-    $(targetId).value = merged;
-    validateXML(targetId, vldId);
-    gMsg('warn', stageLabel + ': la IA devolvió el XML sin conexiones internas. Se generaron conectores automáticos usando previous/next y el mapa de IDs.');
+  
+function ensureInternalEdges(
+  targetId,
+  vldId,
+  stageLabel
+){
+  const target =
+    $(targetId);
+
+  const xml =
+    target
+      ? target.value
+      : '';
+
+  if(!xml){
+    return false;
+  }
+
+  const expectedEdges =
+    buildFallbackInternalEdges();
+
+  if(!expectedEdges.length){
     return true;
   }
-  return false;
+
+  const edgesBefore =
+    countXMLEdges(xml);
+
+  const merged =
+    insertEdgesIntoXML(
+      xml,
+      expectedEdges
+    );
+
+  if(!merged){
+    return false;
+  }
+
+  if(merged !== xml){
+    target.value =
+      merged;
+
+    validateXML(
+      targetId,
+      vldId
+    );
+
+    const edgesAfter =
+      countXMLEdges(merged);
+
+    gMsg(
+      'warn',
+      stageLabel +
+      ': se completaron ' +
+      Math.max(
+        0,
+        edgesAfter - edgesBefore
+      ) +
+      ' conexiones internas faltantes respetando next_relations y las etiquetas individuales de cada ruta.'
+    );
+  }
+
+  return true;
 }
+  
 function ensurePeripheralEdges(sourceId, targetId, vldId, stageLabel){
   const baseEdges = countXMLEdges($(sourceId) ? $(sourceId).value : '');
   let xml = $(targetId) ? $(targetId).value : '';
