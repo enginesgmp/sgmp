@@ -22805,6 +22805,575 @@ function lmpValidateVaStageContract_(parsed){
   return parsed;
 }
 
+function lmpValidateWasteStageContract_(parsed){
+  const allowedWasteTypes = [
+    'DEFECTS',
+    'OVERPRODUCTION',
+    'WAITING',
+    'NON_UTILIZED_TALENT',
+    'TRANSPORTATION',
+    'INVENTORY',
+    'MOTION',
+    'EXTRA_PROCESSING'
+  ];
+
+  const allowedTopLevelKeys = [
+    'stage',
+    'analysis_type',
+    'methodology',
+    'source_control',
+    'summary',
+    'wastes',
+    'warnings',
+    'dataGaps',
+    'validation'
+  ];
+
+  const allowedWasteKeys = [
+    'id',
+    'wasteType',
+    'relatedActivityIds',
+    'description',
+    'justification',
+    'evidence'
+  ];
+
+  if(
+    String(parsed.analysis_type || '').trim() !==
+    'lean_waste_analysis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "lean_waste_analysis".'
+    );
+  }
+
+  if(
+    String(parsed.methodology || '').trim() !==
+    'Lean_DOWNTIME'
+  ){
+    throw new Error(
+      'methodology debe ser "Lean_DOWNTIME".'
+    );
+  }
+
+  /*
+   * No permite conservar campos pertenecientes
+   * al contrato anterior de Desperdicios.
+   */
+  Object.keys(parsed).forEach(function(key){
+    if(!allowedTopLevelKeys.includes(key)){
+      throw new Error(
+        'El campo superior "' +
+        key +
+        '" no pertenece al contrato de Desperdicios.'
+      );
+    }
+  });
+
+  if(
+    !parsed.summary ||
+    typeof parsed.summary !== 'object' ||
+    Array.isArray(parsed.summary)
+  ){
+    throw new Error(
+      'El campo "summary" debe ser un objeto.'
+    );
+  }
+
+  if(
+    !parsed.summary.by_type ||
+    typeof parsed.summary.by_type !== 'object' ||
+    Array.isArray(parsed.summary.by_type)
+  ){
+    throw new Error(
+      'El campo "summary.by_type" debe ser un objeto.'
+    );
+  }
+
+  [
+    'warnings',
+    'dataGaps',
+    'validation.blockingGaps',
+    'validation.warnings'
+  ].forEach(function(path){
+    const value =
+      lmpGetPathValue_(
+        parsed,
+        path
+      );
+
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+  });
+
+  if(!Array.isArray(parsed.wastes)){
+    throw new Error(
+      'El campo "wastes" debe ser un arreglo.'
+    );
+  }
+
+  /*
+   * Recupera el AS-IS oficial editado,
+   * validado y guardado.
+   */
+  const validatedAsIs =
+    lmpGetValidatedAsIsEvidence_();
+
+  const sourceSteps =
+    safeArray(
+      validatedAsIs.activities
+    );
+
+  const isDecision = function(activity){
+    const type =
+      typeof normalizePromptAType === 'function'
+        ? normalizePromptAType(
+            activity?.type
+          )
+        : String(
+            activity?.type || ''
+          )
+            .trim()
+            .toLowerCase();
+
+    return type === 'decision';
+  };
+
+  const eligibleActivities =
+    sourceSteps.filter(function(activity){
+      return !isDecision(activity);
+    });
+
+  if(!eligibleActivities.length){
+    throw new Error(
+      'El AS-IS validado no contiene actividades ejecutables para analizar.'
+    );
+  }
+
+  const executableById =
+    new Map();
+
+  const decisionIds =
+    new Set();
+
+  sourceSteps.forEach(function(activity, index){
+    const id = String(
+      activity?.id || ''
+    ).trim();
+
+    if(!id){
+      throw new Error(
+        'El elemento ' +
+        (index + 1) +
+        ' del AS-IS no tiene ID.'
+      );
+    }
+
+    if(isDecision(activity)){
+      decisionIds.add(id);
+      return;
+    }
+
+    if(executableById.has(id)){
+      throw new Error(
+        'El AS-IS contiene el ID ejecutable duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    executableById.set(
+      id,
+      activity
+    );
+  });
+
+  const seenFindingIds =
+    new Set();
+
+  const affectedActivityIds =
+    new Set();
+
+  const automaticBlockingGaps = [];
+
+  let completeFindingCount = 0;
+
+  const byType = {};
+
+  allowedWasteTypes.forEach(function(type){
+    byType[type] = 0;
+  });
+
+  parsed.wastes.forEach(function(item, index){
+    Object.keys(item).forEach(function(key){
+      if(!allowedWasteKeys.includes(key)){
+        throw new Error(
+          'El hallazgo ' +
+          (index + 1) +
+          ' contiene el campo no permitido "' +
+          key +
+          '".'
+        );
+      }
+    });
+
+    const expectedId =
+      'W-' +
+      String(index + 1).padStart(3, '0');
+
+    const id = String(
+      item?.id || ''
+    ).trim();
+
+    if(!/^W-\d{3}$/.test(id)){
+      throw new Error(
+        'wastes[' +
+        index +
+        '].id debe usar el formato W-001.'
+      );
+    }
+
+    if(id !== expectedId){
+      throw new Error(
+        'Los IDs de wastes deben ser consecutivos. Se esperaba "' +
+        expectedId +
+        '" y se recibió "' +
+        id +
+        '".'
+      );
+    }
+
+    if(seenFindingIds.has(id)){
+      throw new Error(
+        'El ID de hallazgo "' +
+        id +
+        '" está duplicado.'
+      );
+    }
+
+    seenFindingIds.add(id);
+
+    const wasteType = String(
+      item?.wasteType || ''
+    )
+      .trim()
+      .toUpperCase();
+
+    if(
+      wasteType &&
+      !allowedWasteTypes.includes(wasteType)
+    ){
+      throw new Error(
+        'El hallazgo "' +
+        id +
+        '" utiliza un wasteType no permitido.'
+      );
+    }
+
+    if(!Array.isArray(item?.relatedActivityIds)){
+      throw new Error(
+        'relatedActivityIds del hallazgo "' +
+        id +
+        '" debe ser un arreglo.'
+      );
+    }
+
+    const relatedSeen =
+      new Set();
+
+    const relatedActivityIds =
+      item.relatedActivityIds.map(function(
+        activityId,
+        activityIndex
+      ){
+        if(typeof activityId !== 'string'){
+          throw new Error(
+            'relatedActivityIds[' +
+            activityIndex +
+            '] del hallazgo "' +
+            id +
+            '" debe ser texto.'
+          );
+        }
+
+        const normalizedId =
+          activityId.trim();
+
+        if(!normalizedId){
+          throw new Error(
+            'El hallazgo "' +
+            id +
+            '" contiene un ID de actividad vacío.'
+          );
+        }
+
+        if(relatedSeen.has(normalizedId)){
+          throw new Error(
+            'El hallazgo "' +
+            id +
+            '" repite la actividad "' +
+            normalizedId +
+            '".'
+          );
+        }
+
+        if(decisionIds.has(normalizedId)){
+          throw new Error(
+            'La decisión "' +
+            normalizedId +
+            '" no puede incluirse en relatedActivityIds.'
+          );
+        }
+
+        if(!executableById.has(normalizedId)){
+          throw new Error(
+            'El ID "' +
+            normalizedId +
+            '" del hallazgo "' +
+            id +
+            '" no corresponde a una actividad ejecutable del AS-IS.'
+          );
+        }
+
+        relatedSeen.add(
+          normalizedId
+        );
+
+        affectedActivityIds.add(
+          normalizedId
+        );
+
+        return normalizedId;
+      });
+
+    const description = String(
+      item?.description || ''
+    ).trim();
+
+    const justification = String(
+      item?.justification || ''
+    ).trim();
+
+    if(!Array.isArray(item?.evidence)){
+      throw new Error(
+        'La evidencia del hallazgo "' +
+        id +
+        '" debe ser un arreglo.'
+      );
+    }
+
+    const evidence =
+      item.evidence.map(function(
+        entry,
+        evidenceIndex
+      ){
+        if(
+          !entry ||
+          typeof entry !== 'object' ||
+          Array.isArray(entry)
+        ){
+          throw new Error(
+            'La evidencia ' +
+            (evidenceIndex + 1) +
+            ' del hallazgo "' +
+            id +
+            '" no es válida.'
+          );
+        }
+
+        Object.keys(entry).forEach(function(key){
+          if(
+            ![
+              'source',
+              'reference',
+              'detail'
+            ].includes(key)
+          ){
+            throw new Error(
+              'La evidencia ' +
+              (evidenceIndex + 1) +
+              ' del hallazgo "' +
+              id +
+              '" contiene el campo no permitido "' +
+              key +
+              '".'
+            );
+          }
+        });
+
+        return {
+          source: String(
+            entry.source || ''
+          ).trim(),
+
+          reference: String(
+            entry.reference || ''
+          ).trim(),
+
+          detail: String(
+            entry.detail || ''
+          ).trim()
+        };
+      });
+
+    const hasCompleteEvidence =
+      evidence.some(function(entry){
+        return !!(
+          entry.source &&
+          entry.reference &&
+          entry.detail
+        );
+      });
+
+    const isComplete = !!(
+      wasteType &&
+      relatedActivityIds.length &&
+      description &&
+      justification &&
+      hasCompleteEvidence
+    );
+
+    if(wasteType){
+      byType[wasteType] += 1;
+    }
+
+    if(isComplete){
+      completeFindingCount += 1;
+
+    }else{
+      automaticBlockingGaps.push(
+        'Hallazgo ' +
+        id +
+        ': completar tipo, actividades relacionadas, descripción, justificación y evidencia.'
+      );
+    }
+
+    /*
+     * Normalización controlada.
+     */
+    item.id =
+      id;
+
+    item.wasteType =
+      wasteType;
+
+    item.relatedActivityIds =
+      relatedActivityIds;
+
+    item.description =
+      description;
+
+    item.justification =
+      justification;
+
+    item.evidence =
+      evidence;
+  });
+
+  /*
+   * Conserva las brechas reportadas por la IA
+   * y agrega las detectadas localmente.
+   */
+  const existingBlockingGaps =
+    safeArray(
+      parsed.validation.blockingGaps
+    )
+      .map(function(gap){
+        return typeof gap === 'string'
+          ? gap.trim()
+          : JSON.stringify(gap);
+      })
+      .filter(Boolean);
+
+  const blockingGaps =
+    Array.from(
+      new Set(
+        existingBlockingGaps.concat(
+          automaticBlockingGaps
+        )
+      )
+    );
+
+  /*
+   * Determina el desperdicio dominante respetando
+   * el orden oficial para desempates.
+   */
+  let dominantWasteType = '';
+  let dominantCount = 0;
+
+  allowedWasteTypes.forEach(function(type){
+    const count =
+      byType[type];
+
+    if(count > dominantCount){
+      dominantCount =
+        count;
+
+      dominantWasteType =
+        type;
+    }
+  });
+
+  /*
+   * wastes vacío es válido cuando no existen
+   * hallazgos demostrables.
+   */
+  const canProceed = !!(
+    completeFindingCount ===
+      parsed.wastes.length &&
+    blockingGaps.length === 0
+  );
+
+  /*
+   * Los indicadores se recalculan localmente.
+   * No se confía en los conteos entregados por la IA.
+   */
+  parsed.source_control = {
+    source_activity_count:
+      eligibleActivities.length,
+
+    analyzed_activity_count:
+      eligibleActivities.length,
+
+    preserved_activity_ids:
+      true
+  };
+
+  parsed.summary = {
+    total_findings:
+      parsed.wastes.length,
+
+    affected_activity_count:
+      affectedActivityIds.size,
+
+    dominant_waste_type:
+      parsed.wastes.length
+        ? dominantWasteType
+        : '',
+
+    by_type:
+      byType
+  };
+
+  parsed.validation = {
+    canProceed,
+
+    blockingGaps,
+
+    warnings:
+      safeArray(
+        parsed.validation.warnings
+      )
+  };
+
+  return parsed;
+}  
+
 function lmpValidateAnalysisStageContract_(
   stageKey,
   rawText
@@ -23053,10 +23622,16 @@ function lmpValidateAnalysisStageContract_(
   );
 
   if(stage === 'VA'){
-  lmpValidateVaStageContract_(
-    parsed
-  );
-}
+    lmpValidateVaStageContract_(
+      parsed
+    );
+  }
+
+  if(stage === 'DESPERDICIOS'){
+    lmpValidateWasteStageContract_(
+      parsed
+    );
+  }
 
   if(
     stage === 'RESTRICCIONES' &&
