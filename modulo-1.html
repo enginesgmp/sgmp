@@ -8212,72 +8212,188 @@ function sgmpExtractAIText(res){
 }
 
 async function sgmpCallAI(stageCode, prompt){
+async function sgmpCallAI(stageCode, prompt){
   const payload = {
-    session_id: sgmpSessionId(),
-    user_id: sgmpUserId() || 'u_admin',
-    module_code: 'LMP',
-    stage_code: stageCode,
-    process_name: (state && state.context && state.context.processName) ? state.context.processName : '',
-    prompt_chars: String(prompt || '').length,
-    estimated_input_tokens_front: Math.ceil(String(prompt || '').length / 4),
-    prompt: prompt
+    session_id:
+      sgmpSessionId(),
+
+    user_id:
+      sgmpUserId() ||
+      'u_admin',
+
+    module_code:
+      'LMP',
+
+    stage_code:
+      stageCode,
+
+    process_name:
+      state &&
+      state.context &&
+      state.context.processName
+        ? state.context.processName
+        : '',
+
+    prompt_chars:
+      String(
+        prompt || ''
+      ).length,
+
+    estimated_input_tokens_front:
+      Math.ceil(
+        String(
+          prompt || ''
+        ).length / 4
+      ),
+
+    prompt:
+      prompt
   };
 
-  let postError = null;
+  /*
+   * Apps Script tiene un límite aproximado de
+   * seis minutos por ejecución.
+   *
+   * Se deja un margen pequeño para evitar que
+   * el navegador permanezca esperando indefinidamente.
+   */
+  const controller =
+    new AbortController();
 
-  // Apps Script + GitHub Pages: usar text/plain evita preflight CORS por application/json.
+  const timeoutId =
+    setTimeout(
+      function(){
+        controller.abort();
+      },
+      365000
+    );
+
   try{
-    const response = await fetch(SGMP_API + '?action=call_ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    /*
+     * Única vía válida para prompts extensos:
+     * POST con text/plain para evitar preflight.
+     *
+     * Se elimina el respaldo GET porque colocaba
+     * todo el prompt dentro de la URL.
+     */
+    const response =
+      await fetch(
+        SGMP_API +
+        '?action=call_ai',
+        {
+          method:
+            'POST',
 
-    const text = await response.text();
-    const parsed = text ? JSON.parse(text) : {};
+          headers: {
+            'Content-Type':
+              'text/plain;charset=utf-8'
+          },
+
+          body:
+            JSON.stringify(
+              payload
+            ),
+
+          redirect:
+            'follow',
+
+          cache:
+            'no-store',
+
+          signal:
+            controller.signal
+        }
+      );
+
+    const text =
+      await response.text();
+
+    let parsed = {};
+
+    if(text){
+      try{
+        parsed =
+          JSON.parse(
+            text
+          );
+
+      }catch(parseError){
+        throw new Error(
+          'El backend devolvió una respuesta no JSON. HTTP ' +
+          response.status +
+          '.'
+        );
+      }
+    }
 
     if(!response.ok){
-      throw new Error(parsed.error || parsed.message || ('HTTP ' + response.status));
+      throw new Error(
+        parsed.error ||
+        parsed.message ||
+        (
+          'HTTP ' +
+          response.status
+        )
+      );
     }
 
-    if(parsed.fallback_manual === true){
-      const fallbackError = new Error(parsed.error || parsed.message || 'El backend solicitó fallback manual.');
-      fallbackError.skipGetFallback = true;
-      throw fallbackError;
+    if(
+      parsed.fallback_manual ===
+      true
+    ){
+      throw new Error(
+        parsed.error ||
+        parsed.message ||
+        'El backend solicitó continuar en modo manual.'
+      );
     }
 
-    return { text: sgmpExtractAIText(parsed), raw: parsed };
+    return {
+      text:
+        sgmpExtractAIText(
+          parsed
+        ),
+
+      raw:
+        parsed
+    };
+
   }catch(error){
-    postError = error;
-    if(error && error.skipGetFallback){
-      console.warn('[sgmpCallAI] POST text/plain devolvió fallback manual.', error);
-      throw new Error(error.message || 'La API solicitó continuar en modo manual.');
-    }
-    console.warn('[sgmpCallAI] POST text/plain falló. Se intentará GET payload.', error);
-  }
+    console.error(
+      '[sgmpCallAI] Error POST:',
+      error
+    );
 
-  // Respaldo técnico: GET con payload codificado, útil cuando Apps Script/WebApp bloquea POST.
-  try{
-    const url = SGMP_API + '?action=call_ai&payload=' + encodeURIComponent(JSON.stringify(payload));
-    const response = await fetch(url);
-    const text = await response.text();
-    const parsed = text ? JSON.parse(text) : {};
-
-    if(!response.ok){
-      throw new Error(parsed.error || parsed.message || ('HTTP ' + response.status));
+    if(
+      error?.name ===
+      'AbortError'
+    ){
+      throw new Error(
+        'La ejecución superó aproximadamente 6 minutos y fue cancelada. Revisa Apps Script > Ejecuciones para confirmar el límite de tiempo.'
+      );
     }
 
-    if(parsed.fallback_manual === true){
-      throw new Error(parsed.error || parsed.message || 'El backend solicitó fallback manual.');
+    if(
+      error instanceof TypeError ||
+      /failed to fetch/i.test(
+        String(
+          error?.message || ''
+        )
+      )
+    ){
+      throw new Error(
+        'El Web App no devolvió respuesta al POST. Revisa Apps Script > Ejecuciones y confirma que el despliegue /exec siga publicado para cualquier usuario.'
+      );
     }
 
-    return { text: sgmpExtractAIText(parsed), raw: parsed };
-  }catch(error){
-    console.error('[sgmpCallAI] Error final:', error);
-    throw new Error((postError && postError.message ? postError.message + ' | ' : '') + (error.message || 'No fue posible conectar con la API.'));
+    throw error;
+
+  }finally{
+    clearTimeout(
+      timeoutId
+    );
   }
 }
-
 // Auth admin contra Sheet
 function sgmpAuthAdmin(username, password, onOk, onErr) {
   var url = SGMP_API + '?action=auth_admin&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
