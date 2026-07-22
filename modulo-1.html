@@ -28069,7 +28069,344 @@ lmpRenderWasteReview_ = function(parsed){
 
 window.lmpRenderWasteReview_ =
   lmpRenderWasteReview_;
-  
+
+
+window.lmpSavePendingWasteFindings_ = function(options){
+  const settings =
+    Object.assign(
+      {
+        closeAfterSave:
+          true,
+
+        scrollOnError:
+          true
+      },
+      options || {}
+    );
+
+  const pending =
+    window.__LMP_ANALYSIS_PENDING__
+      ?.DESPERDICIOS;
+
+  if(!pending){
+    return {
+      ok:
+        false,
+
+      savedCount:
+        0,
+
+      incompleteId:
+        '',
+
+      error:
+        'Primero valida el JSON de Desperdicios.'
+    };
+  }
+
+  const reviewCard =
+    el(
+      'analysisWasteReview_DESPERDICIOS'
+    );
+
+  if(!reviewCard){
+    return {
+      ok:
+        false,
+
+      savedCount:
+        0,
+
+      incompleteId:
+        '',
+
+      error:
+        'No está disponible la revisión editable de Desperdicios.'
+    };
+  }
+
+  const expectedWastes =
+    safeArray(
+      pending.parsed?.wastes
+    );
+
+  const reviewItems =
+    Array.from(
+      reviewCard.querySelectorAll(
+        '.analysis-waste-item[data-waste-id]'
+      )
+    );
+
+  /*
+   * La interfaz y el JSON pendiente deben contener
+   * exactamente los mismos hallazgos.
+   */
+  if(
+    reviewItems.length !==
+    expectedWastes.length
+  ){
+    return {
+      ok:
+        false,
+
+      savedCount:
+        0,
+
+      incompleteId:
+        '',
+
+      error:
+        'La cantidad de tarjetas no coincide con el JSON pendiente. Valida nuevamente la etapa.'
+    };
+  }
+
+  /*
+   * wastes vacío es válido cuando el análisis
+   * no identificó desperdicios demostrables.
+   */
+  if(!expectedWastes.length){
+    try{
+      const validated =
+        lmpWasteRevalidateCandidate_(
+          JSON.parse(
+            JSON.stringify(
+              pending.parsed
+            )
+          )
+        );
+
+      if(
+        validated.validation
+          ?.canProceed !== true
+      ){
+        throw new Error(
+          'El contrato vacío de Desperdicios contiene brechas bloqueantes.'
+        );
+      }
+
+      pending.parsed =
+        JSON.parse(
+          JSON.stringify(
+            validated
+          )
+        );
+
+      lmpWasteUpdateResultBox_(
+        validated
+      );
+
+      return {
+        ok:
+          true,
+
+        savedCount:
+          0,
+
+        incompleteId:
+          '',
+
+        error:
+          ''
+      };
+
+    }catch(error){
+      return {
+        ok:
+          false,
+
+        savedCount:
+          0,
+
+        incompleteId:
+          '',
+
+        error:
+          error.message
+      };
+    }
+  }
+
+  let savedCount =
+    0;
+
+  for(const reviewItem of reviewItems){
+    const status =
+      lmpWasteRefreshReviewItemState_(
+        reviewItem
+      );
+
+    const id = String(
+      reviewItem.dataset.wasteId || ''
+    ).trim();
+
+    if(!status.isComplete){
+      reviewItem.open =
+        true;
+
+      if(settings.scrollOnError){
+        reviewItem.scrollIntoView({
+          behavior:
+            'smooth',
+
+          block:
+            'center'
+        });
+      }
+
+      return {
+        ok:
+          false,
+
+        savedCount,
+
+        incompleteId:
+          id,
+
+        error:
+          'El hallazgo ' +
+          id +
+          ' está incompleto.'
+      };
+    }
+
+    /*
+     * Solo ejecuta guardado individual cuando
+     * existen cambios que aún no están en pending.parsed.
+     */
+    if(status.hasPendingChanges){
+      const saved =
+        window.lmpSaveWasteFinding_(
+          id,
+          {
+            silent:
+              true,
+
+            closeAfterSave:
+              settings.closeAfterSave,
+
+            scrollOnError:
+              settings.scrollOnError
+          }
+        );
+
+      if(saved !== true){
+        return {
+          ok:
+            false,
+
+          savedCount,
+
+          incompleteId:
+            id,
+
+          error:
+            'No fue posible guardar el hallazgo ' +
+            id +
+            '.'
+        };
+      }
+
+      savedCount +=
+        1;
+    }
+  }
+
+  try{
+    /*
+     * Validación contractual final después de incorporar
+     * todos los cambios de las tarjetas.
+     */
+    const validated =
+      lmpWasteRevalidateCandidate_(
+        JSON.parse(
+          JSON.stringify(
+            pending.parsed
+          )
+        )
+      );
+
+    if(
+      validated.validation
+        ?.canProceed !== true
+    ){
+      const firstIncomplete =
+        reviewCard.querySelector(
+          '.analysis-waste-item.is-incomplete'
+        );
+
+      if(firstIncomplete){
+        firstIncomplete.open =
+          true;
+
+        if(settings.scrollOnError){
+          firstIncomplete.scrollIntoView({
+            behavior:
+              'smooth',
+
+            block:
+              'center'
+          });
+        }
+      }
+
+      const gapCount =
+        safeArray(
+          validated.validation
+            ?.blockingGaps
+        ).length;
+
+      throw new Error(
+        'Desperdicios todavía contiene ' +
+        gapCount +
+        (
+          gapCount === 1
+            ? ' brecha bloqueante.'
+            : ' brechas bloqueantes.'
+        )
+      );
+    }
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    lmpWasteUpdateResultBox_(
+      validated
+    );
+
+    lmpWasteRefreshCounter_();
+
+    return {
+      ok:
+        true,
+
+      savedCount,
+
+      incompleteId:
+        '',
+
+      error:
+        ''
+    };
+
+  }catch(error){
+    return {
+      ok:
+        false,
+
+      savedCount,
+
+      incompleteId:
+        '',
+
+      error:
+        error.message
+    };
+  }
+};  
 
 window.processAnalysisScreenStage = function(stageKey){
   const stage = String(stageKey || '')
@@ -28215,8 +28552,11 @@ window.saveValidatedAnalysisStage = function(stageKey){
 
       const massSave =
         window.lmpSavePendingVaActivities_({
-          closeAfterSave: true,
-          scrollOnError: true
+          closeAfterSave:
+            true,
+
+          scrollOnError:
+            true
         });
 
       if(
@@ -28230,7 +28570,38 @@ window.saveValidatedAnalysisStage = function(stageKey){
       }
     }
 
+    if(stage === 'DESPERDICIOS'){
+      if(
+        typeof window.lmpSavePendingWasteFindings_ !==
+        'function'
+      ){
+        throw new Error(
+          'No está disponible el guardado masivo de Desperdicios.'
+        );
+      }
+
+      const wasteMassSave =
+        window.lmpSavePendingWasteFindings_({
+          closeAfterSave:
+            true,
+
+          scrollOnError:
+            true
+        });
+
+      if(
+        !wasteMassSave ||
+        wasteMassSave.ok !== true
+      ){
+        throw new Error(
+          wasteMassSave?.error ||
+          'No fue posible guardar todos los hallazgos pendientes.'
+        );
+      }
+    }
+
     const currentRaw =
+      
       el(
         'analysisResponse_' +
         stage
@@ -28251,6 +28622,70 @@ window.saveValidatedAnalysisStage = function(stageKey){
           pending.parsed
         )
       );
+
+    /*
+     * Desperdicios utiliza el JSON pendiente reconstruido
+     * desde todas las tarjetas guardadas.
+     */
+    if(stage === 'DESPERDICIOS'){
+      parsed =
+        lmpValidateWasteStageContract_(
+          parsed
+        );
+
+      if(
+        parsed.validation
+          ?.canProceed !== true
+      ){
+        const reviewCard =
+          el(
+            'analysisWasteReview_DESPERDICIOS'
+          );
+
+        const firstIncomplete =
+          reviewCard?.querySelector(
+            '.analysis-waste-item.is-incomplete'
+          );
+
+        if(firstIncomplete){
+          firstIncomplete.open =
+            true;
+
+          firstIncomplete.scrollIntoView({
+            behavior:
+              'smooth',
+
+            block:
+              'center'
+          });
+        }
+
+        const gapCount =
+          safeArray(
+            parsed.validation
+              ?.blockingGaps
+          ).length;
+
+        throw new Error(
+          'Completa la revisión de Desperdicios antes de guardar. ' +
+          gapCount +
+          (
+            gapCount === 1
+              ? ' brecha requiere revisión.'
+              : ' brechas requieren revisión.'
+          )
+        );
+      }
+
+      window.__LMP_ANALYSIS_PENDING__[
+        stage
+      ].parsed =
+        JSON.parse(
+          JSON.stringify(
+            parsed
+          )
+        );
+    }
 
     /*
      * Para VA, la revisión editable es la fuente final
