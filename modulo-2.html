@@ -2558,6 +2558,55 @@ function sbCatalogItemName(value, keys){
   return '';
 }
 
+function sbNormalizePairLinks(
+  rows,
+  leftKey,
+  rightKey
+){
+  const result = [];
+  const seen = new Set();
+
+  (
+    Array.isArray(rows)
+      ? rows
+      : []
+  ).forEach(row => {
+    const left =
+      sbCatalogItemName(
+        row,
+        [leftKey]
+      );
+
+    const right =
+      sbCatalogItemName(
+        row,
+        [rightKey]
+      );
+
+    if(!left || !right){
+      return;
+    }
+
+    const key =
+      left.toLowerCase() +
+      '||' +
+      right.toLowerCase();
+
+    if(seen.has(key)){
+      return;
+    }
+
+    seen.add(key);
+
+    result.push({
+      [leftKey]: left,
+      [rightKey]: right
+    });
+  });
+
+  return result;
+}
+
 
 function sbNormalizeActivityType(value){
   const type = normalizeText(value || '').toLowerCase();
@@ -2823,10 +2872,62 @@ function normActs(acts, options = {}){
       ext_outputs:
         outputs,
 
-      ext_customers:
-        customers,
+ext_customers:
+  customers,
 
-      is_start:
+input_relations:
+  (
+    activity.ext_inputs ||
+    activity.inputs_used ||
+    activity.inputs ||
+    []
+  )
+    .map(value => ({
+      name:
+        sbCatalogItemName(
+          value,
+          ['name', 'input']
+        ),
+
+      label:
+        value &&
+        typeof value === 'object'
+          ? normalizeText(
+              value.label ||
+              value.connector ||
+              ''
+            )
+          : ''
+    }))
+    .filter(item => item.name),
+
+output_relations:
+  (
+    activity.ext_outputs ||
+    activity.outputs_generated ||
+    activity.outputs ||
+    []
+  )
+    .map(value => ({
+      name:
+        sbCatalogItemName(
+          value,
+          ['name', 'output']
+        ),
+
+      label:
+        value &&
+        typeof value === 'object'
+          ? normalizeText(
+              value.label ||
+              value.connector ||
+              ''
+            )
+          : ''
+    }))
+    .filter(item => item.name),
+
+is_start:
         typeof activity.is_start === 'boolean'
           ? activity.is_start
           : previous.length === 0,
@@ -3068,6 +3169,20 @@ function normalizeIncomingPayload(parsed){
           []
         );
 
+  const supplierInputLinks =
+  sbNormalizePairLinks(
+    suppliersInputs,
+    'supplier',
+    'input'
+  );
+
+const outputCustomerLinks =
+  sbNormalizePairLinks(
+    outputsCustomers,
+    'output',
+    'customer'
+  );
+
   const normalized = {
     process_code:
       normalizeText(
@@ -3117,11 +3232,17 @@ function normalizeIncomingPayload(parsed){
           .join('\n')
       ),
 
-    suppliers,
-    inputs,
-    outputs,
-    customers,
-    actors,
+suppliers,
+inputs,
+outputs,
+customers,
+actors,
+
+supplier_input_links:
+  supplierInputLinks,
+
+output_customer_links:
+  outputCustomerLinks,
 
     documents:
       normalizeCatalogItems(
@@ -3182,6 +3303,8 @@ function normalizeIncomingPayload(parsed){
 
 function sourceLabel(sourceKey) {
   const map = {
+    lmp_to_sb_v3:
+  'Contrato LMP_TO_SB 3.0',
     sipoc_input: 'JSON con bloque sipoc_input',
     'final_outputs.sipoc_builder': 'JSON final LMP con salida SIPOC Builder',
     sipoc_builder: 'JSON con bloque sipoc_builder',
@@ -3542,13 +3665,157 @@ function processIncomingJson(raw, source = 'unknown') {
 
     S.sp = sp;
 
-    S.cats.suppliers = (sp.suppliers || []).map(x => ({ name: x }));
-    S.cats.inputs = (sp.inputs || []).map(x => ({ name: x }));
-    S.cats.outputs = (sp.outputs || []).map(x => ({ name: x }));
-    S.cats.customers = (sp.customers || []).map(x => ({ name: x }));
-    S.cats.actors = (sp.actors || []).map(x => ({ name: x }));
-    S.cats.documents = (sp.documents || []).map(x => ({ name: x, ref: '' }));
-    S.acts = Array.isArray(sp.activities) ? sp.activities : [];
+const supplierInputLinks =
+  Array.isArray(
+    sp.supplier_input_links
+  )
+    ? sp.supplier_input_links
+    : [];
+
+const outputCustomerLinks =
+  Array.isArray(
+    sp.output_customer_links
+  )
+    ? sp.output_customer_links
+    : [];
+
+
+S.cats.suppliers =
+  supplierInputLinks.length
+    ? supplierInputLinks
+        .map(link => ({
+          name:
+            normalizeText(
+              link.supplier
+            ),
+
+          input:
+            normalizeText(
+              link.input
+            )
+        }))
+        .filter(item =>
+          item.name &&
+          item.input
+        )
+    : (sp.suppliers || [])
+        .map(name => ({
+          name:
+            normalizeText(name),
+
+          input: ''
+        }))
+        .filter(item => item.name);
+
+
+S.cats.inputs =
+  (sp.inputs || [])
+    .map(name => {
+      const cleanName =
+        normalizeText(name);
+
+      const relation =
+        supplierInputLinks.find(
+          link =>
+            normalizeText(
+              link.input
+            ).toLowerCase() ===
+            cleanName.toLowerCase()
+        );
+
+      return {
+        name:
+          cleanName,
+
+        sourceSupplier:
+          normalizeText(
+            relation?.supplier || ''
+          )
+      };
+    })
+    .filter(item => item.name);
+
+
+S.cats.outputs =
+  (sp.outputs || [])
+    .map(name => {
+      const cleanName =
+        normalizeText(name);
+
+      const relation =
+        outputCustomerLinks.find(
+          link =>
+            normalizeText(
+              link.output
+            ).toLowerCase() ===
+            cleanName.toLowerCase()
+        );
+
+      return {
+        name:
+          cleanName,
+
+        targetCustomer:
+          normalizeText(
+            relation?.customer || ''
+          )
+      };
+    })
+    .filter(item => item.name);
+
+
+S.cats.customers =
+  outputCustomerLinks.length
+    ? outputCustomerLinks
+        .map(link => ({
+          name:
+            normalizeText(
+              link.customer
+            ),
+
+          output:
+            normalizeText(
+              link.output
+            )
+        }))
+        .filter(item =>
+          item.name &&
+          item.output
+        )
+    : (sp.customers || [])
+        .map(name => ({
+          name:
+            normalizeText(name),
+
+          output: ''
+        }))
+        .filter(item => item.name);
+
+
+S.cats.actors =
+  (sp.actors || [])
+    .map(name => ({
+      name:
+        normalizeText(name)
+    }))
+    .filter(item => item.name);
+
+
+S.cats.documents =
+  (sp.documents || [])
+    .map(name => ({
+      name:
+        normalizeText(name),
+
+      ref: ''
+    }))
+    .filter(item => item.name);
+
+
+S.acts =
+  Array.isArray(sp.activities)
+    ? sp.activities
+    : [];
 
     if ($('g_name')) $('g_name').value = sp.process_name || '';
     if ($('g_code')) $('g_code').value = sp.process_code || '';
@@ -3562,7 +3829,9 @@ function processIncomingJson(raw, source = 'unknown') {
     if (typeof syncSelects === 'function') syncSelects();
 
     S.loadTrace = {
-      source,
+source:
+  payload.sourceBlock ||
+  source,
       loadedAt: new Date().toISOString(),
       processName: sp.process_name || '',
       activityCount: Array.isArray(sp.activities) ? sp.activities.length : 0,
