@@ -3204,62 +3204,274 @@ function buildSeverity(blockingCount, warningCount) {
 function validateSipocContract(sp) {
   const blockingErrors = [];
   const warnings = [];
-  if (!normalizeText(sp.process_name)) blockingErrors.push('Falta sipoc_input.process_name.');
-  if (!normalizeText(sp.purpose)) blockingErrors.push('Falta sipoc_input.purpose.');
-  if (!Array.isArray(sp.activities) || !sp.activities.length) blockingErrors.push('sipoc_input.activities debe contener al menos una actividad.');
-  if (!normalizeText(sp.process_code)) warnings.push('process_code viene vacío.');
-  if (looksLikeSerializedJson(sp.notes)) warnings.push('notes parece contener métricas o JSON serializado; separarlo en analysis_metrics.');
-  if (!sp.inputs.length) warnings.push('No se detectaron inputs.');
-  if (!sp.outputs.length) warnings.push('No se detectaron outputs.');
-  if (!sp.customers.length) warnings.push('No se detectaron customers.');
-  if (!sp.actors.length) warnings.push('No se detectaron actores en catálogo.');
-  if (!sp.layout_hints && !sp.layoutHints) warnings.push('No se detectó layout_hints; se usará el layout horizontal base del Builder.');
+
+  if (!sp || typeof sp !== 'object') {
+    return {
+      valid: false,
+      blockingErrors: ['La estructura SIPOC no es válida.'],
+      warnings,
+      summary: {}
+    };
+  }
+
+  const activities = Array.isArray(sp.activities)
+    ? sp.activities
+    : [];
+
+  const actors = Array.isArray(sp.actors)
+    ? sp.actors
+    : [];
+
+  const inputs = Array.isArray(sp.inputs)
+    ? sp.inputs
+    : [];
+
+  const outputs = Array.isArray(sp.outputs)
+    ? sp.outputs
+    : [];
+
+  const customers = Array.isArray(sp.customers)
+    ? sp.customers
+    : [];
+
+  const suppliers = Array.isArray(sp.suppliers)
+    ? sp.suppliers
+    : [];
+
+  if (!normalizeText(sp.process_name)) {
+    blockingErrors.push('Falta process_name.');
+  }
+
+  if (!normalizeText(sp.purpose)) {
+    blockingErrors.push('Falta purpose.');
+  }
+
+  if (!activities.length) {
+    blockingErrors.push('Debe existir al menos una actividad.');
+  }
+
+  if (!normalizeText(sp.process_code)) {
+    warnings.push('process_code está vacío.');
+  }
+
+  if (!actors.length) {
+    blockingErrors.push('No existen actores/carriles.');
+  }
+
+  if (!inputs.length) {
+    warnings.push('No se detectaron entradas.');
+  }
+
+  if (!outputs.length) {
+    warnings.push('No se detectaron salidas.');
+  }
+
+  if (!suppliers.length) {
+    warnings.push('No se detectaron proveedores.');
+  }
+
+  if (!customers.length) {
+    warnings.push('No se detectaron clientes.');
+  }
+
+  if (looksLikeSerializedJson(sp.notes)) {
+    warnings.push('notes contiene JSON o métricas serializadas.');
+  }
+
   return {
     valid: blockingErrors.length === 0,
     blockingErrors,
     warnings,
     summary: {
-      activities: sp.activities.length,
-      actors: sp.actors.length,
-      inputs: sp.inputs.length,
-      outputs: sp.outputs.length,
-      customers: sp.customers.length,
-      documents: sp.documents.length
+      activities: activities.length,
+      actors: actors.length,
+      suppliers: suppliers.length,
+      inputs: inputs.length,
+      outputs: outputs.length,
+      customers: customers.length,
+      documents: Array.isArray(sp.documents)
+        ? sp.documents.length
+        : 0
     }
   };
 }
 
+
 function validateActivitiesSemantic(activities) {
   const blockingErrors = [];
   const warnings = [];
-  const names = new Set();
-  const dupes = new Set();
-  const startCount = activities.filter(a => a.is_start).length;
-  const endCount = activities.filter(a => a.is_end).length;
-  const allowedTypes = new Set(['operation','decision','control','document','end']);
-  activities.forEach((a, idx) => {
-    if (!normalizeText(a.name)) blockingErrors.push(`La actividad #${idx+1} no tiene nombre.`);
-    if (!normalizeText(a.actor)) blockingErrors.push(`La actividad "${a.name || '#'+(idx+1)}" no tiene actor.`);
-    if (!allowedTypes.has(a.type)) warnings.push(`La actividad "${a.name || '#'+(idx+1)}" tiene type no estándar: ${a.type || '(vacío)'}.`);
-    const key = normalizeText(a.name).toLowerCase();
-    if (key) {
-      if (names.has(key)) dupes.add(a.name);
-      names.add(key);
+
+  const list = Array.isArray(activities)
+    ? activities
+    : [];
+
+  const nameMap = new Map();
+  const idMap = new Map();
+
+  list.forEach((activity, index) => {
+    const name = normalizeText(activity.name);
+    const id = normalizeText(activity.id);
+    const actor = normalizeText(activity.actor);
+
+    if (!name) {
+      blockingErrors.push(
+        `Actividad #${index + 1} sin nombre.`
+      );
+    }
+
+    if (!actor) {
+      blockingErrors.push(
+        `Actividad "${name || index + 1}" sin actor/carril.`
+      );
+    }
+
+    if (id) {
+      const key = id.toLowerCase();
+
+      if (idMap.has(key)) {
+        blockingErrors.push(
+          `ID de actividad duplicado: ${id}.`
+        );
+      }
+
+      idMap.set(key, activity);
+    }
+
+    if (name) {
+      const key = name.toLowerCase();
+
+      if (nameMap.has(key)) {
+        blockingErrors.push(
+          `Nombre de actividad duplicado: ${name}.`
+        );
+      }
+
+      nameMap.set(key, activity);
     }
   });
-  if (dupes.size) warnings.push('Existen actividades con nombres duplicados: ' + Array.from(dupes).join(', '));
-  if (startCount > 1) warnings.push('Hay más de una actividad marcada como inicio.');
-  if (endCount > 1) warnings.push('Hay más de una actividad marcada como cierre.');
-  if (activities.length && activities.every(a => a.type === 'operation')) warnings.push('Todas las actividades vienen como operation; revisar si faltan decisiones o cierres.');
-  const validNames = new Set(activities.map(a => normalizeText(a.name)).filter(Boolean));
-  activities.forEach(a => {
-    (a.previous || []).forEach(p => { if (normalizeText(p) && !validNames.has(normalizeText(p))) warnings.push(`La actividad "${a.name}" referencia previous inexistente: ${p}`); });
-    (a.next || []).forEach(n => { if (normalizeText(n) && !validNames.has(normalizeText(n))) warnings.push(`La actividad "${a.name}" referencia next inexistente: ${n}`); });
-    if (a.type === 'decision' && (a.next || []).length < 2) warnings.push(`La decisión "${a.name}" tiene menos de dos salidas definidas.`);
-  });
-  return { blockingErrors, warnings };
-}
 
+  const validNames = new Set(
+    list
+      .map(activity =>
+        normalizeText(activity.name).toLowerCase()
+      )
+      .filter(Boolean)
+  );
+
+  list.forEach(activity => {
+    const name =
+      normalizeText(activity.name) || 'Sin nombre';
+
+    const previous =
+      Array.isArray(activity.previous)
+        ? activity.previous
+        : [];
+
+    const next =
+      Array.isArray(activity.next)
+        ? activity.next
+        : [];
+
+    previous.forEach(reference => {
+      const target =
+        normalizeText(reference).toLowerCase();
+
+      if (target && !validNames.has(target)) {
+        blockingErrors.push(
+          `"${name}" referencia una actividad previa inexistente: ${reference}.`
+        );
+      }
+    });
+
+    next.forEach(reference => {
+      const target =
+        normalizeText(reference).toLowerCase();
+
+      if (target && !validNames.has(target)) {
+        blockingErrors.push(
+          `"${name}" referencia una actividad siguiente inexistente: ${reference}.`
+        );
+      }
+    });
+
+    next.forEach(reference => {
+      const target =
+        nameMap.get(
+          normalizeText(reference).toLowerCase()
+        );
+
+      if (
+        target &&
+        !target.previous
+          .map(value =>
+            normalizeText(value).toLowerCase()
+          )
+          .includes(name.toLowerCase())
+      ) {
+        warnings.push(
+          `La conexión "${name}" → "${reference}" no es recíproca en previous.`
+        );
+      }
+    });
+
+    if (
+      activity.type === 'decision' &&
+      next.length < 2
+    ) {
+      blockingErrors.push(
+        `La decisión "${name}" debe tener al menos dos rutas.`
+      );
+    }
+
+    if (
+      activity.type === 'decision' &&
+      Array.isArray(activity.next_relations)
+    ) {
+      const unlabeled =
+        activity.next_relations.filter(
+          relation =>
+            !normalizeText(relation.label)
+        );
+
+      if (unlabeled.length) {
+        warnings.push(
+          `La decisión "${name}" tiene rutas sin etiqueta Sí/No u otra condición.`
+        );
+      }
+    }
+  });
+
+  const startCount =
+    list.filter(activity =>
+      activity.is_start
+    ).length;
+
+  const endCount =
+    list.filter(activity =>
+      activity.is_end
+    ).length;
+
+  if (!startCount) {
+    warnings.push('No se identificó actividad inicial.');
+  }
+
+  if (!endCount) {
+    warnings.push('No se identificó actividad final.');
+  }
+
+  if (startCount > 1) {
+    warnings.push('Existe más de una actividad inicial.');
+  }
+
+  if (endCount > 1) {
+    warnings.push('Existe más de una actividad final.');
+  }
+
+  return {
+    blockingErrors: [...new Set(blockingErrors)],
+    warnings: [...new Set(warnings)]
+  };
+}
 
 function renderLoadDiagnostics(payload) {
   const box = $('load_diag');
