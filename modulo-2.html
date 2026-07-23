@@ -1507,7 +1507,7 @@ button.ai-run:hover{background:#0369A1;border-color:#0369A1}
 // SGMP · Loader de prompts desde Sheet
 // Incluir este bloque al inicio del <script> de cada módulo
 // ══════════════════════════════════════════════════════
-var SGMP_API = 'https://script.google.com/macros/s/AKfycbwGOvr8ypGtibCLQp66s1oowmYJQUCXBWJ5ZUoR3oFxwmy71VQfOsXFqv4cyT_7JjoS/exec';
+var SGMP_API = 'https://script.google.com/macros/s/AKfycbyQZi1flaILc4e3I7MFp8gLctkzC6VccjfFz5aHluMrGZLwOUeS3uQaHPsMZ3l5yfDw-Q/exec';
 var SGMP_PROMPTS = {};
 var SGMP_PROMPT_META = {};
 var SGMP_STAGE_CONFIG = {};
@@ -1596,17 +1596,70 @@ function sgmpGlobalApiEnabled(){
   return sgmpYes(value);
 }
 function sgmpStageUseApi(stageCode){
-  var runtime = (window.SGMP_STAGE_CONFIG_RUNTIME || {})[stageCode] || {};
-  if(runtime.use_api !== undefined || runtime.useApi !== undefined || runtime.api_enabled !== undefined || runtime.apiEnabled !== undefined){
-    return sgmpYes(runtime.use_api || runtime.useApi || runtime.api_enabled || runtime.apiEnabled);
+  const runtime =
+    (window.SGMP_STAGE_CONFIG_RUNTIME || {})[
+      stageCode
+    ] || {};
+
+  const runtimeValue =
+    runtime.use_api ??
+    runtime.useApi ??
+    runtime.api_enabled ??
+    runtime.apiEnabled;
+
+  if(runtimeValue !== undefined){
+    return sgmpYes(runtimeValue);
   }
-  var mode = runtime.execution_mode || runtime.executionMode || runtime.mode || runtime.DEFAULT_EXECUTION_MODE;
-  if(['HYBRID','API','AUTO'].includes(String(mode || '').trim().toUpperCase())) return true;
-  if(['MANUAL','OFF','FALSE','NO'].includes(String(mode || '').trim().toUpperCase())) return false;
-  var meta = SGMP_STAGE_CONFIG[stageCode] || {};
-  var value = meta.use_api || meta.useApi || meta.api_enabled || meta.apiEnabled;
-  if(value !== undefined) return sgmpYes(value);
-  return true; // SB opera por defecto en modo híbrido si la API global está activa.
+
+  const mode =
+    runtime.execution_mode ||
+    runtime.executionMode ||
+    runtime.mode ||
+    runtime.DEFAULT_EXECUTION_MODE ||
+    '';
+
+  const normalizedMode =
+    String(mode)
+      .trim()
+      .toUpperCase();
+
+  if(
+    ['HYBRID', 'API', 'AUTO']
+      .includes(normalizedMode)
+  ){
+    return true;
+  }
+
+  if(
+    ['MANUAL', 'OFF', 'FALSE', 'NO']
+      .includes(normalizedMode)
+  ){
+    return false;
+  }
+
+  const metadata =
+    SGMP_STAGE_CONFIG[
+      stageCode
+    ] || {};
+
+  const metadataValue =
+    metadata.use_api ??
+    metadata.useApi ??
+    metadata.api_enabled ??
+    metadata.apiEnabled;
+
+  if(metadataValue !== undefined){
+    return sgmpYes(
+      metadataValue
+    );
+  }
+
+  /*
+   * Seguridad exclusiva del SIPOC Builder:
+   * una configuración ausente o incompleta
+   * nunca debe habilitar la API.
+   */
+  return false;
 }
 function sgmpStageApiEnabled(stageCode){ return sgmpGlobalApiEnabled() && sgmpStageUseApi(stageCode); }
 function sgmpExtractAIText(res){
@@ -5696,175 +5749,7 @@ function renderOutReport() {
 // ═══════════════════════════════════════════════════════════════
 // PROMPTS
 // ═══════════════════════════════════════════════════════════════
-function defaultPrompt(key, ...args) {
-  const sp = S.sp || {};
-  if (key === 'p0') {
-    return `ACTÚA COMO arquitecto senior de procesos y especialista SIPOC.
-
-OBJETIVO:
-Convertir la información inicial del proceso en JSON compatible con SIPOC Builder. La salida debe permitir construir un diagrama tipo Visio/draw.io con Suppliers e Inputs a la izquierda, actores internos por carriles al centro y Outputs/Customers a la derecha.
-
-REGLAS:
-- Responde SOLO JSON válido.
-- No inventes datos no presentes.
-- No propongas mejoras.
-- No hagas análisis profundo.
-- Diferencia proveedores externos, entradas, actores internos, salidas y clientes.
-- Las actividades deben seguir el orden real del flujo; no generes una lista vertical simple si el documento tiene carriles.
-- Cada actividad debe tener order, name, type, actor, lane, document, previous, next, ext_suppliers, ext_inputs, ext_outputs, ext_customers, note y observations.
-- type solo puede ser operation o decision salvo que el documento fuerce control/document/end.
-- previous y next usan nombres de actividades, no IDs.
-- Si una decisión tiene rutas Sí/No u otra rama, registra branch_label o route_label en note.
-- Conecta elementos SIPOC solo cuando estén explícitos o sean obvios en el documento.
-- note debe ser siempre texto plano. Nunca devuelvas objetos, arrays de objetos ni "[object Object]" dentro de notes o activity.note.
-- Si hay notas aclaratorias del diagrama, ubícalas en la actividad correspondiente; no las acumules como objetos en notes.
-
-CONTRATO JSON:
-{
-  "sipoc_input": {
-    "process_code": "",
-    "process_name": "",
-    "purpose": "",
-    "start_event": "",
-    "end_event": "",
-    "notes": "",
-    "suppliers": [],
-    "inputs": [],
-    "outputs": [],
-    "customers": [],
-    "actors": [],
-    "documents": [],
-    "layout_hints": {
-      "diagram_style": "horizontal_sipoc_swimlane",
-      "sequence_strategy": "top_to_bottom_by_flow_order",
-      "activity_positioning": "x_by_actor_lane_y_by_sequence_order",
-      "edge_style": "orthogonal_elbow",
-      "avoid_crossing": true,
-      "minimize_routing_nodes": true,
-      "route_strategy": "orthogonal_with_waypoints",
-      "waypoint_policy": "use_waypoints_before_route_nodes",
-      "allow_route_anchors": true,
-      "peripheral_connection_policy": "connect_only_declared_ext_refs"
-    },
-    "activities": []
-  }
-}
-
-INFORMACIÓN DEL PROCESO:
-${args[0] || ''}`;
-  }
-
-  if (key === 'f1') {
-    return `ACTÚA COMO verificador técnico de XML draw.io.
-
-OBJETIVO:
-Revisar la plantilla XML sin rediseñarla. Debes preservar todos los nodos, IDs, parents y coordenadas salvo correcciones mínimas de solapamiento evidente.
-
-REGLAS:
-- Responde SOLO con XML draw.io, comenzando en <mxGraphModel.
-- No elimines nodos.
-- No agregues edges todavía.
-- Mantén parent="1" para nodos principales.
-- Conserva el layout horizontal: Suppliers, Inputs, Proceso por carriles, Outputs, Customers.
-- Si ajustas coordenadas, hazlo de forma mínima y sin convertir el flujo en columna vertical.
-
-MAPA DE IDS:
-${args[1] || ''}
-
-XML PLANTILLA:
-${args[0] || ''}`;
-  }
-
-  if (key === 'f2') {
-    return `ACTÚA COMO diagramador BPM/SIPOC experto en draw.io.
-
-OBJETIVO:
-Agregar SOLO las conexiones del flujo interno entre actividades usando previous/next. No conectes todavía Suppliers, Inputs, Outputs ni Customers.
-
-REGLAS DE CONEXIÓN:
-- Responde SOLO con XML draw.io completo.
-- No elimines ni renombres nodos.
-- Usa edge="1" parent="1".
-- Usa conectores ortogonales/elbow.
-- Evita cruces de líneas; aprovecha que las actividades están en filas por secuencia y columnas por actor.
-- Primero usa waypoints en mxGeometry de los edges para evitar cruces; no agregues nodos de ruteo en F2 salvo que sea imprescindible.
-- Para waypoints usa <Array as="points"><mxPoint x="..." y="..."/></Array> dentro de mxGeometry del edge.
-- Para decisiones, usa las rutas o etiquetas disponibles en note, branch_label o route_label.
-- Si previous/next contradicen el orden visual, respeta previous/next y evita cruzar líneas con puntos intermedios simples.
-
-CONTEXTO SIPOC:
-${JSON.stringify(sp, null, 2)}
-
-MAPA DE IDS:
-${args[2] || args[1] || ''}
-
-XML F1:
-${args[0] || ''}`;
-  }
-
-  if (key === 'f3') {
-    return `ACTÚA COMO diagramador SIPOC experto en draw.io.
-
-OBJETIVO:
-Agregar la capa SIPOC periférica sin modificar el flujo interno: Suppliers -> Inputs -> Actividades -> Outputs -> Customers.
-
-REGLAS:
-- Responde SOLO con XML draw.io completo.
-- No elimines nodos ni edges existentes.
-- Conecta primero las referencias declaradas en ext_suppliers, ext_inputs, ext_outputs y ext_customers.
-- Si ninguna actividad trae referencias externas pero existen catálogos SIPOC, infiere conexiones mínimas por cercanía semántica y orden: inputs hacia primeras actividades lógicas y outputs desde actividades finales o claramente relacionadas. No conectes todo con todo.
-- Si solo algunas actividades declaran referencias externas, no inventes conexiones para las demás.
-- Usa conectores ortogonales/elbow con waypoints; evita cruces y evita líneas sobre nodos.
-- Mantén Suppliers e Inputs a la izquierda; Outputs y Customers a la derecha.
-- Minimiza nodos de ruteo y no conviertas el diagrama en una caja hacia abajo.
-
-CONTEXTO SIPOC:
-${JSON.stringify(sp, null, 2)}
-
-MAPA DE IDS:
-${args[2] || args[1] || ''}
-
-XML F2:
-${args[0] || ''}`;
-  }
-
-  if (key === 'f4') {
-    return `ACTÚA COMO optimizador experto de diagramas draw.io para procesos SIPOC con carriles.
-
-OBJETIVO:
-Tomar el XML ya conectado y optimizarlo para que se parezca a un SIPOC profesional tipo Visio: compacto, legible, con menos cruces y con ruteo limpio.
-
-REGLAS:
-- Responde SOLO con XML draw.io completo.
-- No cambies el significado del proceso.
-- No elimines actividades, carriles, entradas, salidas, proveedores ni clientes.
-- No renombres nodos de negocio.
-- Puedes mover nodos si mejora la lectura y no rompe la secuencia.
-- Prioriza waypoints en edges antes que nodos de ruteo. Los waypoints deben ir en mxGeometry con <Array as="points"><mxPoint x="..." y="..."/></Array>.
-- Puedes agregar nodos de ruteo/conectores invisibles solo si los waypoints no bastan para reducir cruces.
-- Si agregas nodos de ruteo, deben ser invisibles, no representar actividades y usar IDs route_*. Estilo sugerido: ellipse;fillColor=none;strokeColor=none;opacity=0;movable=0;resizable=0.
-- Usa conectores ortogonales/elbow.
-- Evita líneas pasando encima de nodos.
-- Rutea conexiones largas por los bordes de carriles o pasillos laterales; no atravieses cajas de actividad.
-- Mantén actividades ordenadas por secuencia de arriba hacia abajo.
-- Mantén carriles por actor interno.
-- Mantén Suppliers e Inputs a la izquierda y Outputs/Customers a la derecha.
-- Si hay decisiones, conserva etiquetas de rama cuando existan.
-- Prioriza claridad, compactación horizontal y trazabilidad visual.
-
-CONTEXTO SIPOC:
-${JSON.stringify(sp, null, 2)}
-
-MAPA DE IDS:
-${args[2] || args[1] || ''}
-
-XML F3:
-${args[0] || ''}`;
-  }
-
-  return 'Prompt no disponible. Revisa configuración o conexión de prompts.';
-}
-
+  
 function replacePromptToken(
   text,
   token,
@@ -6124,240 +6009,359 @@ function buildSBSipocPromptContext(sp){
 }
   
 
-function getPrompt(key, ...args) {
-  /*
-   * 1. Configuración manual local.
-   */
-  const customPrompt =
-    S.cfg.prompts[key];
-
-  if(
-    customPrompt &&
-    customPrompt.trim()
-  ){
-    return customPrompt;
-  }
-
-
-  /*
-   * 2. Prompt administrado desde Sheet.
-   */
+function getPrompt(
+  key,
+  ...args
+){
   const sheetKey =
     'prompt_' + key;
 
-  let sheetPrompt =
+  if(!SGMP_LOADED){
+    gMsg(
+      'warn',
+      'Los prompts oficiales de Google Sheets todavía se están cargando.'
+    );
+
+    return '';
+  }
+
+  const template =
     sgmpPrompt(
       sheetKey,
       ''
     );
 
-  if(sheetPrompt){
-    const sp =
-      S.sp || {};
-
-    const originalTemplate =
-      sheetPrompt;
-
-    const flowContext =
-      JSON.stringify(
-        buildSBFlowPromptContext(sp),
-        null,
-        2
-      );
-
-    const sipocContext =
-      JSON.stringify(
-        buildSBSipocPromptContext(sp),
-        null,
-        2
-      );
-
-    const fullContext =
-      JSON.stringify(
-        sp,
-        null,
-        2
-      );
-
-
-    /*
-     * Resolver correctamente el XML
-     * correspondiente a cada etapa.
-     */
-    const templateXml =
-      key === 'f1'
-        ? args[0] || ''
-        : S.tplXml || '';
-
-    const xmlF1 =
-      key === 'f2'
-        ? args[0] || ''
-        : S.xmlF1 || '';
-
-    const xmlF2 =
-      key === 'f3'
-        ? args[0] || ''
-        : S.xmlF2 || '';
-
-    const xmlF3 =
-      key === 'f4'
-        ? args[0] || ''
-        : S.xmlF3 || '';
-
-    const idReference =
-      key === 'f1'
-        ? args[1] || ''
-        : args[2] || S.idRef || '';
-
-
-    const replacements = {
-      '{{content}}':
-        key === 'p0'
-          ? args[0] || ''
-          : '',
-
-      '{{process_code}}':
-        sp.process_code || '',
-
-      '{{process_name}}':
-        sp.process_name || '',
-
-      '{{purpose}}':
-        sp.purpose || '',
-
-      '{{actors}}':
-        (sp.actors || [])
-          .join(', '),
-
-      '{{suppliers}}':
-        (sp.suppliers || [])
-          .join(', '),
-
-      '{{inputs}}':
-        (sp.inputs || [])
-          .join(', '),
-
-      '{{outputs}}':
-        (sp.outputs || [])
-          .join(', '),
-
-      '{{customers}}':
-        (sp.customers || [])
-          .join(', '),
-
-      '{{activities_json}}':
-        JSON.stringify(
-          sp.activities || [],
-          null,
-          2
-        ),
-
-      '{{flow_relations}}':
-        flowContext,
-
-      '{{sipoc_relations}}':
-        sipocContext,
-
-      '{{context_json}}':
-        fullContext,
-
-      '{{idRef}}':
-        idReference,
-
-      '{{tplXml}}':
-        templateXml,
-
-      '{{xmlF1}}':
-        xmlF1,
-
-      '{{xmlF2}}':
-        xmlF2,
-
-      '{{xmlF3}}':
-        xmlF3
-    };
-
-
-    Object.entries(
-      replacements
-    ).forEach(
-      ([token, value]) => {
-        sheetPrompt =
-          replacePromptToken(
-            sheetPrompt,
-            token,
-            value
-          );
-      }
+  if(
+    !template ||
+    !template.trim()
+  ){
+    gMsg(
+      'err',
+      `No se encontró ${sheetKey} activo en Google Sheets.`
     );
 
-
-    /*
-     * Compatibilidad temporal:
-     * si el prompt vigente del Sheet todavía
-     * no contiene los nuevos placeholders,
-     * se añade el contexto automáticamente.
-     */
-    if(
-      key === 'f2' &&
-      !originalTemplate.includes(
-        '{{flow_relations}}'
-      ) &&
-      !originalTemplate.includes(
-        '{{context_json}}'
-      )
-    ){
-      sheetPrompt +=
-        '\n\nCONTEXTO RELACIONAL OBLIGATORIO DEL FLUJO INTERNO:\n' +
-        flowContext;
-    }
-
-
-    if(
-      key === 'f3' &&
-      !originalTemplate.includes(
-        '{{sipoc_relations}}'
-      ) &&
-      !originalTemplate.includes(
-        '{{context_json}}'
-      )
-    ){
-      sheetPrompt +=
-        '\n\nRELACIONES SIPOC OBLIGATORIAS:\n' +
-        sipocContext;
-    }
-
-
-    if(
-      key === 'f4' &&
-      !originalTemplate.includes(
-        '{{context_json}}'
-      )
-    ){
-      sheetPrompt +=
-        '\n\nCONTEXTO DEL PROCESO QUE DEBE PRESERVARSE:\n' +
-        fullContext;
-    }
-
-    return sheetPrompt;
+    return '';
   }
 
-
   /*
-   * 3. Fallback interno del HTML.
+   * Cada prompt oficial debe declarar
+   * expresamente sus insumos dinámicos.
    */
-  return defaultPrompt(
-    key,
-    ...args
+  const requiredTokens = {
+    p0: [
+      '{{content}}'
+    ],
+
+    f1: [
+      '{{idRef}}',
+      '{{tplXml}}'
+    ],
+
+    f2: [
+      '{{flow_relations}}',
+      '{{idRef}}',
+      '{{xmlF1}}'
+    ],
+
+    f3: [
+      '{{sipoc_relations}}',
+      '{{idRef}}',
+      '{{xmlF2}}'
+    ],
+
+    f4: [
+      '{{context_json}}',
+      '{{idRef}}',
+      '{{xmlF3}}'
+    ]
+  };
+
+  const missingTokens =
+    (
+      requiredTokens[key] ||
+      []
+    ).filter(
+      token =>
+        !template.includes(token)
+    );
+
+  if(missingTokens.length){
+    gMsg(
+      'err',
+      `${sheetKey} no es compatible con el frontend vigente. ` +
+      `Faltan: ${missingTokens.join(', ')}.`
+    );
+
+    return '';
+  }
+
+  const sp =
+    S.sp || {};
+
+  const templateXml =
+    key === 'f1'
+      ? args[0] || ''
+      : S.tplXml || '';
+
+  const xmlF1 =
+    key === 'f2'
+      ? args[0] || ''
+      : S.xmlF1 || '';
+
+  const xmlF2 =
+    key === 'f3'
+      ? args[0] || ''
+      : S.xmlF2 || '';
+
+  const xmlF3 =
+    key === 'f4'
+      ? args[0] || ''
+      : S.xmlF3 || '';
+
+  const idReference =
+    key === 'f1'
+      ? args[1] || S.idRef || ''
+      : args[2] || S.idRef || '';
+
+  const requiredInput = {
+    p0:
+      args[0] || '',
+
+    f1:
+      templateXml,
+
+    f2:
+      xmlF1,
+
+    f3:
+      xmlF2,
+
+    f4:
+      xmlF3
+  };
+
+  if(
+    Object.prototype.hasOwnProperty.call(
+      requiredInput,
+      key
+    ) &&
+    !String(
+      requiredInput[key] || ''
+    ).trim()
+  ){
+    gMsg(
+      'warn',
+      `No existe el insumo requerido para generar ${sheetKey}.`
+    );
+
+    return '';
+  }
+
+  const flowContext =
+    JSON.stringify(
+      buildSBFlowPromptContext(
+        sp
+      ),
+      null,
+      2
+    );
+
+  const sipocContext =
+    JSON.stringify(
+      buildSBSipocPromptContext(
+        sp
+      ),
+      null,
+      2
+    );
+
+  const fullContext =
+    JSON.stringify(
+      sp,
+      null,
+      2
+    );
+
+  const replacements = {
+    '{{content}}':
+      key === 'p0'
+        ? args[0] || ''
+        : '',
+
+    '{{process_code}}':
+      sp.process_code || '',
+
+    '{{process_name}}':
+      sp.process_name || '',
+
+    '{{purpose}}':
+      sp.purpose || '',
+
+    '{{actors}}':
+      (sp.actors || [])
+        .join(', '),
+
+    '{{suppliers}}':
+      (sp.suppliers || [])
+        .join(', '),
+
+    '{{inputs}}':
+      (sp.inputs || [])
+        .join(', '),
+
+    '{{outputs}}':
+      (sp.outputs || [])
+        .join(', '),
+
+    '{{customers}}':
+      (sp.customers || [])
+        .join(', '),
+
+    '{{activities_json}}':
+      JSON.stringify(
+        sp.activities || [],
+        null,
+        2
+      ),
+
+    '{{flow_relations}}':
+      flowContext,
+
+    '{{sipoc_relations}}':
+      sipocContext,
+
+    '{{context_json}}':
+      fullContext,
+
+    '{{idRef}}':
+      idReference,
+
+    '{{tplXml}}':
+      templateXml,
+
+    '{{xmlF1}}':
+      xmlF1,
+
+    '{{xmlF2}}':
+      xmlF2,
+
+    '{{xmlF3}}':
+      xmlF3
+  };
+
+  let consolidated =
+    String(template);
+
+  Object.entries(
+    replacements
+  ).forEach(
+    ([token, value]) => {
+      consolidated =
+        replacePromptToken(
+          consolidated,
+          token,
+          value
+        );
+    }
+  );
+
+  const unresolved =
+    consolidated.match(
+      /\{\{[^{}]+\}\}/g
+    ) || [];
+
+  if(unresolved.length){
+    gMsg(
+      'err',
+      `${sheetKey} conserva variables sin resolver: ` +
+      [...new Set(unresolved)]
+        .join(', ')
+    );
+
+    return '';
+  }
+
+  return consolidated.trim();
+}
+// Prompts gestionados desde SGMP Sheet
+
+function buildSBPrompt(
+  key,
+  boxId,
+  ...args
+){
+  const box =
+    $(boxId);
+
+  if(!box){
+    return false;
+  }
+
+  const prompt =
+    getPrompt(
+      key,
+      ...args
+    );
+
+  if(!prompt){
+    box.textContent = '';
+
+    return false;
+  }
+
+  box.textContent =
+    prompt;
+
+  gMsg(
+    'ok',
+    `Prompt ${key.toUpperCase()} consolidado desde Google Sheets.`
+  );
+
+  return true;
+}
+
+
+function buildF1Prompt(){
+  return buildSBPrompt(
+    'f1',
+    'pf1_box',
+    S.tplXml,
+    S.idRef
   );
 }
 
-// Prompts gestionados desde SGMP Sheet
 
-function buildF1Prompt() { $('pf1_box').textContent = getPrompt('f1', S.tplXml, S.idRef); }
-function buildF2Prompt() { $('pf2_box').textContent = getPrompt('f2', S.xmlF1, S.sp, S.idRef); }
-function buildF3Prompt() { $('pf3_box').textContent = getPrompt('f3', S.xmlF2, S.sp, S.idRef); }
-function buildF4Prompt() { $('pf4_box').textContent = getPrompt('f4', S.xmlF3, S.sp, S.idRef); }
+function buildF2Prompt(){
+  return buildSBPrompt(
+    'f2',
+    'pf2_box',
+    S.xmlF1,
+    S.sp,
+    S.idRef
+  );
+}
+
+
+function buildF3Prompt(){
+  return buildSBPrompt(
+    'f3',
+    'pf3_box',
+    S.xmlF2,
+    S.sp,
+    S.idRef
+  );
+}
+
+
+function buildF4Prompt(){
+  return buildSBPrompt(
+    'f4',
+    'pf4_box',
+    S.xmlF3,
+    S.sp,
+    S.idRef
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
