@@ -3851,17 +3851,89 @@ border-left:5px solid #8ED3E8 !important;
     resize:vertical !important;
   }
 
-  .analysis-waste-review-grid
-  select[multiple]{
-    min-height:148px;
-    padding:7px !important;
+  .analysis-waste-activity-native{
+    display:none !important;
   }
 
-  .analysis-waste-review-grid
-  select[multiple] option{
-    padding:7px 8px;
-    border-radius:7px;
-    white-space:normal;
+  .analysis-waste-activity-picker{
+    width:100%;
+    overflow:hidden;
+    border:1px solid rgba(11,46,89,.16);
+    border-radius:12px;
+    background:#FFFFFF;
+    transition:
+      border-color .16s ease,
+      box-shadow .16s ease;
+  }
+
+  .analysis-waste-activity-picker[open]{
+    border-color:#1D5FD0;
+    box-shadow:0 0 0 3px rgba(29,95,208,.10);
+  }
+
+  .analysis-waste-activity-picker > summary{
+    cursor:pointer;
+    list-style:none;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    min-height:44px;
+    padding:10px 12px;
+    color:#0B2E59;
+    font-size:.82rem;
+    font-weight:850;
+    user-select:none;
+  }
+
+  .analysis-waste-activity-picker
+  > summary::-webkit-details-marker{
+    display:none;
+  }
+
+  .analysis-waste-activity-picker-arrow{
+    flex:0 0 auto;
+    color:#5B6F8A;
+    font-size:.9rem;
+    transition:transform .16s ease;
+  }
+
+  .analysis-waste-activity-picker[open]
+  .analysis-waste-activity-picker-arrow{
+    transform:rotate(180deg);
+  }
+
+  .analysis-waste-activity-options{
+    max-height:240px;
+    overflow-y:auto;
+    padding:8px;
+    border-top:1px solid rgba(11,46,89,.08);
+    background:#F8FAFC;
+  }
+
+  .analysis-waste-activity-option{
+    cursor:pointer;
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    padding:8px 9px;
+    border-radius:9px;
+    color:#294866;
+    font-size:.76rem;
+    font-weight:750;
+    line-height:1.35;
+  }
+
+  .analysis-waste-activity-option:hover{
+    background:#EEF4FF;
+  }
+
+  .analysis-waste-activity-option input{
+    flex:0 0 auto;
+    width:16px;
+    height:16px;
+    margin:1px 0 0;
+    accent-color:#1D5FD0;
   }
 
   .analysis-waste-field-note{
@@ -27548,6 +27620,59 @@ function lmpRenderWasteReview_(parsed){
         })
         .join('');
 
+    const activityCheckboxesHtml =
+      executableActivities
+        .map(function(activity){
+          const activityId = String(
+            activity?.id || ''
+          ).trim();
+
+          const activityName = String(
+            activity?.name || ''
+          ).trim();
+
+          return `
+            <label class="analysis-waste-activity-option">
+              <input
+                type="checkbox"
+                data-waste-activity-checkbox
+                value="${escapeHtml(activityId)}"
+                ${
+                  relatedActivityIds.includes(
+                    activityId
+                  )
+                    ? 'checked'
+                    : ''
+                }
+              >
+
+              <span>
+                ${escapeHtml(
+                  activityId +
+                  ' · ' +
+                  (
+                    activityName ||
+                    'Actividad sin nombre'
+                  )
+                )}
+              </span>
+            </label>
+          `;
+        })
+        .join('');
+
+    const activitySelectionText =
+      relatedActivityIds.length
+        ? (
+            relatedActivityIds.length +
+            (
+              relatedActivityIds.length === 1
+                ? ' actividad seleccionada'
+                : ' actividades seleccionadas'
+            )
+          )
+        : 'Seleccionar actividades';
+
     const evidenceHtml =
       evidence.length
         ? evidence
@@ -27664,33 +27789,48 @@ function lmpRenderWasteReview_(parsed){
             </select>
           </div>
 
-          <div class="field">
+                    <div class="field">
             <label>
               Actividades relacionadas
             </label>
 
+            <details
+              class="analysis-waste-activity-picker"
+              data-waste-activity-picker
+            >
+              <summary>
+                <span data-waste-activity-picker-label>
+                  ${escapeHtml(activitySelectionText)}
+                </span>
+
+                <span
+                  class="analysis-waste-activity-picker-arrow"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </summary>
+
+              <div class="analysis-waste-activity-options">
+                ${activityCheckboxesHtml}
+              </div>
+            </details>
+
             <select
+              class="analysis-waste-activity-native"
               data-waste-field="relatedActivityIds"
               multiple
-              size="${
-                Math.min(
-                  Math.max(
-                    executableActivities.length,
-                    4
-                  ),
-                  7
-                )
-              }"
+              tabindex="-1"
+              aria-hidden="true"
             >
               ${activityOptionsHtml}
             </select>
 
             <small class="analysis-waste-field-note">
-              Selecciona una o varias actividades ejecutables.
-              En escritorio usa Ctrl o Cmd para seleccionar varias.
+              Marca una o varias actividades ejecutables.
+              La selección se cierra al hacer clic fuera.
             </small>
           </div>
-
           <div class="field analysis-waste-wide">
             <label>
               Descripción
@@ -27750,6 +27890,158 @@ function lmpRenderWasteReview_(parsed){
       details.querySelector(
         '[data-waste-field="relatedActivityIds"]'
       );
+
+    const activityPicker =
+      details.querySelector(
+        '[data-waste-activity-picker]'
+      );
+
+    const activityPickerLabel =
+      details.querySelector(
+        '[data-waste-activity-picker-label]'
+      );
+
+    const activityCheckboxes =
+      Array.from(
+        details.querySelectorAll(
+          '[data-waste-activity-checkbox]'
+        )
+      );
+
+    const refreshActivityPickerLabel =
+      function(){
+        const selectedCount =
+          activityCheckboxes.filter(
+            function(checkbox){
+              return checkbox.checked;
+            }
+          ).length;
+
+        if(activityPickerLabel){
+          activityPickerLabel.textContent =
+            selectedCount
+              ? (
+                  selectedCount +
+                  (
+                    selectedCount === 1
+                      ? ' actividad seleccionada'
+                      : ' actividades seleccionadas'
+                  )
+                )
+              : 'Seleccionar actividades';
+        }
+      };
+
+    const syncActivityPickerSelection =
+      function(){
+        const selectedIds =
+          new Set(
+            activityCheckboxes
+              .filter(function(checkbox){
+                return checkbox.checked;
+              })
+              .map(function(checkbox){
+                return String(
+                  checkbox.value || ''
+                ).trim();
+              })
+              .filter(Boolean)
+          );
+
+        Array.from(
+          activitiesInput?.options || []
+        ).forEach(function(option){
+          option.selected =
+            selectedIds.has(
+              String(
+                option.value || ''
+              ).trim()
+            );
+        });
+
+        refreshActivityPickerLabel();
+
+        if(activitiesInput){
+          activitiesInput.dispatchEvent(
+            new Event(
+              'change',
+              {
+                bubbles:
+                  true
+              }
+            )
+          );
+        }
+      };
+
+    activityCheckboxes.forEach(
+      function(checkbox){
+        checkbox.addEventListener(
+          'change',
+          syncActivityPickerSelection
+        );
+      }
+    );
+
+    if(activityPicker){
+      activityPicker.addEventListener(
+        'toggle',
+        function(){
+          if(!activityPicker.open){
+            return;
+          }
+
+          document.querySelectorAll(
+            '[data-waste-activity-picker][open]'
+          ).forEach(function(otherPicker){
+            if(otherPicker !== activityPicker){
+              otherPicker.open =
+                false;
+            }
+          });
+        }
+      );
+
+      details.addEventListener(
+        'toggle',
+        function(){
+          if(!details.open){
+            activityPicker.open =
+              false;
+          }
+        }
+      );
+    }
+
+    if(
+      window
+        .__LMP_WASTE_ACTIVITY_PICKER_OUTSIDE_BOUND__ !==
+      true
+    ){
+      document.addEventListener(
+        'click',
+        function(event){
+          document.querySelectorAll(
+            '[data-waste-activity-picker][open]'
+          ).forEach(function(openPicker){
+            if(
+              !openPicker.contains(
+                event.target
+              )
+            ){
+              openPicker.open =
+                false;
+            }
+          });
+        }
+      );
+
+      window
+        .__LMP_WASTE_ACTIVITY_PICKER_OUTSIDE_BOUND__ =
+          true;
+    }
+
+    refreshActivityPickerLabel();
 
     const descriptionInput =
       details.querySelector(
