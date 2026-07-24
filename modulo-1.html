@@ -26624,6 +26624,1255 @@ function lmpValidateProblemStageContract_(parsed){
 }
 
 
+function lmpValidateProblemStageContract_(parsed){
+  const topKeys = ['stage','analysis_type','methodology','source_control','problems','distribution','summary','excludedFindings','warnings','dataGaps','validation'];
+  const sourceControlKeys = ['source_activity_count','reviewed_activity_count','identified_problem_count','used_ava_result','used_waste_result','used_additional_information','preserved_activity_ids','preserved_activity_names'];
+  const problemKeys = ['id','problem','description','symptom','activity_id','activity','related_activities','actor','area','sequence','evidence','frequency','occurrence_condition','consequence','impact_dimensions','probable_cause','cause_status','cause_evidence','related_wastes','potential_constraint_candidate','constraint_candidate_reason','priority','priority_justification','confidence','requires_validation','validation_question'];
+  const impactKeys = ['time','quality','cost','service','capacity','information','compliance','safety','traceability'];
+  const summaryKeys = ['highest_priority_problems','recurrent_problem_patterns','most_affected_activities','most_affected_actors_or_areas','main_consequences','probable_cause_patterns','constraint_candidates'];
+  const priorities = ['alta','media','baja'];
+  const causeStatuses = ['confirmed','probable','unknown'];
+  const confidenceLevels = ['high','medium','low'];
+  const evidenceSources = ['activity','additional_information','actor','supplier_input','output_customer','document','system','control','exception','activity_connection','ava_result','waste_result','process_context','prompt_a_evidence','quantitative_data','observation','contradiction','materialized_risk'];
+  const excludedReasons = ['lean_waste_only','restriction_candidate','risk_without_current_problem','improvement_idea','insufficient_evidence','duplicate_problem','outside_process_scope'];
+
+  const text = value => String(value ?? '').trim();
+
+  const requireObject = (value, path) => {
+    if(!value || typeof value !== 'object' || Array.isArray(value)){
+      throw new Error(
+        'El campo "' + path + '" debe ser un objeto.'
+      );
+    }
+  };
+
+  const requireArray = (value, path) => {
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' + path + '" debe ser un arreglo.'
+      );
+    }
+  };
+
+  const rejectUnknownKeys = (value, allowed, path) => {
+    Object.keys(value).forEach(key => {
+      if(!allowed.includes(key)){
+        throw new Error(
+          'El campo "' +
+          path +
+          '" contiene la propiedad no permitida "' +
+          key +
+          '".'
+        );
+      }
+    });
+  };
+
+  if(
+    text(parsed.analysis_type) !==
+    'operational_problem_diagnosis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "operational_problem_diagnosis".'
+    );
+  }
+
+  if(
+    text(parsed.methodology) !==
+    'evidence_based_process_diagnosis'
+  ){
+    throw new Error(
+      'methodology debe ser "evidence_based_process_diagnosis".'
+    );
+  }
+
+  rejectUnknownKeys(
+    parsed,
+    topKeys,
+    'contrato PROBLEMAS'
+  );
+
+  requireObject(
+    parsed.source_control,
+    'source_control'
+  );
+
+  rejectUnknownKeys(
+    parsed.source_control,
+    sourceControlKeys,
+    'source_control'
+  );
+
+  requireArray(
+    parsed.problems,
+    'problems'
+  );
+
+  requireObject(
+    parsed.distribution,
+    'distribution'
+  );
+
+  rejectUnknownKeys(
+    parsed.distribution,
+    [
+      'alta',
+      'media',
+      'baja',
+      'total'
+    ],
+    'distribution'
+  );
+
+  requireObject(
+    parsed.summary,
+    'summary'
+  );
+
+  rejectUnknownKeys(
+    parsed.summary,
+    summaryKeys,
+    'summary'
+  );
+
+  summaryKeys.forEach(key => {
+    requireArray(
+      parsed.summary[key],
+      'summary.' + key
+    );
+  });
+
+  requireArray(
+    parsed.excludedFindings,
+    'excludedFindings'
+  );
+
+  requireArray(
+    parsed.warnings,
+    'warnings'
+  );
+
+  requireArray(
+    parsed.dataGaps,
+    'dataGaps'
+  );
+
+  requireObject(
+    parsed.validation,
+    'validation'
+  );
+
+  rejectUnknownKeys(
+    parsed.validation,
+    [
+      'canProceed',
+      'blockingGaps',
+      'warnings'
+    ],
+    'validation'
+  );
+
+  requireArray(
+    parsed.validation.blockingGaps,
+    'validation.blockingGaps'
+  );
+
+  requireArray(
+    parsed.validation.warnings,
+    'validation.warnings'
+  );
+
+  const sourceSteps =
+    safeArray(
+      lmpGetValidatedAsIsEvidence_()
+        .activities
+    );
+
+  if(!sourceSteps.length){
+    throw new Error(
+      'El AS-IS validado no contiene actividades o decisiones para analizar.'
+    );
+  }
+
+  const sourceById =
+    new Map();
+
+  sourceSteps.forEach((item, index) => {
+    const id =
+      text(item?.id);
+
+    if(!id){
+      throw new Error(
+        'El elemento ' +
+        (index + 1) +
+        ' del AS-IS no tiene ID.'
+      );
+    }
+
+    if(sourceById.has(id)){
+      throw new Error(
+        'El AS-IS contiene el ID duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    sourceById.set(
+      id,
+      item
+    );
+  });
+
+  if(
+    !lmpGetOfficialAnalysisResult_(
+      'VA'
+    )
+  ){
+    throw new Error(
+      'No existe un resultado oficial de VA para validar Problemas.'
+    );
+  }
+
+  const wasteResult =
+    lmpGetOfficialAnalysisResult_(
+      'DESPERDICIOS'
+    );
+
+  if(!wasteResult){
+    throw new Error(
+      'No existe un resultado oficial de Desperdicios para validar Problemas.'
+    );
+  }
+
+  const wasteById =
+    new Map();
+
+  safeArray(
+    wasteResult.wastes
+  ).forEach((item, index) => {
+    const id =
+      text(item?.id);
+
+    if(!id){
+      throw new Error(
+        'El desperdicio oficial ' +
+        (index + 1) +
+        ' no tiene ID.'
+      );
+    }
+
+    if(wasteById.has(id)){
+      throw new Error(
+        'El resultado oficial de Desperdicios contiene el ID duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    wasteById.set(
+      id,
+      item
+    );
+  });
+
+  const automaticBlockingGaps = [];
+  const seenProblemIds = new Set();
+  const seenProblemTexts = new Set();
+
+  const distribution = {
+    alta: 0,
+    media: 0,
+    baja: 0,
+    total: 0
+  };
+
+  let completeProblemCount = 0;
+
+  parsed.problems.forEach((item, index) => {
+    const path =
+      'problems[' +
+      index +
+      ']';
+
+    requireObject(
+      item,
+      path
+    );
+
+    rejectUnknownKeys(
+      item,
+      problemKeys,
+      path
+    );
+
+    const expectedId =
+      'PR-' +
+      String(
+        index + 1
+      ).padStart(
+        3,
+        '0'
+      );
+
+    const id =
+      text(item.id);
+
+    if(!/^PR-\d{3}$/.test(id)){
+      throw new Error(
+        path +
+        '.id debe usar el formato PR-001.'
+      );
+    }
+
+    if(id !== expectedId){
+      throw new Error(
+        'Los IDs de problems deben ser consecutivos. Se esperaba "' +
+        expectedId +
+        '" y se recibió "' +
+        id +
+        '".'
+      );
+    }
+
+    if(seenProblemIds.has(id)){
+      throw new Error(
+        'El ID de problema "' +
+        id +
+        '" está duplicado.'
+      );
+    }
+
+    seenProblemIds.add(id);
+
+    const problem =
+      text(item.problem);
+
+    const problemKey =
+      problem
+        .toLowerCase()
+        .replace(
+          /\s+/g,
+          ' '
+        );
+
+    const duplicateProblem = !!(
+      problemKey &&
+      seenProblemTexts.has(
+        problemKey
+      )
+    );
+
+    if(problemKey){
+      seenProblemTexts.add(
+        problemKey
+      );
+    }
+
+    const description =
+      text(item.description);
+
+    const symptom =
+      text(item.symptom);
+
+    const activityId =
+      text(item.activity_id);
+
+    const sourceActivity =
+      sourceById.get(
+        activityId
+      );
+
+    if(!sourceActivity){
+      throw new Error(
+        'El activity_id "' +
+        activityId +
+        '" del problema "' +
+        id +
+        '" no corresponde al AS-IS validado.'
+      );
+    }
+
+    const expectedActivity =
+      text(
+        sourceActivity?.name
+      );
+
+    const expectedSequence =
+      sourceActivity?.sequence;
+
+    if(
+      text(item.activity) !==
+      expectedActivity
+    ){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" no conserva exactamente el nombre de la actividad AS-IS.'
+      );
+    }
+
+    if(
+      text(item.sequence) !==
+      text(expectedSequence)
+    ){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" no conserva la secuencia AS-IS.'
+      );
+    }
+
+    requireArray(
+      item.related_activities,
+      path +
+      '.related_activities'
+    );
+
+    const relatedActivityIds =
+      new Set();
+
+    const relatedActivities =
+      item.related_activities.map(
+        (
+          related,
+          relatedIndex
+        ) => {
+          const relatedPath =
+            path +
+            '.related_activities[' +
+            relatedIndex +
+            ']';
+
+          requireObject(
+            related,
+            relatedPath
+          );
+
+          rejectUnknownKeys(
+            related,
+            [
+              'activity_id',
+              'activity'
+            ],
+            relatedPath
+          );
+
+          const relatedId =
+            text(
+              related.activity_id
+            );
+
+          if(!relatedId){
+            throw new Error(
+              'El problema "' +
+              id +
+              '" contiene una actividad relacionada sin ID.'
+            );
+          }
+
+          if(
+            relatedActivityIds.has(
+              relatedId
+            )
+          ){
+            throw new Error(
+              'El problema "' +
+              id +
+              '" repite la actividad relacionada "' +
+              relatedId +
+              '".'
+            );
+          }
+
+          const relatedSource =
+            sourceById.get(
+              relatedId
+            );
+
+          if(!relatedSource){
+            throw new Error(
+              'La actividad relacionada "' +
+              relatedId +
+              '" del problema "' +
+              id +
+              '" no corresponde al AS-IS validado.'
+            );
+          }
+
+          const relatedName =
+            text(
+              related.activity
+            );
+
+          if(
+            relatedName !==
+            text(
+              relatedSource?.name
+            )
+          ){
+            throw new Error(
+              'La actividad relacionada "' +
+              relatedId +
+              '" del problema "' +
+              id +
+              '" no conserva su nombre AS-IS.'
+            );
+          }
+
+          relatedActivityIds.add(
+            relatedId
+          );
+
+          return {
+            activity_id:
+              relatedId,
+
+            activity:
+              relatedName
+          };
+        }
+      );
+
+    const actor =
+      text(item.actor);
+
+    const area =
+      text(item.area);
+
+    requireArray(
+      item.evidence,
+      path +
+      '.evidence'
+    );
+
+    const evidence =
+      item.evidence.map(
+        (
+          entry,
+          evidenceIndex
+        ) => {
+          const evidencePath =
+            path +
+            '.evidence[' +
+            evidenceIndex +
+            ']';
+
+          requireObject(
+            entry,
+            evidencePath
+          );
+
+          rejectUnknownKeys(
+            entry,
+            [
+              'source',
+              'detail'
+            ],
+            evidencePath
+          );
+
+          const source =
+            text(
+              entry.source
+            );
+
+          if(
+            source &&
+            !evidenceSources.includes(
+              source
+            )
+          ){
+            throw new Error(
+              'La evidencia ' +
+              (evidenceIndex + 1) +
+              ' del problema "' +
+              id +
+              '" utiliza una fuente no permitida.'
+            );
+          }
+
+          return {
+            source,
+
+            detail:
+              text(
+                entry.detail
+              )
+          };
+        }
+      );
+
+    const hasEvidence =
+      evidence.some(
+        entry =>
+          entry.source &&
+          entry.detail
+      );
+
+    const frequency =
+      text(item.frequency);
+
+    const occurrenceCondition =
+      text(
+        item.occurrence_condition
+      );
+
+    const consequence =
+      text(item.consequence);
+
+    requireObject(
+      item.impact_dimensions,
+      path +
+      '.impact_dimensions'
+    );
+
+    rejectUnknownKeys(
+      item.impact_dimensions,
+      impactKeys,
+      path +
+      '.impact_dimensions'
+    );
+
+    const impactDimensions = {};
+
+    impactKeys.forEach(key => {
+      if(
+        typeof item
+          .impact_dimensions[
+            key
+          ] !==
+        'boolean'
+      ){
+        throw new Error(
+          'impact_dimensions.' +
+          key +
+          ' del problema "' +
+          id +
+          '" debe ser booleano.'
+        );
+      }
+
+      impactDimensions[key] =
+        item
+          .impact_dimensions[
+            key
+          ];
+    });
+
+    const hasImpact =
+      impactKeys.some(
+        key =>
+          impactDimensions[
+            key
+          ] === true
+      );
+
+    const probableCause =
+      text(
+        item.probable_cause
+      );
+
+    const causeStatus =
+      text(
+        item.cause_status
+      ).toLowerCase();
+
+    const causeEvidence =
+      text(
+        item.cause_evidence
+      );
+
+    if(
+      causeStatus &&
+      !causeStatuses.includes(
+        causeStatus
+      )
+    ){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" utiliza un cause_status no permitido.'
+      );
+    }
+
+    requireArray(
+      item.related_wastes,
+      path +
+      '.related_wastes'
+    );
+
+    const relatedWasteIds =
+      new Set();
+
+    let relatedWastesComplete =
+      true;
+
+    const relatedWastes =
+      item.related_wastes.map(
+        (
+          related,
+          relatedIndex
+        ) => {
+          const relatedPath =
+            path +
+            '.related_wastes[' +
+            relatedIndex +
+            ']';
+
+          requireObject(
+            related,
+            relatedPath
+          );
+
+          rejectUnknownKeys(
+            related,
+            [
+              'waste_id',
+              'wasteType',
+              'relationship'
+            ],
+            relatedPath
+          );
+
+          const wasteId =
+            text(
+              related.waste_id
+            );
+
+          if(!wasteId){
+            throw new Error(
+              'El problema "' +
+              id +
+              '" contiene un desperdicio relacionado sin ID.'
+            );
+          }
+
+          if(
+            relatedWasteIds.has(
+              wasteId
+            )
+          ){
+            throw new Error(
+              'El problema "' +
+              id +
+              '" repite el desperdicio relacionado "' +
+              wasteId +
+              '".'
+            );
+          }
+
+          const officialWaste =
+            wasteById.get(
+              wasteId
+            );
+
+          if(!officialWaste){
+            throw new Error(
+              'El desperdicio relacionado "' +
+              wasteId +
+              '" del problema "' +
+              id +
+              '" no existe en el resultado oficial de Desperdicios.'
+            );
+          }
+
+          const officialWasteType =
+            text(
+              officialWaste
+                ?.wasteType
+            ).toUpperCase();
+
+          if(
+            text(
+              related.wasteType
+            ).toUpperCase() !==
+            officialWasteType
+          ){
+            throw new Error(
+              'El desperdicio relacionado "' +
+              wasteId +
+              '" del problema "' +
+              id +
+              '" no conserva su wasteType oficial.'
+            );
+          }
+
+          const relationship =
+            text(
+              related.relationship
+            );
+
+          if(!relationship){
+            relatedWastesComplete =
+              false;
+          }
+
+          relatedWasteIds.add(
+            wasteId
+          );
+
+          return {
+            waste_id:
+              wasteId,
+
+            wasteType:
+              officialWasteType,
+
+            relationship
+          };
+        }
+      );
+
+    if(
+      typeof item
+        .potential_constraint_candidate !==
+      'boolean'
+    ){
+      throw new Error(
+        'potential_constraint_candidate del problema "' +
+        id +
+        '" debe ser booleano.'
+      );
+    }
+
+    if(
+      typeof item
+        .requires_validation !==
+      'boolean'
+    ){
+      throw new Error(
+        'requires_validation del problema "' +
+        id +
+        '" debe ser booleano.'
+      );
+    }
+
+    const potentialConstraintCandidate =
+      item
+        .potential_constraint_candidate;
+
+    const constraintCandidateReason =
+      text(
+        item
+          .constraint_candidate_reason
+      );
+
+    const priority =
+      text(
+        item.priority
+      ).toLowerCase();
+
+    const priorityJustification =
+      text(
+        item
+          .priority_justification
+      );
+
+    const confidence =
+      text(
+        item.confidence
+      ).toLowerCase();
+
+    const requiresValidation =
+      item.requires_validation;
+
+    const validationQuestion =
+      text(
+        item.validation_question
+      );
+
+    if(
+      priority &&
+      !priorities.includes(
+        priority
+      )
+    ){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" utiliza una prioridad no permitida.'
+      );
+    }
+
+    if(
+      confidence &&
+      !confidenceLevels.includes(
+        confidence
+      )
+    ){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" utiliza un confidence no permitido.'
+      );
+    }
+
+    const missing = [];
+
+    if(!problem){
+      missing.push(
+        'problema'
+      );
+    }
+
+    if(!description){
+      missing.push(
+        'descripción'
+      );
+    }
+
+    if(!symptom){
+      missing.push(
+        'síntoma'
+      );
+    }
+
+    if(
+      !actor &&
+      !area
+    ){
+      missing.push(
+        'actor o área'
+      );
+    }
+
+    if(!hasEvidence){
+      missing.push(
+        'evidencia'
+      );
+    }
+
+    if(!consequence){
+      missing.push(
+        'consecuencia'
+      );
+    }
+
+    if(!hasImpact){
+      missing.push(
+        'dimensión de impacto'
+      );
+    }
+
+    if(
+      !causeStatus ||
+      (
+        causeStatus !==
+          'unknown' &&
+        (
+          !probableCause ||
+          !causeEvidence
+        )
+      )
+    ){
+      missing.push(
+        'estado y sustento de causa'
+      );
+    }
+
+    if(!relatedWastesComplete){
+      missing.push(
+        'relación con desperdicios'
+      );
+    }
+
+    if(
+      potentialConstraintCandidate &&
+      !constraintCandidateReason
+    ){
+      missing.push(
+        'justificación de candidatura a restricción'
+      );
+    }
+
+    if(
+      !priority ||
+      !priorityJustification
+    ){
+      missing.push(
+        'prioridad y justificación'
+      );
+    }
+
+    if(!confidence){
+      missing.push(
+        'confianza'
+      );
+    }
+
+    if(
+      requiresValidation &&
+      !validationQuestion
+    ){
+      missing.push(
+        'pregunta de validación'
+      );
+    }
+
+    if(duplicateProblem){
+      missing.push(
+        'formulación no duplicada'
+      );
+    }
+
+    if(priority){
+      distribution[
+        priority
+      ] += 1;
+    }
+
+    distribution.total += 1;
+
+    if(missing.length){
+      automaticBlockingGaps.push(
+        'Problema ' +
+        id +
+        ': completar ' +
+        missing.join(', ') +
+        '.'
+      );
+
+    }else{
+      completeProblemCount += 1;
+    }
+
+    Object.assign(
+      item,
+      {
+        id,
+
+        problem,
+
+        description,
+
+        symptom,
+
+        activity_id:
+          activityId,
+
+        activity:
+          expectedActivity,
+
+        related_activities:
+          relatedActivities,
+
+        actor,
+
+        area,
+
+        sequence:
+          expectedSequence,
+
+        evidence,
+
+        frequency,
+
+        occurrence_condition:
+          occurrenceCondition,
+
+        consequence,
+
+        impact_dimensions:
+          impactDimensions,
+
+        probable_cause:
+          probableCause,
+
+        cause_status:
+          causeStatus,
+
+        cause_evidence:
+          causeEvidence,
+
+        related_wastes:
+          relatedWastes,
+
+        potential_constraint_candidate:
+          potentialConstraintCandidate,
+
+        constraint_candidate_reason:
+          constraintCandidateReason,
+
+        priority,
+
+        priority_justification:
+          priorityJustification,
+
+        confidence,
+
+        requires_validation:
+          requiresValidation,
+
+        validation_question:
+          validationQuestion
+      }
+    );
+  });
+
+  let completeExcludedFindingCount =
+    0;
+
+  parsed.excludedFindings.forEach(
+    (
+      item,
+      index
+    ) => {
+      const path =
+        'excludedFindings[' +
+        index +
+        ']';
+
+      requireObject(
+        item,
+        path
+      );
+
+      rejectUnknownKeys(
+        item,
+        [
+          'finding',
+          'excluded_reason',
+          'suggested_stage',
+          'explanation'
+        ],
+        path
+      );
+
+      const finding =
+        text(item.finding);
+
+      const excludedReason =
+        text(
+          item.excluded_reason
+        ).toLowerCase();
+
+      const suggestedStage =
+        text(
+          item.suggested_stage
+        );
+
+      const explanation =
+        text(
+          item.explanation
+        );
+
+      if(
+        excludedReason &&
+        !excludedReasons.includes(
+          excludedReason
+        )
+      ){
+        throw new Error(
+          path +
+          ' utiliza un excluded_reason no permitido.'
+        );
+      }
+
+      if(
+        finding &&
+        excludedReason &&
+        explanation
+      ){
+        completeExcludedFindingCount +=
+          1;
+
+      }else{
+        automaticBlockingGaps.push(
+          'Hallazgo excluido ' +
+          (index + 1) +
+          ': completar hallazgo, motivo y explicación.'
+        );
+      }
+
+      Object.assign(
+        item,
+        {
+          finding,
+
+          excluded_reason:
+            excludedReason,
+
+          suggested_stage:
+            suggestedStage,
+
+          explanation
+        }
+      );
+    }
+  );
+
+  const existingBlockingGaps =
+    safeArray(
+      parsed.validation
+        .blockingGaps
+    )
+      .map(gap =>
+        typeof gap === 'string'
+          ? gap.trim()
+          : JSON.stringify(gap)
+      )
+      .filter(Boolean);
+
+  const blockingGaps =
+    Array.from(
+      new Set(
+        existingBlockingGaps.concat(
+          automaticBlockingGaps
+        )
+      )
+    );
+
+  const canProceed =
+    completeProblemCount ===
+      parsed.problems.length &&
+    completeExcludedFindingCount ===
+      parsed.excludedFindings.length &&
+    blockingGaps.length === 0;
+
+  parsed.source_control = {
+    source_activity_count:
+      sourceSteps.length,
+
+    reviewed_activity_count:
+      sourceSteps.length,
+
+    identified_problem_count:
+      parsed.problems.length,
+
+    used_ava_result:
+      true,
+
+    used_waste_result:
+      true,
+
+    used_additional_information:
+      true,
+
+    preserved_activity_ids:
+      true,
+
+    preserved_activity_names:
+      true
+  };
+
+  parsed.distribution =
+    distribution;
+
+  parsed.validation = {
+    canProceed,
+
+    blockingGaps,
+
+    warnings:
+      safeArray(
+        parsed.validation.warnings
+      )
+  };
+
+  return parsed;
+}
+
+
 function lmpValidateAnalysisStageContract_(
   stageKey,
   rawText
@@ -26909,7 +28158,6 @@ function lmpValidateAnalysisStageContract_(
     JSON.stringify(parsed)
   );
 }
-
 function lmpInvalidateAnalysisAfter_(stageKey){
   const stage = String(stageKey || '')
     .trim()
