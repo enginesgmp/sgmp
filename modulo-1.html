@@ -3113,27 +3113,30 @@ border-left:5px solid #8ED3E8 !important;
   .analysis-summary-overview-grid{
     display:grid;
     grid-template-columns:repeat(
-      auto-fit,
-      minmax(142px,172px)
+      5,
+      minmax(0,1fr)
     );
-    justify-content:start;
     gap:8px;
   }
 
-  .analysis-summary-overview-grid{
-    margin-bottom:8px;
+  .analysis-summary-stage-grid--ava{
+    grid-template-columns:repeat(
+      4,
+      minmax(0,1fr)
+    );
   }
 
   .analysis-summary-stage-grid--wastes{
     grid-template-columns:repeat(
-      4,
-      minmax(142px,172px)
+      5,
+      minmax(0,1fr)
     );
   }
 
   .analysis-summary-stage-grid .kpi-card,
   .analysis-summary-overview-grid .kpi-card{
     width:100%;
+    min-width:0;
     min-height:112px !important;
     padding:11px !important;
     border:1px solid rgba(11,46,89,.10) !important;
@@ -3142,6 +3145,38 @@ border-left:5px solid #8ED3E8 !important;
     box-shadow:
       0 4px 12px
       rgba(11,46,89,.035) !important;
+  }
+
+  .analysis-summary-stage-grid
+  .kpi-card[data-tone="green"],
+  .analysis-summary-overview-grid
+  .kpi-card[data-tone="green"]{
+    background:#F2FBF5 !important;
+    border-color:rgba(39,174,96,.20) !important;
+  }
+
+  .analysis-summary-stage-grid
+  .kpi-card[data-tone="yellow"],
+  .analysis-summary-overview-grid
+  .kpi-card[data-tone="yellow"]{
+    background:#FFFBEF !important;
+    border-color:rgba(216,161,54,.22) !important;
+  }
+
+  .analysis-summary-stage-grid
+  .kpi-card[data-tone="orange"],
+  .analysis-summary-overview-grid
+  .kpi-card[data-tone="orange"]{
+    background:#FFF6ED !important;
+    border-color:rgba(242,153,74,.24) !important;
+  }
+
+  .analysis-summary-stage-grid
+  .kpi-card[data-tone="red"],
+  .analysis-summary-overview-grid
+  .kpi-card[data-tone="red"]{
+    background:#FFF2F1 !important;
+    border-color:rgba(192,57,43,.20) !important;
   }
 
   .analysis-summary-stage-grid .kpi-card h4,
@@ -3185,10 +3220,13 @@ border-left:5px solid #8ED3E8 !important;
   }
 
   @media(max-width:900px){
+    .analysis-summary-stage-grid,
+    .analysis-summary-overview-grid,
+    .analysis-summary-stage-grid--ava,
     .analysis-summary-stage-grid--wastes{
       grid-template-columns:repeat(
         2,
-        minmax(142px,172px)
+        minmax(0,1fr)
       );
     }
   }
@@ -3199,6 +3237,18 @@ border-left:5px solid #8ED3E8 !important;
       align-items:flex-start;
     }
 
+    .analysis-summary-stage-grid,
+    .analysis-summary-overview-grid,
+    .analysis-summary-stage-grid--ava,
+    .analysis-summary-stage-grid--wastes{
+      grid-template-columns:1fr;
+    }
+
+    .analysis-summary-stage-grid .kpi-card,
+    .analysis-summary-overview-grid .kpi-card{
+      min-height:96px !important;
+    }
+  }
     .analysis-summary-stage-grid,
     .analysis-summary-overview-grid,
     .analysis-summary-stage-grid--wastes{
@@ -31651,7 +31701,8 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
       Object.assign(
         {
           metric:'',
-          valueKind:'number'
+          valueKind:'number',
+          tone:''
         },
         options || {}
       );
@@ -31670,6 +31721,9 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
         }
         data-value-kind="${escapeHtml(
           settings.valueKind
+        )}"
+        data-tone="${escapeHtml(
+          settings.tone
         )}"
       >
         <h4>
@@ -31856,22 +31910,18 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
               : 0
           );
 
-    const coveragePct =
-      hasFiniteNumber(
-        distribution.coverage_pct
-      )
+       const optimizationCount =
+      nnvaCount +
+      nvaCount;
+
+    const optimizationPct =
+      classifiedTotal
         ? round2(
-            distribution.coverage_pct
+            optimizationCount /
+            classifiedTotal *
+            100
           )
-        : (
-            eligibleTotal
-              ? round2(
-                  classifiedTotal /
-                  eligibleTotal *
-                  100
-                )
-              : 0
-          );
+        : 0;
 
     rows.push(`
       <div
@@ -32046,66 +32096,75 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
       });
     });
 
-    /*
-     * El orden DOWNTIME gobierna también
-     * los desempates del tipo dominante.
-     */
-    let dominantType =
-      '';
-
-    let dominantCount =
-      0;
-
-    wasteDefinitions.forEach(function(entry){
-      const type =
-        entry[0];
-
-      const count =
-        byType[type];
-
-      if(count > dominantCount){
-        dominantCount =
-          count;
-
-        dominantType =
-          type;
-      }
-    });
-
-    const dominantLabel =
-      dominantType
-        ? (
-            typeof lmpWasteTypeLabel_ ===
-              'function'
-              ? lmpWasteTypeLabel_(
-                  dominantType
-                )
-              : dominantType
-          )
-        : 'Sin hallazgos';
-
-    const wasteCards =
+     const wasteCards =
       wasteDefinitions
         .map(function(entry){
+          const count =
+            byType[
+              entry[0]
+            ];
+
           return kpiCard(
             entry[1],
             formatInteger(
-              byType[
-                entry[0]
-              ]
+              count
             ),
-            byType[
-              entry[0]
-            ] === 1
+            count === 1
               ? 'hallazgo'
               : 'hallazgos',
             {
               metric:
-                entry[0]
+                entry[0],
+
+              tone:
+                count >= 3
+                  ? 'red'
+                  : (
+                      count > 0
+                        ? 'orange'
+                        : ''
+                    )
             }
           );
-        })
-        .join('');
+        });
+
+    const totalWasteCard =
+      kpiCard(
+        'Total de hallazgos',
+        formatInteger(
+          wastes.length
+        ),
+        wastes.length === 1
+          ? 'registro W-xxx'
+          : 'registros W-xxx',
+        {
+          metric:
+            'TOTAL_WASTES'
+        }
+      );
+
+    const affectedActivitiesCard =
+      kpiCard(
+        'Actividades afectadas',
+        formatInteger(
+          affectedActivityIds.size
+        ),
+        'IDs ejecutables únicos',
+        {
+          metric:
+            'AFFECTED_ACTIVITIES'
+        }
+      );
+
+    const wasteGridCards = [
+      totalWasteCard,
+      ...wasteCards.slice(
+        0,
+        4
+      ),
+      affectedActivitiesCard,
+      ...wasteCards.slice(4)
+    ].join('');
 
     rows.push(`
       <div
@@ -32129,65 +32188,14 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
           </span>
         </div>
 
-        <div class="analysis-summary-overview-grid">
-          ${kpiCard(
-            'Total de hallazgos',
-            formatInteger(
-              wastes.length
-            ),
-            wastes.length === 1
-              ? 'registro W-xxx'
-              : 'registros W-xxx',
-            {
-              metric:
-                'TOTAL_WASTES'
-            }
-          )}
-
-          ${kpiCard(
-            'Actividades afectadas',
-            formatInteger(
-              affectedActivityIds.size
-            ),
-            'IDs ejecutables únicos',
-            {
-              metric:
-                'AFFECTED_ACTIVITIES'
-            }
-          )}
-
-          ${kpiCard(
-            'Tipo dominante',
-            dominantLabel,
-            dominantCount
-              ? formatInteger(
-                  dominantCount
-                ) +
-                (
-                  dominantCount === 1
-                    ? ' hallazgo'
-                    : ' hallazgos'
-                )
-              : 'sin categoría dominante',
-            {
-              metric:
-                'DOMINANT_WASTE',
-
-              valueKind:
-                'text'
-            }
-          )}
-        </div>
-
-        <div
+               <div
           class="
             analysis-summary-stage-grid
             analysis-summary-stage-grid--wastes
           "
         >
-          ${wasteCards}
-        </div>
-      </div>
+          ${wasteGridCards}
+        </div>      </div>
     `);
   }
 
