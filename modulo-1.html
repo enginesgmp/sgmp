@@ -22252,21 +22252,11 @@ function renderAnalysisFromState(){
      * Solo habilita el guardado cuando la revisión
      * fue reconstruida correctamente.
      */
-    if(restoredReview){
-      window
-        .__LMP_ANALYSIS_PENDING__
-        .VA = {
-          raw:
-            restoredRaw,
-
-          parsed:
-            JSON.parse(
-              JSON.stringify(
-                restoredParsed
-              )
-            )
-        };
-
+      if(restoredReview){
+      /*
+       * El resultado restaurado ya es oficial.
+       * No se crea un pending hasta que el usuario lo edite.
+       */
       if(vaSaveButton){
         vaSaveButton.disabled =
           false;
@@ -22350,24 +22340,11 @@ function renderAnalysisFromState(){
         );
     }
 
-    if(restoredWasteReview){
-      window
-        .__LMP_ANALYSIS_PENDING__
-        .DESPERDICIOS = {
-          raw:
-            restoredWasteRaw,
-
-          parsed:
-            JSON.parse(
-              JSON.stringify(
-                restoredWasteParsed
-              )
-            ),
-
-          __wasteReviewInitialized:
-            true
-        };
-
+       if(restoredWasteReview){
+      /*
+       * El resultado restaurado ya es oficial.
+       * No se crea un pending hasta que el usuario lo edite.
+       */
       if(wasteSaveButton){
         wasteSaveButton.disabled =
           false;
@@ -30748,17 +30725,43 @@ window.saveAnalysisStageAndContinue = function(
       stage
     )?.value.trim() || '';
 
-  /*
-   * Permite continuar desde un respaldo cuando la etapa
-   * ya estaba oficialmente guardada y no existe una nueva
-   * respuesta pendiente.
-   */
-  if(
+    const hasSavedResult = !!(
     savedResult &&
     typeof savedResult === 'object' &&
     !Array.isArray(savedResult) &&
-    Object.keys(savedResult).length &&
-    !responseText
+    Object.keys(savedResult).length
+  );
+
+  let responseMatchesSavedResult =
+    false;
+
+  if(
+    hasSavedResult &&
+    responseText
+  ){
+    try{
+      responseMatchesSavedResult =
+        JSON.stringify(
+          JSON.parse(responseText)
+        ) ===
+        JSON.stringify(savedResult);
+
+    }catch(error){
+      responseMatchesSavedResult =
+        false;
+    }
+  }
+
+  /*
+   * Permite continuar desde un respaldo sin volver a guardar
+   * una etapa que ya es oficial.
+   */
+  if(
+    hasSavedResult &&
+    (
+      !responseText ||
+      responseMatchesSavedResult
+    )
   ){
     if(typeof window.goToNext === 'function'){
       return window.goToNext(
@@ -32313,7 +32316,9 @@ window.showSection = function(id){
   }
 
   /*
-   * Guardar solo se habilita después de una nueva validación.
+   * Permite continuar cuando existe:
+   * - una revisión pendiente; o
+   * - un resultado oficial restaurado.
    */
   const saveButton =
     el(
@@ -32321,11 +32326,22 @@ window.showSection = function(id){
       stage
     );
 
+  const hasPending =
+    !!window
+      .__LMP_ANALYSIS_PENDING__
+      ?.[stage];
+
+  const hasStoredResult = !!(
+    storedResult &&
+    typeof storedResult === 'object' &&
+    !Array.isArray(storedResult) &&
+    Object.keys(storedResult).length
+  );
+
   if(saveButton){
     saveButton.disabled =
-      !window
-        .__LMP_ANALYSIS_PENDING__
-        ?.[stage];
+      !hasPending &&
+      !hasStoredResult;
   }
 };
   
