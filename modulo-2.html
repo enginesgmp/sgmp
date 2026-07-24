@@ -6286,329 +6286,823 @@ function processP0(raw) { processIncomingJson(raw, 'prompt0_json'); }
 // ═══════════════════════════════════════════════════════════════
 function genTemplate() {
   const sp = S.sp;
-  const N = x => (Array.isArray(x) ? x : []).map(v => typeof v === 'string' ? v : (v.name || String(v)));
-  const actors = N(sp.catalogs?.actors  || sp.actors);
-  const sups   = N(sp.catalogs?.suppliers || sp.suppliers);
-  const inps   = N(sp.catalogs?.inputs  || sp.inputs);
-  const outs   = N(sp.catalogs?.outputs || sp.outputs);
-  const cuss   = N(sp.catalogs?.customers || sp.customers);
-  const acts   = Array.isArray(sp.activities) ? sp.activities : [];
-  const orderedActs = acts
-    .map((a, idx) => Object.assign({}, a, { __idx: idx, order: Number(a.order || a.sequence || idx + 1) || idx + 1 }))
-    .sort((a, b) => (a.order - b.order) || (a.__idx - b.__idx));
-  const activityNotePack = buildActivityNotePack(orderedActs);
-  S.activityNotes = activityNotePack.notes;
 
-  // Layout constants
-const COL_S = 190;
-const COL_G = 14;
+  if (!sp || typeof sp !== 'object') {
+    gMsg(
+      'err',
+      'No existe una estructura SIPOC válida para generar la plantilla.'
+    );
 
-const LANE_W = 240;
-const LANE_HDR = 40;
+    return false;
+  }
 
-const ACTIVITY_W = 150;
-const ACTIVITY_H = 60;
+  const toNames = value =>
+    (Array.isArray(value) ? value : [])
+      .map(item =>
+        typeof item === 'string'
+          ? normalizeText(item)
+          : normalizeText(
+              item?.name ||
+              item?.label ||
+              item?.value ||
+              ''
+            )
+      )
+      .filter(Boolean);
 
-const DECISION_W = 130;
-const DECISION_H = 60;
+  const readNames = (...candidates) => {
+    for (const candidate of candidates) {
+      const names =
+        toNames(candidate);
 
-const ROW_H = 60;
-const NODE_PAD = 22;
-const GAP_V = 28;
+      if (names.length) {
+        return names;
+      }
+    }
 
-const ZONE_LBL_H = 38;
-const PROC_TOP = 120;
+    return [];
+  };
 
-const SN_W = 150;
-const SN_H = 50;
-const SN_GAP = 14;
-const SN_PAD = 22;
+  const actors =
+    readNames(
+      sp.actors,
+      sp.catalogs?.actors
+    );
 
-  // Identify entry/exit activities for coloring
-  const startActs = new Set(orderedActs.filter(a => a.is_start).map(a => a.name));
-  const endActs   = new Set(orderedActs.filter(a => a.is_end).map(a => a.name));
-  // Fallback: first and last
-  if (!startActs.size && orderedActs.length) startActs.add(orderedActs[0].name);
-  if (!endActs.size && orderedActs.length)   endActs.add(orderedActs[orderedActs.length-1].name);
+  const suppliers =
+    readNames(
+      sp.suppliers,
+      sp.catalogs?.suppliers
+    );
 
-  // Identify inputs linked to start acts and outputs linked to end acts
-  const startInputs  = new Set(orderedActs.filter(a => startActs.has(a.name)).flatMap(a => a.ext_inputs  || []));
-  const endOutputs   = new Set(orderedActs.filter(a => endActs.has(a.name)).flatMap(a => a.ext_outputs || []));
+  const inputs =
+    readNames(
+      sp.inputs,
+      sp.catalogs?.inputs
+    );
 
-  // Altura por secuencia global: filas por orden del flujo, columnas por actor.
-  const maxA = Math.max(4, orderedActs.length);
- const laneH =
-  LANE_HDR +
-  maxA * (ROW_H + GAP_V) +
-  GAP_V * 2;
-  const sipocItems = Math.max(sups.length, inps.length, outs.length, cuss.length, 3);
-  const sipocH = Math.max(laneH, ZONE_LBL_H + sipocItems*(SN_H+SN_GAP) + SN_PAD*2);
+  const outputs =
+    readNames(
+      sp.outputs,
+      sp.catalogs?.outputs
+    );
 
-  // X positions
-  const xSup=20, xInp=xSup+COL_S+COL_G;
-  const xProc=xInp+COL_S+COL_G;
-  const procW=Math.max(actors.length,1)*LANE_W;
-  const xOut=xProc+procW+COL_G, xCus=xOut+COL_S+COL_G;
-  const totalW=xCus+COL_S+20;
+  const customers =
+    readNames(
+      sp.customers,
+      sp.catalogs?.customers
+    );
 
-  let idC=100; const nid=()=>String(idC++);
-  const cells=[], nodeMap={}, sipocMap={suppliers:{},inputs:{},outputs:{},customers:{}}, laneMap={};
-  const C = S.cfg;
+  const activities =
+    Array.isArray(sp.activities)
+      ? sp.activities
+      : [];
+
+  const orderedActivities =
+    activities
+      .map((activity, index) => ({
+        ...activity,
+
+        __index:
+          index,
+
+        order:
+          Number(
+            activity.order ||
+            activity.sequence ||
+            index + 1
+          ) || index + 1
+      }))
+      .sort(
+        (a, b) =>
+          (a.order - b.order) ||
+          (a.__index - b.__index)
+      );
+
+  const activityNotePack =
+    buildActivityNotePack(
+      orderedActivities
+    );
+
+  S.activityNotes =
+    activityNotePack.notes;
+
+  /*
+   * Dimensiones oficiales.
+   */
+  const SIDE_COLUMN_W = 190;
+  const COLUMN_GAP = 14;
+
+  const LANE_W = 240;
+  const LANE_HEADER_H = 40;
+
+  const ACTIVITY_W = 150;
+  const ACTIVITY_H = 60;
+
+  const DECISION_W = 130;
+  const DECISION_H = 60;
+
+  const ROW_H = 60;
+  const ROW_GAP = 28;
+  const BODY_PADDING_Y = 28;
+
+  const ZONE_HEADER_H = 38;
+  const PROCESS_TOP = 120;
+
+  const SIPOC_NODE_W = 150;
+  const SIPOC_NODE_H = 50;
+  const SIPOC_NODE_GAP = 14;
+  const SIPOC_PADDING_Y = 22;
+
   const P = {
-  supplierHeader: '#475569',
-  inputHeader: '#2563EB',
-  processHeader: '#163A5F',
-  outputHeader: '#4F7F63',
-  customerHeader: '#8B5E7A',
+    supplierHeader: '#475569',
+    inputHeader: '#2563EB',
+    processHeader: '#163A5F',
+    outputHeader: '#4F7F63',
+    customerHeader: '#8B5E7A',
 
-  supplierBody: '#F8FAFC',
-  inputBody: '#EFF6FF',
-  outputBody: '#F0FDF4',
-  customerBody: '#FDF2F8',
+    supplierBody: '#F8FAFC',
+    inputBody: '#EFF6FF',
+    outputBody: '#F0FDF4',
+    customerBody: '#FDF2F8',
 
-  supplierNode: '#E2E8F0',
-  inputNode: '#DBEAFE',
-  outputNode: '#DCFCE7',
-  customerNode: '#FCE7F3',
+    supplierNode: '#E2E8F0',
+    inputNode: '#DBEAFE',
+    outputNode: '#DCFCE7',
+    customerNode: '#FCE7F3',
 
-  text: '#0F172A',
-  activityStroke: '#274C77',
-  decisionFill: '#FFF7E6',
-  decisionStroke: '#B7791F',
-  laneHeader: '#EAF1F7',
-  laneBody: '#FFFFFF',
-  laneStroke: '#94A3B8'
-};
-  const colBodyY = PROC_TOP+ZONE_LBL_H;
+    text: '#0F172A',
+    activityStroke: '#274C77',
 
-  cells.push('<mxCell id="0"/>','<mxCell id="1" parent="0"/>');
+    decisionFill: '#FFF7E6',
+    decisionStroke: '#B7791F',
 
-  // Zone label bars
-[
-  [C.lbl_sup, xSup, COL_S, P.supplierHeader],
-  [C.lbl_inp, xInp, COL_S, P.inputHeader],
-  [C.lbl_proc, xProc, procW, P.processHeader],
-  [C.lbl_out, xOut, COL_S, P.outputHeader],
-  [C.lbl_cus, xCus, COL_S, P.customerHeader]
-]
-  ].forEach(([lbl,x,w,fill]) => {
-    cells.push(`<mxCell id="${nid()}" value="${ex(sbDiagramText(lbl))}" style="text;html=1;strokeColor=${fill};fillColor=${fill};align=center;verticalAlign=middle;fontStyle=1;fontSize=12;fontColor=#ffffff;rounded=0;" vertex="1" parent="1"><mxGeometry x="${x}" y="${PROC_TOP}" width="${w}" height="${ZONE_LBL_H}" as="geometry"/></mxCell>`);
-  });
+    laneHeader: '#EAF1F7',
+    laneBody: '#FFFFFF',
+    laneStroke: '#94A3B8'
+  };
 
-  // Zone backgrounds
-[
-  [xSup, COL_S, P.supplierBody, '#CBD5E1'],
-  [xInp, COL_S, P.inputBody, '#93C5FD'],
-  [xOut, COL_S, P.outputBody, '#86EFAC'],
-  [xCus, COL_S, P.customerBody, '#F9A8D4']
-]
-  ].forEach(([x,w,fill,stroke]) => {
-    cells.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=${stroke};opacity=60;" vertex="1" parent="1"><mxGeometry x="${x}" y="${colBodyY}" width="${w}" height="${sipocH}" as="geometry"/></mxCell>`);
-  });
+  const effectiveActors =
+    actors.length
+      ? actors
+      : ['ACTOR'];
 
-  // Swimlanes
-  const effActors = actors.length > 0 ? actors : ['Actor'];
-  effActors.forEach((actor, ai) => {
-    const lid=nid(), lx=xProc+ai*LANE_W, ly=colBodyY;
-    laneMap[actor] = {id:lid, x:lx, y:ly};
-    cells.push(   `<mxCell id="${lid}" value="${ex(sbDiagramText(actor))}" ` +   `style="swimlane;html=1;startSize=${LANE_HDR};` +   `fillColor=${P.laneHeader};swimlaneFillColor=${P.laneBody};` +   `strokeColor=${P.laneStroke};strokeWidth=1;` +   `fontColor=${P.processHeader};fontSize=11;fontStyle=1;align=center;" ` +   `vertex="1" parent="1">` +   `<mxGeometry x="${lx}" y="${ly}" width="${LANE_W}" height="${laneH}" as="geometry"/>` +   `</mxCell>` ); vertex="1" parent="1"><mxGeometry x="${lx}" y="${ly}" width="${LANE_W}" height="${laneH}" as="geometry"/></mxCell>`);
-  });
+  const rowCount =
+    Math.max(
+      4,
+      orderedActivities.length
+    );
 
-  // Activity nodes
-  orderedActs.forEach((a, idx) => {
-    const laneName = a.lane || a.actor || '';
-    const actor = (laneName && laneMap[laneName]) ? laneName : ((a.actor && laneMap[a.actor]) ? a.actor : effActors[0]);
-    const lane = laneMap[actor] || Object.values(laneMap)[0];
+  const flowBodyHeight =
+    LANE_HEADER_H +
+    BODY_PADDING_Y * 2 +
+    rowCount * ROW_H +
+    Math.max(
+      0,
+      rowCount - 1
+    ) * ROW_GAP;
 
-    
-const absY =
-  lane.y +
-  LANE_HDR +
-  GAP_V +
-  idx * (ROW_H + GAP_V);
+  const sideItemCount =
+    Math.max(
+      suppliers.length,
+      inputs.length,
+      outputs.length,
+      customers.length,
+      3
+    );
 
-const isDec =
-  a.type === 'decision';
+  const sideBodyHeight =
+    SIPOC_PADDING_Y * 2 +
+    sideItemCount * SIPOC_NODE_H +
+    Math.max(
+      0,
+      sideItemCount - 1
+    ) * SIPOC_NODE_GAP;
 
-const nw =
-  isDec
-    ? DECISION_W
-    : ACTIVITY_W;
+  const bodyHeight =
+    Math.max(
+      flowBodyHeight,
+      sideBodyHeight
+    );
 
-const nh =
-  isDec
-    ? DECISION_H
-    : ACTIVITY_H;
+  const xSupplier = 20;
 
-const nx =
-  lane.x +
-  (LANE_W - nw) / 2;
+  const xInput =
+    xSupplier +
+    SIDE_COLUMN_W +
+    COLUMN_GAP;
 
-nodeMap['act_' + idx] = {
-  id: nidV,
-  name: a.name,
-  actor,
-  absX: nx,
-  absY,
-  type: a.type
-};
+  const xProcess =
+    xInput +
+    SIDE_COLUMN_W +
+    COLUMN_GAP;
 
-    // Color logic: entry=light green, exit=dark green, decision=yellow, default=white
-let fillColor =
-  '#FFFFFF';
+  const processWidth =
+    effectiveActors.length *
+    LANE_W;
 
-let strokeColor =
-  P.activityStroke;
+  const xOutput =
+    xProcess +
+    processWidth +
+    COLUMN_GAP;
 
-if(isDec){
-  fillColor =
-    P.decisionFill;
+  const xCustomer =
+    xOutput +
+    SIDE_COLUMN_W +
+    COLUMN_GAP;
 
-  strokeColor =
-    P.decisionStroke;
-}
+  const totalWidth =
+    xCustomer +
+    SIDE_COLUMN_W +
+    20;
 
-    const style = isDec
-      ? `rhombus;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`
-      : `rounded=1;whiteSpace=wrap;html=1;fillColor=${fillColor};strokeColor=${strokeColor};fontSize=10;`;
+  const bodyY =
+    PROCESS_TOP +
+    ZONE_HEADER_H;
 
-    const noteRef = activityNotePack.refs.get(idx);
-   const activityLabel =
-  sbDiagramText(
-    noteRef
-      ? `${a.name} (${noteRef})`
-      : a.name
+  let idCounter = 100;
+
+  const nextId = () =>
+    String(idCounter++);
+
+  const cells = [
+    '<mxCell id="0"/>',
+    '<mxCell id="1" parent="0"/>'
+  ];
+
+  const activityNodes = [];
+
+  const laneMap = {};
+
+  const sipocMap = {
+    suppliers: {},
+    inputs: {},
+    outputs: {},
+    customers: {}
+  };
+
+  const C =
+    S.cfg || {};
+
+  /*
+   * Encabezados de las zonas.
+   */
+  [
+    [
+      C.lbl_sup || 'SUPPLIERS',
+      xSupplier,
+      SIDE_COLUMN_W,
+      P.supplierHeader
+    ],
+
+    [
+      C.lbl_inp || 'INPUTS',
+      xInput,
+      SIDE_COLUMN_W,
+      P.inputHeader
+    ],
+
+    [
+      C.lbl_proc || 'PROCESO',
+      xProcess,
+      processWidth,
+      P.processHeader
+    ],
+
+    [
+      C.lbl_out || 'OUTPUTS',
+      xOutput,
+      SIDE_COLUMN_W,
+      P.outputHeader
+    ],
+
+    [
+      C.lbl_cus || 'CUSTOMERS',
+      xCustomer,
+      SIDE_COLUMN_W,
+      P.customerHeader
+    ]
+  ].forEach(
+    ([label, x, width, fill]) => {
+      cells.push(
+        `<mxCell id="${nextId()}" ` +
+        `value="${ex(
+          sbDiagramText(label)
+        )}" ` +
+        `style="text;html=1;` +
+        `strokeColor=${fill};` +
+        `fillColor=${fill};` +
+        `align=center;` +
+        `verticalAlign=middle;` +
+        `fontStyle=1;` +
+        `fontSize=12;` +
+        `fontColor=#FFFFFF;` +
+        `rounded=0;" ` +
+        `vertex="1" parent="1">` +
+        `<mxGeometry x="${x}" ` +
+        `y="${PROCESS_TOP}" ` +
+        `width="${width}" ` +
+        `height="${ZONE_HEADER_H}" ` +
+        `as="geometry"/>` +
+        `</mxCell>`
+      );
+    }
   );
-    cells.push(`<mxCell id="${nidV}" value="${ex(activityLabel)}" style="${style}" vertex="1" parent="1"><mxGeometry x="${Math.round(nx)}" y="${Math.round(absY)}" width="${Math.round(nw)}" height="${Math.round(nh)}" as="geometry"/></mxCell>`);
-  });
 
-  // SIPOC item nodes
-const sStyle = (
-  fill,
-  stroke,
-  fontColor
-) =>
+  /*
+   * Fondos laterales.
+   */
   [
-    'rounded=1',
-    'arcSize=12',
-    'whiteSpace=wrap',
-    'html=1',
-    `fillColor=${fill}`,
-    `strokeColor=${stroke}`,
-    'strokeWidth=1.5',
-    `fontColor=${fontColor}`,
-    'fontSize=10',
-    'fontStyle=1',
-    'align=center',
-    'verticalAlign=middle'
-  ].join(';') + ';';
+    [
+      xSupplier,
+      SIDE_COLUMN_W,
+      P.supplierBody,
+      '#CBD5E1'
+    ],
 
+    [
+      xInput,
+      SIDE_COLUMN_W,
+      P.inputBody,
+      '#93C5FD'
+    ],
 
-[
-  [
-    sups,
-    xSup,
-    P.supplierNode,
-    '#94A3B8',
-    '#334155',
-    'suppliers'
-  ],
+    [
+      xOutput,
+      SIDE_COLUMN_W,
+      P.outputBody,
+      '#86EFAC'
+    ],
 
-  [
-    inps,
-    xInp,
-    P.inputNode,
-    '#60A5FA',
-    '#1E3A8A',
-    'inputs'
-  ],
+    [
+      xCustomer,
+      SIDE_COLUMN_W,
+      P.customerBody,
+      '#F9A8D4'
+    ]
+  ].forEach(
+    ([x, width, fill, stroke]) => {
+      cells.push(
+        `<mxCell id="${nextId()}" ` +
+        `value="" ` +
+        `style="rounded=0;` +
+        `whiteSpace=wrap;` +
+        `html=1;` +
+        `fillColor=${fill};` +
+        `strokeColor=${stroke};` +
+        `opacity=60;" ` +
+        `vertex="1" parent="1">` +
+        `<mxGeometry x="${x}" ` +
+        `y="${bodyY}" ` +
+        `width="${width}" ` +
+        `height="${bodyHeight}" ` +
+        `as="geometry"/>` +
+        `</mxCell>`
+      );
+    }
+  );
 
-  [
-    outs,
-    xOut,
-    P.outputNode,
-    '#4ADE80',
-    '#14532D',
-    'outputs'
-  ],
+  /*
+   * Carriles de actores.
+   */
+  effectiveActors.forEach(
+    (actor, actorIndex) => {
+      const laneId =
+        nextId();
 
-  [
-    cuss,
-    xCus,
-    P.customerNode,
-    '#F472B6',
-    '#831843',
-    'customers'
-  ]
-].forEach(
-  ([
-    items,
-    x,
+      const laneX =
+        xProcess +
+        actorIndex * LANE_W;
+
+      laneMap[actor] = {
+        id: laneId,
+        x: laneX,
+        y: bodyY
+      };
+
+      cells.push(
+        `<mxCell id="${laneId}" ` +
+        `value="${ex(
+          sbDiagramText(actor)
+        )}" ` +
+        `style="swimlane;` +
+        `html=1;` +
+        `startSize=${LANE_HEADER_H};` +
+        `fillColor=${P.laneHeader};` +
+        `swimlaneFillColor=${P.laneBody};` +
+        `strokeColor=${P.laneStroke};` +
+        `strokeWidth=1;` +
+        `fontColor=${P.processHeader};` +
+        `fontSize=11;` +
+        `fontStyle=1;` +
+        `align=center;" ` +
+        `vertex="1" parent="1">` +
+        `<mxGeometry x="${laneX}" ` +
+        `y="${bodyY}" ` +
+        `width="${LANE_W}" ` +
+        `height="${bodyHeight}" ` +
+        `as="geometry"/>` +
+        `</mxCell>`
+      );
+    }
+  );
+
+  /*
+   * Actividades y decisiones.
+   */
+  orderedActivities.forEach(
+    (activity, index) => {
+      const requestedLane =
+        normalizeText(
+          activity.lane ||
+          activity.actor ||
+          ''
+        );
+
+      const actor =
+        laneMap[requestedLane]
+          ? requestedLane
+          : effectiveActors[0];
+
+      const lane =
+        laneMap[actor];
+
+      const isDecision =
+        activity.type === 'decision';
+
+      const width =
+        isDecision
+          ? DECISION_W
+          : ACTIVITY_W;
+
+      const height =
+        isDecision
+          ? DECISION_H
+          : ACTIVITY_H;
+
+      const x =
+        lane.x +
+        (
+          LANE_W -
+          width
+        ) / 2;
+
+      const y =
+        lane.y +
+        LANE_HEADER_H +
+        BODY_PADDING_Y +
+        index *
+        (
+          ROW_H +
+          ROW_GAP
+        );
+
+      const nodeId =
+        nextId();
+
+      const noteRef =
+        activityNotePack.refs.get(
+          index
+        );
+
+      const label =
+        sbDiagramText(
+          noteRef
+            ? `${activity.name} (${noteRef})`
+            : activity.name
+        );
+
+      const style =
+        isDecision
+          ? [
+              'rhombus',
+              'whiteSpace=wrap',
+              'html=1',
+              `fillColor=${P.decisionFill}`,
+              `strokeColor=${P.decisionStroke}`,
+              'strokeWidth=1.5',
+              `fontColor=${P.text}`,
+              'fontSize=10',
+              'fontStyle=1',
+              'align=center',
+              'verticalAlign=middle',
+              'spacing=4'
+            ].join(';') + ';'
+
+          : [
+              'rounded=1',
+              'arcSize=12',
+              'whiteSpace=wrap',
+              'html=1',
+              'fillColor=#FFFFFF',
+              `strokeColor=${P.activityStroke}`,
+              'strokeWidth=1.5',
+              `fontColor=${P.text}`,
+              'fontSize=10',
+              'fontStyle=1',
+              'align=center',
+              'verticalAlign=middle',
+              'spacing=4'
+            ].join(';') + ';';
+
+      activityNodes.push({
+        id: nodeId,
+
+        /*
+         * Se conserva el nombre original
+         * para resolver relaciones.
+         */
+        name:
+          normalizeText(
+            activity.name
+          ),
+
+        actor,
+
+        x:
+          Math.round(x),
+
+        y:
+          Math.round(y),
+
+        type:
+          activity.type
+      });
+
+      cells.push(
+        `<mxCell id="${nodeId}" ` +
+        `value="${ex(label)}" ` +
+        `style="${style}" ` +
+        `vertex="1" parent="1">` +
+        `<mxGeometry x="${Math.round(x)}" ` +
+        `y="${Math.round(y)}" ` +
+        `width="${width}" ` +
+        `height="${height}" ` +
+        `as="geometry"/>` +
+        `</mxCell>`
+      );
+    }
+  );
+
+  const sipocStyle = (
     fill,
     stroke,
-    fontColor,
-    key
-  ]) => {
-    items.forEach(
-      (item, index) => {
-        const sid =
-          nid();
+    fontColor
+  ) =>
+    [
+      'rounded=1',
+      'arcSize=12',
+      'whiteSpace=wrap',
+      'html=1',
+      `fillColor=${fill}`,
+      `strokeColor=${stroke}`,
+      'strokeWidth=1.5',
+      `fontColor=${fontColor}`,
+      'fontSize=10',
+      'fontStyle=1',
+      'align=center',
+      'verticalAlign=middle',
+      'spacing=4'
+    ].join(';') + ';';
 
-        const nx =
-          x +
-          (COL_S - SN_W) / 2;
+  /*
+   * Nodos periféricos SIPOC.
+   */
+  [
+    [
+      suppliers,
+      xSupplier,
+      P.supplierNode,
+      '#94A3B8',
+      '#334155',
+      'suppliers'
+    ],
 
-        const ny =
-          colBodyY +
-          SN_PAD +
-          index * (SN_H + SN_GAP);
+    [
+      inputs,
+      xInput,
+      P.inputNode,
+      '#60A5FA',
+      '#1E3A8A',
+      'inputs'
+    ],
 
-        sipocMap[key][item] = {
-          id: sid
-        };
+    [
+      outputs,
+      xOutput,
+      P.outputNode,
+      '#4ADE80',
+      '#14532D',
+      'outputs'
+    ],
 
-        cells.push(
-          `<mxCell id="${sid}" ` +
-          `value="${ex(sbDiagramText(item))}" ` +
-          `style="${sStyle(fill, stroke, fontColor)}" ` +
-          `vertex="1" parent="1">` +
-          `<mxGeometry x="${nx}" y="${ny}" ` +
-          `width="${SN_W}" height="${SN_H}" ` +
-          `as="geometry"/>` +
-          `</mxCell>`
-        );
-      }
-    );
-  }
-);
+    [
+      customers,
+      xCustomer,
+      P.customerNode,
+      '#F472B6',
+      '#831843',
+      'customers'
+    ]
+  ].forEach(
+    ([
+      items,
+      columnX,
+      fill,
+      stroke,
+      fontColor,
+      mapKey
+    ]) => {
+      items.forEach(
+        (item, index) => {
+          const nodeId =
+            nextId();
 
-  // ID reference map
-  const idLines = ['=== MAPA DE IDs (usar en source= y target= de los edges) ===','','SWIMLANES:'];
-  Object.entries(laneMap).forEach(([a,v]) => idLines.push(`  "${a}" -> id="${v.id}" x=${v.x} y=${v.y}`));
-  idLines.push('','ACTIVIDADES:');
-  Object.entries(nodeMap).forEach(([,v]) => idLines.push(`  "${v.name}" (${v.actor}) -> id="${v.id}" x=${v.absX} y=${v.absY}`));
-  idLines.push('','SUPPLIERS:'); Object.entries(sipocMap.suppliers).forEach(([n,v]) => idLines.push(`  "${n}" -> id="${v.id}"`));
-  idLines.push('INPUTS:');    Object.entries(sipocMap.inputs).forEach(([n,v])    => idLines.push(`  "${n}" -> id="${v.id}"`));
-  idLines.push('OUTPUTS:');   Object.entries(sipocMap.outputs).forEach(([n,v])   => idLines.push(`  "${n}" -> id="${v.id}"`));
-  idLines.push('CUSTOMERS:'); Object.entries(sipocMap.customers).forEach(([n,v]) => idLines.push(`  "${n}" -> id="${v.id}"`));
-  idLines.push('','REGLA: Todos los edges deben tener parent="1". Usa source="ID" target="ID".');
+          const x =
+            columnX +
+            (
+              SIDE_COLUMN_W -
+              SIPOC_NODE_W
+            ) / 2;
 
-  const pageW = Math.ceil((totalW+200)/100)*100;
-  const pageH = Math.ceil((sipocH+colBodyY+200)/100)*100;
-  S.tplXml = `<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${pageW}" pageHeight="${pageH}" math="0" shadow="0">\n  <root>\n    ${cells.join('\n    ')}\n  </root>\n</mxGraphModel>`;
-  S.idRef = idLines.join('\n');
+          const y =
+            bodyY +
+            SIPOC_PADDING_Y +
+            index *
+            (
+              SIPOC_NODE_H +
+              SIPOC_NODE_GAP
+            );
 
-  // Update UI
-  $('tpl_xml').value = S.tplXml;
-  $('tpl_info').innerHTML = `<strong>Plantilla generada &mdash; arquitectura plana, todos parent="1"</strong><br>
-    Actores: ${effActors.length} (${effActors.join(', ')}) &middot; Actividades: ${orderedActs.length} &middot;
-    S:${sups.length} I:${inps.length} O:${outs.length} C:${cuss.length} &middot; Canvas: ~${totalW}px &middot;
-    Layout: filas por secuencia y columnas por actor`;
+          sipocMap[mapKey][item] = {
+            id: nodeId,
+            x: Math.round(x),
+            y: Math.round(y)
+          };
 
-  switchTab('tab_tpl');
-  gMsg('ok', 'Plantilla XML generada. Contin\u00faa con F1.');
+          cells.push(
+            `<mxCell id="${nodeId}" ` +
+            `value="${ex(
+              sbDiagramText(item)
+            )}" ` +
+            `style="${sipocStyle(
+              fill,
+              stroke,
+              fontColor
+            )}" ` +
+            `vertex="1" parent="1">` +
+            `<mxGeometry x="${Math.round(x)}" ` +
+            `y="${Math.round(y)}" ` +
+            `width="${SIPOC_NODE_W}" ` +
+            `height="${SIPOC_NODE_H}" ` +
+            `as="geometry"/>` +
+            `</mxCell>`
+          );
+        }
+      );
+    }
+  );
+
+  /*
+   * Mapa de IDs.
+   */
+  const idLines = [
+    '=== MAPA DE IDs (usar en source= y target= de los edges) ===',
+    '',
+    'SWIMLANES:'
+  ];
+
+  Object.entries(
+    laneMap
+  ).forEach(
+    ([actor, lane]) => {
+      idLines.push(
+        `  "${actor}" -> ` +
+        `id="${lane.id}" ` +
+        `x=${lane.x} y=${lane.y}`
+      );
+    }
+  );
+
+  idLines.push(
+    '',
+    'ACTIVIDADES:'
+  );
+
+  activityNodes.forEach(
+    node => {
+      idLines.push(
+        `  "${node.name}" ` +
+        `(${node.actor}) -> ` +
+        `id="${node.id}" ` +
+        `x=${node.x} y=${node.y}`
+      );
+    }
+  );
+
+  const appendMap = (
+    title,
+    map
+  ) => {
+    idLines.push(title);
+
+    Object.entries(map)
+      .forEach(
+        ([name, node]) => {
+          idLines.push(
+            `  "${name}" -> ` +
+            `id="${node.id}"`
+          );
+        }
+      );
+  };
+
+  idLines.push('');
+
+  appendMap(
+    'SUPPLIERS:',
+    sipocMap.suppliers
+  );
+
+  appendMap(
+    'INPUTS:',
+    sipocMap.inputs
+  );
+
+  appendMap(
+    'OUTPUTS:',
+    sipocMap.outputs
+  );
+
+  appendMap(
+    'CUSTOMERS:',
+    sipocMap.customers
+  );
+
+  idLines.push(
+    '',
+    'REGLA: Todos los edges deben tener parent="1". Usa source="ID" target="ID".'
+  );
+
+  const pageWidth =
+    Math.ceil(
+      (
+        totalWidth +
+        200
+      ) / 100
+    ) * 100;
+
+  const pageHeight =
+    Math.ceil(
+      (
+        bodyY +
+        bodyHeight +
+        200
+      ) / 100
+    ) * 100;
+
+  S.tplXml =
+    `<mxGraphModel dx="1422" dy="762" ` +
+    `grid="1" gridSize="10" guides="1" ` +
+    `tooltips="1" connect="1" arrows="1" ` +
+    `fold="1" page="1" pageScale="1" ` +
+    `pageWidth="${pageWidth}" ` +
+    `pageHeight="${pageHeight}" ` +
+    `math="0" shadow="0">\n` +
+    `  <root>\n` +
+    `    ${cells.join('\n    ')}\n` +
+    `  </root>\n` +
+    `</mxGraphModel>`;
+
+  S.idRef =
+    idLines.join('\n');
+
+  $('tpl_xml').value =
+    S.tplXml;
+
+  $('tpl_info').innerHTML =
+    `<strong>Plantilla generada — arquitectura plana, todos parent="1"</strong><br>` +
+    `Actores: ${effectiveActors.length} ` +
+    `(${effectiveActors.map(ex).join(', ')}) · ` +
+    `Actividades: ${orderedActivities.length} · ` +
+    `S:${suppliers.length} ` +
+    `I:${inputs.length} ` +
+    `O:${outputs.length} ` +
+    `C:${customers.length} · ` +
+    `Canvas: ~${totalWidth}px · ` +
+    `Layout: filas por secuencia y columnas por actor`;
+
+  switchTab(
+    'tab_tpl'
+  );
+
+  gMsg(
+    'ok',
+    'Plantilla XML generada con tamaños y paleta estandarizados. Continúa con F1.'
+  );
+
+  return true;
 }
-
 // ═══════════════════════════════════════════════════════════════
 // PROMPT STEP NAVIGATION
 // ═══════════════════════════════════════════════════════════════
