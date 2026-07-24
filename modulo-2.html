@@ -1265,19 +1265,66 @@ button.ai-run:hover{background:#0369A1;border-color:#0369A1}
   </div>
 </div>
 
-<!-- ═══════════════════════════════════ TAB PLANTILLA ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════ DIAGRAM STUDIO ═══════════════════════════════════ -->
 <div id="tab_tpl" class="tab-content hidden">
   <div class="panel">
-    <div class="stage">   <strong>Construcción base</strong>   <span>     Genera la estructura inicial del SIPOC con carriles,     nodos, dimensiones y coordenadas reglamentarias.   </span> </div>
-    <div id="load_diag" class="sum-box" style="display:none"></div>
-    <div id="tpl_info" class="tpl-info">Sin datos a&uacute;n.</div>
-    <div class="field"><label>XML plantilla</label><textarea id="tpl_xml" class="xml-ta" style="min-height:160px" readonly></textarea></div>
-    <div class="btn-row between" style="margin-top:10px">
+    <div class="stage">
+      <strong>Diagram Studio · Construcción automática</strong>
+      <span>
+        Valida el contrato y construye por código todas las relaciones
+        internas y SIPOC declaradas.
+      </span>
+    </div>
+
+    <div
+      id="load_diag"
+      class="sum-box"
+      style="display:none"
+    ></div>
+
+    <div
+      id="tpl_info"
+      class="tpl-info"
+    >
+      Sin datos aún.
+    </div>
+
+    <div class="field">
+      <label>XML del diagrama construido</label>
+
+      <textarea
+        id="xml_diagram"
+        class="xml-ta"
+        style="min-height:260px"
+        readonly
+      ></textarea>
+    </div>
+
+    <div
+      id="vld_diagram"
+      class="vld"
+    ></div>
+
+    <div class="btn-row between">
       <div class="btn-row">
-        <button id="btn_copy_tpl">Copiar XML plantilla</button>
-        <button class="warn" id="btn_dl_tpl">Descargar plantilla.xml</button>
+        <button id="btn_build_diagram">
+          Reconstruir diagrama
+        </button>
+
+        <button
+          class="warn"
+          id="btn_dl_diagram"
+        >
+          Descargar XML construido
+        </button>
       </div>
-      <button   class="primary"   id="btn_validate_contract" >   Validar estructura y continuar </button>
+
+      <button
+        class="primary"
+        id="btn_generate_output"
+      >
+        Generar salida
+      </button>
     </div>
   </div>
 </div>
@@ -2430,7 +2477,7 @@ function buildFallbackInternalEdges(){
 
     edges.push(
       edgeCell(
-        'sgmp_f2_edge_' +
+        'sb_internal_edge_' +
         edges.length +
         '_' +
         sourceId +
@@ -2607,7 +2654,7 @@ function buildFallbackPeripheralEdges(){
   effectiveSupplierLinks.forEach(
     link => {
       add(
-        'sgmp_f3_supplier_input',
+        'sb_supplier_input',
 
         firstExistingId(
           idMap.suppliers,
@@ -2674,7 +2721,7 @@ function buildFallbackPeripheralEdges(){
       }
 
       add(
-        'sgmp_f3_input_activity',
+        'sb_input_activity',
 
         inputId,
         activityId,
@@ -2711,7 +2758,7 @@ function buildFallbackPeripheralEdges(){
         sp.inputs
       ).forEach(inputName => {
         add(
-          'sgmp_f3_input_start',
+          'sb_input_start',
 
           firstExistingId(
             idMap.inputs,
@@ -2779,7 +2826,7 @@ function buildFallbackPeripheralEdges(){
       }
 
       add(
-        'sgmp_f3_activity_output',
+        'sb_activity_output',
 
         activityId,
         outputId,
@@ -2820,7 +2867,7 @@ function buildFallbackPeripheralEdges(){
         sp.outputs
       ).forEach(outputName => {
         add(
-          'sgmp_f3_end_output',
+          'sb_end_output',
 
           activityIdByName(
             idMap,
@@ -2874,7 +2921,7 @@ function buildFallbackPeripheralEdges(){
   effectiveCustomerLinks.forEach(
     link => {
       add(
-        'sgmp_f3_output_customer',
+        'sb_output_customer',
 
         firstExistingId(
           idMap.outputs,
@@ -2892,6 +2939,307 @@ function buildFallbackPeripheralEdges(){
   );
 
   return edges;
+}
+
+function buildSBExpectedEdgeCells(){
+  return [
+    ...buildFallbackInternalEdges(),
+    ...buildFallbackPeripheralEdges()
+  ];
+}
+
+
+function validateSBBuiltDiagram(
+  baseXML,
+  builtXML
+){
+  const baseGraph =
+    readDrawioGraph(
+      baseXML
+    );
+
+  const builtGraph =
+    readDrawioGraph(
+      builtXML
+    );
+
+  const errors = [];
+
+  if(!baseGraph.ok){
+    errors.push(
+      baseGraph.error ||
+      'El XML base no es válido.',
+
+      ...(
+        baseGraph.errors ||
+        []
+      )
+    );
+  }
+
+  if(!builtGraph.ok){
+    errors.push(
+      builtGraph.error ||
+      'El XML construido no es válido.',
+
+      ...(
+        builtGraph.errors ||
+        []
+      )
+    );
+  }
+
+  const expectedCells =
+    buildSBExpectedEdgeCells();
+
+  const expectedEdges =
+    readExpectedEdgeCells(
+      expectedCells
+    );
+
+  const internalEdges =
+    readExpectedEdgeCells(
+      buildFallbackInternalEdges()
+    );
+
+  const activityCount =
+    Array.isArray(
+      S.sp?.activities
+    )
+      ? S.sp.activities.length
+      : 0;
+
+  if(
+    activityCount > 1 &&
+    internalEdges.length === 0
+  ){
+    errors.push(
+      'No fue posible construir las conexiones internas desde las relaciones declaradas.'
+    );
+  }
+
+  if(
+    baseGraph.ok &&
+    builtGraph.ok
+  ){
+    errors.push(
+      ...validateBasePreservation(
+        baseGraph,
+        builtGraph,
+        false
+      ),
+
+      ...validateExpectedConnections(
+        builtGraph,
+        expectedEdges,
+        true
+      )
+    );
+  }
+
+  return {
+    ok:
+      errors.length === 0,
+
+    errors:
+      [...new Set(
+        errors.filter(Boolean)
+      )],
+
+    vertices:
+      builtGraph.vertices?.size ||
+      0,
+
+    edges:
+      builtGraph.edges?.length ||
+      0
+  };
+}
+
+
+function renderSBDiagramValidation(
+  result
+){
+  const box =
+    $('vld_diagram');
+
+  if(!box){
+    return;
+  }
+
+  if(!result.ok){
+    box.className =
+      'vld show bad';
+
+    box.textContent =
+      'Construcción bloqueada: ' +
+      result.errors
+        .slice(0, 6)
+        .join(' | ') +
+      (
+        result.errors.length > 6
+          ? ` | ${result.errors.length - 6} error(es) adicionales.`
+          : ''
+      );
+
+    return;
+  }
+
+  box.className =
+    'vld show ok';
+
+  box.textContent =
+    'Diagrama construido y validado. ' +
+    `${result.vertices} nodos y ` +
+    `${result.edges} conexiones verificadas.`;
+}
+
+
+function buildSBConnectedDiagram(){
+  const baseXML =
+    cleanStageXMLArtifacts(
+      S.tplXml || ''
+    );
+
+  if(!baseXML){
+    gMsg(
+      'err',
+      'No existe una plantilla base para construir el diagrama.'
+    );
+
+    return false;
+  }
+
+  const expectedCells =
+    buildSBExpectedEdgeCells();
+
+  let builtXML =
+    expectedCells.length
+      ? insertEdgesIntoXML(
+          baseXML,
+          expectedCells
+        )
+      : baseXML;
+
+  if(!builtXML){
+    gMsg(
+      'err',
+      'No fue posible incorporar las conexiones al XML base.'
+    );
+
+    return false;
+  }
+
+  const styledResult =
+    applySBExecutiveEdgeStyles(
+      builtXML
+    );
+
+  if(!styledResult.ok){
+    gMsg(
+      'err',
+      'No fue posible aplicar el estándar visual de conexiones.'
+    );
+
+    return false;
+  }
+
+  builtXML =
+    cleanStageXMLArtifacts(
+      styledResult.xml
+    );
+
+  const validation =
+    validateSBBuiltDiagram(
+      baseXML,
+      builtXML
+    );
+
+  renderSBDiagramValidation(
+    validation
+  );
+
+  if(!validation.ok){
+    gMsg(
+      'err',
+      'El diagrama automático no superó la validación contractual y semántica.'
+    );
+
+    return false;
+  }
+
+  S.diagramXml =
+    builtXML;
+
+  const output =
+    $('xml_diagram');
+
+  if(output){
+    output.value =
+      builtXML;
+  }
+
+  return true;
+}
+
+
+function finalizeSBBuiltDiagram(){
+  const xml =
+    String(
+      S.diagramXml ||
+      $('xml_diagram')?.value ||
+      ''
+    ).trim();
+
+  if(!xml){
+    gMsg(
+      'warn',
+      'Primero construye el diagrama.'
+    );
+
+    return false;
+  }
+
+  const validation =
+    validateSBBuiltDiagram(
+      S.tplXml,
+      xml
+    );
+
+  renderSBDiagramValidation(
+    validation
+  );
+
+  if(!validation.ok){
+    gMsg(
+      'err',
+      'La salida fue bloqueada porque el diagrama no conserva correctamente el contrato.'
+    );
+
+    return false;
+  }
+
+  S.xmlFinal =
+    injectHeader(
+      xml,
+      S.sp || {}
+    );
+
+  $('xml_final').value =
+    S.xmlFinal;
+
+  renderOutReport();
+
+  switchTab(
+    'tab_out'
+  );
+
+  gMsg(
+    'ok',
+    'XML final generado desde la construcción determinista.'
+  );
+
+  return true;
 }
   
 function ensureInternalEdges(
@@ -4047,9 +4395,23 @@ const S = {
   tplXml:
     '',
 
-  idRef:
-    '',
-  xmlF2:   '',  xmlF3:   '',  xmlF4:   '',  xmlFinal:   '',
+idRef:
+  '',
+
+diagramXml:
+  '',
+
+xmlF2:
+  '',
+
+xmlF3:
+  '',
+
+xmlF4:
+  '',
+
+xmlFinal:
+  '',
   manualLocked: false,
   editActIndex: null,
   loadTrace: { source:'', loadedAt:'', processName:'', activityCount:0, warningsCount:0, blockingCount:0 },
@@ -5941,9 +6303,7 @@ function runSBContractPreflight(){
 
   const templateXML =
     String(
-      S.tplXml ||
-      $('tpl_xml')?.value ||
-      ''
+      S.tplXml || ''
     ).trim();
 
   const errors = [];
@@ -6033,18 +6393,12 @@ function runSBContractPreflight(){
       templateXML
     );
 
-  $('tpl_xml').value =
-    S.tplXml;
-
-  const instructionsReady =
-    buildF2Prompt();
-
-  if(!instructionsReady){
+  if(!buildSBConnectedDiagram()){
     return false;
   }
 
   switchTab(
-    'tab_f2'
+    'tab_tpl'
   );
 
   gMsg(
@@ -6053,9 +6407,9 @@ function runSBContractPreflight(){
       : 'ok',
 
     uniqueWarnings.length
-      ? 'La estructura es válida, con advertencias: ' +
+      ? 'Diagrama construido con advertencias contractuales: ' +
         uniqueWarnings.join(' | ')
-      : 'Contrato, actividades, IDs y XML base validados correctamente.'
+      : 'Contrato validado y diagrama construido automáticamente.'
   );
 
   return true;
@@ -6325,9 +6679,9 @@ sbSetDataModuleLocked(
   S.manualLocked
 );
 
-    genTemplate();
-    switchTab('tab_tpl');
-    gMsg('ok', 'JSON del LMP cargado y plantilla XML generada correctamente.');
+if(!genTemplate()){
+  return;
+}
 
   } catch (error) {
     gMsg('err', 'No fue posible procesar el JSON cargado: ' + error.message);
@@ -7157,32 +7511,32 @@ function genTemplate() {
   S.idRef =
     idLines.join('\n');
 
-  $('tpl_xml').value =
-    S.tplXml;
+ S.diagramXml =
+  '';
 
-  $('tpl_info').innerHTML =
-    `<strong>Plantilla generada — estándar ejecutivo SIPOC</strong><br>` +
-    `Actores: ${effectiveActors.length} ` +
-    `(${effectiveActors.map(ex).join(', ')}) · ` +
-    `Actividades: ${orderedActivities.length} · ` +
-    `S:${suppliers.length} ` +
-    `I:${inputs.length} ` +
-    `O:${outputs.length} ` +
-    `C:${customers.length} · ` +
-    `Cajas: 150×60 · ` +
-    `Decisiones: 130×60 · ` +
-    `Carriles externos: ancho fijo ${EXTERNAL_LANE_W}px`;
+if($('xml_diagram')){
+  $('xml_diagram').value =
+    '';
+}
 
-  switchTab(
-    'tab_tpl'
-  );
+$('tpl_info').innerHTML =
+  `<strong>Base generada — estándar ejecutivo SIPOC</strong><br>` +
+  `Actores: ${effectiveActors.length} ` +
+  `(${effectiveActors.map(ex).join(', ')}) · ` +
+  `Actividades: ${orderedActivities.length} · ` +
+  `S:${suppliers.length} ` +
+  `I:${inputs.length} ` +
+  `O:${outputs.length} ` +
+  `C:${customers.length} · ` +
+  `Cajas: 150×60 · ` +
+  `Decisiones: 130×60 · ` +
+  `Carriles externos: ancho fijo ${EXTERNAL_LANE_W}px`;
 
-  gMsg(
-    'ok',
-    'Plantilla XML generada con dimensiones uniformes y paleta ejecutiva pastel.'
-  );
+switchTab(
+  'tab_tpl'
+);
 
-  return true;
+return runSBContractPreflight();
 }
   
 // ═══════════════════════════════════════════════════════════════
@@ -8392,30 +8746,29 @@ $('btn_lmp')
   $('btn_export_json').addEventListener('click', exportJSON);
   $('btn_to_tpl').addEventListener('click', goToTemplate);
 
- // Construcción base
-$('btn_copy_tpl')
+// Diagram Studio · construcción determinista
+$('btn_build_diagram')
   .addEventListener(
     'click',
-    () =>
-      copyText(
-        $('tpl_xml').value
-      )
+    runSBContractPreflight
   );
 
-$('btn_dl_tpl')
+$('btn_dl_diagram')
   .addEventListener(
     'click',
     () =>
       dlText(
-        $('tpl_xml').value,
-        'sipoc_plantilla.xml'
+        S.diagramXml ||
+        $('xml_diagram').value,
+
+        'sipoc_diagrama_construido.xml'
       )
   );
 
-$('btn_validate_contract')
+$('btn_generate_output')
   .addEventListener(
     'click',
-    runSBContractPreflight
+    finalizeSBBuiltDiagram
   );
   
   // F2
