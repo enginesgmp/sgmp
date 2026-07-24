@@ -6305,6 +6305,10 @@ function genTemplate() {
               item?.name ||
               item?.label ||
               item?.value ||
+              item?.supplier ||
+              item?.input ||
+              item?.output ||
+              item?.customer ||
               ''
             )
       )
@@ -6353,13 +6357,12 @@ function genTemplate() {
       sp.catalogs?.customers
     );
 
-  const activities =
-    Array.isArray(sp.activities)
-      ? sp.activities
-      : [];
-
   const orderedActivities =
-    activities
+    (
+      Array.isArray(sp.activities)
+        ? sp.activities
+        : []
+    )
       .map((activity, index) => ({
         ...activity,
 
@@ -6379,6 +6382,10 @@ function genTemplate() {
           (a.__index - b.__index)
       );
 
+  /*
+   * Las notas se obtienen exclusivamente
+   * de las actividades que poseen nota.
+   */
   const activityNotePack =
     buildActivityNotePack(
       orderedActivities
@@ -6388,58 +6395,63 @@ function genTemplate() {
     activityNotePack.notes;
 
   /*
-   * Dimensiones oficiales.
+   * Estándar visual ejecutivo SIPOC.
+   *
+   * Todas las cajas: 150 x 60.
+   * Decisiones: 130 x 60.
+   * Los cuatro carriles externos mantienen
+   * siempre el mismo ancho.
    */
-  const SIDE_COLUMN_W = 190;
-  const COLUMN_GAP = 14;
-
-  const LANE_W = 240;
-  const LANE_HEADER_H = 40;
-
-  const ACTIVITY_W = 150;
-  const ACTIVITY_H = 60;
-
+  const EXTERNAL_LANE_W = 190;
+  const EXTERNAL_NODE_W = 150;
+  const STANDARD_NODE_H = 60;
   const DECISION_W = 130;
-  const DECISION_H = 60;
 
-  const ROW_H = 60;
+  const INTERNAL_LANE_W = 240;
+  const INTERNAL_LANE_HEADER_H = 40;
+
+  const COLUMN_GAP = 14;
   const ROW_GAP = 28;
   const BODY_PADDING_Y = 28;
+  const EXTERNAL_PADDING_Y = 22;
 
   const ZONE_HEADER_H = 38;
   const PROCESS_TOP = 120;
 
-  const SIPOC_NODE_W = 150;
-  const SIPOC_NODE_H = 50;
-  const SIPOC_NODE_GAP = 14;
-  const SIPOC_PADDING_Y = 22;
-
+  /*
+   * Paleta pastel, ejecutiva, tecnológica
+   * y sin colores invasivos.
+   */
   const P = {
-    supplierHeader: '#475569',
-    inputHeader: '#2563EB',
-    processHeader: '#163A5F',
-    outputHeader: '#4F7F63',
-    customerHeader: '#8B5E7A',
+    supplierHeader: '#667383',
+    inputHeader: '#6F9FBC',
+    processHeader: '#294B66',
+    outputHeader: '#769985',
+    customerHeader: '#667383',
 
-    supplierBody: '#F8FAFC',
-    inputBody: '#EFF6FF',
-    outputBody: '#F0FDF4',
-    customerBody: '#FDF2F8',
+    supplierBody: '#F7F9FB',
+    inputBody: '#F1F7FA',
+    outputBody: '#F3F8F5',
+    customerBody: '#F7F9FB',
 
-    supplierNode: '#E2E8F0',
-    inputNode: '#DBEAFE',
-    outputNode: '#DCFCE7',
-    customerNode: '#FCE7F3',
+    supplierNode: '#F2F4F6',
+    inputNode: '#EAF4F9',
+    outputNode: '#EDF6F0',
+    customerNode: '#F2F4F6',
 
-    text: '#0F172A',
-    activityStroke: '#274C77',
+    supplierStroke: '#A9B4BF',
+    inputStroke: '#83AEC7',
+    activityStroke: '#3D5B73',
+    outputStroke: '#86A895',
+    customerStroke: '#A9B4BF',
+    decisionStroke: '#8B97A3',
 
-    decisionFill: '#FFF7E6',
-    decisionStroke: '#B7791F',
+    text: '#223042',
+    mutedText: '#435466',
 
-    laneHeader: '#EAF1F7',
+    laneHeader: '#EEF3F6',
     laneBody: '#FFFFFF',
-    laneStroke: '#94A3B8'
+    laneStroke: '#AAB7C2'
   };
 
   const effectiveActors =
@@ -6454,9 +6466,9 @@ function genTemplate() {
     );
 
   const flowBodyHeight =
-    LANE_HEADER_H +
+    INTERNAL_LANE_HEADER_H +
     BODY_PADDING_Y * 2 +
-    rowCount * ROW_H +
+    rowCount * STANDARD_NODE_H +
     Math.max(
       0,
       rowCount - 1
@@ -6472,34 +6484,39 @@ function genTemplate() {
     );
 
   const sideBodyHeight =
-    SIPOC_PADDING_Y * 2 +
-    sideItemCount * SIPOC_NODE_H +
+    EXTERNAL_PADDING_Y * 2 +
+    sideItemCount * STANDARD_NODE_H +
     Math.max(
       0,
       sideItemCount - 1
-    ) * SIPOC_NODE_GAP;
+    ) * ROW_GAP;
 
+  /*
+   * Solo aumenta la extensión vertical.
+   * Los anchos permanecen fijos.
+   */
   const bodyHeight =
     Math.max(
       flowBodyHeight,
       sideBodyHeight
     );
 
-  const xSupplier = 20;
+  const xSupplier =
+    20;
 
   const xInput =
     xSupplier +
-    SIDE_COLUMN_W +
+    EXTERNAL_LANE_W +
     COLUMN_GAP;
 
   const xProcess =
     xInput +
-    SIDE_COLUMN_W +
+    EXTERNAL_LANE_W +
     COLUMN_GAP;
 
   const processWidth =
     effectiveActors.length *
-    LANE_W;
+    INTERNAL_LANE_W;
 
   const xOutput =
     xProcess +
@@ -6508,22 +6525,25 @@ function genTemplate() {
 
   const xCustomer =
     xOutput +
-    SIDE_COLUMN_W +
+    EXTERNAL_LANE_W +
     COLUMN_GAP;
 
   const totalWidth =
     xCustomer +
-    SIDE_COLUMN_W +
+    EXTERNAL_LANE_W +
     20;
 
   const bodyY =
     PROCESS_TOP +
     ZONE_HEADER_H;
 
-  let idCounter = 100;
+  let idCounter =
+    100;
 
   const nextId = () =>
-    String(idCounter++);
+    String(
+      idCounter++
+    );
 
   const cells = [
     '<mxCell id="0"/>',
@@ -6545,20 +6565,20 @@ function genTemplate() {
     S.cfg || {};
 
   /*
-   * Encabezados de las zonas.
+   * Encabezados de las cinco zonas.
    */
-  [
+  const zoneHeaders = [
     [
       C.lbl_sup || 'SUPPLIERS',
       xSupplier,
-      SIDE_COLUMN_W,
+      EXTERNAL_LANE_W,
       P.supplierHeader
     ],
 
     [
       C.lbl_inp || 'INPUTS',
       xInput,
-      SIDE_COLUMN_W,
+      EXTERNAL_LANE_W,
       P.inputHeader
     ],
 
@@ -6572,17 +6592,19 @@ function genTemplate() {
     [
       C.lbl_out || 'OUTPUTS',
       xOutput,
-      SIDE_COLUMN_W,
+      EXTERNAL_LANE_W,
       P.outputHeader
     ],
 
     [
       C.lbl_cus || 'CUSTOMERS',
       xCustomer,
-      SIDE_COLUMN_W,
+      EXTERNAL_LANE_W,
       P.customerHeader
     ]
-  ].forEach(
+  ];
+
+  zoneHeaders.forEach(
     ([label, x, width, fill]) => {
       cells.push(
         `<mxCell id="${nextId()}" ` +
@@ -6610,38 +6632,37 @@ function genTemplate() {
   );
 
   /*
-   * Fondos laterales.
+   * Cuatro carriles externos.
+   * Siempre conservan EXTERNAL_LANE_W.
    */
-  [
+  const externalLanes = [
     [
       xSupplier,
-      SIDE_COLUMN_W,
       P.supplierBody,
-      '#CBD5E1'
+      P.supplierStroke
     ],
 
     [
       xInput,
-      SIDE_COLUMN_W,
       P.inputBody,
-      '#93C5FD'
+      P.inputStroke
     ],
 
     [
       xOutput,
-      SIDE_COLUMN_W,
       P.outputBody,
-      '#86EFAC'
+      P.outputStroke
     ],
 
     [
       xCustomer,
-      SIDE_COLUMN_W,
       P.customerBody,
-      '#F9A8D4'
+      P.customerStroke
     ]
-  ].forEach(
-    ([x, width, fill, stroke]) => {
+  ];
+
+  externalLanes.forEach(
+    ([x, fill, stroke]) => {
       cells.push(
         `<mxCell id="${nextId()}" ` +
         `value="" ` +
@@ -6650,11 +6671,11 @@ function genTemplate() {
         `html=1;` +
         `fillColor=${fill};` +
         `strokeColor=${stroke};` +
-        `opacity=60;" ` +
+        `strokeWidth=1;" ` +
         `vertex="1" parent="1">` +
         `<mxGeometry x="${x}" ` +
         `y="${bodyY}" ` +
-        `width="${width}" ` +
+        `width="${EXTERNAL_LANE_W}" ` +
         `height="${bodyHeight}" ` +
         `as="geometry"/>` +
         `</mxCell>`
@@ -6663,7 +6684,7 @@ function genTemplate() {
   );
 
   /*
-   * Carriles de actores.
+   * Carriles internos del proceso.
    */
   effectiveActors.forEach(
     (actor, actorIndex) => {
@@ -6672,7 +6693,8 @@ function genTemplate() {
 
       const laneX =
         xProcess +
-        actorIndex * LANE_W;
+        actorIndex *
+        INTERNAL_LANE_W;
 
       laneMap[actor] = {
         id: laneId,
@@ -6687,7 +6709,7 @@ function genTemplate() {
         )}" ` +
         `style="swimlane;` +
         `html=1;` +
-        `startSize=${LANE_HEADER_H};` +
+        `startSize=${INTERNAL_LANE_HEADER_H};` +
         `fillColor=${P.laneHeader};` +
         `swimlaneFillColor=${P.laneBody};` +
         `strokeColor=${P.laneStroke};` +
@@ -6699,7 +6721,7 @@ function genTemplate() {
         `vertex="1" parent="1">` +
         `<mxGeometry x="${laneX}" ` +
         `y="${bodyY}" ` +
-        `width="${LANE_W}" ` +
+        `width="${INTERNAL_LANE_W}" ` +
         `height="${bodyHeight}" ` +
         `as="geometry"/>` +
         `</mxCell>`
@@ -6728,32 +6750,30 @@ function genTemplate() {
         laneMap[actor];
 
       const isDecision =
-        activity.type === 'decision';
+        normalizeText(
+          activity.type
+        ).toLowerCase() ===
+        'decision';
 
       const width =
         isDecision
           ? DECISION_W
-          : ACTIVITY_W;
-
-      const height =
-        isDecision
-          ? DECISION_H
-          : ACTIVITY_H;
+          : EXTERNAL_NODE_W;
 
       const x =
         lane.x +
         (
-          LANE_W -
+          INTERNAL_LANE_W -
           width
         ) / 2;
 
       const y =
         lane.y +
-        LANE_HEADER_H +
+        INTERNAL_LANE_HEADER_H +
         BODY_PADDING_Y +
         index *
         (
-          ROW_H +
+          STANDARD_NODE_H +
           ROW_GAP
         );
 
@@ -6778,11 +6798,11 @@ function genTemplate() {
               'rhombus',
               'whiteSpace=wrap',
               'html=1',
-              `fillColor=${P.decisionFill}`,
+              'fillColor=#FFFFFF',
               `strokeColor=${P.decisionStroke}`,
               'strokeWidth=1.5',
               `fontColor=${P.text}`,
-              'fontSize=10',
+              'fontSize=11',
               'fontStyle=1',
               'align=center',
               'verticalAlign=middle',
@@ -6790,15 +6810,14 @@ function genTemplate() {
             ].join(';') + ';'
 
           : [
-              'rounded=1',
-              'arcSize=12',
+              'rounded=0',
               'whiteSpace=wrap',
               'html=1',
               'fillColor=#FFFFFF',
               `strokeColor=${P.activityStroke}`,
               'strokeWidth=1.5',
               `fontColor=${P.text}`,
-              'fontSize=10',
+              'fontSize=11',
               'fontStyle=1',
               'align=center',
               'verticalAlign=middle',
@@ -6806,12 +6825,9 @@ function genTemplate() {
             ].join(';') + ';';
 
       activityNodes.push({
-        id: nodeId,
+        id:
+          nodeId,
 
-        /*
-         * Se conserva el nombre original
-         * para resolver relaciones.
-         */
         name:
           normalizeText(
             activity.name
@@ -6837,7 +6853,7 @@ function genTemplate() {
         `<mxGeometry x="${Math.round(x)}" ` +
         `y="${Math.round(y)}" ` +
         `width="${width}" ` +
-        `height="${height}" ` +
+        `height="${STANDARD_NODE_H}" ` +
         `as="geometry"/>` +
         `</mxCell>`
       );
@@ -6850,15 +6866,14 @@ function genTemplate() {
     fontColor
   ) =>
     [
-      'rounded=1',
-      'arcSize=12',
+      'rounded=0',
       'whiteSpace=wrap',
       'html=1',
       `fillColor=${fill}`,
       `strokeColor=${stroke}`,
       'strokeWidth=1.5',
       `fontColor=${fontColor}`,
-      'fontSize=10',
+      'fontSize=11',
       'fontStyle=1',
       'align=center',
       'verticalAlign=middle',
@@ -6866,15 +6881,16 @@ function genTemplate() {
     ].join(';') + ';';
 
   /*
-   * Nodos periféricos SIPOC.
+   * Nodos periféricos.
+   * Todos son 150 x 60.
    */
-  [
+  const peripheralGroups = [
     [
       suppliers,
       xSupplier,
       P.supplierNode,
-      '#94A3B8',
-      '#334155',
+      P.supplierStroke,
+      P.mutedText,
       'suppliers'
     ],
 
@@ -6882,8 +6898,8 @@ function genTemplate() {
       inputs,
       xInput,
       P.inputNode,
-      '#60A5FA',
-      '#1E3A8A',
+      P.inputStroke,
+      P.text,
       'inputs'
     ],
 
@@ -6891,8 +6907,8 @@ function genTemplate() {
       outputs,
       xOutput,
       P.outputNode,
-      '#4ADE80',
-      '#14532D',
+      P.outputStroke,
+      P.text,
       'outputs'
     ],
 
@@ -6900,11 +6916,13 @@ function genTemplate() {
       customers,
       xCustomer,
       P.customerNode,
-      '#F472B6',
-      '#831843',
+      P.customerStroke,
+      P.mutedText,
       'customers'
     ]
-  ].forEach(
+  ];
+
+  peripheralGroups.forEach(
     ([
       items,
       columnX,
@@ -6921,23 +6939,28 @@ function genTemplate() {
           const x =
             columnX +
             (
-              SIDE_COLUMN_W -
-              SIPOC_NODE_W
+              EXTERNAL_LANE_W -
+              EXTERNAL_NODE_W
             ) / 2;
 
           const y =
             bodyY +
-            SIPOC_PADDING_Y +
+            EXTERNAL_PADDING_Y +
             index *
             (
-              SIPOC_NODE_H +
-              SIPOC_NODE_GAP
+              STANDARD_NODE_H +
+              ROW_GAP
             );
 
           sipocMap[mapKey][item] = {
-            id: nodeId,
-            x: Math.round(x),
-            y: Math.round(y)
+            id:
+              nodeId,
+
+            x:
+              Math.round(x),
+
+            y:
+              Math.round(y)
           };
 
           cells.push(
@@ -6953,8 +6976,8 @@ function genTemplate() {
             `vertex="1" parent="1">` +
             `<mxGeometry x="${Math.round(x)}" ` +
             `y="${Math.round(y)}" ` +
-            `width="${SIPOC_NODE_W}" ` +
-            `height="${SIPOC_NODE_H}" ` +
+            `width="${EXTERNAL_NODE_W}" ` +
+            `height="${STANDARD_NODE_H}" ` +
             `as="geometry"/>` +
             `</mxCell>`
           );
@@ -6964,7 +6987,7 @@ function genTemplate() {
   );
 
   /*
-   * Mapa de IDs.
+   * Mapa de IDs utilizado por F1-F4.
    */
   const idLines = [
     '=== MAPA DE IDs (usar en source= y target= de los edges) ===',
@@ -7081,7 +7104,7 @@ function genTemplate() {
     S.tplXml;
 
   $('tpl_info').innerHTML =
-    `<strong>Plantilla generada — arquitectura plana, todos parent="1"</strong><br>` +
+    `<strong>Plantilla generada — estándar ejecutivo SIPOC</strong><br>` +
     `Actores: ${effectiveActors.length} ` +
     `(${effectiveActors.map(ex).join(', ')}) · ` +
     `Actividades: ${orderedActivities.length} · ` +
@@ -7089,8 +7112,9 @@ function genTemplate() {
     `I:${inputs.length} ` +
     `O:${outputs.length} ` +
     `C:${customers.length} · ` +
-    `Canvas: ~${totalWidth}px · ` +
-    `Layout: filas por secuencia y columnas por actor`;
+    `Cajas: 150×60 · ` +
+    `Decisiones: 130×60 · ` +
+    `Carriles externos: ancho fijo ${EXTERNAL_LANE_W}px`;
 
   switchTab(
     'tab_tpl'
@@ -7098,11 +7122,12 @@ function genTemplate() {
 
   gMsg(
     'ok',
-    'Plantilla XML generada con tamaños y paleta estandarizados. Continúa con F1.'
+    'Plantilla XML generada con dimensiones uniformes y paleta ejecutiva pastel.'
   );
 
   return true;
 }
+  
 // ═══════════════════════════════════════════════════════════════
 // PROMPT STEP NAVIGATION
 // ═══════════════════════════════════════════════════════════════
