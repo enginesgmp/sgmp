@@ -31205,37 +31205,41 @@ window.lmpSavePendingWasteFindings_ = function(options){
   }
 };  
 
-function lmpProblemPriorityLabel_(value){
+function lmpProblemTypeLabel_(value){
   return ({
-    alta: 'Alta',
-    media: 'Media',
-    baja: 'Baja'
+    QUALITY_ERROR: 'Calidad, error o reproceso',
+    INFORMATION_TRACEABILITY: 'Información o trazabilidad',
+    CONTROL_COMPLIANCE: 'Control o cumplimiento',
+    COORDINATION_HANDOFF: 'Coordinación o transferencia',
+    SYSTEM_TOOL: 'Sistema o herramienta',
+    TIME_SERVICE: 'Tiempo o nivel de servicio',
+    CAPACITY_RESOURCES: 'Capacidad o recursos',
+    OTHER: 'Otro problema demostrable'
   })[
     String(value || '')
       .trim()
-      .toLowerCase()
-  ] || 'Sin prioridad';
-}
-
-
-function lmpProblemConfidenceLabel_(value){
-  return ({
-    high: 'Alta',
-    medium: 'Media',
-    low: 'Baja'
-  })[
-    String(value || '')
-      .trim()
-      .toLowerCase()
+      .toUpperCase()
   ] || 'Sin definir';
 }
 
 
+function lmpProblemImpactLabel_(value){
+  return ({
+    HIGH: 'Impacto alto',
+    MEDIUM: 'Impacto medio',
+    LOW: 'Impacto bajo'
+  })[
+    String(value || '')
+      .trim()
+      .toUpperCase()
+  ] || 'Sin impacto';
+}
+
+
 function lmpRenderProblemReview_(parsed){
-  const cards =
-    document.querySelector(
-      '#analisis_problemas .cards'
-    );
+  const cards = document.querySelector(
+    '#analisis_problemas .cards'
+  );
 
   if(!cards){
     return null;
@@ -31251,50 +31255,72 @@ function lmpRenderProblemReview_(parsed){
     );
 
   const activities =
-    safeArray(
-      lmpGetValidatedAsIsEvidence_()
-        ?.activities
-    );
+    lmpGetExecutableWasteActivities_();
 
-  const wastes =
-    safeArray(
-      lmpGetOfficialAnalysisResult_(
-        'DESPERDICIOS'
-      )?.wastes
-    );
+  const totalProblems =
+    problems.length;
 
-  const evidenceSources = [
-    ['activity', 'Actividad'],
-    ['additional_information', 'Información adicional'],
-    ['actor', 'Actor'],
-    ['supplier_input', 'Proveedor o entrada'],
-    ['output_customer', 'Salida o cliente'],
-    ['document', 'Documento'],
-    ['system', 'Sistema'],
-    ['control', 'Control'],
-    ['exception', 'Excepción'],
-    ['activity_connection', 'Conexión entre actividades'],
-    ['ava_result', 'Resultado VA'],
-    ['waste_result', 'Resultado de desperdicios'],
-    ['process_context', 'Contexto del proceso'],
-    ['prompt_a_evidence', 'Evidencia del Prompt A'],
-    ['quantitative_data', 'Dato cuantitativo'],
-    ['observation', 'Observación'],
-    ['contradiction', 'Contradicción'],
-    ['materialized_risk', 'Riesgo materializado']
-  ];
+  const highImpactCount =
+    problems.filter(
+      function(problem){
+        return String(
+          problem?.impactLevel || ''
+        )
+          .trim()
+          .toUpperCase() ===
+          'HIGH';
+      }
+    ).length;
 
-  const impactDimensions = [
-    ['time', 'Tiempo'],
-    ['quality', 'Calidad'],
-    ['cost', 'Costo'],
-    ['service', 'Servicio'],
-    ['capacity', 'Capacidad'],
-    ['information', 'Información'],
-    ['compliance', 'Cumplimiento'],
-    ['safety', 'Seguridad'],
-    ['traceability', 'Trazabilidad']
-  ];
+  const affectedActivityIds =
+    new Set();
+
+  problems.forEach(
+    function(problem){
+      safeArray(
+        problem?.relatedActivityIds
+      )
+        .map(
+          function(activityId){
+            return String(
+              activityId || ''
+            ).trim();
+          }
+        )
+        .filter(Boolean)
+        .forEach(
+          function(activityId){
+            affectedActivityIds.add(
+              activityId
+            );
+          }
+        );
+    }
+  );
+
+  const affectedActivityCount =
+    affectedActivityIds.size;
+
+  const sourceActivityCount =
+    activities.length;
+
+  const highImpactPercent =
+    totalProblems
+      ? Math.round(
+          highImpactCount /
+          totalProblems *
+          100
+        )
+      : 0;
+
+  const affectedActivityPercent =
+    sourceActivityCount
+      ? Math.round(
+          affectedActivityCount /
+          sourceActivityCount *
+          100
+        )
+      : 0;
 
   const reviewCard =
     document.createElement(
@@ -31315,19 +31341,67 @@ function lmpRenderProblemReview_(parsed){
         </h3>
 
         <p>
-          Revisa diagnóstico, trazabilidad, causa probable,
-          impacto, prioridad y validaciones pendientes.
-          Esta fase todavía no guarda cambios.
+          Revisa nombre, tipo, impacto,
+          actividades relacionadas, descripción,
+          justificación y evidencia.
         </p>
       </div>
 
       <div class="analysis-problem-review-counter">
-        ${problems.length}
+        ${totalProblems}
         ${
-          problems.length === 1
+          totalProblems === 1
             ? 'problema'
             : 'problemas'
         }
+      </div>
+    </div>
+
+    <div class="analysis-problem-kpis">
+      <div class="analysis-problem-kpi">
+        <small>
+          Problemas identificados
+        </small>
+
+        <strong>
+          ${totalProblems}
+        </strong>
+
+        <span>
+          Total de hallazgos
+        </span>
+      </div>
+
+      <div class="analysis-problem-kpi">
+        <small>
+          Problemas de impacto alto
+        </small>
+
+        <strong>
+          ${highImpactCount}
+          de
+          ${totalProblems}
+        </strong>
+
+        <span>
+          ${highImpactPercent}% del total
+        </span>
+      </div>
+
+      <div class="analysis-problem-kpi">
+        <small>
+          Actividades afectadas
+        </small>
+
+        <strong>
+          ${affectedActivityCount}
+          de
+          ${sourceActivityCount}
+        </strong>
+
+        <span>
+          ${affectedActivityPercent}% del proceso
+        </span>
       </div>
     </div>
 
@@ -31365,1076 +31439,855 @@ function lmpRenderProblemReview_(parsed){
   if(!problems.length){
     list.innerHTML = `
       <div class="analysis-problem-empty">
-        El contrato validado no contiene problemas demostrables.
+        El análisis no contiene problemas
+        operativos demostrables.
       </div>
     `;
 
     return reviewCard;
   }
 
-  const activityOptions = function(
-    selectedId,
-    selectedIds
-  ){
-    return activities
-      .map(function(activity){
-        const id =
-          String(
-            activity?.id || ''
-          ).trim();
+  const typeOptions = [
+    [
+      '',
+      'Seleccionar tipo de problema'
+    ],
+    [
+      'QUALITY_ERROR',
+      'Calidad, error o reproceso'
+    ],
+    [
+      'INFORMATION_TRACEABILITY',
+      'Información o trazabilidad'
+    ],
+    [
+      'CONTROL_COMPLIANCE',
+      'Control o cumplimiento'
+    ],
+    [
+      'COORDINATION_HANDOFF',
+      'Coordinación o transferencia'
+    ],
+    [
+      'SYSTEM_TOOL',
+      'Sistema o herramienta'
+    ],
+    [
+      'TIME_SERVICE',
+      'Tiempo o nivel de servicio'
+    ],
+    [
+      'CAPACITY_RESOURCES',
+      'Capacidad o recursos'
+    ],
+    [
+      'OTHER',
+      'Otro problema demostrable'
+    ]
+  ];
 
-        const name =
-          String(
-            activity?.name || ''
-          ).trim();
+  const impactOptions = [
+    [
+      '',
+      'Seleccionar impacto'
+    ],
+    [
+      'HIGH',
+      'Alto'
+    ],
+    [
+      'MEDIUM',
+      'Medio'
+    ],
+    [
+      'LOW',
+      'Bajo'
+    ]
+  ];
 
-        const selected =
-          selectedIds
-            ? selectedIds.has(id)
-            : id === selectedId;
-
-        return `
-          <option
-            value="${escapeHtml(id)}"
-            ${selected ? 'selected' : ''}
-          >
-            ${escapeHtml(id + ' · ' + name)}
-          </option>
-        `;
-      })
-      .join('');
-  };
-
-  problems.forEach(function(
-    problem,
-    index
-  ){
-    const id =
-      String(
-        problem?.id ||
-        (
-          'PR-' +
-          String(
-            index + 1
-          ).padStart(
-            3,
-            '0'
-          )
-        )
-      ).trim();
-
-    const relatedActivityIds =
-      new Set(
-        safeArray(
-          problem?.related_activities
-        )
-          .map(function(item){
-            return String(
-              item?.activity_id || ''
-            ).trim();
-          })
-          .filter(Boolean)
-      );
-
-    const relatedWasteMap =
-      new Map(
-        safeArray(
-          problem?.related_wastes
-        )
-          .map(function(item){
-            return [
-              String(
-                item?.waste_id || ''
-              ).trim(),
-
-              item || {}
-            ];
-          })
-          .filter(function(entry){
-            return !!entry[0];
-          })
-      );
-
-    const evidence =
-      safeArray(
-        problem?.evidence
-      ).length
-        ? safeArray(
-            problem.evidence
-          )
-        : [
-            {
-              source: '',
-              detail: ''
-            }
-          ];
-
-    const evidenceHtml =
-      evidence
-        .map(function(
-          item,
-          evidenceIndex
-        ){
-          const source =
+  problems.forEach(
+    function(problem, index){
+      const id =
+        String(
+          problem?.id ||
+          (
+            'P-' +
             String(
-              item?.source || ''
-            ).trim();
+              index + 1
+            ).padStart(
+              3,
+              '0'
+            )
+          )
+        ).trim();
 
-          const options =
-            evidenceSources
-              .map(function(entry){
-                return `
-                  <option
-                    value="${escapeHtml(entry[0])}"
+      const name =
+        String(
+          problem?.name || ''
+        ).trim();
+
+      const problemType =
+        String(
+          problem?.problemType || ''
+        )
+          .trim()
+          .toUpperCase();
+
+      const impactLevel =
+        String(
+          problem?.impactLevel || ''
+        )
+          .trim()
+          .toUpperCase();
+
+      const relatedActivityIds =
+        safeArray(
+          problem?.relatedActivityIds
+        )
+          .map(
+            function(activityId){
+              return String(
+                activityId || ''
+              ).trim();
+            }
+          )
+          .filter(Boolean);
+
+      const description =
+        String(
+          problem?.description || ''
+        ).trim();
+
+      const justification =
+        String(
+          problem?.justification || ''
+        ).trim();
+
+      const evidence =
+        String(
+          problem?.evidence || ''
+        ).trim();
+
+      const typeOptionsHtml =
+        typeOptions
+          .map(
+            function(option){
+              return `
+                <option
+                  value="${escapeHtml(
+                    option[0]
+                  )}"
+                  ${
+                    option[0] ===
+                    problemType
+                      ? 'selected'
+                      : ''
+                  }
+                >
+                  ${escapeHtml(
+                    option[1]
+                  )}
+                </option>
+              `;
+            }
+          )
+          .join('');
+
+      const impactOptionsHtml =
+        impactOptions
+          .map(
+            function(option){
+              return `
+                <option
+                  value="${escapeHtml(
+                    option[0]
+                  )}"
+                  ${
+                    option[0] ===
+                    impactLevel
+                      ? 'selected'
+                      : ''
+                  }
+                >
+                  ${escapeHtml(
+                    option[1]
+                  )}
+                </option>
+              `;
+            }
+          )
+          .join('');
+
+      const activityOptionsHtml =
+        activities
+          .map(
+            function(activity){
+              const activityId =
+                String(
+                  activity?.id || ''
+                ).trim();
+
+              const activityName =
+                String(
+                  activity?.name || ''
+                ).trim();
+
+              return `
+                <option
+                  value="${escapeHtml(
+                    activityId
+                  )}"
+                  ${
+                    relatedActivityIds
+                      .includes(
+                        activityId
+                      )
+                      ? 'selected'
+                      : ''
+                  }
+                >
+                  ${escapeHtml(
+                    activityId +
+                    ' · ' +
+                    (
+                      activityName ||
+                      'Actividad sin nombre'
+                    )
+                  )}
+                </option>
+              `;
+            }
+          )
+          .join('');
+
+      const activityCheckboxesHtml =
+        activities
+          .map(
+            function(activity){
+              const activityId =
+                String(
+                  activity?.id || ''
+                ).trim();
+
+              const activityName =
+                String(
+                  activity?.name || ''
+                ).trim();
+
+              return `
+                <label
+                  class="analysis-problem-activity-option"
+                >
+                  <input
+                    type="checkbox"
+                    data-problem-activity-checkbox
+                    value="${escapeHtml(
+                      activityId
+                    )}"
                     ${
-                      entry[0] === source
-                        ? 'selected'
+                      relatedActivityIds
+                        .includes(
+                          activityId
+                        )
+                        ? 'checked'
                         : ''
                     }
                   >
-                    ${escapeHtml(entry[1])}
-                  </option>
-                `;
-              })
-              .join('');
 
-          return `
-            <div
-              class="analysis-problem-evidence-row"
-              data-problem-evidence-index="${evidenceIndex}"
-            >
-              <div class="field">
-                <label>Fuente de evidencia</label>
+                  <span>
+                    <strong>
+                      ${escapeHtml(
+                        activityId
+                      )}
+                    </strong>
 
-                <select
-                  data-problem-evidence-field="source"
-                >
-                  <option value="">
-                    Selecciona una fuente
-                  </option>
-
-                  ${options}
-                </select>
-              </div>
-
-              <div class="field">
-                <label>Detalle verificable</label>
-
-                <textarea
-                  data-problem-evidence-field="detail"
-                  placeholder="Describe la evidencia que demuestra el problema."
-                >${escapeHtml(item?.detail || '')}</textarea>
-              </div>
-            </div>
-          `;
-        })
-        .join('');
-
-    const impactsHtml =
-      impactDimensions
-        .map(function(entry){
-          return `
-            <label class="analysis-problem-check-option">
-              <input
-                type="checkbox"
-                data-problem-impact="${entry[0]}"
-                ${
-                  problem?.impact_dimensions
-                    ?.[entry[0]] === true
-                    ? 'checked'
-                    : ''
-                }
-              >
-
-              <span>
-                ${escapeHtml(entry[1])}
-              </span>
-            </label>
-          `;
-        })
-        .join('');
-
-    const wastesHtml =
-      wastes.length
-        ? wastes
-            .map(function(waste){
-              const wasteId =
-                String(
-                  waste?.id || ''
-                ).trim();
-
-              const wasteType =
-                String(
-                  waste?.wasteType || ''
-                ).trim();
-
-              const selected =
-                relatedWasteMap.get(
-                  wasteId
-                ) || null;
-
-              return `
-                <div
-                  class="analysis-problem-waste-row"
-                  data-problem-waste-id="${escapeHtml(wasteId)}"
-                  data-problem-waste-type="${escapeHtml(wasteType)}"
-                >
-                  <label class="analysis-problem-waste-selector">
-                    <input
-                      type="checkbox"
-                      data-problem-waste-selected
-                      ${selected ? 'checked' : ''}
-                    >
-
-                    <span>
-                      <strong>
-                        ${escapeHtml(wasteId)}
-                      </strong>
-
-                      ${escapeHtml(wasteType)}
-                    </span>
-                  </label>
-
-                  <input
-                    type="text"
-                    data-problem-waste-relationship
-                    value="${escapeHtml(selected?.relationship || '')}"
-                    placeholder="Explica cómo se relaciona con el problema."
-                    ${selected ? '' : 'disabled'}
-                  >
-                </div>
+                    ${escapeHtml(
+                      activityName ||
+                      'Actividad sin nombre'
+                    )}
+                  </span>
+                </label>
               `;
-            })
-            .join('')
-        : `
-            <div class="analysis-problem-inline-empty">
-              No existen desperdicios oficiales disponibles.
-            </div>
-          `;
+            }
+          )
+          .join('');
 
-    const details =
-      document.createElement(
-        'details'
-      );
-
-    details.className =
-      'analysis-problem-item';
-
-    details.dataset.problemId =
-      id;
-
-    details.open =
-      index === 0;
-
-    details.innerHTML = `
-      <summary class="analysis-problem-summary">
-        <div class="analysis-problem-summary-main">
-          <strong data-problem-summary-title>
-            ${escapeHtml(problem?.problem || id)}
-          </strong>
-
-          <small data-problem-summary-subtitle>
-            ${escapeHtml(
+      const activitySelectionText =
+        relatedActivityIds.length
+          ? (
+              relatedActivityIds.length +
               (
-                problem?.activity_id ||
-                'Sin actividad'
-              ) +
-              ' · ' +
-              (
-                problem?.description ||
-                'Sin descripción'
+                relatedActivityIds.length === 1
+                  ? ' actividad seleccionada'
+                  : ' actividades seleccionadas'
               )
-            )}
-          </small>
-        </div>
+            )
+          : 'Seleccionar actividades';
 
-        <div class="analysis-problem-summary-status">
-          <span class="analysis-problem-chip">
-            ${escapeHtml(id)}
-          </span>
+      const details =
+        document.createElement(
+          'details'
+        );
 
-          <span
-            class="analysis-problem-priority"
-            data-problem-summary-priority
-          >
-            ${escapeHtml(
-              lmpProblemPriorityLabel_(
-                problem?.priority
-              )
-            )}
-          </span>
+      details.className =
+        'analysis-problem-item';
 
-          <span
-            class="analysis-problem-state"
-            data-problem-summary-state
-          >
-            Pendiente de revisión
-          </span>
-        </div>
-      </summary>
+      details.dataset.problemId =
+        id;
 
-      <div class="analysis-problem-body">
-        <div class="analysis-problem-reference">
-          <span>
-            ID:
-            <strong>${escapeHtml(id)}</strong>
-          </span>
+      details.open =
+        index === 0;
 
-          <span>
-            Confianza:
+      details.__lmpProblemSourceItem =
+        JSON.parse(
+          JSON.stringify(
+            problem
+          )
+        );
 
-            <strong data-problem-reference-confidence>
+      details
+        .__lmpProblemRelatedWasteIds =
+          safeArray(
+            problem?.relatedWasteIds
+          )
+            .map(
+              function(wasteId){
+                return String(
+                  wasteId || ''
+                ).trim();
+              }
+            )
+            .filter(Boolean);
+
+      details.innerHTML = `
+        <summary class="analysis-problem-summary">
+          <div class="analysis-problem-summary-main">
+            <strong data-problem-summary-title>
               ${escapeHtml(
-                lmpProblemConfidenceLabel_(
-                  problem?.confidence
-                )
+                name || id
               )}
             </strong>
-          </span>
-        </div>
 
-        <details
-          class="analysis-problem-group"
-          open
-        >
-          <summary>
-            1. Diagnóstico y alcance
-          </summary>
+            <small data-problem-summary-subtitle>
+              ${escapeHtml(
+                lmpProblemTypeLabel_(
+                  problemType
+                ) +
+                ' · ' +
+                relatedActivityIds.length +
+                (
+                  relatedActivityIds.length === 1
+                    ? ' actividad'
+                    : ' actividades'
+                )
+              )}
+            </small>
+          </div>
 
-          <div class="analysis-problem-group-body analysis-problem-grid">
+          <div class="analysis-problem-summary-status">
+            <span class="analysis-problem-chip">
+              ${escapeHtml(id)}
+            </span>
+
+            <span
+              class="analysis-problem-impact"
+              data-problem-summary-impact
+              data-impact="${escapeHtml(
+                impactLevel
+              )}"
+            >
+              ${escapeHtml(
+                lmpProblemImpactLabel_(
+                  impactLevel
+                )
+              )}
+            </span>
+
+            <span
+              class="analysis-problem-state"
+              data-problem-summary-state
+            >
+              Requiere revisión
+            </span>
+          </div>
+        </summary>
+
+        <div class="analysis-problem-body">
+          <div class="analysis-problem-grid">
             <div class="field analysis-problem-wide">
-              <label>Problema</label>
+              <label>
+                Nombre del problema
+              </label>
 
               <input
                 type="text"
-                data-problem-field="problem"
-                value="${escapeHtml(problem?.problem || '')}"
-                placeholder="Formula el problema operativo de manera concreta."
+                data-problem-field="name"
+                value="${escapeHtml(name)}"
+                placeholder="Resume el problema en una frase breve."
               >
             </div>
 
+            <div class="field">
+              <label>
+                Tipo de problema
+              </label>
+
+              <select
+                data-problem-field="problemType"
+              >
+                ${typeOptionsHtml}
+              </select>
+            </div>
+
+            <div class="field">
+              <label>
+                Impacto
+              </label>
+
+              <select
+                data-problem-field="impactLevel"
+              >
+                ${impactOptionsHtml}
+              </select>
+            </div>
+
             <div class="field analysis-problem-wide">
-              <label>Descripción</label>
+              <label>
+                Actividades relacionadas
+              </label>
+
+              <details
+                class="analysis-problem-activity-picker"
+                data-problem-activity-picker
+              >
+                <summary>
+                  <span
+                    data-problem-activity-picker-label
+                  >
+                    ${escapeHtml(
+                      activitySelectionText
+                    )}
+                  </span>
+
+                  <span
+                    class="analysis-problem-activity-picker-arrow"
+                    aria-hidden="true"
+                  >
+                    ▾
+                  </span>
+                </summary>
+
+                <div
+                  class="analysis-problem-activity-options"
+                >
+                  ${activityCheckboxesHtml}
+                </div>
+              </details>
+
+              <select
+                class="analysis-problem-activity-native"
+                data-problem-field="relatedActivityIds"
+                multiple
+                tabindex="-1"
+                aria-hidden="true"
+              >
+                ${activityOptionsHtml}
+              </select>
+
+              <small
+                class="analysis-problem-field-note"
+              >
+                Marca una o varias actividades
+                ejecutables.
+              </small>
+            </div>
+
+            <div class="field analysis-problem-wide">
+              <label>
+                Descripción del problema
+              </label>
 
               <textarea
                 data-problem-field="description"
-                placeholder="Explica qué ocurre y dónde se manifiesta."
-              >${escapeHtml(problem?.description || '')}</textarea>
-            </div>
-
-            <div class="field analysis-problem-wide">
-              <label>Síntoma observable</label>
-
-              <textarea
-                data-problem-field="symptom"
-                placeholder="Describe el síntoma que evidencia el problema."
-              >${escapeHtml(problem?.symptom || '')}</textarea>
-            </div>
-
-            <div class="field">
-              <label>Actividad principal</label>
-
-              <select data-problem-field="activity_id">
-                <option value="">
-                  Selecciona una actividad
-                </option>
-
-                ${activityOptions(
-                  String(
-                    problem?.activity_id || ''
-                  ).trim()
-                )}
-              </select>
-            </div>
-
-            <div class="field">
-              <label>Secuencia AS-IS</label>
-
-              <input
-                type="text"
-                data-problem-field="sequence"
-                value="${escapeHtml(problem?.sequence ?? '')}"
-                readonly
-              >
-            </div>
-
-            <input
-              type="hidden"
-              data-problem-field="activity"
-              value="${escapeHtml(problem?.activity || '')}"
-            >
-
-            <div class="field analysis-problem-wide">
-              <label>Actividades relacionadas</label>
-
-              <select
-                multiple
-                size="5"
-                data-problem-field="related_activities"
-              >
-                ${activityOptions(
-                  '',
-                  relatedActivityIds
-                )}
-              </select>
-
-              <small class="analysis-problem-field-note">
-                Usa Ctrl o Cmd para seleccionar varias actividades.
-              </small>
-            </div>
-
-            <div class="field">
-              <label>Actor</label>
-
-              <input
-                type="text"
-                data-problem-field="actor"
-                value="${escapeHtml(problem?.actor || '')}"
-              >
-            </div>
-
-            <div class="field">
-              <label>Área</label>
-
-              <input
-                type="text"
-                data-problem-field="area"
-                value="${escapeHtml(problem?.area || '')}"
-              >
-            </div>
-
-            <div class="field">
-              <label>Frecuencia</label>
-
-              <input
-                type="text"
-                data-problem-field="frequency"
-                value="${escapeHtml(problem?.frequency || '')}"
-              >
-            </div>
-
-            <div class="field">
-              <label>Condición de ocurrencia</label>
-
-              <input
-                type="text"
-                data-problem-field="occurrence_condition"
-                value="${escapeHtml(problem?.occurrence_condition || '')}"
-              >
-            </div>
-          </div>
-        </details>
-
-        <details class="analysis-problem-group">
-          <summary>
-            2. Evidencia, consecuencia e impacto
-          </summary>
-
-          <div class="analysis-problem-group-body">
-            <div class="analysis-problem-evidence-list">
-              ${evidenceHtml}
-            </div>
-
-            <div class="field analysis-problem-wide">
-              <label>Consecuencia</label>
-
-              <textarea
-                data-problem-field="consequence"
-                placeholder="Describe el efecto operativo actual."
-              >${escapeHtml(problem?.consequence || '')}</textarea>
-            </div>
-
-            <div class="field analysis-problem-wide">
-              <label>Dimensiones de impacto</label>
-
-              <div class="analysis-problem-check-grid">
-                ${impactsHtml}
-              </div>
-            </div>
-          </div>
-        </details>
-
-        <details class="analysis-problem-group">
-          <summary>
-            3. Causa probable y trazabilidad Lean
-          </summary>
-
-          <div class="analysis-problem-group-body">
-            <div class="analysis-problem-grid">
-              <div class="field analysis-problem-wide">
-                <label>Causa probable</label>
-
-                <textarea
-                  data-problem-field="probable_cause"
-                  placeholder="Registra la causa probable sin presentarla como causa raíz confirmada."
-                >${escapeHtml(problem?.probable_cause || '')}</textarea>
-              </div>
-
-              <div class="field">
-                <label>Estado de la causa</label>
-
-                <select data-problem-field="cause_status">
-                  <option value="">
-                    Selecciona
-                  </option>
-
-                  <option
-                    value="confirmed"
-                    ${
-                      problem?.cause_status ===
-                      'confirmed'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Confirmada
-                  </option>
-
-                  <option
-                    value="probable"
-                    ${
-                      problem?.cause_status ===
-                      'probable'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Probable
-                  </option>
-
-                  <option
-                    value="unknown"
-                    ${
-                      problem?.cause_status ===
-                      'unknown'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Desconocida
-                  </option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label>Confianza del diagnóstico</label>
-
-                <select data-problem-field="confidence">
-                  <option value="">
-                    Selecciona
-                  </option>
-
-                  <option
-                    value="high"
-                    ${
-                      problem?.confidence ===
-                      'high'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Alta
-                  </option>
-
-                  <option
-                    value="medium"
-                    ${
-                      problem?.confidence ===
-                      'medium'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Media
-                  </option>
-
-                  <option
-                    value="low"
-                    ${
-                      problem?.confidence ===
-                      'low'
-                        ? 'selected'
-                        : ''
-                    }
-                  >
-                    Baja
-                  </option>
-                </select>
-              </div>
-
-              <div class="field analysis-problem-wide">
-                <label>Evidencia de la causa</label>
-
-                <textarea
-                  data-problem-field="cause_evidence"
-                  placeholder="Explica qué evidencia sostiene la causa probable."
-                >${escapeHtml(problem?.cause_evidence || '')}</textarea>
-              </div>
-            </div>
-
-            <div class="analysis-problem-related-wastes">
-              <strong>
-                Desperdicios relacionados
-              </strong>
-
-              <small>
-                Selecciona únicamente desperdicios oficiales
-                y explica la relación.
-              </small>
-
-              ${wastesHtml}
-            </div>
-          </div>
-        </details>
-
-        <details class="analysis-problem-group">
-          <summary>
-            4. Priorización y validación pendiente
-          </summary>
-
-          <div class="analysis-problem-group-body analysis-problem-grid">
-            <div class="field">
-              <label>Prioridad</label>
-
-              <select data-problem-field="priority">
-                <option value="">
-                  Selecciona
-                </option>
-
-                <option
-                  value="alta"
-                  ${
-                    problem?.priority ===
-                    'alta'
-                      ? 'selected'
-                      : ''
-                  }
-                >
-                  Alta
-                </option>
-
-                <option
-                  value="media"
-                  ${
-                    problem?.priority ===
-                    'media'
-                      ? 'selected'
-                      : ''
-                  }
-                >
-                  Media
-                </option>
-
-                <option
-                  value="baja"
-                  ${
-                    problem?.priority ===
-                    'baja'
-                      ? 'selected'
-                      : ''
-                  }
-                >
-                  Baja
-                </option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label>
-                ¿Candidato a restricción?
-              </label>
-
-              <select
-                data-problem-field="potential_constraint_candidate"
-              >
-                <option
-                  value="false"
-                  ${
-                    problem?.potential_constraint_candidate ===
-                    true
-                      ? ''
-                      : 'selected'
-                  }
-                >
-                  No
-                </option>
-
-                <option
-                  value="true"
-                  ${
-                    problem?.potential_constraint_candidate ===
-                    true
-                      ? 'selected'
-                      : ''
-                  }
-                >
-                  Sí
-                </option>
-              </select>
-            </div>
-
-            <div class="field analysis-problem-wide">
-              <label>Justificación de prioridad</label>
-
-              <textarea
-                data-problem-field="priority_justification"
-                placeholder="Explica por qué se asignó esta prioridad."
-              >${escapeHtml(problem?.priority_justification || '')}</textarea>
+                placeholder="Explica qué ocurre, dónde, quién interviene, cuándo sucede, cómo se manifiesta y qué consecuencia genera."
+              >${escapeHtml(
+                description
+              )}</textarea>
             </div>
 
             <div class="field analysis-problem-wide">
               <label>
-                Razón de candidatura a restricción
+                Justificación
               </label>
 
               <textarea
-                data-problem-field="constraint_candidate_reason"
-                placeholder="Completa solo cuando el problema sea candidato a restricción."
-              >${escapeHtml(problem?.constraint_candidate_reason || '')}</textarea>
-            </div>
-
-            <div class="field">
-              <label>
-                ¿Requiere validación adicional?
-              </label>
-
-              <select
-                data-problem-field="requires_validation"
-              >
-                <option
-                  value="false"
-                  ${
-                    problem?.requires_validation ===
-                    true
-                      ? ''
-                      : 'selected'
-                  }
-                >
-                  No
-                </option>
-
-                <option
-                  value="true"
-                  ${
-                    problem?.requires_validation ===
-                    true
-                      ? 'selected'
-                      : ''
-                  }
-                >
-                  Sí
-                </option>
-              </select>
+                data-problem-field="justification"
+                placeholder="Explica por qué constituye un problema y qué regla, control, objetivo o condición esperada incumple."
+              >${escapeHtml(
+                justification
+              )}</textarea>
             </div>
 
             <div class="field analysis-problem-wide">
-              <label>Pregunta de validación</label>
+              <label>
+                Evidencia
+              </label>
 
               <textarea
-                data-problem-field="validation_question"
-                placeholder="Formula la pregunta necesaria para confirmar el hallazgo."
-              >${escapeHtml(problem?.validation_question || '')}</textarea>
+                data-problem-field="evidence"
+                placeholder="Indica la fuente y el hecho observable que demuestra la existencia del problema."
+              >${escapeHtml(
+                evidence
+              )}</textarea>
             </div>
           </div>
-        </details>
-      </div>
-    `;
+        </div>
+      `;
 
-    list.appendChild(
-      details
-    );
-
-    const byField = function(name){
-      return details.querySelector(
-        '[data-problem-field="' +
-        name +
-        '"]'
-      );
-    };
-
-    const titleNode =
-      details.querySelector(
-        '[data-problem-summary-title]'
+      list.appendChild(
+        details
       );
 
-    const subtitleNode =
-      details.querySelector(
-        '[data-problem-summary-subtitle]'
-      );
-
-    const priorityNode =
-      details.querySelector(
-        '[data-problem-summary-priority]'
-      );
-
-    const stateNode =
-      details.querySelector(
-        '[data-problem-summary-state]'
-      );
-
-    const confidenceNode =
-      details.querySelector(
-        '[data-problem-reference-confidence]'
-      );
-
-    const syncActivity = function(){
-      const selectedId =
-        String(
-          byField(
-            'activity_id'
-          )?.value || ''
-        ).trim();
-
-      const source =
-        activities.find(function(item){
-          return String(
-            item?.id || ''
-          ).trim() === selectedId;
-        });
-
-      if(
-        byField(
-          'activity'
-        )
-      ){
-        byField(
-          'activity'
-        ).value =
-          source
-            ? String(
-                source.name || ''
-              ).trim()
-            : '';
-      }
-
-      if(
-        byField(
-          'sequence'
-        )
-      ){
-        byField(
-          'sequence'
-        ).value =
-          source
-            ? String(
-                source.sequence ?? ''
-              )
-            : '';
-      }
-    };
-
-    const refresh = function(){
-      syncActivity();
-
-      const value = function(name){
-        return String(
-          byField(name)?.value || ''
-        ).trim();
-      };
-
-      const hasEvidence =
-        Array.from(
-          details.querySelectorAll(
-            '[data-problem-evidence-index]'
-          )
-        ).some(function(row){
-          return !!(
-            String(
-              row.querySelector(
-                '[data-problem-evidence-field="source"]'
-              )?.value || ''
-            ).trim() &&
-
-            String(
-              row.querySelector(
-                '[data-problem-evidence-field="detail"]'
-              )?.value || ''
-            ).trim()
+      const byField =
+        function(fieldName){
+          return details.querySelector(
+            '[data-problem-field="' +
+            fieldName +
+            '"]'
           );
-        });
+        };
 
-      const hasImpact =
+      const activitiesInput =
+        byField(
+          'relatedActivityIds'
+        );
+
+      const activityPicker =
+        details.querySelector(
+          '[data-problem-activity-picker]'
+        );
+
+      const activityPickerLabel =
+        details.querySelector(
+          '[data-problem-activity-picker-label]'
+        );
+
+      const activityCheckboxes =
         Array.from(
           details.querySelectorAll(
-            '[data-problem-impact]'
+            '[data-problem-activity-checkbox]'
           )
-        ).some(function(input){
-          return input.checked;
-        });
+        );
 
-      let relatedWastesComplete =
-        true;
+      const titleNode =
+        details.querySelector(
+          '[data-problem-summary-title]'
+        );
+
+      const subtitleNode =
+        details.querySelector(
+          '[data-problem-summary-subtitle]'
+        );
+
+      const impactNode =
+        details.querySelector(
+          '[data-problem-summary-impact]'
+        );
+
+      const stateNode =
+        details.querySelector(
+          '[data-problem-summary-state]'
+        );
+
+      const refreshActivityPickerLabel =
+        function(){
+          const selectedCount =
+            activityCheckboxes.filter(
+              function(checkbox){
+                return checkbox.checked;
+              }
+            ).length;
+
+          if(activityPickerLabel){
+            activityPickerLabel
+              .textContent =
+                selectedCount
+                  ? (
+                      selectedCount +
+                      (
+                        selectedCount === 1
+                          ? ' actividad seleccionada'
+                          : ' actividades seleccionadas'
+                      )
+                    )
+                  : 'Seleccionar actividades';
+          }
+        };
+
+      const syncActivityPickerSelection =
+        function(){
+          const selectedIds =
+            new Set(
+              activityCheckboxes
+                .filter(
+                  function(checkbox){
+                    return checkbox.checked;
+                  }
+                )
+                .map(
+                  function(checkbox){
+                    return String(
+                      checkbox.value || ''
+                    ).trim();
+                  }
+                )
+                .filter(Boolean)
+            );
+
+          Array.from(
+            activitiesInput?.options || []
+          ).forEach(
+            function(option){
+              option.selected =
+                selectedIds.has(
+                  String(
+                    option.value || ''
+                  ).trim()
+                );
+            }
+          );
+
+          refreshActivityPickerLabel();
+
+          if(activitiesInput){
+            activitiesInput.dispatchEvent(
+              new Event(
+                'change',
+                {
+                  bubbles:
+                    true
+                }
+              )
+            );
+          }
+        };
+
+      activityCheckboxes.forEach(
+        function(checkbox){
+          checkbox.addEventListener(
+            'change',
+            syncActivityPickerSelection
+          );
+        }
+      );
+
+      if(activityPicker){
+        activityPicker.addEventListener(
+          'toggle',
+          function(){
+            if(!activityPicker.open){
+              return;
+            }
+
+            document.querySelectorAll(
+              '[data-problem-activity-picker][open], ' +
+              '[data-waste-activity-picker][open]'
+            ).forEach(
+              function(otherPicker){
+                if(
+                  otherPicker !==
+                  activityPicker
+                ){
+                  otherPicker.open =
+                    false;
+                }
+              }
+            );
+          }
+        );
+
+        details.addEventListener(
+          'toggle',
+          function(){
+            if(!details.open){
+              activityPicker.open =
+                false;
+            }
+          }
+        );
+      }
+
+      const refresh =
+        function(){
+          const value =
+            function(fieldName){
+              return String(
+                byField(
+                  fieldName
+                )?.value || ''
+              ).trim();
+            };
+
+          const selectedActivityIds =
+            Array.from(
+              activitiesInput
+                ?.selectedOptions || []
+            )
+              .map(
+                function(option){
+                  return String(
+                    option.value || ''
+                  ).trim();
+                }
+              )
+              .filter(Boolean);
+
+          const currentName =
+            value(
+              'name'
+            );
+
+          const currentType =
+            value(
+              'problemType'
+            ).toUpperCase();
+
+          const currentImpact =
+            value(
+              'impactLevel'
+            ).toUpperCase();
+
+          const complete = !!(
+            currentName &&
+            currentType &&
+            selectedActivityIds.length &&
+            value('description') &&
+            value('justification') &&
+            value('evidence') &&
+            currentImpact
+          );
+
+          if(titleNode){
+            titleNode.textContent =
+              currentName ||
+              id;
+          }
+
+          if(subtitleNode){
+            subtitleNode.textContent =
+              lmpProblemTypeLabel_(
+                currentType
+              ) +
+              ' · ' +
+              selectedActivityIds.length +
+              (
+                selectedActivityIds.length === 1
+                  ? ' actividad'
+                  : ' actividades'
+              );
+          }
+
+          if(impactNode){
+            impactNode.textContent =
+              lmpProblemImpactLabel_(
+                currentImpact
+              );
+
+            impactNode.dataset.impact =
+              currentImpact;
+          }
+
+          details.classList.toggle(
+            'is-complete',
+            complete
+          );
+
+          details.classList.toggle(
+            'is-incomplete',
+            !complete
+          );
+
+          if(stateNode){
+            stateNode.textContent =
+              complete
+                ? 'Completa'
+                : 'Incompleta';
+          }
+        };
 
       details.querySelectorAll(
-        '[data-problem-waste-id]'
-      ).forEach(function(row){
-        const selected =
-          row.querySelector(
-            '[data-problem-waste-selected]'
-          );
+        'input, textarea, select'
+      ).forEach(
+        function(input){
+          input.addEventListener(
+            (
+              input.type ===
+                'checkbox' ||
+              input.tagName ===
+                'SELECT'
+            )
+              ? 'change'
+              : 'input',
 
-        const relationship =
-          row.querySelector(
-            '[data-problem-waste-relationship]'
+            refresh
           );
+        }
+      );
 
-        if(relationship){
-          relationship.disabled =
-            !selected?.checked;
+      refreshActivityPickerLabel();
+      refresh();
+    }
+  );
+
+  if(
+    window
+      .__LMP_ANALYSIS_ACTIVITY_PICKER_OUTSIDE_BOUND__ !==
+    true
+  ){
+    document.addEventListener(
+      'click',
+      function(event){
+        document.querySelectorAll(
+          '[data-problem-activity-picker][open], ' +
+          '[data-waste-activity-picker][open]'
+        ).forEach(
+          function(openPicker){
+            if(
+              !openPicker.contains(
+                event.target
+              )
+            ){
+              openPicker.open =
+                false;
+            }
+          }
+        );
+      }
+    );
+
+    document.addEventListener(
+      'keydown',
+      function(event){
+        if(event.key !== 'Escape'){
+          return;
         }
 
-        if(
-          selected?.checked &&
-          !String(
-            relationship?.value || ''
-          ).trim()
-        ){
-          relatedWastesComplete =
-            false;
-        }
-      });
-
-      const causeStatus =
-        value(
-          'cause_status'
+        document.querySelectorAll(
+          '[data-problem-activity-picker][open], ' +
+          '[data-waste-activity-picker][open]'
+        ).forEach(
+          function(openPicker){
+            openPicker.open =
+              false;
+          }
         );
-
-      const priority =
-        value(
-          'priority'
-        );
-
-      const confidence =
-        value(
-          'confidence'
-        );
-
-      const candidate =
-        value(
-          'potential_constraint_candidate'
-        ) === 'true';
-
-      const requiresValidation =
-        value(
-          'requires_validation'
-        ) === 'true';
-
-      const complete = !!(
-        value('problem') &&
-        value('description') &&
-        value('symptom') &&
-        value('activity_id') &&
-        (
-          value('actor') ||
-          value('area')
-        ) &&
-        hasEvidence &&
-        value('consequence') &&
-        hasImpact &&
-        causeStatus &&
-        (
-          causeStatus === 'unknown' ||
-          (
-            value('probable_cause') &&
-            value('cause_evidence')
-          )
-        ) &&
-        relatedWastesComplete &&
-        (
-          !candidate ||
-          value(
-            'constraint_candidate_reason'
-          )
-        ) &&
-        priority &&
-        value(
-          'priority_justification'
-        ) &&
-        confidence &&
-        (
-          !requiresValidation ||
-          value(
-            'validation_question'
-          )
-        )
-      );
-
-      if(titleNode){
-        titleNode.textContent =
-          value('problem') ||
-          id;
       }
+    );
 
-      if(subtitleNode){
-        subtitleNode.textContent =
-          (
-            value(
-              'activity_id'
-            ) ||
-            'Sin actividad'
-          ) +
-          ' · ' +
-          (
-            value(
-              'description'
-            ) ||
-            'Sin descripción'
-          );
-      }
-
-      if(priorityNode){
-        priorityNode.textContent =
-          lmpProblemPriorityLabel_(
-            priority
-          );
-
-        priorityNode.dataset.priority =
-          priority ||
-          'none';
-      }
-
-      if(confidenceNode){
-        confidenceNode.textContent =
-          lmpProblemConfidenceLabel_(
-            confidence
-          );
-      }
-
-      details.classList.toggle(
-        'is-complete',
-        complete
-      );
-
-      details.classList.toggle(
-        'is-incomplete',
-        !complete
-      );
-
-      if(stateNode){
-        stateNode.textContent =
-          complete
-            ? 'Completa'
-            : 'Incompleta';
-      }
-    };
-
-    details.querySelectorAll(
-      'input, textarea, select'
-    ).forEach(function(input){
-      input.addEventListener(
-        (
-          input.type === 'checkbox' ||
-          input.tagName === 'SELECT'
-        )
-          ? 'change'
-          : 'input',
-
-        refresh
-      );
-    });
-
-    refresh();
-  });
+    window
+      .__LMP_ANALYSIS_ACTIVITY_PICKER_OUTSIDE_BOUND__ =
+        true;
+  }
 
   const responseBox =
     el(
@@ -32475,7 +32328,6 @@ function lmpRenderProblemReview_(parsed){
 
 window.lmpRenderProblemReview_ =
   lmpRenderProblemReview_;
-
 
 window.processAnalysisScreenStage = function(stageKey){
   const stage = String(stageKey || '')
