@@ -25682,6 +25682,8 @@ function lmpValidateWasteStageContract_(parsed){
   return parsed;
 }  
 
+
+  
 function lmpValidateProblemStageContract_(parsed){
   const TYPES = [
     'QUALITY_ERROR',
@@ -25694,7 +25696,7 @@ function lmpValidateProblemStageContract_(parsed){
     'OTHER'
   ];
 
-  const PRIORITIES = [
+  const IMPACT_LEVELS = [
     'HIGH',
     'MEDIUM',
     'LOW'
@@ -25720,20 +25722,20 @@ function lmpValidateProblemStageContract_(parsed){
 
   const SUMMARY_KEYS = [
     'total_problems',
-    'affected_activity_count',
-    'linked_waste_count',
-    'by_priority'
+    'high_impact_count',
+    'affected_activity_count'
   ];
 
   const PROBLEM_KEYS = [
     'id',
+    'name',
     'problemType',
-    'priority',
     'relatedActivityIds',
     'relatedWasteIds',
     'description',
-    'justificationEvidence',
-    'consequence'
+    'justification',
+    'evidence',
+    'impactLevel'
   ];
 
   const text = value =>
@@ -25831,17 +25833,6 @@ function lmpValidateProblemStageContract_(parsed){
     parsed.summary,
     SUMMARY_KEYS,
     'summary'
-  );
-
-  requireObject(
-    parsed.summary.by_priority,
-    'summary.by_priority'
-  );
-
-  rejectUnknownKeys(
-    parsed.summary.by_priority,
-    PRIORITIES,
-    'summary.by_priority'
   );
 
   requireArray(
@@ -26008,13 +25999,7 @@ function lmpValidateProblemStageContract_(parsed){
 
   const automaticBlockingGaps = [];
 
-  const byPriority = {
-    HIGH: 0,
-    MEDIUM: 0,
-    LOW: 0
-  };
-
-  let linkedWasteCount = 0;
+  let highImpactCount = 0;
   let completeProblemCount = 0;
 
   parsed.problems.forEach(function(
@@ -26076,14 +26061,17 @@ function lmpValidateProblemStageContract_(parsed){
 
     seenProblemIds.add(id);
 
+    const name =
+      text(item.name);
+
     const problemType =
       text(
         item.problemType
       ).toUpperCase();
 
-    const priority =
+    const impactLevel =
       text(
-        item.priority
+        item.impactLevel
       ).toUpperCase();
 
     if(
@@ -26098,13 +26086,15 @@ function lmpValidateProblemStageContract_(parsed){
     }
 
     if(
-      priority &&
-      !PRIORITIES.includes(priority)
+      impactLevel &&
+      !IMPACT_LEVELS.includes(
+        impactLevel
+      )
     ){
       throw new Error(
         'El problema "' +
         id +
-        '" utiliza una prioridad no permitida.'
+        '" utiliza un impactLevel no permitido.'
       );
     }
 
@@ -26247,25 +26237,25 @@ function lmpValidateProblemStageContract_(parsed){
         item.description
       );
 
-    const justificationEvidence =
+    const justification =
       text(
-        item.justificationEvidence
+        item.justification
       );
 
-    const consequence =
+    const evidence =
       text(
-        item.consequence
+        item.evidence
       );
 
     const signature = [
-      problemType,
-
-      description
+      name
         .toLowerCase()
         .replace(
           /\s+/g,
           ' '
         ),
+
+      problemType,
 
       relatedActivityIds
         .slice()
@@ -26274,17 +26264,17 @@ function lmpValidateProblemStageContract_(parsed){
     ].join('::');
 
     if(
-      description &&
+      name &&
       seenSignatures.has(signature)
     ){
       throw new Error(
         'El problema "' +
         id +
-        '" duplica otro problema con el mismo tipo, descripción y actividades.'
+        '" duplica otro problema con el mismo nombre, tipo y actividades.'
       );
     }
 
-    if(description){
+    if(name){
       seenSignatures.add(
         signature
       );
@@ -26292,15 +26282,15 @@ function lmpValidateProblemStageContract_(parsed){
 
     const missing = [];
 
-    if(!problemType){
+    if(!name){
       missing.push(
-        'tipo'
+        'nombre'
       );
     }
 
-    if(!priority){
+    if(!problemType){
       missing.push(
-        'prioridad'
+        'tipo'
       );
     }
 
@@ -26316,26 +26306,26 @@ function lmpValidateProblemStageContract_(parsed){
       );
     }
 
-    if(!justificationEvidence){
+    if(!justification){
       missing.push(
-        'evidencia y justificación'
+        'justificación'
       );
     }
 
-    if(!consequence){
+    if(!evidence){
       missing.push(
-        'consecuencia'
+        'evidencia'
       );
     }
 
-    if(priority){
-      byPriority[
-        priority
-      ] += 1;
+    if(!impactLevel){
+      missing.push(
+        'impacto'
+      );
     }
 
-    if(relatedWasteIds.length){
-      linkedWasteCount += 1;
+    if(impactLevel === 'HIGH'){
+      highImpactCount += 1;
     }
 
     if(missing.length){
@@ -26355,13 +26345,14 @@ function lmpValidateProblemStageContract_(parsed){
       item,
       {
         id,
+        name,
         problemType,
-        priority,
         relatedActivityIds,
         relatedWasteIds,
         description,
-        justificationEvidence,
-        consequence
+        justification,
+        evidence,
+        impactLevel
       }
     );
   });
@@ -26406,14 +26397,11 @@ function lmpValidateProblemStageContract_(parsed){
     total_problems:
       parsed.problems.length,
 
+    high_impact_count:
+      highImpactCount,
+
     affected_activity_count:
-      affectedActivityIds.size,
-
-    linked_waste_count:
-      linkedWasteCount,
-
-    by_priority:
-      byPriority
+      affectedActivityIds.size
   };
 
   parsed.validation = {
