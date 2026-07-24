@@ -2346,55 +2346,181 @@ function applySBExecutiveEdgeStyles(xml){
 }
 
 
-function edgeCell(
-  id,
-  source,
-  target,
-  label
-){
-  const value =
-    label
-      ? ex(label)
-      : '';
+function sbExecutiveEdgeVisual(family){
+  const palette = {
+    internal: {
+      stroke: '#294B66',
+      font: '#294B66',
+      width: 1.8,
+      opacity: 92
+    },
 
-  const family =
-    sbInferEdgeFamilyFromId(
-      id
-    );
+    input: {
+      stroke: '#83AEC7',
+      font: '#5E839B',
+      width: 1.8,
+      opacity: 92
+    },
 
-  const visual =
-    sbExecutiveEdgeVisual(
-      family
-    );
+    output: {
+      stroke: '#86A895',
+      font: '#5B7A68',
+      width: 1.8,
+      opacity: 92
+    }
+  };
 
-  const dashStyle =
-    visual.dashed
-      ? 'dashed=1;dashPattern=4 4;'
-      : 'dashed=0;';
+  return palette[family] || palette.internal;
+}
 
-  return (
-    `<mxCell id="${id}" ` +
-    `value="${value}" ` +
-    `style="edgeStyle=orthogonalEdgeStyle;` +
-    `rounded=1;` +
-    `orthogonalLoop=1;` +
-    `jettySize=auto;` +
-    `html=1;` +
-    `endArrow=block;` +
-    `endFill=1;` +
-    `${dashStyle}` +
-    `strokeWidth=${visual.width};` +
-    `strokeColor=${visual.stroke};` +
-    `opacity=${visual.opacity};` +
-    `strokeOpacity=${visual.opacity};` +
-    `fontSize=10;` +
-    `fontColor=${visual.font};" ` +
-    `edge="1" parent="1" ` +
-    `source="${source}" ` +
-    `target="${target}">` +
-    `<mxGeometry relative="1" as="geometry"/>` +
-    `</mxCell>`
+function sbInferEdgeFamilyFromId(id){
+  const key = String(id || '').trim().toLowerCase();
+
+  if (
+    key.includes('supplier_input') ||
+    key.includes('input_activity') ||
+    key.includes('input_start')
+  ) return 'input';
+
+  if (
+    key.includes('activity_output') ||
+    key.includes('end_output') ||
+    key.includes('output_customer')
+  ) return 'output';
+
+  return 'internal';
+}
+
+function sbMergeDrawioStyle(currentStyle, updates){
+  const styles = new Map();
+
+  String(currentStyle || '')
+    .split(';')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .forEach(item => {
+      const idx = item.indexOf('=');
+      if (idx < 0) {
+        styles.set(item, '');
+        return;
+      }
+      styles.set(item.slice(0, idx), item.slice(idx + 1));
+    });
+
+  Object.entries(updates || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined) {
+      styles.delete(key);
+      return;
+    }
+    styles.set(key, String(value));
+  });
+
+  return Array.from(styles.entries())
+    .map(([key, value]) => value === '' ? key : `${key}=${value}`)
+    .join(';') + ';';
+}
+
+function applySBExecutiveEdgeStyles(xml){
+  const parser = new DOMParser();
+  const documentXML = parser.parseFromString(
+    cleanStageXMLArtifacts(xml),
+    'application/xml'
   );
+
+  if (documentXML.getElementsByTagName('parsererror')[0]) {
+    return { ok: false, xml };
+  }
+
+  const idMap = parseIdReference();
+
+  const toIdSet = map =>
+    new Set(
+      Object.values(map || {})
+        .map(item => item?.id)
+        .filter(Boolean)
+    );
+
+  const activityIds = toIdSet(idMap.activities);
+  const supplierIds = toIdSet(idMap.suppliers);
+  const inputIds = toIdSet(idMap.inputs);
+  const outputIds = toIdSet(idMap.outputs);
+  const customerIds = toIdSet(idMap.customers);
+
+  Array.from(documentXML.getElementsByTagName('mxCell'))
+    .filter(cell => cell.getAttribute('edge') === '1')
+    .forEach(cell => {
+      const id = cell.getAttribute('id') || '';
+
+      if (
+        cell.getAttribute('data-sgmp-reference-edge') === '1' ||
+        id.startsWith('sgmp_ref_edge_')
+      ) return;
+
+      if (cell.getAttribute('data-sgmp-logical-edge') === '1') return;
+
+      const source = cell.getAttribute('source') || '';
+      const target = cell.getAttribute('target') || '';
+
+      let family = sbInferEdgeFamilyFromId(id);
+
+      if (
+        supplierIds.has(source) ||
+        inputIds.has(source) ||
+        inputIds.has(target)
+      ) {
+        family = 'input';
+      } else if (
+        outputIds.has(source) ||
+        outputIds.has(target) ||
+        customerIds.has(target)
+      ) {
+        family = 'output';
+      } else if (
+        activityIds.has(source) &&
+        activityIds.has(target)
+      ) {
+        family = 'internal';
+      }
+
+      const visual = sbExecutiveEdgeVisual(family);
+
+      cell.setAttribute(
+        'style',
+        sbMergeDrawioStyle(
+          cell.getAttribute('style') || '',
+          {
+            edgeStyle: 'orthogonalEdgeStyle',
+            rounded: '1',
+            orthogonalLoop: '1',
+            jettySize: 'auto',
+            html: '1',
+            endArrow: 'block',
+            endFill: '1',
+            strokeColor: visual.stroke,
+            strokeWidth: visual.width,
+            fontColor: visual.font,
+            fontSize: '10',
+            opacity: visual.opacity,
+            strokeOpacity: visual.opacity,
+            dashed: '0',
+            dashPattern: null
+          }
+        )
+      );
+    });
+
+  return {
+    ok: true,
+    xml: new XMLSerializer().serializeToString(documentXML)
+  };
+}
+
+function edgeCell(id, source, target, label){
+  const val = label ? ex(label) : '';
+  const family = sbInferEdgeFamilyFromId(id);
+  const visual = sbExecutiveEdgeVisual(family);
+
+  return `<mxCell id="${id}" value="${val}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=0;strokeWidth=${visual.width};strokeColor=${visual.stroke};opacity=${visual.opacity};strokeOpacity=${visual.opacity};fontSize=10;fontColor=${visual.font};" edge="1" parent="1" source="${source}" target="${target}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
 }
 
   function sbFindMxCellById(
@@ -2459,33 +2585,30 @@ function sbReadCellGeometry(cell){
 function sbReferenceConnectorVisual(type){
   const palette = {
     internal: {
-      fill: '#E8EFF5',
+      fill: '#DDE8F1',
       stroke: '#294B66',
-      font: '#294B66',
+      font: '#203B52',
       edge: '#294B66'
     },
 
     input: {
-      fill: '#EAF4F9',
-      stroke: '#83AEC7',
-      font: '#476F86',
-      edge: '#83AEC7'
+      fill: '#DCEEF7',
+      stroke: '#6F9FBC',
+      font: '#466A81',
+      edge: '#6F9FBC'
     },
 
     output: {
-      fill: '#EDF6F0',
-      stroke: '#86A895',
-      font: '#4E6F5D',
-      edge: '#86A895'
+      fill: '#E3EFE6',
+      stroke: '#769985',
+      font: '#536E5E',
+      edge: '#769985'
     }
   };
 
-  return (
-    palette[type] ||
-    palette.internal
-  );
+  return palette[type] || palette.internal;
 }
-
+  
 function sbCreateReferenceNode(
   documentXML,
   spec,
@@ -2567,7 +2690,7 @@ function sbCreateReferenceNode(
       `fontColor=${visual.font}`,
       `fillColor=${visual.fill}`,
       `strokeColor=${visual.stroke}`,
-      'strokeWidth=1.5',
+      'strokeWidth=1.8',
       'shadow=0'
     ].join(';') + ';'
   );
@@ -2612,7 +2735,6 @@ function sbCreateReferenceNode(
 
   return cell;
 }
-
 
 function sbCreateReferenceEdge(
   documentXML,
@@ -2676,8 +2798,8 @@ function sbCreateReferenceEdge(
       'html=1',
       'endArrow=block',
       'endFill=1',
-      'strokeWidth=1.5',
-      'opacity=88',
+      'strokeWidth=1.8',
+      'opacity=92',
       `strokeColor=${visual.edge}`
     ].join(';') + ';'
   );
@@ -2725,15 +2847,47 @@ function sbFindLogicalEdge(
   ) || null;
 }
 
+function sbConnectorStackOffset(index){
+  const step = 18;
+
+  if(index <= 0){
+    return 0;
+  }
+
+  const level =
+    Math.ceil(index / 2);
+
+  return (
+    index % 2 === 1
+      ? -level * step
+      : level * step
+  );
+}
+
+function sbCountExistingReferenceNodes(
+  documentXML,
+  logicalId,
+  pairPosition
+){
+  return Array.from(
+    documentXML.getElementsByTagName('mxCell')
+  ).filter(cell =>
+    cell.getAttribute('data-sgmp-connector') === '1' &&
+    cell.getAttribute('data-pair-position') === pairPosition &&
+    (
+      pairPosition === 'source'
+        ? cell.getAttribute('data-logical-source') === logicalId
+        : cell.getAttribute('data-logical-target') === logicalId
+    )
+  ).length;
+}
 
 function sbEnsureReferenceConnectorPair(
   documentXML,
   spec
 ){
   const root =
-    documentXML.getElementsByTagName(
-      'root'
-    )[0];
+    documentXML.getElementsByTagName('root')[0];
 
   if(!root){
     return false;
@@ -2759,14 +2913,10 @@ function sbEnsureReferenceConnectorPair(
     );
 
   const sourceGeometry =
-    sbReadCellGeometry(
-      sourceCell
-    );
+    sbReadCellGeometry(sourceCell);
 
   const targetGeometry =
-    sbReadCellGeometry(
-      targetCell
-    );
+    sbReadCellGeometry(targetCell);
 
   if(
     !sourceCell ||
@@ -2785,14 +2935,8 @@ function sbEnsureReferenceConnectorPair(
     `sgmp_ref_${spec.type}_${spec.reference}_target`;
 
   if(
-    sbFindMxCellById(
-      documentXML,
-      sourceNodeId
-    ) &&
-    sbFindMxCellById(
-      documentXML,
-      targetNodeId
-    )
+    sbFindMxCellById(documentXML, sourceNodeId) &&
+    sbFindMxCellById(documentXML, targetNodeId)
   ){
     return true;
   }
@@ -2801,40 +2945,49 @@ function sbEnsureReferenceConnectorPair(
   const gap = 14;
 
   const goesRight =
-    targetGeometry.x >=
-    sourceGeometry.x;
+    targetGeometry.x >= sourceGeometry.x;
 
   const sourceX =
     goesRight
-      ? sourceGeometry.x +
-        sourceGeometry.width +
-        gap
-      : sourceGeometry.x -
-        size -
-        gap;
+      ? sourceGeometry.x + sourceGeometry.width + gap
+      : sourceGeometry.x - size - gap;
 
   const targetX =
     goesRight
-      ? targetGeometry.x -
-        size -
-        gap
-      : targetGeometry.x +
-        targetGeometry.width +
-        gap;
+      ? targetGeometry.x - size - gap
+      : targetGeometry.x + targetGeometry.width + gap;
+
+  const sourceBaseY =
+    sourceGeometry.y +
+    (sourceGeometry.height - size) / 2;
+
+  const targetBaseY =
+    targetGeometry.y +
+    (targetGeometry.height - size) / 2;
+
+  const sourceOffset =
+    sbConnectorStackOffset(
+      sbCountExistingReferenceNodes(
+        documentXML,
+        spec.sourceId,
+        'source'
+      )
+    );
+
+  const targetOffset =
+    sbConnectorStackOffset(
+      sbCountExistingReferenceNodes(
+        documentXML,
+        spec.targetId,
+        'target'
+      )
+    );
 
   const sourceY =
-    sourceGeometry.y +
-    (
-      sourceGeometry.height -
-      size
-    ) / 2;
+    sourceBaseY + sourceOffset;
 
   const targetY =
-    targetGeometry.y +
-    (
-      targetGeometry.height -
-      size
-    ) / 2;
+    targetBaseY + targetOffset;
 
   const sourceNode =
     sbCreateReferenceNode(
@@ -2857,9 +3010,7 @@ function sbEnsureReferenceConnectorPair(
   const sourceEdge =
     sbCreateReferenceEdge(
       documentXML,
-
       `sgmp_ref_edge_${spec.type}_${spec.reference}_source`,
-
       spec.sourceId,
       sourceNodeId,
       spec.type
@@ -2868,27 +3019,18 @@ function sbEnsureReferenceConnectorPair(
   const targetEdge =
     sbCreateReferenceEdge(
       documentXML,
-
       `sgmp_ref_edge_${spec.type}_${spec.reference}_target`,
-
       targetNodeId,
       spec.targetId,
       spec.type
     );
 
-  /*
-   * La relación lógica se conserva para
-   * trazabilidad, pero queda invisible.
-   */
   const currentStyle =
-    logicalEdge.getAttribute(
-      'style'
-    ) || '';
+    logicalEdge.getAttribute('style') || '';
 
   logicalEdge.setAttribute(
     'style',
-    currentStyle +
-    ';opacity=0;strokeOpacity=0;endArrow=none;'
+    currentStyle + ';opacity=0;strokeOpacity=0;endArrow=none;'
   );
 
   logicalEdge.setAttribute(
@@ -2901,25 +3043,13 @@ function sbEnsureReferenceConnectorPair(
     spec.reference
   );
 
-  root.appendChild(
-    sourceNode
-  );
-
-  root.appendChild(
-    targetNode
-  );
-
-  root.appendChild(
-    sourceEdge
-  );
-
-  root.appendChild(
-    targetEdge
-  );
+  root.appendChild(sourceNode);
+  root.appendChild(targetNode);
+  root.appendChild(sourceEdge);
+  root.appendChild(targetEdge);
 
   return true;
 }
-
 
 function sbReferenceConnectorSpecs(
   stageLabel
@@ -4560,8 +4690,7 @@ function validateStageXML(
   vldId,
   stageLabel
 ){
-  const target =
-    $(targetId);
+  const target = $(targetId);
 
   if(!target){
     return false;
@@ -4629,10 +4758,7 @@ function validateStageXML(
     }
   }
 
-  if(
-    ['F2', 'F3', 'F4']
-      .includes(stageLabel)
-  ){
+  if(['F2','F3','F4'].includes(stageLabel)){
     const styledResult =
       applySBExecutiveEdgeStyles(
         target.value
@@ -4643,7 +4769,6 @@ function validateStageXML(
         'err',
         `No fue posible aplicar el estándar visual de conexiones en ${stageLabel}.`
       );
-
       return false;
     }
 
@@ -7696,66 +7821,123 @@ if(!validFinal){
 // ═══════════════════════════════════════════════════════════════
 // INJECT HEADER + FOOTER
 // ═══════════════════════════════════════════════════════════════
+  
 function injectHeader(xmlStr, sp) {
   if (!xmlStr || !xmlStr.includes('<mxGraphModel')) return xmlStr;
-  // Clean previous injections
-  let xml = xmlStr.replace(/<mxCell id="90\d\d"[^>]*\/>/g,'')
-                  .replace(/<mxCell id="90\d\d"[\s\S]*?<\/mxCell>/g,'');
 
-  const wM = xml.match(/pageWidth="(\d+)"/), hM = xml.match(/pageHeight="(\d+)"/);
-  const pageW = wM ? parseInt(wM[1]) : 2400;
-  const pageH = hM ? parseInt(hM[1]) : 1000;
+  let xml = xmlStr
+    .replace(/<mxCell id="90\d\d"[^>]*\/>/g, '')
+    .replace(/<mxCell id="90\d\d"[\s\S]*?<\/mxCell>/g, '');
 
-  // Find max Y for footer placement
+  const wM = xml.match(/pageWidth="(\d+)"/);
+  const hM = xml.match(/pageHeight="(\d+)"/);
+  const pageW = wM ? parseInt(wM[1], 10) : 2400;
+  const pageH = hM ? parseInt(hM[1], 10) : 1000;
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'application/xml');
+
+  let maxX = 0;
   let maxY = 0;
-  const reY = /y="([\d.]+)"[^>]*?height="([\d.]+)"/g; let mY;
-  while ((mY=reY.exec(xml))!==null) { const b=parseFloat(mY[1])+parseFloat(mY[2]); if(b>maxY) maxY=b; }
-  if (!maxY) maxY=600;
 
-  const totalW = Math.max(pageW-40, 1200);
-  const code    = sp.process_code || '';
-  const name    = sp.process_name || '';
-  const purpose = sp.purpose || '';
-  const notes   = buildFooterNotesFromActivities(sp.activities || []);
+  Array.from(doc.getElementsByTagName('mxCell')).forEach(cell => {
+    const id = cell.getAttribute('id') || '';
+    if (/^90\d\d$/.test(id)) return;
 
-  // Header layout:
-  // Line 1: [código 90px] [nombre — immediately after, left-aligned]
-  // Line 2: FINALIDAD — left-aligned, full width
-  const L1H = 28, L2H = purpose ? 20 : 0, GAP = purpose ? 3 : 0;
+    const geo = cell.getElementsByTagName('mxGeometry')[0];
+    if (!geo) return;
+
+    const x = parseFloat(geo.getAttribute('x') || '0');
+    const y = parseFloat(geo.getAttribute('y') || '0');
+    const w = parseFloat(geo.getAttribute('width') || '0');
+    const h = parseFloat(geo.getAttribute('height') || '0');
+
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  });
+
+  if (!maxX) maxX = pageW - 20;
+  if (!maxY) maxY = 600;
+
+  const leftX = 20;
+  const totalW = Math.max(1000, Math.ceil(maxX - leftX));
+
+  const code =
+    String(sp?.process_code || '').trim().toUpperCase();
+
+  const name =
+    String(sp?.process_name || '').trim().toUpperCase();
+
+  const purpose =
+    String(sp?.purpose || '').trim().toUpperCase();
+
+  const notes =
+    buildFooterNotesFromActivities(sp?.activities || []);
+
+  const L1H = 28;
+  const L2H = purpose ? 20 : 0;
+  const GAP = purpose ? 3 : 0;
   const HDR_H = L1H + L2H + GAP;
-  const yH = 8, yF = maxY + 20;
+  const yH = 8;
+  const yF = maxY + 20;
 
-  let idc=9000; const nid=()=>String(idc++); const nc=[];
+  let idc = 9000;
+  const nid = () => String(idc++);
+  const nc = [];
 
-  // Background
-  nc.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1a2f45;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="20" y="${yH}" width="${totalW}" height="${HDR_H}" as="geometry"/></mxCell>`);
+  nc.push(
+    `<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#294B66;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="${leftX}" y="${yH}" width="${totalW}" height="${HDR_H}" as="geometry"/></mxCell>`
+  );
 
-  // Code — left, 90px
-  if (code) nc.push(`<mxCell id="${nid()}" value="${ex(code)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=11;fontColor=#7ab8f5;" vertex="1" parent="1"><mxGeometry x="28" y="${yH}" width="90" height="${L1H}" as="geometry"/></mxCell>`);
+  if (code) {
+    nc.push(
+      `<mxCell id="${nid()}" value="${ex(code)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=11;fontColor=#A7C6D9;" vertex="1" parent="1"><mxGeometry x="${leftX + 8}" y="${yH}" width="90" height="${L1H}" as="geometry"/></mxCell>`
+    );
+  }
 
-  // Name — immediately after code, left-aligned (not centered)
   if (name) {
-    const nameX = code ? 122 : 28;
-    nc.push(`<mxCell id="${nid()}" value="${ex(name)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#ffffff;" vertex="1" parent="1"><mxGeometry x="${nameX}" y="${yH}" width="${totalW-nameX-20}" height="${L1H}" as="geometry"/></mxCell>`);
+    const nameX = code ? leftX + 102 : leftX + 8;
+    nc.push(
+      `<mxCell id="${nid()}" value="${ex(name)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#FFFFFF;" vertex="1" parent="1"><mxGeometry x="${nameX}" y="${yH}" width="${totalW - (nameX - leftX) - 8}" height="${L1H}" as="geometry"/></mxCell>`
+    );
   }
 
-  // Finalidad — line 2, left-aligned
-  if (purpose) nc.push(`<mxCell id="${nid()}" value="FINALIDAD: ${ex(purpose)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=2;fontSize=10;fontColor=#aed4ff;" vertex="1" parent="1"><mxGeometry x="28" y="${yH+L1H+GAP}" width="${totalW-56}" height="${L2H}" as="geometry"/></mxCell>`);
+  if (purpose) {
+    nc.push(
+      `<mxCell id="${nid()}" value="FINALIDAD: ${ex(purpose)}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=2;fontSize=10;fontColor=#D5E8F2;" vertex="1" parent="1"><mxGeometry x="${leftX + 8}" y="${yH + L1H + GAP}" width="${totalW - 16}" height="${L2H}" as="geometry"/></mxCell>`
+    );
+  }
 
-  // Footer notes — left-aligned
   if (notes) {
-    const nl = notes.split(/\n/).filter(l=>l.trim());
-    const noteH = Math.max(44, nl.length*15+18);
-    nc.push(`<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f4f7fb;strokeColor=#c8d8e8;" vertex="1" parent="1"><mxGeometry x="20" y="${yF}" width="${totalW}" height="${noteH}" as="geometry"/></mxCell>`);
-    nc.push(`<mxCell id="${nid()}" value="NOTAS:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontStyle=1;fontSize=9;fontColor=#1a2f45;" vertex="1" parent="1"><mxGeometry x="28" y="${yF+5}" width="55" height="${noteH-10}" as="geometry"/></mxCell>`);
-    // Use &#xa; for line breaks inside XML attributes — NO <br/> tags
-    const notesVal = nl.map(l=>ex(l)).join('&#xa;');
-    nc.push(`<mxCell id="${nid()}" value="${notesVal}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=9;fontColor=#2d4a62;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="86" y="${yF+5}" width="${totalW-100}" height="${noteH-10}" as="geometry"/></mxCell>`);
-    const nH = yF+noteH+40;
-    if (nH>pageH) xml = xml.replace(`pageHeight="${pageH}"`,`pageHeight="${Math.ceil(nH/100)*100+100}"`);
+    const nl = notes.split(/\n/).filter(line => line.trim());
+    const noteH = Math.max(44, nl.length * 15 + 18);
+
+    nc.push(
+      `<mxCell id="${nid()}" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F8FA;strokeColor=#C9D6DF;" vertex="1" parent="1"><mxGeometry x="${leftX}" y="${yF}" width="${totalW}" height="${noteH}" as="geometry"/></mxCell>`
+    );
+
+    nc.push(
+      `<mxCell id="${nid()}" value="NOTAS:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontStyle=1;fontSize=9;fontColor=#294B66;" vertex="1" parent="1"><mxGeometry x="${leftX + 8}" y="${yF + 5}" width="55" height="${noteH - 10}" as="geometry"/></mxCell>`
+    );
+
+    const notesVal = nl
+      .map(line => ex(String(line).toUpperCase()))
+      .join('&#xa;');
+
+    nc.push(
+      `<mxCell id="${nid()}" value="${notesVal}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=9;fontColor=#435466;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="${leftX + 66}" y="${yF + 5}" width="${totalW - 80}" height="${noteH - 10}" as="geometry"/></mxCell>`
+    );
+
+    const neededH = yF + noteH + 40;
+    if (neededH > pageH) {
+      xml = xml.replace(
+        `pageHeight="${pageH}"`,
+        `pageHeight="${Math.ceil(neededH / 100) * 100 + 100}"`
+      );
+    }
   }
 
-  return xml.replace(/\s*<\/root>/, '\n    '+nc.join('\n    ')+'\n  </root>');
+  return xml.replace(/\s*<\/root>/, '\n    ' + nc.join('\n    ') + '\n  </root>');
 }
 
 function renderOutReport() {
