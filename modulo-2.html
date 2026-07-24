@@ -1515,60 +1515,259 @@ window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
 window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
 var SGMP_LOADED  = false;
 
-function sgmpLoadPrompts(moduleCode, onReady) {
-  var cacheKey = 'sgmp_p_' + moduleCode;
-  try {
-    var cached = sessionStorage.getItem(cacheKey);
-    if (cached) {
-      var arr = JSON.parse(cached);
-      arr.forEach(function(p) { sgmpRegisterPrompt(p); });
-      SGMP_LOADED = true;
-      onReady();
-      return;
-    }
-  } catch(e) {}
-
-  fetch(SGMP_API + '?action=get_prompts&module_code=' + encodeURIComponent(moduleCode))
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-      if (res.ok && res.data && res.data.length) {
-        res.data.forEach(function(p) { sgmpRegisterPrompt(p); });
-        try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch(e) {}
-      }
-      SGMP_LOADED = true;
-      onReady();
-    })
-    .catch(function() {
-      SGMP_LOADED = true;
-      onReady(); // continúa con prompts vacíos — módulo funciona igual
-    });
+function sgmpCleanKey(value){
+  return String(value || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .trim();
 }
 
-// Obtener prompt — nunca falla, devuelve fallback si no hay nada
+
+function sgmpRegisterPrompt(p){
+  if(!p){
+    return;
+  }
+
+  const promptKey =
+    sgmpCleanKey(
+      p.prompt_key ||
+      p.promptKey ||
+      p.prompt_code ||
+      p.promptCode ||
+      p.key ||
+      ''
+    );
+
+  const promptText =
+    String(
+      p.prompt_text ||
+      p.promptText ||
+      p.prompt ||
+      p.text ||
+      p.content ||
+      ''
+    ).trim();
+
+  if(
+    !promptKey ||
+    !promptText
+  ){
+    return;
+  }
+
+  SGMP_PROMPTS[promptKey] =
+    promptText;
+
+  SGMP_PROMPT_META[promptKey] =
+    p;
+
+  const stageMap = {
+    prompt_p0: 'sb_p0',
+    prompt_f1: 'sb_f1',
+    prompt_f2: 'sb_f2',
+    prompt_f3: 'sb_f3',
+    prompt_f4: 'sb_f4'
+  };
+
+  const stageCode =
+    sgmpCleanKey(
+      p.stage_code ||
+      p.stageCode ||
+      p.stage ||
+      p.prompt_stage ||
+      stageMap[promptKey] ||
+      ''
+    );
+
+  if(stageCode){
+    SGMP_STAGE_CONFIG[stageCode] =
+      p;
+  }
+}
+
+
 function sgmpPrompt(key){
+  const cleanKey =
+    sgmpCleanKey(key);
+
   const value =
-    SGMP_PROMPTS[key];
+    SGMP_PROMPTS[cleanKey];
 
   return (
     typeof value === 'string' &&
     value.trim()
   )
-    ? value
+    ? value.trim()
     : '';
 }
 
-function sgmpRegisterPrompt(p) {
-  if(!p || !p.prompt_key) return;
-  SGMP_PROMPTS[p.prompt_key] = p.prompt_text || '';
-  SGMP_PROMPT_META[p.prompt_key] = p;
-  var stageMap = {
-    prompt_p0:'sb_p0', prompt_f1:'sb_f1', prompt_f2:'sb_f2', prompt_f3:'sb_f3', prompt_f4:'sb_f4',
-    p0:'sb_p0', f1:'sb_f1', f2:'sb_f2', f3:'sb_f3', f4:'sb_f4'
-  };
-  var stage = p.stage_code || p.stageCode || p.stage || p.prompt_stage || stageMap[p.prompt_key] || '';
-  if(stage) SGMP_STAGE_CONFIG[stage] = p;
-}
 
+function sgmpLoadPrompts(
+  moduleCode,
+  onReady
+){
+  const normalizedModule =
+    sgmpCleanKey(
+      moduleCode || 'SB'
+    ) || 'SB';
+
+  const cacheKey =
+    'sgmp_p_' +
+    normalizedModule;
+
+  let cachedRows = [];
+  let readyExecuted = false;
+
+  const executeReadyOnce = () => {
+    if(readyExecuted){
+      return;
+    }
+
+    readyExecuted = true;
+
+    if(
+      typeof onReady === 'function'
+    ){
+      try{
+        const result =
+          onReady();
+
+        if(
+          result &&
+          typeof result.catch === 'function'
+        ){
+          result.catch(error =>
+            console.warn(
+              '[SB] Error posterior a la carga de prompts.',
+              error
+            )
+          );
+        }
+      }catch(error){
+        console.warn(
+          '[SB] Error ejecutando la inicialización.',
+          error
+        );
+      }
+    }
+  };
+
+  try{
+    const cached =
+      sessionStorage.getItem(
+        cacheKey
+      );
+
+    const parsedCache =
+      cached
+        ? JSON.parse(cached)
+        : [];
+
+    cachedRows =
+      Array.isArray(parsedCache)
+        ? parsedCache
+        : [];
+
+    cachedRows.forEach(
+      sgmpRegisterPrompt
+    );
+  }catch(error){
+    cachedRows = [];
+
+    console.warn(
+      '[SB] No fue posible leer el caché de prompts.',
+      error
+    );
+  }
+
+  const url =
+    SGMP_API +
+    '?action=get_prompts&module_code=' +
+    encodeURIComponent(
+      normalizedModule
+    );
+
+  fetch(url)
+    .then(response => {
+      if(!response.ok){
+        throw new Error(
+          'HTTP ' +
+          response.status
+        );
+      }
+
+      return response.json();
+    })
+    .then(response => {
+      const rows =
+        Array.isArray(response)
+          ? response
+          : (
+              Array.isArray(response?.data)
+                ? response.data
+                : (
+                    Array.isArray(response?.prompts)
+                      ? response.prompts
+                      : []
+                  )
+            );
+
+      if(!rows.length){
+        throw new Error(
+          'Sheets no devolvió prompts activos para el módulo SB.'
+        );
+      }
+
+      SGMP_PROMPTS = {};
+      SGMP_PROMPT_META = {};
+      SGMP_STAGE_CONFIG = {};
+
+      rows.forEach(
+        sgmpRegisterPrompt
+      );
+
+      SGMP_LOADED = true;
+
+      try{
+        sessionStorage.setItem(
+          cacheKey,
+          JSON.stringify(rows)
+        );
+      }catch(error){
+        console.warn(
+          '[SB] No fue posible actualizar el caché de prompts.',
+          error
+        );
+      }
+
+      executeReadyOnce();
+    })
+    .catch(error => {
+      if(cachedRows.length){
+        SGMP_LOADED = true;
+
+        gMsg(
+          'warn',
+          'No se pudo sincronizar Sheets. Se utilizará temporalmente el último caché disponible.'
+        );
+      }else{
+        SGMP_LOADED = true;
+
+        gMsg(
+          'err',
+          'No se pudieron cargar los prompts de Google Sheets: ' +
+          error.message
+        );
+      }
+
+      console.warn(
+        '[SB] Error cargando prompts.',
+        error
+      );
+
+      executeReadyOnce();
+    });
+}
 function sgmpYes(value){
   return ['YES','SI','SÍ','TRUE','1','ON','API','HYBRID','AUTO'].includes(String(value ?? '').trim().toUpperCase());
 }
@@ -5621,12 +5820,24 @@ function stepNext(
     S.xmlF4 = xml;
   }
 
-  buildNext();
+  const promptReady =
+    typeof buildNext === 'function'
+      ? buildNext()
+      : true;
+
+  /*
+   * No cambia de etapa ni oculta el error
+   * cuando Sheets no entregó el prompt.
+   */
+  if(!promptReady){
+    return;
+  }
+
   switchTab(tabId);
 
   gMsg(
     'ok',
-    'Etapa validada. Se verificaron nodos, conexiones y trazabilidad.'
+    'Etapa validada y prompt siguiente preparado desde Google Sheets.'
   );
 }
 
@@ -6457,7 +6668,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // Template tab
   $('btn_copy_tpl').addEventListener('click', () => copyText($('tpl_xml').value));
   $('btn_dl_tpl').addEventListener('click', () => dlText($('tpl_xml').value, 'sipoc_plantilla.xml'));
-  $('btn_tpl_to_f1').addEventListener('click', () => { buildF1Prompt(); switchTab('tab_f1'); gMsg('info', 'Copia el Prompt F1 y ej\u00e9cutalo en la IA.'); });
+  $('btn_tpl_to_f1').addEventListener(
+  'click',
+  () => {
+    const promptReady =
+      buildF1Prompt();
+
+    if(!promptReady){
+      return;
+    }
+
+    switchTab(
+      'tab_f1'
+    );
+
+    gMsg(
+      'info',
+      'Prompt F1 preparado desde Google Sheets.'
+    );
+  }
+);
 
   // F1
   $('btn_copy_f1').addEventListener('click', () => copyText($('pf1_box').textContent));
