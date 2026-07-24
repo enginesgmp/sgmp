@@ -1545,8 +1545,16 @@ function sgmpLoadPrompts(moduleCode, onReady) {
 }
 
 // Obtener prompt — nunca falla, devuelve fallback si no hay nada
-function sgmpPrompt(key, fallback) {
-  return (SGMP_PROMPTS[key] && SGMP_PROMPTS[key].trim()) ? SGMP_PROMPTS[key] : (fallback || '');
+function sgmpPrompt(key){
+  const value =
+    SGMP_PROMPTS[key];
+
+  return (
+    typeof value === 'string' &&
+    value.trim()
+  )
+    ? value
+    : '';
 }
 
 function sgmpRegisterPrompt(p) {
@@ -1637,28 +1645,19 @@ function sgmpStageUseApi(stageCode){
     return false;
   }
 
-  const metadata =
-    SGMP_STAGE_CONFIG[
-      stageCode
-    ] || {};
+  const meta =
+    SGMP_STAGE_CONFIG[stageCode] || {};
 
-  const metadataValue =
-    metadata.use_api ??
-    metadata.useApi ??
-    metadata.api_enabled ??
-    metadata.apiEnabled;
+  const metaValue =
+    meta.use_api ??
+    meta.useApi ??
+    meta.api_enabled ??
+    meta.apiEnabled;
 
-  if(metadataValue !== undefined){
-    return sgmpYes(
-      metadataValue
-    );
+  if(metaValue !== undefined){
+    return sgmpYes(metaValue);
   }
 
-  /*
-   * Seguridad exclusiva del SIPOC Builder:
-   * una configuración ausente o incompleta
-   * nunca debe habilitar la API.
-   */
   return false;
 }
 function sgmpStageApiEnabled(stageCode){ return sgmpGlobalApiEnabled() && sgmpStageUseApi(stageCode); }
@@ -6009,27 +6008,21 @@ function buildSBSipocPromptContext(sp){
 }
   
 
-function getPrompt(
-  key,
-  ...args
-){
+function getPrompt(key, ...args) {
   const sheetKey =
     'prompt_' + key;
 
   if(!SGMP_LOADED){
     gMsg(
       'warn',
-      'Los prompts oficiales de Google Sheets todavía se están cargando.'
+      'Los prompts de Google Sheets todavía se están cargando.'
     );
 
     return '';
   }
 
   const template =
-    sgmpPrompt(
-      sheetKey,
-      ''
-    );
+    sgmpPrompt(sheetKey);
 
   if(
     !template ||
@@ -6043,10 +6036,6 @@ function getPrompt(
     return '';
   }
 
-  /*
-   * Cada prompt oficial debe declarar
-   * expresamente sus insumos dinámicos.
-   */
   const requiredTokens = {
     p0: [
       '{{content}}'
@@ -6078,8 +6067,7 @@ function getPrompt(
 
   const missingTokens =
     (
-      requiredTokens[key] ||
-      []
+      requiredTokens[key] || []
     ).filter(
       token =>
         !template.includes(token)
@@ -6123,9 +6111,11 @@ function getPrompt(
       ? args[1] || S.idRef || ''
       : args[2] || S.idRef || '';
 
-  const requiredInput = {
+  const requiredInputs = {
     p0:
-      args[0] || '',
+      key === 'p0'
+        ? args[0] || ''
+        : 'ok',
 
     f1:
       templateXml,
@@ -6142,11 +6132,11 @@ function getPrompt(
 
   if(
     Object.prototype.hasOwnProperty.call(
-      requiredInput,
+      requiredInputs,
       key
     ) &&
     !String(
-      requiredInput[key] || ''
+      requiredInputs[key] || ''
     ).trim()
   ){
     gMsg(
@@ -6156,31 +6146,6 @@ function getPrompt(
 
     return '';
   }
-
-  const flowContext =
-    JSON.stringify(
-      buildSBFlowPromptContext(
-        sp
-      ),
-      null,
-      2
-    );
-
-  const sipocContext =
-    JSON.stringify(
-      buildSBSipocPromptContext(
-        sp
-      ),
-      null,
-      2
-    );
-
-  const fullContext =
-    JSON.stringify(
-      sp,
-      null,
-      2
-    );
 
   const replacements = {
     '{{content}}':
@@ -6198,24 +6163,19 @@ function getPrompt(
       sp.purpose || '',
 
     '{{actors}}':
-      (sp.actors || [])
-        .join(', '),
+      (sp.actors || []).join(', '),
 
     '{{suppliers}}':
-      (sp.suppliers || [])
-        .join(', '),
+      (sp.suppliers || []).join(', '),
 
     '{{inputs}}':
-      (sp.inputs || [])
-        .join(', '),
+      (sp.inputs || []).join(', '),
 
     '{{outputs}}':
-      (sp.outputs || [])
-        .join(', '),
+      (sp.outputs || []).join(', '),
 
     '{{customers}}':
-      (sp.customers || [])
-        .join(', '),
+      (sp.customers || []).join(', '),
 
     '{{activities_json}}':
       JSON.stringify(
@@ -6225,13 +6185,25 @@ function getPrompt(
       ),
 
     '{{flow_relations}}':
-      flowContext,
+      JSON.stringify(
+        buildSBFlowPromptContext(sp),
+        null,
+        2
+      ),
 
     '{{sipoc_relations}}':
-      sipocContext,
+      JSON.stringify(
+        buildSBSipocPromptContext(sp),
+        null,
+        2
+      ),
 
     '{{context_json}}':
-      fullContext,
+      JSON.stringify(
+        sp,
+        null,
+        2
+      ),
 
     '{{idRef}}':
       idReference,
@@ -6274,8 +6246,7 @@ function getPrompt(
     gMsg(
       'err',
       `${sheetKey} conserva variables sin resolver: ` +
-      [...new Set(unresolved)]
-        .join(', ')
+      [...new Set(unresolved)].join(', ')
     );
 
     return '';
@@ -6283,8 +6254,7 @@ function getPrompt(
 
   return consolidated.trim();
 }
-// Prompts gestionados desde SGMP Sheet
-
+  
 function buildSBPrompt(
   key,
   boxId,
