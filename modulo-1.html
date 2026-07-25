@@ -26561,6 +26561,739 @@ function lmpValidateProblemStageContract_(parsed){
 }
 
 
+function lmpValidateRestrictionStageContract_(parsed){
+  const TYPES = [
+    'CAPACITY_RESOURCE',
+    'POLICY_RULE',
+    'SYSTEM_TECHNOLOGY',
+    'INFORMATION_COORDINATION',
+    'EXTERNAL_DEPENDENCY',
+    'OTHER'
+  ];
+
+  const TOP_KEYS = [
+    'stage',
+    'analysis_type',
+    'methodology',
+    'source_control',
+    'restrictions',
+    'primaryConstraintId',
+    'warnings',
+    'dataGaps',
+    'validation'
+  ];
+
+  const SOURCE_KEYS = [
+    'source_activity_count',
+    'analyzed_activity_count',
+    'preserved_activity_ids',
+    'used_ava_result',
+    'used_waste_result',
+    'used_problem_result'
+  ];
+
+  const RESTRICTION_KEYS = [
+    'id',
+    'name',
+    'constraintType',
+    'relatedActivityIds',
+    'relatedProblemIds',
+    'limitingEffect',
+    'evidence'
+  ];
+
+  const text = value =>
+    String(value ?? '').trim();
+
+  const requireObject = function(
+    value,
+    path
+  ){
+    if(
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un objeto.'
+      );
+    }
+  };
+
+  const requireArray = function(
+    value,
+    path
+  ){
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+  };
+
+  const rejectUnknownKeys = function(
+    value,
+    allowed,
+    path
+  ){
+    Object.keys(value).forEach(function(key){
+      if(!allowed.includes(key)){
+        throw new Error(
+          'El campo "' +
+          path +
+          '" contiene la propiedad no permitida "' +
+          key +
+          '".'
+        );
+      }
+    });
+  };
+
+  if(
+    text(parsed.analysis_type) !==
+    'constraint_analysis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "constraint_analysis".'
+    );
+  }
+
+  if(
+    text(parsed.methodology) !==
+    'Theory_of_Constraints'
+  ){
+    throw new Error(
+      'methodology debe ser "Theory_of_Constraints".'
+    );
+  }
+
+  rejectUnknownKeys(
+    parsed,
+    TOP_KEYS,
+    'contrato RESTRICCIONES'
+  );
+
+  requireObject(
+    parsed.source_control,
+    'source_control'
+  );
+
+  rejectUnknownKeys(
+    parsed.source_control,
+    SOURCE_KEYS,
+    'source_control'
+  );
+
+  requireArray(
+    parsed.restrictions,
+    'restrictions'
+  );
+
+  requireArray(
+    parsed.warnings,
+    'warnings'
+  );
+
+  requireArray(
+    parsed.dataGaps,
+    'dataGaps'
+  );
+
+  requireObject(
+    parsed.validation,
+    'validation'
+  );
+
+  rejectUnknownKeys(
+    parsed.validation,
+    [
+      'canProceed',
+      'blockingGaps',
+      'warnings'
+    ],
+    'validation'
+  );
+
+  requireArray(
+    parsed.validation.blockingGaps,
+    'validation.blockingGaps'
+  );
+
+  requireArray(
+    parsed.validation.warnings,
+    'validation.warnings'
+  );
+
+  if(parsed.restrictions.length > 5){
+    throw new Error(
+      'La etapa RESTRICCIONES admite un máximo de 5 restricciones.'
+    );
+  }
+
+  const sourceSteps =
+    safeArray(
+      lmpGetValidatedAsIsEvidence_()
+        .activities
+    );
+
+  const isDecision = function(activity){
+    const type =
+      typeof normalizePromptAType ===
+      'function'
+        ? normalizePromptAType(
+            activity?.type
+          )
+        : text(
+            activity?.type
+          ).toLowerCase();
+
+    return type === 'decision';
+  };
+
+  const eligibleActivities =
+    sourceSteps.filter(function(activity){
+      return !isDecision(activity);
+    });
+
+  if(!eligibleActivities.length){
+    throw new Error(
+      'El AS-IS validado no contiene actividades ejecutables para analizar.'
+    );
+  }
+
+  const executableById =
+    new Map();
+
+  const decisionIds =
+    new Set();
+
+  sourceSteps.forEach(function(
+    activity,
+    index
+  ){
+    const id =
+      text(activity?.id);
+
+    if(!id){
+      throw new Error(
+        'El elemento ' +
+        (index + 1) +
+        ' del AS-IS no tiene ID.'
+      );
+    }
+
+    if(isDecision(activity)){
+      decisionIds.add(id);
+      return;
+    }
+
+    if(executableById.has(id)){
+      throw new Error(
+        'El AS-IS contiene el ID ejecutable duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    executableById.set(
+      id,
+      activity
+    );
+  });
+
+  const vaResult =
+    lmpGetOfficialAnalysisResult_(
+      'VA'
+    );
+
+  const wasteResult =
+    lmpGetOfficialAnalysisResult_(
+      'DESPERDICIOS'
+    );
+
+  const problemResult =
+    lmpGetOfficialAnalysisResult_(
+      'PROBLEMAS'
+    );
+
+  if(!vaResult){
+    throw new Error(
+      'No existe un resultado oficial de VA para validar Restricciones.'
+    );
+  }
+
+  if(!wasteResult){
+    throw new Error(
+      'No existe un resultado oficial de Desperdicios para validar Restricciones.'
+    );
+  }
+
+  if(!problemResult){
+    throw new Error(
+      'No existe un resultado oficial de Problemas para validar Restricciones.'
+    );
+  }
+
+  const problemIds =
+    new Set();
+
+  safeArray(
+    problemResult.problems
+  ).forEach(function(
+    problem,
+    index
+  ){
+    const id =
+      text(problem?.id);
+
+    if(!id){
+      throw new Error(
+        'El problema oficial ' +
+        (index + 1) +
+        ' no tiene ID.'
+      );
+    }
+
+    if(problemIds.has(id)){
+      throw new Error(
+        'El resultado de Problemas contiene el ID duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    problemIds.add(id);
+  });
+
+  const seenRestrictionIds =
+    new Set();
+
+  const seenSignatures =
+    new Set();
+
+  const automaticBlockingGaps = [];
+
+  let completeRestrictionCount = 0;
+
+  parsed.restrictions.forEach(function(
+    item,
+    index
+  ){
+    const path =
+      'restrictions[' +
+      index +
+      ']';
+
+    requireObject(
+      item,
+      path
+    );
+
+    rejectUnknownKeys(
+      item,
+      RESTRICTION_KEYS,
+      path
+    );
+
+    const expectedId =
+      'R-' +
+      String(
+        index + 1
+      ).padStart(
+        3,
+        '0'
+      );
+
+    const id =
+      text(item.id);
+
+    if(!/^R-\d{3}$/.test(id)){
+      throw new Error(
+        path +
+        '.id debe usar el formato R-001.'
+      );
+    }
+
+    if(id !== expectedId){
+      throw new Error(
+        'Los IDs de restrictions deben ser consecutivos. ' +
+        'Se esperaba "' +
+        expectedId +
+        '" y se recibió "' +
+        id +
+        '".'
+      );
+    }
+
+    if(seenRestrictionIds.has(id)){
+      throw new Error(
+        'El ID de restricción "' +
+        id +
+        '" está duplicado.'
+      );
+    }
+
+    seenRestrictionIds.add(id);
+
+    const name =
+      text(item.name);
+
+    const constraintType =
+      text(
+        item.constraintType
+      ).toUpperCase();
+
+    const limitingEffect =
+      text(
+        item.limitingEffect
+      );
+
+    const evidence =
+      text(
+        item.evidence
+      );
+
+    if(
+      constraintType &&
+      !TYPES.includes(
+        constraintType
+      )
+    ){
+      throw new Error(
+        'La restricción "' +
+        id +
+        '" utiliza un constraintType no permitido.'
+      );
+    }
+
+    requireArray(
+      item.relatedActivityIds,
+      path +
+      '.relatedActivityIds'
+    );
+
+    const activitySeen =
+      new Set();
+
+    const relatedActivityIds =
+      item.relatedActivityIds.map(function(
+        value,
+        referenceIndex
+      ){
+        if(typeof value !== 'string'){
+          throw new Error(
+            path +
+            '.relatedActivityIds[' +
+            referenceIndex +
+            '] debe ser texto.'
+          );
+        }
+
+        const activityId =
+          value.trim();
+
+        if(!activityId){
+          throw new Error(
+            'La restricción "' +
+            id +
+            '" contiene un ID de actividad vacío.'
+          );
+        }
+
+        if(activitySeen.has(activityId)){
+          throw new Error(
+            'La restricción "' +
+            id +
+            '" repite la actividad "' +
+            activityId +
+            '".'
+          );
+        }
+
+        if(decisionIds.has(activityId)){
+          throw new Error(
+            'La decisión "' +
+            activityId +
+            '" no puede incluirse en relatedActivityIds.'
+          );
+        }
+
+        if(!executableById.has(activityId)){
+          throw new Error(
+            'El ID "' +
+            activityId +
+            '" de la restricción "' +
+            id +
+            '" no corresponde a una actividad ejecutable del AS-IS.'
+          );
+        }
+
+        activitySeen.add(
+          activityId
+        );
+
+        return activityId;
+      });
+
+    requireArray(
+      item.relatedProblemIds,
+      path +
+      '.relatedProblemIds'
+    );
+
+    const problemSeen =
+      new Set();
+
+    const relatedProblemIds =
+      item.relatedProblemIds.map(function(
+        value,
+        referenceIndex
+      ){
+        if(typeof value !== 'string'){
+          throw new Error(
+            path +
+            '.relatedProblemIds[' +
+            referenceIndex +
+            '] debe ser texto.'
+          );
+        }
+
+        const problemId =
+          value.trim();
+
+        if(!problemId){
+          throw new Error(
+            'La restricción "' +
+            id +
+            '" contiene un ID de problema vacío.'
+          );
+        }
+
+        if(problemSeen.has(problemId)){
+          throw new Error(
+            'La restricción "' +
+            id +
+            '" repite el problema "' +
+            problemId +
+            '".'
+          );
+        }
+
+        if(!problemIds.has(problemId)){
+          throw new Error(
+            'El problema "' +
+            problemId +
+            '" de la restricción "' +
+            id +
+            '" no existe en el resultado oficial de Problemas.'
+          );
+        }
+
+        problemSeen.add(
+          problemId
+        );
+
+        return problemId;
+      });
+
+    const signature = [
+      name
+        .toLowerCase()
+        .replace(
+          /\s+/g,
+          ' '
+        ),
+
+      constraintType,
+
+      relatedActivityIds
+        .slice()
+        .sort()
+        .join('|')
+    ].join('::');
+
+    if(
+      name &&
+      seenSignatures.has(signature)
+    ){
+      throw new Error(
+        'La restricción "' +
+        id +
+        '" duplica otra restricción con el mismo nombre, tipo y actividades.'
+      );
+    }
+
+    if(name){
+      seenSignatures.add(
+        signature
+      );
+    }
+
+    const missing = [];
+
+    if(!name){
+      missing.push(
+        'nombre'
+      );
+    }
+
+    if(!constraintType){
+      missing.push(
+        'tipo'
+      );
+    }
+
+    if(!relatedActivityIds.length){
+      missing.push(
+        'actividades relacionadas'
+      );
+    }
+
+    if(!limitingEffect){
+      missing.push(
+        'efecto limitante'
+      );
+    }
+
+    if(!evidence){
+      missing.push(
+        'evidencia'
+      );
+    }
+
+    if(missing.length){
+      automaticBlockingGaps.push(
+        'Restricción ' +
+        id +
+        ': completar ' +
+        missing.join(', ') +
+        '.'
+      );
+
+    }else{
+      completeRestrictionCount += 1;
+    }
+
+    Object.assign(
+      item,
+      {
+        id,
+        name,
+        constraintType,
+        relatedActivityIds,
+        relatedProblemIds,
+        limitingEffect,
+        evidence
+      }
+    );
+  });
+
+  let primaryConstraintId =
+    parsed.primaryConstraintId;
+
+  if(primaryConstraintId !== null){
+    if(typeof primaryConstraintId !== 'string'){
+      throw new Error(
+        'primaryConstraintId debe ser un ID de texto o null.'
+      );
+    }
+
+    primaryConstraintId =
+      primaryConstraintId.trim();
+
+    if(!primaryConstraintId){
+      throw new Error(
+        'primaryConstraintId no puede ser texto vacío; usa null.'
+      );
+    }
+
+    if(!/^R-\d{3}$/.test(primaryConstraintId)){
+      throw new Error(
+        'primaryConstraintId debe usar el formato R-001 o ser null.'
+      );
+    }
+
+    if(!seenRestrictionIds.has(primaryConstraintId)){
+      throw new Error(
+        'primaryConstraintId debe corresponder a una restricción incluida en restrictions.'
+      );
+    }
+  }
+
+  if(
+    parsed.restrictions.length === 0 &&
+    primaryConstraintId !== null
+  ){
+    throw new Error(
+      'Cuando restrictions está vacío, primaryConstraintId debe ser null.'
+    );
+  }
+
+  const existingBlockingGaps =
+    safeArray(
+      parsed.validation.blockingGaps
+    )
+      .map(function(gap){
+        return typeof gap === 'string'
+          ? gap.trim()
+          : JSON.stringify(gap);
+      })
+      .filter(Boolean);
+
+  const blockingGaps =
+    Array.from(
+      new Set(
+        existingBlockingGaps.concat(
+          automaticBlockingGaps
+        )
+      )
+    );
+
+  parsed.source_control = {
+    source_activity_count:
+      eligibleActivities.length,
+
+    analyzed_activity_count:
+      eligibleActivities.length,
+
+    preserved_activity_ids:
+      true,
+
+    used_ava_result:
+      true,
+
+    used_waste_result:
+      true,
+
+    used_problem_result:
+      true
+  };
+
+  parsed.primaryConstraintId =
+    primaryConstraintId;
+
+  parsed.validation = {
+    canProceed:
+      completeRestrictionCount ===
+        parsed.restrictions.length &&
+      blockingGaps.length === 0,
+
+    blockingGaps,
+
+    warnings:
+      safeArray(
+        parsed.validation.warnings
+      )
+  };
+
+  return parsed;
+}
+
+
 function lmpValidateAnalysisStageContract_(
   stageKey,
   rawText
@@ -26752,8 +27485,7 @@ function lmpValidateAnalysisStageContract_(
 
     RESTRICCIONES: {
       arrays: [
-        'restrictions',
-        'bottlenecks'
+        'restrictions'
       ]
     },
 
@@ -26771,13 +27503,6 @@ function lmpValidateAnalysisStageContract_(
       ]
     }
   };
-
-  if(
-    stage === 'RESTRICCIONES' &&
-    parsed.bottlenecks === undefined
-  ){
-    parsed.bottlenecks = [];
-  }
 
   if(
     stage === 'QUICK_WINS' &&
@@ -26826,19 +27551,9 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
-  if(
-    stage === 'RESTRICCIONES' &&
-    parsed.primaryConstraint !== null &&
-    (
-      !parsed.primaryConstraint ||
-      typeof parsed.primaryConstraint !== 'object' ||
-      Array.isArray(
-        parsed.primaryConstraint
-      )
-    )
-  ){
-    throw new Error(
-      'primaryConstraint debe ser un objeto o null.'
+  if(stage === 'RESTRICCIONES'){
+    lmpValidateRestrictionStageContract_(
+      parsed
     );
   }
 
