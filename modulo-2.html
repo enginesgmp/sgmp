@@ -6217,7 +6217,7 @@ function renderActsTable(){
   const container =
     $('sb_activity_list');
 
-    sbRefreshActivityRelationSelects();
+  sbRefreshActivityRelationSelects();
 
   if(counter){
     counter.textContent =
@@ -6241,6 +6241,30 @@ function renderActsTable(){
 
     return;
   }
+
+  /*
+   * Construye cada dato sin espacios ni saltos
+   * provenientes de la indentación del template.
+   */
+  const detailBlock = (
+    title,
+    value,
+    full = false
+  ) => {
+    const cleanValue =
+      String(
+        value || ''
+      ).trim();
+
+    return `
+      <div
+        class="sb-activity-data${full ? ' full' : ''}"
+      >
+        <strong>${ex(title)}</strong>
+        <span>${ex(cleanValue)}</span>
+      </div>
+    `;
+  };
 
   container.innerHTML =
     S.acts
@@ -6289,9 +6313,10 @@ function renderActsTable(){
           );
 
         const observations =
-          normalizeText(
-            activity.observations || ''
-          );
+          String(
+            activity.observations ||
+            ''
+          ).trim();
 
         return `
           <details
@@ -6300,112 +6325,76 @@ function renderActsTable(){
           >
             <summary>
               <div class="sb-activity-summary-main">
-                <strong>
-                  ${index + 1}. ${ex(
-                    activity.name ||
-                    (
-                      isDecision
-                        ? 'Decisión sin nombre'
-                        : 'Actividad sin nombre'
-                    )
-                  )}
-                </strong>
+                <strong>${index + 1}. ${ex(
+                  activity.name ||
+                  (
+                    isDecision
+                      ? 'Decisión sin nombre'
+                      : 'Actividad sin nombre'
+                  )
+                )}</strong>
 
-                <small>
-                  ${ex(activityId)} ·
-                  Actor: ${ex(
-                    activity.actor ||
-                    activity.lane ||
-                    'Sin actor'
-                  )}
-                </small>
+                <small>${ex(activityId)} · Actor: ${ex(
+                  activity.actor ||
+                  activity.lane ||
+                  'Sin actor'
+                )}</small>
               </div>
 
               <span
-                class="sb-activity-badge ${
+                class="sb-activity-badge${
                   isDecision
-                    ? 'decision'
+                    ? ' decision'
                     : ''
                 }"
-              >
-                ${
-                  isDecision
-                    ? 'Decisión'
-                    : 'Actividad'
-                }
-              </span>
+              >${
+                isDecision
+                  ? 'Decisión'
+                  : 'Actividad'
+              }</span>
             </summary>
 
             <div class="sb-activity-card-body">
-
               <div class="sb-activity-data-grid">
 
-                <div class="sb-activity-data">
-                  <strong>Actividad previa</strong>
+                ${detailBlock(
+                  'Actividad previa',
+                  previous.join(' · ') ||
+                  'Sin conexión previa'
+                )}
 
-                  <span>
-                    ${ex(
-                      previous.join(' · ') ||
-                      'Sin conexión previa'
-                    )}
-                  </span>
-                </div>
+                ${detailBlock(
+                  'Actividad siguiente',
+                  next.join(' · ') ||
+                  'Sin conexión siguiente'
+                )}
 
-                <div class="sb-activity-data">
-                  <strong>Actividad siguiente</strong>
+                ${detailBlock(
+                  'Entradas',
+                  inputs.join(' · ') ||
+                  'Sin entradas vinculadas'
+                )}
 
-                  <span>
-                    ${ex(
-                      next.join(' · ') ||
-                      'Sin conexión siguiente'
-                    )}
-                  </span>
-                </div>
+                ${detailBlock(
+                  'Salidas',
+                  outputs.join(' · ') ||
+                  'Sin salidas vinculadas'
+                )}
 
-                <div class="sb-activity-data">
-                  <strong>Entradas</strong>
-
-                  <span>
-                    ${ex(
-                      inputs.join(' · ') ||
-                      'Sin entradas vinculadas'
-                    )}
-                  </span>
-                </div>
-
-                <div class="sb-activity-data">
-                  <strong>Salidas</strong>
-
-                  <span>
-                    ${ex(
-                      outputs.join(' · ') ||
-                      'Sin salidas vinculadas'
-                    )}
-                  </span>
-                </div>
-
-                <div class="sb-activity-data full">
-                  <strong>Nota aclaratoria</strong>
-
-                  <span>
-                    ${ex(
-                      note ||
-                      'Sin nota aclaratoria'
-                    )}
-                  </span>
-                </div>
+                ${detailBlock(
+                  'Nota aclaratoria',
+                  note ||
+                  'Sin nota aclaratoria',
+                  true
+                )}
 
                 ${
                   observations
-                    ? `
-                      <div class="sb-activity-data full">
-                        <strong>Observaciones</strong>
-
-                        <span>
-                          ${ex(observations)}
-                        </span>
-                      </div>
-                    `
+                    ? detailBlock(
+                        'Observaciones',
+                        observations,
+                        true
+                      )
                     : ''
                 }
 
@@ -6450,14 +6439,13 @@ function renderActsTable(){
                   Eliminar
                 </button>
               </div>
-
             </div>
           </details>
         `;
       })
       .join('');
 }
-
+  
 // ═══════════════════════════════════════════════════════════════
 // MODES
 // ═══════════════════════════════════════════════════════════════
