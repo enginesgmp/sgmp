@@ -22633,6 +22633,7 @@ function renderAnalysisFromState(){
     vaReviewCard.remove();
   }
 
+  
   /*
    * El estado temporal no forma parte del respaldo.
    * Se reconstruye únicamente desde resultados oficiales.
@@ -22879,6 +22880,104 @@ function renderAnalysisFromState(){
       );
     }
   }  
+
+  /*
+   * Restaura Problemas como resultado editable.
+   */
+  const storedProblemResult =
+    results.PROBLEMAS &&
+    typeof results.PROBLEMAS === 'object' &&
+    !Array.isArray(results.PROBLEMAS)
+      ? results.PROBLEMAS
+      : null;
+
+  if(
+    storedProblemResult &&
+    Object.keys(storedProblemResult).length
+  ){
+    const restoredProblemParsed =
+      JSON.parse(
+        JSON.stringify(
+          storedProblemResult
+        )
+      );
+
+    const restoredProblemRaw =
+      JSON.stringify(
+        restoredProblemParsed,
+        null,
+        2
+      );
+
+    const problemResponseBox =
+      document.getElementById(
+        'analysisResponse_PROBLEMAS'
+      );
+
+    const problemResultBox =
+      document.getElementById(
+        'analysisResult_PROBLEMAS'
+      );
+
+    const problemSaveButton =
+      document.getElementById(
+        'btnSaveAnalysisStage_PROBLEMAS'
+      );
+
+    /*
+     * El respaldo contiene un resultado oficial,
+     * no un borrador temporal.
+     */
+    delete window
+      .__LMP_ANALYSIS_PENDING__
+      .PROBLEMAS;
+
+    /*
+     * Evita reutilizar estados visuales provenientes
+     * de otro proceso cargado anteriormente.
+     */
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__ =
+      Object.create(null);
+
+    if(problemResponseBox){
+      problemResponseBox.value =
+        restoredProblemRaw;
+    }
+
+    if(problemResultBox){
+      problemResultBox.value =
+        restoredProblemRaw;
+    }
+
+    let restoredProblemReview =
+      null;
+
+    if(
+      typeof window.lmpRenderProblemReview_ ===
+      'function'
+    ){
+      restoredProblemReview =
+        window.lmpRenderProblemReview_(
+          restoredProblemParsed
+        );
+    }
+
+    if(restoredProblemReview){
+      /*
+       * Las tarjetas restauradas representan
+       * el resultado oficial guardado.
+       */
+      if(problemSaveButton){
+        problemSaveButton.disabled =
+          false;
+      }
+
+    }else{
+      console.error(
+        '[LMP] No fue posible reconstruir la revisión editable de Problemas.'
+      );
+    }
+  }
   
   /*
    * Restaura mejoras únicamente cuando el usuario todavía
