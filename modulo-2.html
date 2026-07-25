@@ -1293,9 +1293,10 @@ body{font-size:14px !important}
 }
 
 .sb-preview-viewport{
-  min-height:420px;
+  min-height:0;
+  max-height:520px;
   overflow:auto;
-  padding:14px;
+  padding:10px;
   background-color:#F7FAFD;
   background-image:
     linear-gradient(
@@ -1312,8 +1313,13 @@ body{font-size:14px !important}
 
 .sb-preview-viewport svg{
   display:block;
-  min-width:100%;
+  width:100%;
+  min-width:0;
   height:auto;
+  max-height:460px;
+  margin:0 auto;
+  pointer-events:none;
+  user-select:none;
   border:1px solid rgba(11,46,89,.10);
   border-radius:14px;
   background:#FFFFFF;
@@ -6633,25 +6639,44 @@ function sbInlineRelationRows(
   index,
   direction
 ){
-  const relations =
-    sbEditorRelations(
-      activity,
-      direction
-    )
-      .map(relation => ({
-        activity:
-          sbRelationName(
-            relation
-          ),
+  const relationKey =
+    direction +
+    '_relations';
 
-        label:
-          sbRelationLabel(
-            relation
+  const explicitRelations =
+    Array.isArray(
+      activity?.[relationKey]
+    )
+      ? activity[relationKey]
+      : [];
+
+  /*
+   * Las filas vacías deben conservarse mientras
+   * el usuario completa la nueva relación.
+   */
+  const source =
+    explicitRelations.length
+      ? explicitRelations
+      : (
+          Array.isArray(
+            activity?.[direction]
           )
-      }))
-      .filter(relation =>
-        relation.activity
-      );
+            ? activity[direction]
+            : []
+        );
+
+  const relations =
+    source.map(relation => ({
+      activity:
+        sbRelationName(
+          relation
+        ),
+
+      label:
+        sbRelationLabel(
+          relation
+        )
+    }));
 
   if(!relations.length){
     return `
@@ -6697,22 +6722,75 @@ function sbInlineRelationRows(
     .join('');
 }
 
-
 function sbInlineIORows(
   activity,
   index,
   kind
 ){
+  const relationKey =
+    kind === 'input'
+      ? 'input_relations'
+      : 'output_relations';
+
+  const legacyKey =
+    kind === 'input'
+      ? 'ext_inputs'
+      : 'ext_outputs';
+
+  const valueKey =
+    kind === 'input'
+      ? 'input'
+      : 'output';
+
+  const explicitRelations =
+    Array.isArray(
+      activity?.[relationKey]
+    )
+      ? activity[relationKey]
+      : [];
+
+  const source =
+    explicitRelations.length
+      ? explicitRelations
+      : (
+          Array.isArray(
+            activity?.[legacyKey]
+          )
+            ? activity[legacyKey]
+            : []
+        );
+
   const relations =
-    sbEditorIOItems(
-      activity,
-      kind
-    );
+    source.map(value => ({
+      name:
+        normalizeText(
+          typeof value === 'string'
+            ? value
+            : (
+                value?.name ||
+                value?.[valueKey] ||
+                ''
+              )
+        ),
+
+      label:
+        typeof value === 'object'
+          ? normalizeText(
+              value?.label ||
+              value?.connector ||
+              ''
+            )
+          : ''
+    }));
 
   if(!relations.length){
     return `
       <div class="sb-inline-empty">
-        Sin ${kind === 'input' ? 'entradas' : 'salidas'} vinculadas.
+        Sin ${
+          kind === 'input'
+            ? 'entradas'
+            : 'salidas'
+        } vinculadas.
       </div>
     `;
   }
@@ -6944,18 +7022,6 @@ function sbInlineActivityTemplate(
               )}</textarea>
             </div>
 
-            <div class="field full">
-              <label>Observaciones</label>
-
-              <textarea
-                class="sb-inline-observations"
-                placeholder="Observaciones del flujo AS-IS"
-              >${ex(
-                activity?.observations ||
-                ''
-              )}</textarea>
-            </div>
-
           </div>
         </div>
 
@@ -6975,7 +7041,11 @@ function sbInlineActivityTemplate(
           index,
           'input',
           'Entrada / proveedor',
-          inputs.length,
+          Array.isArray(
+            activity?.input_relations
+          )
+            ? activity.input_relations.length
+            : inputs.length,
           sbInlineIORows(
             activity,
             index,
@@ -6999,7 +7069,11 @@ function sbInlineActivityTemplate(
           index,
           'output',
           'Salida / cliente',
-          outputs.length,
+          Array.isArray(
+            activity?.output_relations
+          )
+            ? activity.output_relations.length
+            : outputs.length,
           sbInlineIORows(
             activity,
             index,
@@ -7067,6 +7141,14 @@ function sbCollectInlineActivity(
   if(!card || !current){
     return current || null;
   }
+
+    const {
+    observations:
+      _discardedObservations,
+
+    ...currentWithoutObservations
+  } =
+    current;
 
   const readRelations =
     direction =>
@@ -7161,7 +7243,7 @@ function sbCollectInlineActivity(
     );
 
   return {
-    ...current,
+    ...currentWithoutObservations,
 
     name:
       normalizeText(
@@ -7280,12 +7362,6 @@ function sbCollectInlineActivity(
       )?.value?.trim() ||
       '',
 
-    observations:
-      card.querySelector(
-        '.sb-inline-observations'
-      )?.value?.trim() ||
-      '',
-
     is_start:
       previousRelations.length === 0,
 
@@ -7298,9 +7374,21 @@ function sbCollectInlineActivity(
 function sbCollectAllInlineActivities(){
   S.acts =
     S.acts.map(
-      (activity, index) =>
-        sbCollectInlineActivity(index) ||
-        activity
+      (activity, index) => {
+        const collected =
+          sbCollectInlineActivity(
+            index
+          ) ||
+          activity;
+
+        const cleanActivity = {
+          ...collected
+        };
+
+        delete cleanActivity.observations;
+
+        return cleanActivity;
+      }
     );
 
   return S.acts;
@@ -7587,9 +7675,6 @@ function addSBInlineActivity(){
 
     note:
       '',
-
-    observations:
-      ''
   });
 
   renderActsTable();
@@ -7618,10 +7703,473 @@ function addSBInlineActivity(){
   return true;
 }
 
+function sbNormalizeInlineRelationRows(
+  rows
+){
+  const normalized =
+    new Map();
 
+  (
+    Array.isArray(rows)
+      ? rows
+      : []
+  ).forEach(row => {
+    const activity =
+      normalizeText(
+        sbRelationName(row)
+      );
+
+    const label =
+      normalizeText(
+        sbRelationLabel(row)
+      );
+
+    if(!activity){
+      return;
+    }
+
+    const key =
+      activity.toLowerCase();
+
+    if(!normalized.has(key)){
+      normalized.set(
+        key,
+        {
+          activity,
+          label
+        }
+      );
+
+      return;
+    }
+
+    const existing =
+      normalized.get(key);
+
+    if(
+      !existing.label &&
+      label
+    ){
+      existing.label =
+        label;
+    }
+  });
+
+  return Array.from(
+    normalized.values()
+  );
+}
+
+
+function sbSetInlineRelationRows(
+  activity,
+  direction,
+  rows
+){
+  const normalized =
+    sbNormalizeInlineRelationRows(
+      rows
+    );
+
+  activity[
+    direction +
+    '_relations'
+  ] =
+    normalized;
+
+  activity[direction] =
+    normalized.map(
+      relation =>
+        relation.activity
+    );
+
+  return normalized;
+}
+
+
+function sbFindInlineActivityByName(
+  name
+){
+  const key =
+    normalizeText(
+      name || ''
+    ).toLowerCase();
+
+  if(!key){
+    return null;
+  }
+
+  return S.acts.find(activity =>
+    normalizeText(
+      activity?.name || ''
+    ).toLowerCase() ===
+    key
+  ) || null;
+}
+
+
+function sbRemoveInlineRelationByName(
+  activity,
+  direction,
+  relatedName
+){
+  if(!activity){
+    return false;
+  }
+
+  const key =
+    normalizeText(
+      relatedName || ''
+    ).toLowerCase();
+
+  const rows =
+    sbNormalizeInlineRelationRows(
+      sbEditorRelations(
+        activity,
+        direction
+      )
+    ).filter(relation =>
+      normalizeText(
+        relation.activity
+      ).toLowerCase() !==
+      key
+    );
+
+  sbSetInlineRelationRows(
+    activity,
+    direction,
+    rows
+  );
+
+  return true;
+}
+
+
+function sbAddInlineRelationByName(
+  activity,
+  direction,
+  relatedName,
+  label
+){
+  const name =
+    normalizeText(
+      relatedName || ''
+    );
+
+  if(
+    !activity ||
+    !name
+  ){
+    return false;
+  }
+
+  const rows =
+    sbNormalizeInlineRelationRows(
+      sbEditorRelations(
+        activity,
+        direction
+      )
+    );
+
+  const existing =
+    rows.find(relation =>
+      normalizeText(
+        relation.activity
+      ).toLowerCase() ===
+      name.toLowerCase()
+    );
+
+  if(existing){
+    if(
+      !existing.label &&
+      normalizeText(label)
+    ){
+      existing.label =
+        normalizeText(label);
+    }
+  }else{
+    rows.push({
+      activity:
+        name,
+
+      label:
+        normalizeText(
+          label || ''
+        )
+    });
+  }
+
+  sbSetInlineRelationRows(
+    activity,
+    direction,
+    rows
+  );
+
+  return true;
+}
+
+
+function sbSyncInlineBidirectionalConnections(
+  index,
+  previousActivity
+){
+  const current =
+    S.acts[index];
+
+  if(!current){
+    return false;
+  }
+
+  const oldName =
+    normalizeText(
+      previousActivity?.name || ''
+    );
+
+  const currentName =
+    normalizeText(
+      current?.name || ''
+    );
+
+  if(!currentName){
+    return false;
+  }
+
+  /*
+   * Si cambia el nombre, actualiza todas
+   * las referencias existentes.
+   */
+  if(
+    oldName &&
+    oldName.toLowerCase() !==
+      currentName.toLowerCase()
+  ){
+    S.acts.forEach(
+      (activity, activityIndex) => {
+        if(activityIndex === index){
+          return;
+        }
+
+        [
+          'previous',
+          'next'
+        ].forEach(direction => {
+          const rows =
+            sbNormalizeInlineRelationRows(
+              sbEditorRelations(
+                activity,
+                direction
+              )
+            ).map(relation => ({
+              activity:
+                normalizeText(
+                  relation.activity
+                ).toLowerCase() ===
+                oldName.toLowerCase()
+                  ? currentName
+                  : relation.activity,
+
+              label:
+                relation.label
+            }));
+
+          sbSetInlineRelationRows(
+            activity,
+            direction,
+            rows
+          );
+        });
+      }
+    );
+  }
+
+  const oldPrevious =
+    sbNormalizeInlineRelationRows(
+      sbEditorRelations(
+        previousActivity || {},
+        'previous'
+      )
+    );
+
+  const oldNext =
+    sbNormalizeInlineRelationRows(
+      sbEditorRelations(
+        previousActivity || {},
+        'next'
+      )
+    );
+
+  /*
+   * Retira reciprocidades antiguas.
+   */
+  oldPrevious.forEach(relation => {
+    const target =
+      sbFindInlineActivityByName(
+        relation.activity
+      );
+
+    if(
+      !target ||
+      target === current
+    ){
+      return;
+    }
+
+    sbRemoveInlineRelationByName(
+      target,
+      'next',
+      oldName
+    );
+
+    sbRemoveInlineRelationByName(
+      target,
+      'next',
+      currentName
+    );
+  });
+
+  oldNext.forEach(relation => {
+    const target =
+      sbFindInlineActivityByName(
+        relation.activity
+      );
+
+    if(
+      !target ||
+      target === current
+    ){
+      return;
+    }
+
+    sbRemoveInlineRelationByName(
+      target,
+      'previous',
+      oldName
+    );
+
+    sbRemoveInlineRelationByName(
+      target,
+      'previous',
+      currentName
+    );
+  });
+
+  const currentPrevious =
+    sbSetInlineRelationRows(
+      current,
+      'previous',
+      sbEditorRelations(
+        current,
+        'previous'
+      )
+    );
+
+  const currentNext =
+    sbSetInlineRelationRows(
+      current,
+      'next',
+      sbEditorRelations(
+        current,
+        'next'
+      )
+    );
+
+  /*
+   * Construye las reciprocidades nuevas.
+   */
+  currentPrevious.forEach(relation => {
+    if(
+      normalizeText(
+        relation.activity
+      ).toLowerCase() ===
+      currentName.toLowerCase()
+    ){
+      return;
+    }
+
+    const target =
+      sbFindInlineActivityByName(
+        relation.activity
+      );
+
+    if(!target){
+      return;
+    }
+
+    sbAddInlineRelationByName(
+      target,
+      'next',
+      currentName,
+      relation.label
+    );
+  });
+
+  currentNext.forEach(relation => {
+    if(
+      normalizeText(
+        relation.activity
+      ).toLowerCase() ===
+      currentName.toLowerCase()
+    ){
+      return;
+    }
+
+    const target =
+      sbFindInlineActivityByName(
+        relation.activity
+      );
+
+    if(!target){
+      return;
+    }
+
+    sbAddInlineRelationByName(
+      target,
+      'previous',
+      currentName,
+      relation.label
+    );
+  });
+
+  S.acts.forEach(activity => {
+    sbSetInlineRelationRows(
+      activity,
+      'previous',
+      sbEditorRelations(
+        activity,
+        'previous'
+      )
+    );
+
+    sbSetInlineRelationRows(
+      activity,
+      'next',
+      sbEditorRelations(
+        activity,
+        'next'
+      )
+    );
+
+    activity.is_start =
+      activity.previous_relations.length ===
+      0;
+
+    activity.is_end =
+      activity.next_relations.length ===
+      0;
+  });
+
+  return true;
+}
+
+  
 function saveSBInlineActivity(
   index
 ){
+  const previousActivity =
+    sbDeepClone(
+      S.acts[index] || {}
+    );
+
   const activity =
     sbCollectInlineActivity(
       index
@@ -7633,6 +8181,11 @@ function saveSBInlineActivity(
 
   S.acts[index] =
     activity;
+
+  sbSyncInlineBidirectionalConnections(
+    index,
+    previousActivity
+  );
 
   S.acts.forEach(
     (item, activityIndex) => {
@@ -7650,25 +8203,29 @@ function saveSBInlineActivity(
 
   renderActsTable();
 
+  const savedActivity =
+    S.acts[index];
+
   const missing =
     [];
 
-  if(!activity.name){
+  if(!savedActivity?.name){
     missing.push(
       'nombre'
     );
   }
 
-  if(!activity.actor){
+  if(!savedActivity?.actor){
     missing.push(
       'actor'
     );
   }
 
   if(
-    activity.type ===
+    savedActivity?.type ===
       'decision' &&
-    activity.next_relations.length < 2
+    savedActivity.next_relations.length <
+      2
   ){
     missing.push(
       'dos rutas de salida'
@@ -7688,11 +8245,11 @@ function saveSBInlineActivity(
 
   gMsg(
     'ok',
-    'Actividad guardada.'
+    'Actividad guardada y conexiones actualizadas.'
   );
 
   return true;
-}  
+}
 
 function moveSBActivity(
   index,
@@ -9008,9 +9565,12 @@ function sbBuildStaticPreview(
   let svg = `
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="${width}"
-      height="${height}"
       viewBox="0 0 ${width} ${height}"
+      preserveAspectRatio="xMinYMin meet"
+      role="img"
+      aria-label="Vista previa estática del flujo SIPOC"
+      data-canvas-width="${width}"
+      data-canvas-height="${height}"
     >
       <defs>
         <marker
