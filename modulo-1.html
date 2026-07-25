@@ -5549,6 +5549,50 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
   }
 </style>
 
+<style id="sgmp-analysis-problem-actions-layer">
+.analysis-problem-review-card{border-left:4px solid #C0392B!important;background:linear-gradient(180deg,#fff,#fffdfc)!important}
+.analysis-problem-review-head{margin-bottom:16px!important}
+.analysis-problem-head-actions{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.analysis-problem-add-button{min-height:34px;padding:7px 12px;border:1px solid #0B2E59;border-radius:10px;background:#0B2E59;color:#fff;font-family:inherit;font-size:.76rem;font-weight:900;cursor:pointer}
+.analysis-problem-add-button:hover,.analysis-problem-save-button:hover{background:#123E73}
+.analysis-problem-item{overflow:visible!important;border-radius:16px!important}
+.analysis-problem-item.is-saved{border-left-color:#27AE60;background:linear-gradient(180deg,#fff,#fbfffc)}
+.analysis-problem-item.has-pending-changes{border-left-color:#1A56DB;background:linear-gradient(180deg,#fff,#fafcff)}
+.analysis-problem-item.is-incomplete{border-left-color:#F2994A}
+.analysis-problem-item.is-saved>.analysis-problem-summary{background:linear-gradient(135deg,#f1fbf5,#fff)}
+.analysis-problem-item.has-pending-changes>.analysis-problem-summary{background:linear-gradient(135deg,#f1f6ff,#fff)}
+.analysis-problem-item.is-saved .analysis-problem-state{background:rgba(39,174,96,.09);border-color:rgba(39,174,96,.22);color:#1E6B3D}
+.analysis-problem-item.has-pending-changes .analysis-problem-state{background:rgba(26,86,219,.08);border-color:rgba(26,86,219,.20);color:#1749A6}
+.analysis-problem-body{padding:12px 14px 14px!important}
+.analysis-problem-reference{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:11px;padding:8px 10px;border:1px solid rgba(11,46,89,.08);border-radius:11px;background:#F7FAFD}
+.analysis-problem-reference span{color:#42617F;font-size:.74rem;font-weight:750}
+.analysis-problem-reference strong{color:#0B2E59;font-weight:900}
+.analysis-problem-grid{grid-template-columns:minmax(220px,.72fr) minmax(0,1.28fr)!important;gap:10px!important}
+.analysis-problem-grid textarea{min-height:76px!important;max-height:190px!important;resize:vertical!important}
+.analysis-problem-grid input,.analysis-problem-grid select,.analysis-problem-activity-picker>summary{min-height:40px!important}
+.analysis-problem-field-note{margin-top:4px!important}
+.analysis-problem-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(11,46,89,.08)}
+.analysis-problem-save-message{flex:1 1 auto;min-width:0;color:#5B6F8A;font-size:.74rem;font-weight:750;line-height:1.3}
+.analysis-problem-item.is-saved .analysis-problem-save-message{color:#1E6B3D}
+.analysis-problem-item.has-pending-changes .analysis-problem-save-message{color:#1749A6}
+.analysis-problem-item.is-incomplete .analysis-problem-save-message{color:#8A570D}
+.analysis-problem-save-button,.analysis-problem-delete-button{flex:0 0 auto;min-height:36px;padding:8px 13px;border-radius:10px;font-family:inherit;font-size:.76rem;font-weight:900;cursor:pointer}
+.analysis-problem-save-button{border:1px solid #0B2E59;background:#0B2E59;color:#fff}
+.analysis-problem-save-button:disabled{cursor:not-allowed;border-color:#AAB7C7;background:#AAB7C7;opacity:.78}
+.analysis-problem-delete-button{border:1px solid rgba(192,57,43,.34);background:#fff;color:#A93226}
+.analysis-problem-delete-button:hover{background:rgba(192,57,43,.06)}
+
+@media(max-width:900px){
+  .analysis-problem-head-actions{width:100%;justify-content:flex-start}
+  .analysis-problem-grid{grid-template-columns:1fr!important}
+}
+
+@media(max-width:680px){
+  .analysis-problem-actions{flex-direction:column;align-items:stretch}
+  .analysis-problem-save-button,.analysis-problem-delete-button{width:100%}
+}
+</style>
+  
 </head>
 <body>
   
@@ -26677,6 +26721,36 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
+    if(stage === 'PROBLEMAS'){
+      if(
+        typeof window.lmpSavePendingProblemFindings_ !==
+        'function'
+      ){
+        throw new Error(
+          'No está disponible el guardado masivo de Problemas.'
+        );
+      }
+
+      const problemMassSave =
+        window.lmpSavePendingProblemFindings_({
+          closeAfterSave:
+            true,
+
+          scrollOnError:
+            true
+        });
+
+      if(
+        !problemMassSave ||
+        problemMassSave.ok !== true
+      ){
+        throw new Error(
+          problemMassSave?.error ||
+          'No fue posible guardar todos los problemas pendientes.'
+        );
+      }
+    }
+  
   if(stage === 'PROBLEMAS'){
     lmpValidateProblemStageContract_(
       parsed
@@ -32224,8 +32298,1298 @@ function lmpRenderProblemReview_(parsed){
 }
 
 
-window.lmpRenderProblemReview_ =
+function lmpProblemSnapshot_(item){
+  return JSON.stringify({
+    name:String(item?.name||'').trim(),
+    problemType:String(item?.problemType||'').trim().toUpperCase(),
+    impactLevel:String(item?.impactLevel||'').trim().toUpperCase(),
+
+    relatedActivityIds:safeArray(item?.relatedActivityIds)
+      .map(value=>String(value||'').trim())
+      .filter(Boolean),
+
+    relatedWasteIds:safeArray(item?.relatedWasteIds)
+      .map(value=>String(value||'').trim())
+      .filter(Boolean),
+
+    description:String(item?.description||'').trim(),
+    justification:String(item?.justification||'').trim(),
+    evidence:String(item?.evidence||'').trim()
+  });
+}
+
+
+function lmpProblemReadCard_(card,sourceItem){
+  const read=function(name){
+    return String(
+      card?.querySelector(
+        '[data-problem-field="' +
+        name +
+        '"]'
+      )?.value || ''
+    ).trim();
+  };
+
+  const activitySelect=
+    card?.querySelector(
+      '[data-problem-field="relatedActivityIds"]'
+    );
+
+  const relatedActivityIds=
+    Array.from(
+      activitySelect?.selectedOptions || []
+    )
+      .map(option=>
+        String(option.value||'').trim()
+      )
+      .filter(Boolean);
+
+  const item={
+    id:String(
+      card?.dataset?.problemId ||
+      sourceItem?.id ||
+      ''
+    ).trim(),
+
+    name:read('name'),
+
+    problemType:
+      read('problemType').toUpperCase(),
+
+    relatedActivityIds,
+
+    relatedWasteIds:
+      safeArray(
+        card?.__lmpProblemRelatedWasteIds ||
+        sourceItem?.relatedWasteIds
+      )
+        .map(value=>
+          String(value||'').trim()
+        )
+        .filter(Boolean),
+
+    description:read('description'),
+    justification:read('justification'),
+    evidence:read('evidence'),
+
+    impactLevel:
+      read('impactLevel').toUpperCase()
+  };
+
+  const missing=[];
+
+  if(!item.name) missing.push('nombre');
+  if(!item.problemType) missing.push('tipo');
+  if(!item.impactLevel) missing.push('impacto');
+
+  if(!item.relatedActivityIds.length){
+    missing.push('actividades relacionadas');
+  }
+
+  if(!item.description){
+    missing.push('descripción');
+  }
+
+  if(!item.justification){
+    missing.push('justificación');
+  }
+
+  if(!item.evidence){
+    missing.push('evidencia');
+  }
+
+  return {
+    item,
+    missing,
+    isComplete:missing.length===0,
+    snapshot:lmpProblemSnapshot_(item)
+  };
+}
+
+
+function lmpProblemFindCard_(problemId){
+  const id=String(problemId||'').trim();
+
+  return Array.from(
+    el('analysisProblemReview_PROBLEMAS')
+      ?.querySelectorAll(
+        '.analysis-problem-item[data-problem-id]'
+      ) || []
+  ).find(function(card){
+    return String(
+      card.dataset.problemId||''
+    ).trim()===id;
+  }) || null;
+}
+
+
+function lmpProblemEnsurePending_(){
+  window.__LMP_ANALYSIS_PENDING__=
+    window.__LMP_ANALYSIS_PENDING__ ||
+    Object.create(null);
+
+  if(
+    window.__LMP_ANALYSIS_PENDING__
+      .PROBLEMAS
+  ){
+    return window
+      .__LMP_ANALYSIS_PENDING__
+      .PROBLEMAS;
+  }
+
+  const official=
+    state.analysisStages
+      ?.results
+      ?.PROBLEMAS;
+
+  if(
+    !official ||
+    typeof official!=='object' ||
+    Array.isArray(official) ||
+    !Object.keys(official).length
+  ){
+    throw new Error(
+      'No existe un resultado de Problemas validado para iniciar la edición.'
+    );
+  }
+
+  const parsed=
+    JSON.parse(
+      JSON.stringify(official)
+    );
+
+  const raw=
+    JSON.stringify(
+      parsed,
+      null,
+      2
+    );
+
+  window.__LMP_ANALYSIS_PENDING__
+    .PROBLEMAS={
+      raw,
+      parsed,
+      __problemReviewInitialized:true
+    };
+
+  const response=
+    el('analysisResponse_PROBLEMAS');
+
+  if(response){
+    response.value=raw;
+  }
+
+  const stageButton=
+    el('btnSaveAnalysisStage_PROBLEMAS');
+
+  if(stageButton){
+    stageButton.disabled=false;
+  }
+
+  return window
+    .__LMP_ANALYSIS_PENDING__
+    .PROBLEMAS;
+}
+
+
+function lmpProblemRevalidate_(candidate){
+  candidate.validation=
+    (
+      candidate.validation &&
+      typeof candidate.validation==='object' &&
+      !Array.isArray(candidate.validation)
+    )
+      ? candidate.validation
+      : {};
+
+  candidate.validation.blockingGaps=[];
+  candidate.validation.canProceed=false;
+
+  return lmpValidateProblemStageContract_(
+    candidate
+  );
+}
+
+
+function lmpProblemUpdateOutput_(parsed){
+  const output=
+    el('analysisResult_PROBLEMAS');
+
+  if(output){
+    output.value=
+      JSON.stringify(
+        parsed,
+        null,
+        2
+      );
+  }
+
+  const stageButton=
+    el('btnSaveAnalysisStage_PROBLEMAS');
+
+  if(stageButton){
+    stageButton.disabled=false;
+  }
+
+  if(
+    typeof window.renderAnalysisScreenAccumulated===
+    'function'
+  ){
+    window.renderAnalysisScreenAccumulated(
+      'PROBLEMAS'
+    );
+  }
+}
+
+
+function lmpProblemRefreshCounter_(){
+  const review=
+    el('analysisProblemReview_PROBLEMAS');
+
+  if(!review){
+    return;
+  }
+
+  const cards=
+    Array.from(
+      review.querySelectorAll(
+        '.analysis-problem-item[data-problem-id]'
+      )
+    );
+
+  const saved=
+    cards.filter(function(card){
+      return card.classList.contains(
+        'is-saved'
+      );
+    }).length;
+
+  const counter=
+    review.querySelector(
+      '.analysis-problem-review-counter'
+    );
+
+  if(counter){
+    counter.textContent=
+      cards.length
+        ? (
+            saved +
+            ' de ' +
+            cards.length +
+            ' guardados'
+          )
+        : '0 problemas';
+  }
+}
+
+
+function lmpProblemRefreshCard_(card){
+  const data=
+    lmpProblemReadCard_(
+      card,
+      card?.__lmpProblemSourceItem || {}
+    );
+
+  window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__ ||
+    Object.create(null);
+
+  const isSaved=!!(
+    data.isComplete &&
+    window
+      .__LMP_PROBLEM_SAVED_SNAPSHOTS__[
+        data.item.id
+      ]===data.snapshot
+  );
+
+  const hasPendingChanges=!!(
+    data.isComplete &&
+    !isSaved
+  );
+
+  card.classList.remove(
+    'is-complete',
+    'is-saved',
+    'has-pending-changes',
+    'is-incomplete'
+  );
+
+  card.classList.add(
+    data.isComplete
+      ? 'is-complete'
+      : 'is-incomplete'
+  );
+
+  if(isSaved){
+    card.classList.add('is-saved');
+  }
+
+  if(hasPendingChanges){
+    card.classList.add(
+      'has-pending-changes'
+    );
+  }
+
+  const title=
+    card.querySelector(
+      '[data-problem-summary-title]'
+    );
+
+  const subtitle=
+    card.querySelector(
+      '[data-problem-summary-subtitle]'
+    );
+
+  const impact=
+    card.querySelector(
+      '[data-problem-summary-impact]'
+    );
+
+  const stateBadge=
+    card.querySelector(
+      '[data-problem-summary-state]'
+    );
+
+  const message=
+    card.querySelector(
+      '[data-problem-save-message]'
+    );
+
+  const saveButton=
+    card.querySelector(
+      '[data-problem-save-button]'
+    );
+
+  if(title){
+    title.textContent=
+      data.item.name ||
+      data.item.id;
+  }
+
+  if(subtitle){
+    subtitle.textContent=
+      lmpProblemTypeLabel_(
+        data.item.problemType
+      ) +
+      ' · ' +
+      data.item.relatedActivityIds.length +
+      (
+        data.item.relatedActivityIds.length===1
+          ? ' actividad'
+          : ' actividades'
+      );
+  }
+
+  if(impact){
+    impact.textContent=
+      lmpProblemImpactLabel_(
+        data.item.impactLevel
+      );
+
+    impact.dataset.impact=
+      data.item.impactLevel;
+  }
+
+  if(!data.isComplete){
+    if(stateBadge){
+      stateBadge.textContent=
+        'Incompleta';
+    }
+
+    if(message){
+      message.textContent=
+        'Completa ' +
+        data.missing.join(', ') +
+        '.';
+    }
+
+    if(saveButton){
+      saveButton.disabled=true;
+      saveButton.textContent=
+        'Guardar problema';
+    }
+
+  }else if(isSaved){
+    if(stateBadge){
+      stateBadge.textContent=
+        'Guardado';
+    }
+
+    if(message){
+      message.textContent=
+        'El problema está guardado dentro de la revisión.';
+    }
+
+    if(saveButton){
+      saveButton.disabled=true;
+      saveButton.textContent=
+        'Problema guardado';
+    }
+
+  }else{
+    if(stateBadge){
+      stateBadge.textContent=
+        'Cambios pendientes';
+    }
+
+    if(message){
+      message.textContent=
+        'Guarda el problema para incorporar sus cambios a la revisión.';
+    }
+
+    if(saveButton){
+      saveButton.disabled=false;
+      saveButton.textContent=
+        'Guardar problema';
+    }
+  }
+
+  lmpProblemRefreshCounter_();
+
+  return {
+    data,
+    isComplete:data.isComplete,
+    isSaved,
+    hasPendingChanges
+  };
+}
+
+
+window.lmpSaveProblemFinding_=function(
+  problemId,
+  options
+){
+  const settings=
+    Object.assign(
+      {
+        silent:false,
+        closeAfterSave:true,
+        scrollOnError:true
+      },
+      options || {}
+    );
+
+  const id=
+    String(problemId||'').trim();
+
+  const card=
+    lmpProblemFindCard_(id);
+
+  try{
+    if(!card){
+      throw new Error(
+        'No se encontró el problema "' +
+        id +
+        '".'
+      );
+    }
+
+    const pending=
+      lmpProblemEnsurePending_();
+
+    const index=
+      safeArray(
+        pending.parsed?.problems
+      ).findIndex(function(item){
+        return String(
+          item?.id||''
+        ).trim()===id;
+      });
+
+    if(index<0){
+      throw new Error(
+        'El problema "' +
+        id +
+        '" no existe en el JSON pendiente.'
+      );
+    }
+
+    const read=
+      lmpProblemReadCard_(
+        card,
+        pending.parsed.problems[index]
+      );
+
+    if(!read.isComplete){
+      throw new Error(
+        'Completa ' +
+        read.missing.join(', ') +
+        '.'
+      );
+    }
+
+    const candidate=
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.problems[index]=
+      read.item;
+
+    const validated=
+      lmpProblemRevalidate_(
+        candidate
+      );
+
+    pending.parsed=
+      JSON.parse(
+        JSON.stringify(validated)
+      );
+
+    const savedItem=
+      validated.problems[index];
+
+    card.__lmpProblemSourceItem=
+      JSON.parse(
+        JSON.stringify(savedItem)
+      );
+
+    card.__lmpProblemRelatedWasteIds=
+      safeArray(
+        savedItem.relatedWasteIds
+      ).slice();
+
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+      window.__LMP_PROBLEM_SAVED_SNAPSHOTS__ ||
+      Object.create(null);
+
+    window
+      .__LMP_PROBLEM_SAVED_SNAPSHOTS__[
+        id
+      ]=read.snapshot;
+
+    lmpProblemUpdateOutput_(
+      validated
+    );
+
+    lmpProblemRefreshCard_(
+      card
+    );
+
+    if(settings.closeAfterSave){
+      card.open=false;
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg==='function'
+    ){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'ok',
+        'Problema ' +
+        id +
+        ' guardado dentro de la revisión. Guarda la etapa completa para incorporarlo al respaldo.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(card){
+      card.open=true;
+
+      if(settings.scrollOnError){
+        card.scrollIntoView({
+          behavior:'smooth',
+          block:'center'
+        });
+      }
+    }
+
+    if(
+      !settings.silent &&
+      typeof showMsg==='function'
+    ){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'err',
+        'No fue posible guardar el problema. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.lmpAddProblemFinding_=function(){
+  try{
+    const pending=
+      lmpProblemEnsurePending_();
+
+    const candidate=
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.problems=
+      safeArray(candidate.problems);
+
+    const id=
+      'P-' +
+      String(
+        candidate.problems.length+1
+      ).padStart(3,'0');
+
+    candidate.problems.push({
+      id,
+      name:'',
+      problemType:'',
+      relatedActivityIds:[],
+      relatedWasteIds:[],
+      description:'',
+      justification:'',
+      evidence:'',
+      impactLevel:''
+    });
+
+    const validated=
+      lmpProblemRevalidate_(
+        candidate
+      );
+
+    pending.parsed=
+      JSON.parse(
+        JSON.stringify(validated)
+      );
+
+    lmpProblemUpdateOutput_(
+      validated
+    );
+
+    window.lmpRenderProblemReview_(
+      validated
+    );
+
+    const card=
+      lmpProblemFindCard_(id);
+
+    if(card){
+      card.open=true;
+
+      card.scrollIntoView({
+        behavior:'smooth',
+        block:'center'
+      });
+    }
+
+    if(typeof showMsg==='function'){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'warn',
+        'Se agregó el problema ' +
+        id +
+        '. Completa sus campos antes de guardar la etapa.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(typeof showMsg==='function'){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'err',
+        'No fue posible agregar el problema. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+window.lmpDeleteProblemFinding_=function(
+  problemId
+){
+  const id=
+    String(problemId||'').trim();
+
+  if(
+    !window.confirm(
+      '¿Eliminar el problema ' +
+      id +
+      '? Los IDs posteriores se reorganizarán.'
+    )
+  ){
+    return false;
+  }
+
+  try{
+    const pending=
+      lmpProblemEnsurePending_();
+
+    const candidate=
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    const problems=
+      safeArray(candidate.problems);
+
+    const index=
+      problems.findIndex(function(item){
+        return String(
+          item?.id||''
+        ).trim()===id;
+      });
+
+    if(index<0){
+      throw new Error(
+        'El problema no existe en el JSON pendiente.'
+      );
+    }
+
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+      window.__LMP_PROBLEM_SAVED_SNAPSHOTS__ ||
+      Object.create(null);
+
+    const previous=
+      window
+        .__LMP_PROBLEM_SAVED_SNAPSHOTS__;
+
+    problems.splice(index,1);
+
+    const next=
+      Object.create(null);
+
+    problems.forEach(function(item,itemIndex){
+      const oldId=
+        String(item?.id||'').trim();
+
+      const newId=
+        'P-' +
+        String(itemIndex+1)
+          .padStart(3,'0');
+
+      item.id=newId;
+
+      if(previous[oldId]){
+        next[newId]=
+          previous[oldId];
+      }
+    });
+
+    candidate.problems=problems;
+
+    const validated=
+      lmpProblemRevalidate_(
+        candidate
+      );
+
+    pending.parsed=
+      JSON.parse(
+        JSON.stringify(validated)
+      );
+
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+      next;
+
+    lmpProblemUpdateOutput_(
+      validated
+    );
+
+    window.lmpRenderProblemReview_(
+      validated
+    );
+
+    if(typeof showMsg==='function'){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'ok',
+        'Problema eliminado. Los IDs y los KPI fueron recalculados.'
+      );
+    }
+
+    return true;
+
+  }catch(error){
+    if(typeof showMsg==='function'){
+      showMsg(
+        'analysisMsg_PROBLEMAS',
+        'err',
+        'No fue posible eliminar el problema. Detalle: ' +
+        error.message
+      );
+    }
+
+    return false;
+  }
+};
+
+
+function lmpEnhanceProblemReview_(
+  reviewCard,
+  parsed
+){
+  if(!reviewCard){
+    return null;
+  }
+
+  window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__ ||
+    Object.create(null);
+
+  const pending=
+    window.__LMP_ANALYSIS_PENDING__
+      ?.PROBLEMAS;
+
+  if(
+    pending &&
+    pending.__problemReviewInitialized!==true
+  ){
+    window.__LMP_PROBLEM_SAVED_SNAPSHOTS__=
+      Object.create(null);
+
+    pending.__problemReviewInitialized=true;
+  }
+
+  const official=
+    state.analysisStages
+      ?.results
+      ?.PROBLEMAS;
+
+  const restored=!!(
+    !pending &&
+    official &&
+    typeof official==='object' &&
+    !Array.isArray(official) &&
+    JSON.stringify(official)===
+      JSON.stringify(parsed)
+  );
+
+  const head=
+    reviewCard.querySelector(
+      '.analysis-problem-review-head'
+    );
+
+  const counter=
+    reviewCard.querySelector(
+      '.analysis-problem-review-counter'
+    );
+
+  if(
+    head &&
+    !head.querySelector(
+      '[data-problem-add-button]'
+    )
+  ){
+    const actions=
+      document.createElement('div');
+
+    actions.className=
+      'analysis-problem-head-actions';
+
+    if(counter){
+      actions.appendChild(counter);
+    }
+
+    const add=
+      document.createElement('button');
+
+    add.type='button';
+    add.className=
+      'analysis-problem-add-button';
+
+    add.dataset.problemAddButton='1';
+    add.textContent='Agregar problema';
+
+    add.addEventListener(
+      'click',
+      window.lmpAddProblemFinding_
+    );
+
+    actions.appendChild(add);
+    head.appendChild(actions);
+  }
+
+  const sourceById=
+    new Map(
+      safeArray(parsed?.problems)
+        .map(function(item){
+          return [
+            String(item?.id||'').trim(),
+            item
+          ];
+        })
+    );
+
+  reviewCard.querySelectorAll(
+    '.analysis-problem-item[data-problem-id]'
+  ).forEach(function(card){
+    const id=
+      String(
+        card.dataset.problemId||''
+      ).trim();
+
+    const source=
+      sourceById.get(id)||{};
+
+    card.__lmpProblemSourceItem=
+      JSON.parse(
+        JSON.stringify(source)
+      );
+
+    card.__lmpProblemRelatedWasteIds=
+      safeArray(
+        source.relatedWasteIds
+      ).slice();
+
+    const initial=
+      lmpProblemReadCard_(
+        card,
+        source
+      );
+
+    if(
+      restored &&
+      initial.isComplete
+    ){
+      window
+        .__LMP_PROBLEM_SAVED_SNAPSHOTS__[
+          id
+        ]=initial.snapshot;
+
+      card.open=false;
+    }
+
+    const body=
+      card.querySelector(
+        '.analysis-problem-body'
+      );
+
+    const grid=
+      body?.querySelector(
+        '.analysis-problem-grid'
+      );
+
+    if(
+      body &&
+      grid &&
+      !body.querySelector(
+        '.analysis-problem-reference'
+      )
+    ){
+      grid.insertAdjacentHTML(
+        'beforebegin',
+        `
+          <div class="analysis-problem-reference">
+            <span>
+              <strong>ID:</strong>
+              ${escapeHtml(id)}
+            </span>
+
+            <span>
+              <strong>Unidad:</strong>
+              Problema operativo
+            </span>
+          </div>
+        `
+      );
+    }
+
+    [
+      'justification',
+      'evidence'
+    ].forEach(function(fieldName){
+      card.querySelector(
+        '[data-problem-field="' +
+        fieldName +
+        '"]'
+      )?.closest('.field')
+        ?.classList.remove(
+          'analysis-problem-wide'
+        );
+    });
+
+    if(
+      body &&
+      !body.querySelector(
+        '[data-problem-save-button]'
+      )
+    ){
+      body.insertAdjacentHTML(
+        'beforeend',
+        `
+          <div class="analysis-problem-actions">
+            <div
+              class="analysis-problem-save-message"
+              data-problem-save-message
+            ></div>
+
+            <button
+              class="analysis-problem-delete-button"
+              data-problem-delete-button
+              type="button"
+            >
+              Eliminar
+            </button>
+
+            <button
+              class="analysis-problem-save-button"
+              data-problem-save-button
+              type="button"
+            >
+              Guardar problema
+            </button>
+          </div>
+        `
+      );
+    }
+
+    const changed=function(){
+      if(
+        !window.__LMP_ANALYSIS_PENDING__
+          ?.PROBLEMAS
+      ){
+        lmpProblemEnsurePending_();
+      }
+
+      lmpProblemRefreshCard_(card);
+    };
+
+    card.querySelectorAll(
+      '[data-problem-field]'
+    ).forEach(function(input){
+      input.addEventListener(
+        input.tagName==='SELECT'
+          ? 'change'
+          : 'input',
+        changed
+      );
+    });
+
+    card.querySelector(
+      '[data-problem-save-button]'
+    )?.addEventListener(
+      'click',
+      function(event){
+        event.preventDefault();
+        event.stopPropagation();
+
+        window.lmpSaveProblemFinding_(
+          id
+        );
+      }
+    );
+
+    card.querySelector(
+      '[data-problem-delete-button]'
+    )?.addEventListener(
+      'click',
+      function(event){
+        event.preventDefault();
+        event.stopPropagation();
+
+        window.lmpDeleteProblemFinding_(
+          id
+        );
+      }
+    );
+
+    lmpProblemRefreshCard_(card);
+  });
+
+  lmpProblemRefreshCounter_();
+
+  return reviewCard;
+}
+
+
+const lmpRenderProblemReviewBase_=
   lmpRenderProblemReview_;
+
+lmpRenderProblemReview_=function(parsed){
+  return lmpEnhanceProblemReview_(
+    lmpRenderProblemReviewBase_(
+      parsed
+    ),
+    parsed
+  );
+};
+
+window.lmpRenderProblemReview_=
+  lmpRenderProblemReview_;
+
+
+window.lmpSavePendingProblemFindings_=
+function(options){
+  const settings=
+    Object.assign(
+      {
+        closeAfterSave:true,
+        scrollOnError:true
+      },
+      options || {}
+    );
+
+  const pending=
+    window.__LMP_ANALYSIS_PENDING__
+      ?.PROBLEMAS;
+
+  if(!pending){
+    return {
+      ok:false,
+      savedCount:0,
+      incompleteId:'',
+      error:'Primero valida el JSON de Problemas.'
+    };
+  }
+
+  const review=
+    el('analysisProblemReview_PROBLEMAS');
+
+  if(!review){
+    return {
+      ok:false,
+      savedCount:0,
+      incompleteId:'',
+      error:'No está disponible la revisión editable de Problemas.'
+    };
+  }
+
+  const expected=
+    safeArray(
+      pending.parsed?.problems
+    );
+
+  const cards=
+    Array.from(
+      review.querySelectorAll(
+        '.analysis-problem-item[data-problem-id]'
+      )
+    );
+
+  if(cards.length!==expected.length){
+    return {
+      ok:false,
+      savedCount:0,
+      incompleteId:'',
+      error:'La cantidad de tarjetas no coincide con el JSON pendiente. Valida nuevamente la etapa.'
+    };
+  }
+
+  let savedCount=0;
+
+  for(const card of cards){
+    const status=
+      lmpProblemRefreshCard_(card);
+
+    const id=
+      String(
+        card.dataset.problemId||''
+      ).trim();
+
+    if(!status.isComplete){
+      card.open=true;
+
+      if(settings.scrollOnError){
+        card.scrollIntoView({
+          behavior:'smooth',
+          block:'center'
+        });
+      }
+
+      return {
+        ok:false,
+        savedCount,
+        incompleteId:id,
+        error:
+          'El problema ' +
+          id +
+          ' está incompleto.'
+      };
+    }
+
+    if(status.hasPendingChanges){
+      const saved=
+        window.lmpSaveProblemFinding_(
+          id,
+          {
+            silent:true,
+            closeAfterSave:
+              settings.closeAfterSave,
+            scrollOnError:
+              settings.scrollOnError
+          }
+        );
+
+      if(saved!==true){
+        return {
+          ok:false,
+          savedCount,
+          incompleteId:id,
+          error:
+            'No fue posible guardar el problema ' +
+            id +
+            '.'
+        };
+      }
+
+      savedCount++;
+    }
+  }
+
+  try{
+    const validated=
+      lmpProblemRevalidate_(
+        JSON.parse(
+          JSON.stringify(
+            pending.parsed
+          )
+        )
+      );
+
+    if(
+      validated.validation
+        ?.canProceed!==true
+    ){
+      throw new Error(
+        'Problemas contiene ' +
+        safeArray(
+          validated.validation
+            ?.blockingGaps
+        ).length +
+        ' brechas bloqueantes.'
+      );
+    }
+
+    pending.parsed=
+      JSON.parse(
+        JSON.stringify(validated)
+      );
+
+    lmpProblemUpdateOutput_(
+      validated
+    );
+
+    lmpProblemRefreshCounter_();
+
+    return {
+      ok:true,
+      savedCount,
+      incompleteId:'',
+      error:''
+    };
+
+  }catch(error){
+    return {
+      ok:false,
+      savedCount,
+      incompleteId:'',
+      error:error.message
+    };
+  }
+};
 
 window.processAnalysisScreenStage = function(stageKey){
   const stage = String(stageKey || '')
@@ -32315,7 +33679,7 @@ window.processAnalysisScreenStage = function(stageKey){
           ? 'El JSON AVA fue validado. Revisa cada actividad antes de guardar y continuar.'
           : (
               stage === 'PROBLEMAS'
-                ? 'El JSON de Problemas fue validado. Revisa las tarjetas antes de implementar el guardado.'
+                ? 'El JSON de Problemas fue validado. Revisa y guarda cada tarjeta antes de continuar.'
                 : (
                     'La estructura JSON de ' +
                     lmpAnalysisStageName_(stage) +
