@@ -4860,7 +4860,7 @@ function addCat(type) {
   } else if (type === 'suppliers') {
     const n = $('in_sup').value.trim();
     const input = $('in_sup_input').value.trim();
-    if (!n) { gMsg('warn', 'Ingresa el nombre del proveedor.'); return; }
+    if(   !n ||   !input ){   gMsg(     'warn',     'Completa proveedor y entrada antes de agregar la relación.'   );    return; }
     item = { name: n, input };
     $('in_sup').value = ''; $('in_sup_input').value = '';
     if (input && !S.cats.inputs.some(x => String(x.name || '').toLowerCase() === input.toLowerCase())) {
@@ -4870,7 +4870,7 @@ function addCat(type) {
   } else if (type === 'customers') {
     const n = $('in_cus').value.trim();
     const output = $('in_cus_output').value.trim();
-    if (!n) { gMsg('warn', 'Ingresa el nombre del cliente.'); return; }
+    if(   !n ||   !output ){   gMsg(     'warn',     'Completa salida y cliente o receptor antes de agregar la relación.'   );    return; }
     item = { name: n, output };
     $('in_cus').value = ''; $('in_cus_output').value = '';
     if (output && !S.cats.outputs.some(x => String(x.name || '').toLowerCase() === output.toLowerCase())) {
@@ -4890,32 +4890,113 @@ function addCat(type) {
   gMsg('ok', 'Elemento agregado.');
 }
 
-function removeCat(type, idx) {
-  S.cats[type].splice(idx, 1);
-  renderCatTable(type);
+function removeCat(
+  type,
+  index
+){
+  const items =
+    S.cats[type];
+
+  if(
+    !Array.isArray(items) ||
+    index < 0 ||
+    index >= items.length
+  ){
+    return false;
+  }
+
+  items.splice(
+    index,
+    1
+  );
+
+  renderCatTable(
+    type
+  );
+
   syncSelects();
+
+  /*
+   * El catálogo forma parte del contrato.
+   * Cualquier eliminación invalida el diagrama anterior.
+   */
+  resetSBGeneratedArtifacts();
+
+  gMsg(
+    'ok',
+    type === 'actors'
+      ? 'Actor eliminado.'
+      : 'Relación eliminada.'
+  );
+
+  return true;
 }
 
-function renderCatTable(type) {
-  const tb = $(CAT_TB[type]);
-  if (!tb) return;
-  const items = S.cats[type];
-  if (!items.length) {
-    tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Sin elementos.</td></tr>';
+function renderCatTable(type){
+  const tableBody =
+    $(CAT_TB[type]);
+
+  if(!tableBody){
     return;
   }
-  if (type === 'documents') {
-    tb.innerHTML = items.map((it, i) =>
-      `<tr><td>${ex(it.name)}</td><td>${ex(it.ref||'')}</td><td><button class="sm" onclick="removeCat('documents',${i})">\u2715</button></td></tr>`
-    ).join('');
-    
-  } else if (type === 'suppliers') {
-    tb.innerHTML =
+
+  const items =
+    Array.isArray(
+      S.cats[type]
+    )
+      ? S.cats[type]
+      : [];
+
+  if(!items.length){
+    const emptyMessage =
+      type === 'suppliers'
+        ? 'No existen relaciones Proveedor → Entrada.'
+        : (
+            type === 'customers'
+              ? 'No existen relaciones Salida → Cliente.'
+              : (
+                  type === 'actors'
+                    ? 'No existen actores registrados.'
+                    : 'Sin elementos registrados.'
+                )
+          );
+
+    const columnCount =
+      (
+        type === 'suppliers' ||
+        type === 'customers'
+      )
+        ? 4
+        : (
+            type === 'documents'
+              ? 3
+              : 2
+          );
+
+    tableBody.innerHTML = `
+      <tr>
+        <td
+          colspan="${columnCount}"
+          style="
+            color:var(--muted);
+            text-align:center;
+          "
+        >
+          ${ex(emptyMessage)}
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  if(type === 'suppliers'){
+    tableBody.innerHTML =
       items
-        .map((it, i) => `
+        .map((item, index) => `
           <tr>
             <td>
-              ${ex(it.name)}
+              ${ex(item.name)}
             </td>
 
             <td class="sb-flow-arrow-cell">
@@ -4925,15 +5006,15 @@ function renderCatTable(type) {
             </td>
 
             <td>
-              ${ex(it.input || '')}
+              ${ex(item.input || '')}
             </td>
 
             <td class="sb-flow-action-cell">
               <button
                 class="sm"
                 type="button"
-                onclick="removeCat('suppliers', ${i})"
-                aria-label="Eliminar relación"
+                onclick="removeCat('suppliers', ${index})"
+                aria-label="Eliminar relación Proveedor a Entrada"
               >
                 \u2715
               </button>
@@ -4942,13 +5023,16 @@ function renderCatTable(type) {
         `)
         .join('');
 
-  } else if (type === 'customers') {
-    tb.innerHTML =
+    return;
+  }
+
+  if(type === 'customers'){
+    tableBody.innerHTML =
       items
-        .map((it, i) => `
+        .map((item, index) => `
           <tr>
             <td>
-              ${ex(it.output || '')}
+              ${ex(item.output || '')}
             </td>
 
             <td class="sb-flow-arrow-cell">
@@ -4958,29 +5042,77 @@ function renderCatTable(type) {
             </td>
 
             <td>
-              ${ex(it.name)}
+              ${ex(item.name)}
             </td>
 
             <td class="sb-flow-action-cell">
               <button
                 class="sm"
                 type="button"
-                onclick="removeCat('customers', ${i})"
-                aria-label="Eliminar relación"
+                onclick="removeCat('customers', ${index})"
+                aria-label="Eliminar relación Salida a Cliente"
               >
                 \u2715
               </button>
             </td>
           </tr>
         `)
-        .join('');me)}</td><td>${ex(it.output||'')}</td><td><button class="sm" onclick="removeCat('customers',${i})">\u2715</button></td></tr>`
-    ).join('');
-    
-  } else {
-    tb.innerHTML = items.map((it, i) =>
-      `<tr><td>${ex(it.name)}</td><td><button class="sm" onclick="removeCat('${type}',${i})">\u2715</button></td></tr>`
-    ).join('');
+        .join('');
+
+    return;
   }
+
+  if(type === 'documents'){
+    tableBody.innerHTML =
+      items
+        .map((item, index) => `
+          <tr>
+            <td>
+              ${ex(item.name)}
+            </td>
+
+            <td>
+              ${ex(item.ref || '')}
+            </td>
+
+            <td>
+              <button
+                class="sm"
+                type="button"
+                onclick="removeCat('documents', ${index})"
+                aria-label="Eliminar documento"
+              >
+                \u2715
+              </button>
+            </td>
+          </tr>
+        `)
+        .join('');
+
+    return;
+  }
+
+  tableBody.innerHTML =
+    items
+      .map((item, index) => `
+        <tr>
+          <td>
+            ${ex(item.name)}
+          </td>
+
+          <td>
+            <button
+              class="sm"
+              type="button"
+              onclick="removeCat('${type}', ${index})"
+              aria-label="Eliminar elemento"
+            >
+              \u2715
+            </button>
+          </td>
+        </tr>
+      `)
+      .join('');
 }
 
 function syncSelects() {
@@ -5882,13 +6014,6 @@ $('a_name').scrollIntoView({
 });
 }
 
-function removeAct(idx) {
-  S.acts.splice(idx, 1);
-  S.acts.forEach((a, i) => a.order = i + 1);
-  if(S.editActIndex === idx) resetActivityForm();
-  renderActsTable();
-  syncSelects();
-}
 
 function sbActivityRelationsForDisplay(
   activity,
