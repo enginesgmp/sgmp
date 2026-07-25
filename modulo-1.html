@@ -26720,36 +26720,6 @@ function lmpValidateAnalysisStageContract_(
       parsed
     );
   }
-
-    if(stage === 'PROBLEMAS'){
-      if(
-        typeof window.lmpSavePendingProblemFindings_ !==
-        'function'
-      ){
-        throw new Error(
-          'No está disponible el guardado masivo de Problemas.'
-        );
-      }
-
-      const problemMassSave =
-        window.lmpSavePendingProblemFindings_({
-          closeAfterSave:
-            true,
-
-          scrollOnError:
-            true
-        });
-
-      if(
-        !problemMassSave ||
-        problemMassSave.ok !== true
-      ){
-        throw new Error(
-          problemMassSave?.error ||
-          'No fue posible guardar todos los problemas pendientes.'
-        );
-      }
-    }
   
   if(stage === 'PROBLEMAS'){
     lmpValidateProblemStageContract_(
@@ -33806,6 +33776,37 @@ window.saveValidatedAnalysisStage = function(stageKey){
       }
     }
 
+if(stage === 'PROBLEMAS'){
+  if(
+    typeof window.lmpSavePendingProblemFindings_ !==
+    'function'
+  ){
+    throw new Error(
+      'No está disponible el guardado masivo de Problemas.'
+    );
+  }
+
+  const problemMassSave =
+    window.lmpSavePendingProblemFindings_({
+      closeAfterSave:
+        true,
+
+      scrollOnError:
+        true
+    });
+
+  if(
+    !problemMassSave ||
+    problemMassSave.ok !== true
+  ){
+    throw new Error(
+      problemMassSave?.error ||
+      'No fue posible guardar todos los problemas pendientes.'
+    );
+  }
+}
+    
+
     const currentRaw =
       
       el(
@@ -33893,6 +33894,70 @@ window.saveValidatedAnalysisStage = function(stageKey){
         );
     }
 
+/*
+ * Problemas utiliza el JSON pendiente reconstruido
+ * desde todas las tarjetas guardadas.
+ */
+if(stage === 'PROBLEMAS'){
+  parsed =
+    lmpValidateProblemStageContract_(
+      parsed
+    );
+
+  if(
+    parsed.validation
+      ?.canProceed !== true
+  ){
+    const reviewCard =
+      el(
+        'analysisProblemReview_PROBLEMAS'
+      );
+
+    const firstIncomplete =
+      reviewCard?.querySelector(
+        '.analysis-problem-item.is-incomplete'
+      );
+
+    if(firstIncomplete){
+      firstIncomplete.open =
+        true;
+
+      firstIncomplete.scrollIntoView({
+        behavior:
+          'smooth',
+
+        block:
+          'center'
+      });
+    }
+
+    const gapCount =
+      safeArray(
+        parsed.validation
+          ?.blockingGaps
+      ).length;
+
+    throw new Error(
+      'Completa la revisión de Problemas antes de guardar. ' +
+      gapCount +
+      (
+        gapCount === 1
+          ? ' brecha requiere revisión.'
+          : ' brechas requieren revisión.'
+      )
+    );
+  }
+
+  window.__LMP_ANALYSIS_PENDING__[
+    stage
+  ].parsed =
+    JSON.parse(
+      JSON.stringify(
+        parsed
+      )
+    );
+}
+    
     /*
      * Para VA, la revisión editable es la fuente final
      * que debe almacenarse.
