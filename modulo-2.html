@@ -1395,6 +1395,77 @@ body{font-size:14px !important}
   text-align:center;
 }
 
+
+/* SB · Relaciones estructuradas entre actividades */
+
+.sb-relation-builder{
+  padding:12px;
+  border:1px solid rgba(14,165,233,.20);
+  border-radius:12px;
+  background:#F8FCFF;
+}
+
+.sb-relation-builder-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);
+  gap:8px;
+}
+
+.sb-relation-builder .btn-row{
+  margin-top:8px;
+}
+
+.sb-relation-list{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  margin-top:10px;
+}
+
+.sb-relation-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:9px 10px;
+  border:1px solid rgba(14,165,233,.18);
+  border-radius:10px;
+  background:#FFFFFF;
+}
+
+.sb-relation-row-main{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  min-width:0;
+}
+
+.sb-relation-row-main strong{
+  color:#075985;
+  font-size:.82rem;
+  font-weight:850;
+}
+
+.sb-relation-row-main small{
+  color:#5B6F8A;
+  font-size:.75rem;
+}
+
+.sb-relation-list-empty{
+  padding:10px;
+  border:1px dashed rgba(14,165,233,.22);
+  border-radius:9px;
+  color:#647B8A;
+  font-size:.79rem;
+  text-align:center;
+}
+
+@media(max-width:700px){
+  .sb-relation-builder-grid{
+    grid-template-columns:1fr;
+  }
+}  
+
 .sb-data-final-action{
   display:flex;
   justify-content:flex-end;
@@ -2055,23 +2126,96 @@ body{font-size:14px !important}
             </select>
           </div>
 
-          <div class="field">
-            <label>Actividad previa</label>
+<div class="field">
+  <label>Actividades previas</label>
 
-            <input
-              id="a_prev_text"
-              placeholder="Una por línea o separadas por ;"
-            />
-          </div>
+  <div class="sb-relation-builder">
 
-          <div class="field">
-            <label>Actividad siguiente</label>
+    <div class="sb-relation-builder-grid">
 
-            <input
-              id="a_next_text"
-              placeholder="Una por línea o separadas por ;"
-            />
-          </div>
+      <div class="field">
+        <label>Actividad relacionada</label>
+
+        <select id="a_prev_activity">
+          <option value="">
+            — Seleccione —
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Etiqueta de conexión</label>
+
+        <input
+          id="a_prev_label"
+          placeholder="Ej: Sí, No, Aprobado"
+        />
+      </div>
+
+    </div>
+
+    <div class="btn-row">
+      <button
+        id="btn_add_prev_relation"
+        type="button"
+      >
+        + Agregar relación previa
+      </button>
+    </div>
+
+    <div
+      id="a_prev_relations"
+      class="sb-relation-list"
+    ></div>
+
+  </div>
+</div>
+
+
+<div class="field">
+  <label>Actividades siguientes</label>
+
+  <div class="sb-relation-builder">
+
+    <div class="sb-relation-builder-grid">
+
+      <div class="field">
+        <label>Actividad relacionada</label>
+
+        <select id="a_next_activity">
+          <option value="">
+            — Seleccione —
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Etiqueta de conexión</label>
+
+        <input
+          id="a_next_label"
+          placeholder="Ej: Sí, No, Continúa"
+        />
+      </div>
+
+    </div>
+
+    <div class="btn-row">
+      <button
+        id="btn_add_next_relation"
+        type="button"
+      >
+        + Agregar relación siguiente
+      </button>
+    </div>
+
+    <div
+      id="a_next_relations"
+      class="sb-relation-list"
+    ></div>
+
+  </div>
+</div>
 
           <div class="field">
             <label>Entradas asociadas</label>
@@ -4231,6 +4375,18 @@ const S = {
   editActIndex:
     null,
 
+  /*
+   * Relaciones que se están registrando
+   * en el editor de actividades.
+   */
+  activityRelationDrafts: {
+    previous:
+      [],
+
+    next:
+      []
+  },
+
   loadTrace: {
     source:
       '',
@@ -4750,16 +4906,393 @@ function setPairSelection(wrapId, pairs, activity, mode){
   });
 }
 
+function sbNormalizeActivityRelationDraft(
+  relation
+){
+  const activity =
+    sbRelationName(
+      relation
+    );
+
+  if(!activity){
+    return null;
+  }
+
+  return {
+    activity,
+
+    label:
+      sbRelationLabel(
+        relation
+      )
+  };
+}
+
+
+function sbResetActivityRelationDrafts(){
+  S.activityRelationDrafts = {
+    previous:
+      [],
+
+    next:
+      []
+  };
+
+  sbRenderActivityRelationDrafts(
+    'previous'
+  );
+
+  sbRenderActivityRelationDrafts(
+    'next'
+  );
+}
+
+
+function sbActivityRelationCandidates(){
+  return S.acts
+    .map((activity, index) => ({
+      index,
+
+      id:
+        normalizeText(
+          activity?.id ||
+          `ACT-${String(index + 1).padStart(3, '0')}`
+        ),
+
+      name:
+        normalizeText(
+          activity?.name || ''
+        )
+    }))
+    .filter(candidate =>
+      candidate.name &&
+      candidate.index !==
+        S.editActIndex
+    );
+}
+
+
+function sbRefreshActivityRelationSelects(){
+  const candidates =
+    sbActivityRelationCandidates();
+
+  [
+    'a_prev_activity',
+    'a_next_activity'
+  ].forEach(selectId => {
+    const select =
+      $(selectId);
+
+    if(!select){
+      return;
+    }
+
+    const currentValue =
+      select.value;
+
+    select.innerHTML =
+      '<option value="">— Seleccione —</option>' +
+      candidates
+        .map(candidate =>
+          `<option value="${ex(candidate.name)}">` +
+          `${ex(candidate.id)} · ${ex(candidate.name)}` +
+          '</option>'
+        )
+        .join('');
+
+    if(
+      candidates.some(candidate =>
+        candidate.name ===
+        currentValue
+      )
+    ){
+      select.value =
+        currentValue;
+    }
+  });
+}
+
+
+function sbRenderActivityRelationDrafts(
+  direction
+){
+  const containerId =
+    direction === 'previous'
+      ? 'a_prev_relations'
+      : 'a_next_relations';
+
+  const container =
+    $(containerId);
+
+  if(!container){
+    return;
+  }
+
+  const relations =
+    Array.isArray(
+      S.activityRelationDrafts?.[direction]
+    )
+      ? S.activityRelationDrafts[direction]
+      : [];
+
+  if(!relations.length){
+    container.innerHTML =
+      '<div class="sb-relation-list-empty">' +
+      (
+        direction === 'previous'
+          ? 'Sin relaciones previas registradas.'
+          : 'Sin relaciones siguientes registradas.'
+      ) +
+      '</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    relations
+      .map((relation, index) => {
+        const relatedActivity =
+          S.acts.find(activity =>
+            normalizeText(
+              activity?.name || ''
+            ).toLowerCase() ===
+            normalizeText(
+              relation.activity || ''
+            ).toLowerCase()
+          );
+
+        const relatedId =
+          normalizeText(
+            relatedActivity?.id || ''
+          );
+
+        return `
+          <div class="sb-relation-row">
+
+            <div class="sb-relation-row-main">
+              <strong>
+                ${ex(relation.activity)}
+              </strong>
+
+              <small>
+                ${
+                  relatedId
+                    ? `${ex(relatedId)} · `
+                    : ''
+                }
+
+                ${
+                  relation.label
+                    ? `Etiqueta: ${ex(relation.label)}`
+                    : 'Sin etiqueta de conexión'
+                }
+              </small>
+            </div>
+
+            <button
+              class="sm"
+              type="button"
+              onclick="sbRemoveActivityRelation('${direction}', ${index})"
+            >
+              Eliminar
+            </button>
+
+          </div>
+        `;
+      })
+      .join('');
+}
+
+
+function sbAddActivityRelation(
+  direction
+){
+  const isPrevious =
+    direction === 'previous';
+
+  const select =
+    $(
+      isPrevious
+        ? 'a_prev_activity'
+        : 'a_next_activity'
+    );
+
+  const labelInput =
+    $(
+      isPrevious
+        ? 'a_prev_label'
+        : 'a_next_label'
+    );
+
+  const activityName =
+    normalizeText(
+      select?.value || ''
+    );
+
+  const label =
+    normalizeText(
+      labelInput?.value || ''
+    );
+
+  if(!activityName){
+    gMsg(
+      'warn',
+      'Selecciona una actividad relacionada.'
+    );
+
+    return false;
+  }
+
+  const relations =
+    S.activityRelationDrafts[
+      direction
+    ];
+
+  const alreadyExists =
+    relations.some(relation =>
+      normalizeText(
+        relation.activity
+      ).toLowerCase() ===
+      activityName.toLowerCase()
+    );
+
+  if(alreadyExists){
+    gMsg(
+      'warn',
+      'Esa relación ya está registrada.'
+    );
+
+    return false;
+  }
+
+  relations.push({
+    activity:
+      activityName,
+
+    label
+  });
+
+  select.value =
+    '';
+
+  if(labelInput){
+    labelInput.value =
+      '';
+  }
+
+  sbRenderActivityRelationDrafts(
+    direction
+  );
+
+  return true;
+}
+
+
+function sbRemoveActivityRelation(
+  direction,
+  index
+){
+  const relations =
+    S.activityRelationDrafts?.[
+      direction
+    ];
+
+  if(
+    !Array.isArray(relations) ||
+    index < 0 ||
+    index >= relations.length
+  ){
+    return false;
+  }
+
+  relations.splice(
+    index,
+    1
+  );
+
+  sbRenderActivityRelationDrafts(
+    direction
+  );
+
+  return true;
+}
+
+
+function sbLoadActivityRelationDrafts(
+  activity
+){
+  const previousSource =
+    Array.isArray(
+      activity?.previous_relations
+    ) &&
+    activity.previous_relations.length
+      ? activity.previous_relations
+      : (
+          Array.isArray(
+            activity?.previous
+          )
+            ? activity.previous
+            : []
+        );
+
+  const nextSource =
+    Array.isArray(
+      activity?.next_relations
+    ) &&
+    activity.next_relations.length
+      ? activity.next_relations
+      : (
+          Array.isArray(
+            activity?.next
+          )
+            ? activity.next
+            : []
+        );
+
+  S.activityRelationDrafts = {
+    previous:
+      previousSource
+        .map(
+          sbNormalizeActivityRelationDraft
+        )
+        .filter(Boolean),
+
+    next:
+      nextSource
+        .map(
+          sbNormalizeActivityRelationDraft
+        )
+        .filter(Boolean)
+  };
+
+  sbRenderActivityRelationDrafts(
+    'previous'
+  );
+
+  sbRenderActivityRelationDrafts(
+    'next'
+  );
+}  
+
 function resetActivityForm(){
-  ['a_name','a_note','a_prev_text','a_next_text','a_observations'].forEach(id => { if($(id)) $(id).value = ''; });
+  [     'a_name',     'a_note',     'a_observations',     'a_prev_label',     'a_next_label'   ].forEach(id => {     if($(id)){       $(id).value =         '';     }   });
   if($('a_type')) $('a_type').value = 'operation';
   if($('a_actor')) $('a_actor').value = '';
   if($('a_doc')) $('a_doc').value = '';
   ['a_entry_checks','a_exit_checks'].forEach(id => {
     if($(id)) Array.from($(id).querySelectorAll('input')).forEach(o => o.checked = false);
   });
-  S.editActIndex = null;
-  if($('btn_add_act_row')) $('btn_add_act_row').textContent = '+ Agregar actividad';
+  S.editActIndex =
+    null;
+
+  sbResetActivityRelationDrafts();
+
+  sbRefreshActivityRelationSelects();
+
+  if($('btn_add_act_row')){
+    $('btn_add_act_row').textContent =
+      '+ Agregar actividad';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -4882,23 +5415,56 @@ function addActivity(){
     return;
   }
 
-  const splitTyped =
-    value =>
-      String(value || '')
-        .split(/\n|;|\|/)
-        .map(item =>
-          item.trim()
-        )
-        .filter(Boolean);
+   const previousRelations =
+    (
+      S.activityRelationDrafts
+        ?.previous || []
+    )
+      .map(relation => ({
+        activity:
+          normalizeText(
+            relation.activity || ''
+          ),
+
+        label:
+          normalizeText(
+            relation.label || ''
+          )
+      }))
+      .filter(relation =>
+        relation.activity
+      );
+
+  const nextRelations =
+    (
+      S.activityRelationDrafts
+        ?.next || []
+    )
+      .map(relation => ({
+        activity:
+          normalizeText(
+            relation.activity || ''
+          ),
+
+        label:
+          normalizeText(
+            relation.label || ''
+          )
+      }))
+      .filter(relation =>
+        relation.activity
+      );
 
   const previous =
-    splitTyped(
-      $('a_prev_text')?.value || ''
+    previousRelations.map(
+      relation =>
+        relation.activity
     );
 
   const next =
-    splitTyped(
-      $('a_next_text')?.value || ''
+    nextRelations.map(
+      relation =>
+        relation.activity
     );
 
   const entryPairs =
@@ -4989,16 +5555,10 @@ function addActivity(){
     next,
 
     previous_relations:
-      sbPreserveActivityRelations(
-        existingActivity.previous_relations,
-        previous
-      ),
+      previousRelations,
 
     next_relations:
-      sbPreserveActivityRelations(
-        existingActivity.next_relations,
-        next
-      ),
+      nextRelations,
 
     ext_suppliers:
       uniqueStrings(
@@ -5095,10 +5655,13 @@ function loadActForEdit(idx){
   const a = S.acts[idx];
   if(!a) return;
   S.editActIndex = idx;
+    sbLoadActivityRelationDrafts(
+    a
+  );
+
+  sbRefreshActivityRelationSelects();
   $('a_name').value = a.name || '';
   $('a_type').value = a.type || 'operation';
-  $('a_prev_text').value = (a.previous || []).join('\n');
-  $('a_next_text').value = (a.next || []).join('\n');
   $('a_note').value = a.note || '';
   if($('a_observations')) $('a_observations').value = a.observations || '';
   syncSelects();
@@ -5340,6 +5903,8 @@ function renderActsTable(){
 
   const container =
     $('sb_activity_list');
+
+    sbRefreshActivityRelationSelects();
 
   if(counter){
     counter.textContent =
@@ -10491,6 +11056,28 @@ if($('btn_add_doc')){
 }
 
 // Actividades AS-IS
+
+  if($('btn_add_prev_relation')){
+  $('btn_add_prev_relation')
+    .addEventListener(
+      'click',
+      () =>
+        sbAddActivityRelation(
+          'previous'
+        )
+    );
+}
+
+if($('btn_add_next_relation')){
+  $('btn_add_next_relation')
+    .addEventListener(
+      'click',
+      () =>
+        sbAddActivityRelation(
+          'next'
+        )
+    );
+}
 
 if($('btn_open_activity_form')){
   $('btn_open_activity_form')
