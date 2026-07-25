@@ -3426,60 +3426,201 @@ const semanticEdges =
 // STATE
 // ═══════════════════════════════════════════════════════════════
 const S = {
+  /*
+   * Fuente oficial de Datos del proceso.
+   * Conserva el contrato completo LMP_TO_SB 3.0.
+   */
+  contract:
+    null,
+
+  /*
+   * Alias temporal utilizado por las funciones heredadas.
+   * Se retirará cuando Diagram Studio trabaje únicamente
+   * con SB_DIAGRAM_MODEL.
+   */
   sp:
     null,
+
+  /*
+   * Modelo construido determinísticamente desde el contrato.
+   */
+  diagramModel:
+    null,
+
+  /*
+   * Modelo final después de aplicar únicamente
+   * optimizaciones geométricas autorizadas.
+   */
+  optimizedDiagramModel:
+    null,
+
+  /*
+   * Estado del único proceso de optimización asistida.
+   * No admite cambios semánticos ni funcionales.
+   */
+  optimization: {
+    status:
+      'idle',
+
+    comments:
+      '',
+
+    geometryPatch:
+      null,
+
+    alerts:
+      []
+  },
+
+  /*
+   * Alertas puntuales del modelo, preview y exportación.
+   */
+  alerts:
+    [],
 
   activeStudioTab:
     'tab_tpl',
 
+  /*
+   * Campos XML heredados.
+   * Se conservan temporalmente durante la migración.
+   */
   tplXml:
     '',
 
-idRef:
-  '',
+  idRef:
+    '',
 
-diagramXml:
-  '',
+  diagramXml:
+    '',
 
-xmlFinal:
-  '',
-  manualLocked: false,
-  editActIndex: null,
-  loadTrace: { source:'', loadedAt:'', processName:'', activityCount:0, warningsCount:0, blockingCount:0 },
-  cats: { suppliers:[], inputs:[], outputs:[], customers:[], actors:[], documents:[] },
-  acts: [],
-cfg: {
-  lbl_sup:
-    'SUPPLIERS',
+  xmlFinal:
+    '',
 
-  lbl_inp:
-    'INPUTS',
+  /*
+   * Compatibilidad temporal con la captura actual.
+   */
+  manualLocked:
+    false,
 
-  lbl_proc:
-    'PROCESO',
+  editActIndex:
+    null,
 
-  lbl_out:
-    'OUTPUTS',
+  loadTrace: {
+    source:
+      '',
 
-  lbl_cus:
-    'CUSTOMERS',
+    loadedAt:
+      '',
 
-  col_sup:
-    '#667383',
+    processName:
+      '',
 
-  col_inp:
-    '#6F9FBC',
+    activityCount:
+      0,
 
-  col_proc:
-    '#294B66',
+    warningsCount:
+      0,
 
-  col_out:
-    '#769985',
+    blockingCount:
+      0
+  },
 
-  col_cus:
-    '#667383'
-}
+  cats: {
+    suppliers:
+      [],
+
+    inputs:
+      [],
+
+    outputs:
+      [],
+
+    customers:
+      [],
+
+    actors:
+      [],
+
+    documents:
+      []
+  },
+
+  acts:
+    [],
+
+  cfg: {
+    lbl_sup:
+      'SUPPLIERS',
+
+    lbl_inp:
+      'INPUTS',
+
+    lbl_proc:
+      'PROCESO',
+
+    lbl_out:
+      'OUTPUTS',
+
+    lbl_cus:
+      'CUSTOMERS',
+
+    col_sup:
+      '#667383',
+
+    col_inp:
+      '#6F9FBC',
+
+    col_proc:
+      '#294B66',
+
+    col_out:
+      '#769985',
+
+    col_cus:
+      '#667383'
+  }
 };
+
+
+function createEmptySBDiagramModel(){
+  return {
+    model_code:
+      'SB_DIAGRAM_MODEL',
+
+    model_version:
+      '1.0',
+
+    generated_at:
+      new Date().toISOString(),
+
+    source_contract:
+      null,
+
+    diagram_model: {
+      nodes:
+        [],
+
+      edges:
+        [],
+
+      lanes:
+        [],
+
+      connectors:
+        [],
+
+      notes:
+        [],
+
+      layout:
+        {},
+
+      style_profile:
+        'executive_pastel'
+    }
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════
 // UTILS
@@ -3537,18 +3678,6 @@ function sbActivateModuleNavigation(tabId){
 
 
 function switchTab(id){
-  if(
-    id === 'tab_guided' &&
-    S.manualLocked
-  ){
-    gMsg(
-      'warn',
-      'Los datos del proceso quedan bloqueados porque se cargó un contrato JSON del LMP.'
-    );
-
-    return false;
-  }
-
   const target =
     $(id);
 
@@ -3609,9 +3738,7 @@ function openSBStudio(){
     );
 
     switchTab(
-      S.manualLocked
-        ? 'tab_capture'
-        : 'tab_guided'
+      'tab_guided'
     );
 
     return false;
@@ -4001,40 +4128,61 @@ function renderActsTable() {
 // ═══════════════════════════════════════════════════════════════
 // MODES
 // ═══════════════════════════════════════════════════════════════
-function sbSetDataModuleLocked(isLocked){
+function sbSetDataModuleLocked(){
   const moduleButton =
     document.querySelector(
       '.nav.sb-stagebar [data-module="datos"]'
     );
 
-  const locked =
-    Boolean(isLocked);
+  /*
+   * Datos del proceso siempre permanece disponible.
+   * Tanto la captura manual como el JSON del LMP
+   * utilizan el mismo editor canónico.
+   */
+  S.manualLocked =
+    false;
 
   if(!moduleButton){
     return false;
   }
 
-  moduleButton.classList.toggle(
-    'disabled',
-    locked
+  moduleButton.classList.remove(
+    'disabled'
   );
 
   moduleButton.setAttribute(
     'aria-disabled',
-    locked
-      ? 'true'
-      : 'false'
+    'false'
   );
 
-  moduleButton.title =
-    locked
-      ? 'Los datos del proceso provienen del contrato JSON cargado desde el LMP.'
-      : '';
+  moduleButton.removeAttribute(
+    'title'
+  );
 
   return true;
 }
 
 function resetSBGeneratedArtifacts(){
+    S.diagramModel =
+    null;
+
+  S.optimizedDiagramModel =
+    null;
+
+  S.optimization.status =
+    'idle';
+
+  S.optimization.comments =
+    '';
+
+  S.optimization.geometryPatch =
+    null;
+
+  S.optimization.alerts =
+    [];
+
+  S.alerts =
+    [];
   S.tplXml =
     '';
 
@@ -5531,6 +5679,477 @@ function renderLoadDiagnostics(payload) {
     ${warnings.length ? `<div style="margin-top:8px;color:#92400e;font-size:12px"><strong>Advertencias:</strong><ul style="margin:6px 0 0 18px">${warnings.map(x=>`<li>${ex(x)}</li>`).join('')}</ul></div>` : ''}
   `;
 }
+
+function sbDeepClone(value){
+  if(
+    value === null ||
+    value === undefined
+  ){
+    return value;
+  }
+
+  return JSON.parse(
+    JSON.stringify(value)
+  );
+}
+
+
+function sbBuildCanonicalContract(
+  parsed,
+  sp,
+  source
+){
+  const isCanonicalV3 =
+    parsed?.contract_code ===
+      'LMP_TO_SB' &&
+    String(
+      parsed?.contract_version || ''
+    ).startsWith('3') &&
+    parsed?.sipoc_input &&
+    typeof parsed.sipoc_input ===
+      'object';
+
+  /*
+   * Cuando el archivo ya corresponde al contrato
+   * vigente, se conserva sin reconstruirlo.
+   */
+  if(isCanonicalV3){
+    return sbDeepClone(
+      parsed
+    );
+  }
+
+  const actors =
+    Array.isArray(sp?.actors)
+      ? sp.actors
+      : [];
+
+  const activities =
+    Array.isArray(sp?.activities)
+      ? sp.activities
+      : [];
+
+  const actorRows =
+    actors
+      .map((actor, index) => ({
+        id:
+          `LANE-${String(index + 1).padStart(3, '0')}`,
+
+        name:
+          normalizeText(actor)
+      }))
+      .filter(actor =>
+        actor.name
+      );
+
+  const actorIdByName =
+    new Map(
+      actorRows.map(actor => [
+        actor.name.toLowerCase(),
+        actor.id
+      ])
+    );
+
+  const activityRows =
+    activities.map(
+      (activity, index) => ({
+        ...activity,
+
+        id:
+          normalizeText(
+            activity.id ||
+            `ACT-${String(index + 1).padStart(3, '0')}`
+          ),
+
+        sequence:
+          Number(
+            activity.sequence ||
+            activity.order ||
+            index + 1
+          ) || index + 1,
+
+        name:
+          normalizeText(
+            activity.name || ''
+          )
+      })
+    );
+
+  const activityIdByName =
+    new Map(
+      activityRows
+        .filter(activity =>
+          activity.name
+        )
+        .map(activity => [
+          activity.name.toLowerCase(),
+          activity.id
+        ])
+    );
+
+  const relationToCanonical =
+    relation => {
+      const activityName =
+        sbRelationName(
+          relation
+        );
+
+      if(!activityName){
+        return null;
+      }
+
+      return {
+        activity_id:
+          activityIdByName.get(
+            activityName.toLowerCase()
+          ) || '',
+
+        activity_name:
+          activityName,
+
+        label:
+          sbRelationLabel(
+            relation
+          )
+      };
+    };
+
+  const notes = [];
+  const noteIdsByActivity =
+    new Map();
+
+  let noteCounter =
+    0;
+
+  const nextNoteId =
+    () => {
+      noteCounter += 1;
+
+      return (
+        'NOTE-' +
+        String(noteCounter)
+          .padStart(3, '0')
+      );
+    };
+
+  /*
+   * Notas generales heredadas.
+   * Se conservan como notas contextuales,
+   * sin vincularlas artificialmente.
+   */
+  String(sp?.notes || '')
+    .split(/\r?\n/)
+    .map(normalizeText)
+    .filter(Boolean)
+    .forEach(text => {
+      notes.push({
+        id:
+          nextNoteId(),
+
+        activity_id:
+          '',
+
+        activity_name:
+          '',
+
+        text,
+
+        type:
+          'clarifying',
+
+        source:
+          'legacy_import'
+      });
+    });
+
+  /*
+   * Notas vinculadas a las actividades.
+   */
+  activityRows.forEach(activity => {
+    const text =
+      normalizeNoteText(
+        activity.note ||
+        activity.notes ||
+        ''
+      );
+
+    if(!text){
+      noteIdsByActivity.set(
+        activity.id,
+        []
+      );
+
+      return;
+    }
+
+    const noteId =
+      nextNoteId();
+
+    notes.push({
+      id:
+        noteId,
+
+      activity_id:
+        activity.id,
+
+      activity_name:
+        activity.name,
+
+      text,
+
+      type:
+        'clarifying',
+
+      source:
+        'legacy_import'
+    });
+
+    noteIdsByActivity.set(
+      activity.id,
+      [noteId]
+    );
+  });
+
+  const supplierInputLinks =
+    Array.isArray(
+      sp?.supplier_input_links
+    )
+      ? sp.supplier_input_links
+      : [];
+
+  const outputCustomerLinks =
+    Array.isArray(
+      sp?.output_customer_links
+    )
+      ? sp.output_customer_links
+      : [];
+
+  return {
+    contract_code:
+      'LMP_TO_SB',
+
+    contract_version:
+      '3.0',
+
+    source_module:
+      source === 'guided_capture'
+        ? 'SIPOC_BUILDER'
+        : 'LMP',
+
+    target_module:
+      'SIPOC_BUILDER',
+
+    generated_at:
+      new Date().toISOString(),
+
+    sipoc_input: {
+      process_code:
+        normalizeText(
+          sp?.process_code || ''
+        ),
+
+      process_name:
+        normalizeText(
+          sp?.process_name || ''
+        ),
+
+      purpose:
+        normalizeText(
+          sp?.purpose || ''
+        ),
+
+      lanes: {
+        suppliers_inputs:
+          supplierInputLinks.map(
+            (link, index) => ({
+              id:
+                `SI-${String(index + 1).padStart(3, '0')}`,
+
+              supplier:
+                normalizeText(
+                  link?.supplier || ''
+                ),
+
+              input:
+                normalizeText(
+                  link?.input || ''
+                )
+            })
+          ),
+
+        actors:
+          actorRows,
+
+        outputs_customers:
+          outputCustomerLinks.map(
+            (link, index) => ({
+              id:
+                `OC-${String(index + 1).padStart(3, '0')}`,
+
+              output:
+                normalizeText(
+                  link?.output || ''
+                ),
+
+              customer:
+                normalizeText(
+                  link?.customer || ''
+                )
+            })
+          )
+      },
+
+      activities:
+        activityRows.map(activity => {
+          const previousSource =
+            Array.isArray(
+              activity.previous_relations
+            ) &&
+            activity.previous_relations.length
+              ? activity.previous_relations
+              : (
+                  Array.isArray(activity.previous)
+                    ? activity.previous
+                    : []
+                );
+
+          const nextSource =
+            Array.isArray(
+              activity.next_relations
+            ) &&
+            activity.next_relations.length
+              ? activity.next_relations
+              : (
+                  Array.isArray(activity.next)
+                    ? activity.next
+                    : []
+                );
+
+          const inputSource =
+            Array.isArray(
+              activity.input_relations
+            ) &&
+            activity.input_relations.length
+              ? activity.input_relations
+              : asNameArray(
+                  activity.ext_inputs
+                ).map(name => ({
+                  name,
+                  label:
+                    ''
+                }));
+
+          const outputSource =
+            Array.isArray(
+              activity.output_relations
+            ) &&
+            activity.output_relations.length
+              ? activity.output_relations
+              : asNameArray(
+                  activity.ext_outputs
+                ).map(name => ({
+                  name,
+                  label:
+                    ''
+                }));
+
+          return {
+            id:
+              activity.id,
+
+            sequence:
+              activity.sequence,
+
+            actor_lane_id:
+              actorIdByName.get(
+                normalizeText(
+                  activity.actor ||
+                  activity.lane ||
+                  ''
+                ).toLowerCase()
+              ) || '',
+
+            name:
+              activity.name,
+
+            type:
+              activity.type === 'decision'
+                ? 'decision'
+                : 'actividad',
+
+            previous:
+              previousSource
+                .map(
+                  relationToCanonical
+                )
+                .filter(Boolean),
+
+            next:
+              nextSource
+                .map(
+                  relationToCanonical
+                )
+                .filter(Boolean),
+
+            inputs:
+              inputSource
+                .map(input => ({
+                  name:
+                    normalizeText(
+                      input?.name ||
+                      input?.input ||
+                      input ||
+                      ''
+                    ),
+
+                  label:
+                    typeof input ===
+                      'object'
+                      ? normalizeText(
+                          input?.label || ''
+                        )
+                      : ''
+                }))
+                .filter(input =>
+                  input.name
+                ),
+
+            outputs:
+              outputSource
+                .map(output => ({
+                  name:
+                    normalizeText(
+                      output?.name ||
+                      output?.output ||
+                      output ||
+                      ''
+                    ),
+
+                  label:
+                    typeof output ===
+                      'object'
+                      ? normalizeText(
+                          output?.label || ''
+                        )
+                      : ''
+                }))
+                .filter(output =>
+                  output.name
+                ),
+
+            note_ids:
+              noteIdsByActivity.get(
+                activity.id
+              ) || []
+          };
+        }),
+
+      clarifying_notes:
+        notes
+    }
+  };
+}
+  
 function processIncomingJson(raw, source = 'unknown') {
   try {
     if (!raw || !String(raw).trim()) {
@@ -5538,9 +6157,27 @@ function processIncomingJson(raw, source = 'unknown') {
       return;
     }
 
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const payload = normalizeIncomingPayload(parsed);
-    const sp = payload.normalized || payload.sp || payload;
+const parsed =
+  typeof raw === 'string'
+    ? JSON.parse(raw)
+    : raw;
+
+const payload =
+  normalizeIncomingPayload(
+    parsed
+  );
+
+const sp =
+  payload.normalized ||
+  payload.sp ||
+  payload;
+
+const canonicalContract =
+  sbBuildCanonicalContract(
+    parsed,
+    sp,
+    source
+  );
 
     if (!sp || typeof sp !== 'object') {
       gMsg('err', 'El JSON cargado no contiene una estructura SIPOC válida.');
@@ -5562,8 +6199,17 @@ function processIncomingJson(raw, source = 'unknown') {
     blocking.push(...(contractCheck.blockingErrors || []), ...(semanticCheck.blockingErrors || []));
     warnings.push(...(contractCheck.warnings || []), ...(semanticCheck.warnings || []));
 
-    S.sp = sp;
+/*
+ * El contrato canónico es la fuente oficial.
+ * S.sp continúa temporalmente como adaptador
+ * para las funciones heredadas.
+ */
+S.contract =
+  canonicalContract;
 
+S.sp =
+  sp;
+    
 const supplierInputLinks =
   Array.isArray(
     sp.supplier_input_links
@@ -5756,12 +6402,7 @@ source:
  * Los bloqueantes se muestran para revisión,
  * pero no impiden abrir el constructor editable.
  */
-S.manualLocked =
-  false;
-
-sbSetDataModuleLocked(
-  false
-);
+sbSetDataModuleLocked();
 
 resetSBGeneratedArtifacts();
 
