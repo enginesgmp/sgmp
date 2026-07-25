@@ -4297,49 +4297,1008 @@ function buildPreview() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BUILD SP FROM GUIDED
+// SINCRONIZACIÓN DEL EDITOR CON LMP_TO_SB 3.0
 // ═══════════════════════════════════════════════════════════════
-function buildSP() {
-  return {
-    process_code: $('g_code').value.trim(),
-    process_name: $('g_name').value.trim(),
-    purpose:      $('g_purpose').value.trim(),
-    notes:        $('g_notes').value.trim(),
-    suppliers: S.cats.suppliers.map(x => x.name),
-    inputs:    S.cats.inputs.map(x => x.name),
-    outputs:   S.cats.outputs.map(x => x.name),
-    customers: S.cats.customers.map(x => x.name),
-    actors:    S.cats.actors.map(x => x.name),
-    documents: S.cats.documents.map(x => x.name),
-    layout_hints: {
-      diagram_style: 'horizontal_sipoc_swimlane',
-      sequence_strategy: 'top_to_bottom_by_flow_order',
-      activity_positioning: 'x_by_actor_lane_y_by_sequence_order',
-      edge_style: 'orthogonal_elbow',
-      avoid_crossing: true,
-      minimize_routing_nodes: true,
-      route_strategy: 'orthogonal_with_waypoints',
-      waypoint_policy: 'use_waypoints_before_route_nodes',
-      allow_route_anchors: true,
-      peripheral_connection_policy: 'connect_only_declared_ext_refs'
-    },
-    activities: S.acts.map((a, idx) => Object.assign({}, a, {
-      order: idx + 1,
-      lane: a.lane || a.actor || '',
-      is_start: idx === 0,
-      is_end: idx === S.acts.length - 1
-    }))
+
+function sbCreateIdFactory(
+  prefix,
+  existingRows
+){
+  let maxNumber =
+    0;
+
+  (
+    Array.isArray(existingRows)
+      ? existingRows
+      : []
+  ).forEach(row => {
+    const id =
+      normalizeText(
+        typeof row === 'string'
+          ? row
+          : row?.id || ''
+      );
+
+    const match =
+      id.match(
+        new RegExp(
+          '^' + prefix + '-(\\d+)$',
+          'i'
+        )
+      );
+
+    if(match){
+      maxNumber =
+        Math.max(
+          maxNumber,
+          Number(match[1]) || 0
+        );
+    }
+  });
+
+  return () => {
+    maxNumber += 1;
+
+    return (
+      prefix +
+      '-' +
+      String(maxNumber)
+        .padStart(3, '0')
+    );
   };
 }
 
-function exportJSON() {
-  dlText(JSON.stringify({ sipoc_input: buildSP() }, null, 2), 'sipoc_export.json');
+
+function sbTakeStableId(
+  candidate,
+  usedIds,
+  nextId
+){
+  const requestedId =
+    normalizeText(
+      candidate || ''
+    );
+
+  if(
+    requestedId &&
+    !usedIds.has(requestedId)
+  ){
+    usedIds.add(
+      requestedId
+    );
+
+    return requestedId;
+  }
+
+  let generatedId =
+    nextId();
+
+  while(
+    usedIds.has(
+      generatedId
+    )
+  ){
+    generatedId =
+      nextId();
+  }
+
+  usedIds.add(
+    generatedId
+  );
+
+  return generatedId;
 }
 
-function goToTemplate() {
-  if (!$('g_name').value.trim()) { gMsg('warn', 'Completa el nombre del proceso.'); return; }
-  if (!S.acts.length) { gMsg('warn', 'Agrega al menos una actividad.'); return; }
-  S.sp = buildSP();
+
+function sbEditorKey(
+  left,
+  right
+){
+  return (
+    normalizeText(left)
+      .toLowerCase() +
+    '||' +
+    normalizeText(right)
+      .toLowerCase()
+  );
+}
+
+
+function sbCleanEditorActivityNote(
+  value
+){
+  return String(
+    value || ''
+  )
+    .split(/\r?\n/)
+    .map(normalizeText)
+    .filter(line =>
+      line &&
+      !/^rutas\s*:/i.test(line)
+    )
+    .join('\n');
+}
+
+
+function sbEditorRelations(
+  activity,
+  direction
+){
+  const relationKey =
+    direction +
+    '_relations';
+
+  const explicitRelations =
+    Array.isArray(
+      activity?.[relationKey]
+    )
+      ? activity[relationKey]
+      : [];
+
+  if(explicitRelations.length){
+    return explicitRelations;
+  }
+
+  return (
+    Array.isArray(
+      activity?.[direction]
+    )
+      ? activity[direction]
+      : []
+  ).map(value => ({
+    activity:
+      sbRelationName(value),
+
+    label:
+      sbRelationLabel(value)
+  }));
+}
+
+
+function sbEditorIOItems(
+  activity,
+  type
+){
+  const relationKey =
+    type === 'input'
+      ? 'input_relations'
+      : 'output_relations';
+
+  const legacyKey =
+    type === 'input'
+      ? 'ext_inputs'
+      : 'ext_outputs';
+
+  const nameKey =
+    type === 'input'
+      ? 'input'
+      : 'output';
+
+  const explicitRelations =
+    Array.isArray(
+      activity?.[relationKey]
+    )
+      ? activity[relationKey]
+      : [];
+
+  const source =
+    explicitRelations.length
+      ? explicitRelations
+      : (
+          Array.isArray(
+            activity?.[legacyKey]
+          )
+            ? activity[legacyKey]
+            : []
+        );
+
+  return source
+    .map(value => ({
+      name:
+        normalizeText(
+          typeof value === 'string'
+            ? value
+            : (
+                value?.name ||
+                value?.[nameKey] ||
+                ''
+              )
+        ),
+
+      label:
+        typeof value === 'object'
+          ? normalizeText(
+              value?.label ||
+              value?.connector ||
+              ''
+            )
+          : ''
+    }))
+    .filter(item =>
+      item.name
+    );
+}
+
+
+function sbSyncEditorToContract(){
+  const previousEnvelope =
+    S.contract &&
+    typeof S.contract === 'object'
+      ? S.contract
+      : {};
+
+  const previousInput =
+    previousEnvelope.sipoc_input &&
+    typeof previousEnvelope.sipoc_input ===
+      'object'
+      ? previousEnvelope.sipoc_input
+      : {};
+
+  const previousLanes =
+    previousInput.lanes &&
+    typeof previousInput.lanes ===
+      'object'
+      ? previousInput.lanes
+      : {};
+
+  const previousSupplierInputs =
+    Array.isArray(
+      previousLanes.suppliers_inputs
+    )
+      ? previousLanes.suppliers_inputs
+      : [];
+
+  const previousActors =
+    Array.isArray(
+      previousLanes.actors
+    )
+      ? previousLanes.actors
+      : [];
+
+  const previousOutputsCustomers =
+    Array.isArray(
+      previousLanes.outputs_customers
+    )
+      ? previousLanes.outputs_customers
+      : [];
+
+  const previousActivities =
+    Array.isArray(
+      previousInput.activities
+    )
+      ? previousInput.activities
+      : [];
+
+  const previousNotes =
+    Array.isArray(
+      previousInput.clarifying_notes
+    )
+      ? previousInput.clarifying_notes
+      : [];
+
+
+  /*
+   * Suppliers e Inputs.
+   */
+  const previousSupplierInputByKey =
+    new Map(
+      previousSupplierInputs.map(row => [
+        sbEditorKey(
+          row?.supplier,
+          row?.input
+        ),
+        row
+      ])
+    );
+
+  const usedSupplierInputIds =
+    new Set();
+
+  const nextSupplierInputId =
+    sbCreateIdFactory(
+      'SI',
+      previousSupplierInputs
+    );
+
+  const suppliersInputs =
+    S.cats.suppliers
+      .map(item => {
+        const supplier =
+          normalizeText(
+            item?.name || ''
+          );
+
+        const input =
+          normalizeText(
+            item?.input || ''
+          );
+
+        if(
+          !supplier ||
+          !input
+        ){
+          return null;
+        }
+
+        const previousRow =
+          previousSupplierInputByKey.get(
+            sbEditorKey(
+              supplier,
+              input
+            )
+          );
+
+        return {
+          id:
+            sbTakeStableId(
+              item?.id ||
+              previousRow?.id,
+              usedSupplierInputIds,
+              nextSupplierInputId
+            ),
+
+          supplier,
+
+          input
+        };
+      })
+      .filter(Boolean);
+
+
+  /*
+   * Actores y carriles.
+   */
+  const previousActorByName =
+    new Map(
+      previousActors.map(actor => [
+        normalizeText(
+          actor?.name || ''
+        ).toLowerCase(),
+        actor
+      ])
+    );
+
+  const usedActorIds =
+    new Set();
+
+  const nextActorId =
+    sbCreateIdFactory(
+      'LANE',
+      previousActors
+    );
+
+  const actors =
+    S.cats.actors
+      .map(item => {
+        const name =
+          normalizeText(
+            item?.name || ''
+          );
+
+        if(!name){
+          return null;
+        }
+
+        const previousActor =
+          previousActorByName.get(
+            name.toLowerCase()
+          );
+
+        return {
+          id:
+            sbTakeStableId(
+              item?.id ||
+              previousActor?.id,
+              usedActorIds,
+              nextActorId
+            ),
+
+          name
+        };
+      })
+      .filter(Boolean);
+
+  const actorIdByName =
+    new Map(
+      actors.map(actor => [
+        actor.name.toLowerCase(),
+        actor.id
+      ])
+    );
+
+
+  /*
+   * Outputs y Customers.
+   */
+  const previousOutputCustomerByKey =
+    new Map(
+      previousOutputsCustomers.map(row => [
+        sbEditorKey(
+          row?.output,
+          row?.customer
+        ),
+        row
+      ])
+    );
+
+  const usedOutputCustomerIds =
+    new Set();
+
+  const nextOutputCustomerId =
+    sbCreateIdFactory(
+      'OC',
+      previousOutputsCustomers
+    );
+
+  const outputsCustomers =
+    S.cats.customers
+      .map(item => {
+        const output =
+          normalizeText(
+            item?.output || ''
+          );
+
+        const customer =
+          normalizeText(
+            item?.name || ''
+          );
+
+        if(
+          !output ||
+          !customer
+        ){
+          return null;
+        }
+
+        const previousRow =
+          previousOutputCustomerByKey.get(
+            sbEditorKey(
+              output,
+              customer
+            )
+          );
+
+        return {
+          id:
+            sbTakeStableId(
+              item?.id ||
+              previousRow?.id,
+              usedOutputCustomerIds,
+              nextOutputCustomerId
+            ),
+
+          output,
+
+          customer
+        };
+      })
+      .filter(Boolean);
+
+
+  /*
+   * Actividades: primero se estabilizan
+   * todos los IDs para resolver relaciones.
+   */
+  const previousActivityById =
+    new Map(
+      previousActivities
+        .filter(activity =>
+          normalizeText(
+            activity?.id || ''
+          )
+        )
+        .map(activity => [
+          normalizeText(
+            activity.id
+          ),
+          activity
+        ])
+    );
+
+  const previousActivityByName =
+    new Map(
+      previousActivities
+        .filter(activity =>
+          normalizeText(
+            activity?.name || ''
+          )
+        )
+        .map(activity => [
+          normalizeText(
+            activity.name
+          ).toLowerCase(),
+          activity
+        ])
+    );
+
+  const usedActivityIds =
+    new Set();
+
+  const nextActivityId =
+    sbCreateIdFactory(
+      'ACT',
+      previousActivities
+    );
+
+  const activityDrafts =
+    S.acts
+      .map((activity, index) => {
+        const name =
+          normalizeText(
+            activity?.name || ''
+          );
+
+        if(!name){
+          return null;
+        }
+
+        const previousActivity =
+          previousActivityById.get(
+            normalizeText(
+              activity?.id || ''
+            )
+          ) ||
+          previousActivityByName.get(
+            name.toLowerCase()
+          );
+
+        const id =
+          sbTakeStableId(
+            activity?.id ||
+            previousActivity?.id,
+            usedActivityIds,
+            nextActivityId
+          );
+
+        return {
+          source:
+            activity,
+
+          previous:
+            previousActivity,
+
+          id,
+
+          sequence:
+            index + 1,
+
+          name
+        };
+      })
+      .filter(Boolean);
+
+  const activityByName =
+    new Map(
+      activityDrafts.map(activity => [
+        activity.name.toLowerCase(),
+        activity
+      ])
+    );
+
+
+  /*
+   * Notas contextuales.
+   */
+  const previousContextNotes =
+    previousNotes.filter(note =>
+      !normalizeText(
+        note?.activity_id || ''
+      ) &&
+      !normalizeText(
+        note?.activity_name || ''
+      )
+    );
+
+  const previousContextNoteByText =
+    new Map(
+      previousContextNotes.map(note => [
+        normalizeText(
+          note?.text ||
+          note?.content ||
+          ''
+        ).toLowerCase(),
+        note
+      ])
+    );
+
+  const usedNoteIds =
+    new Set();
+
+  const nextNoteId =
+    sbCreateIdFactory(
+      'NOTE',
+      previousNotes
+    );
+
+  const clarifyingNotes =
+    [];
+
+  String(
+    $('g_notes')?.value || ''
+  )
+    .split(/\r?\n/)
+    .map(normalizeText)
+    .filter(Boolean)
+    .forEach(text => {
+      const previousNote =
+        previousContextNoteByText.get(
+          text.toLowerCase()
+        );
+
+      clarifyingNotes.push({
+        id:
+          sbTakeStableId(
+            previousNote?.id,
+            usedNoteIds,
+            nextNoteId
+          ),
+
+        activity_id:
+          '',
+
+        activity_name:
+          '',
+
+        text,
+
+        type:
+          previousNote?.type ||
+          'clarifying',
+
+        source:
+          previousNote?.source ||
+          'sipoc_builder'
+      });
+    });
+
+
+  /*
+   * Construcción canónica de actividades
+   * y notas vinculadas.
+   */
+  const activities =
+    activityDrafts.map(draft => {
+      const activity =
+        draft.source;
+
+      const previousActivity =
+        draft.previous;
+
+      const previousRelations =
+        sbEditorRelations(
+          activity,
+          'previous'
+        );
+
+      const nextRelations =
+        sbEditorRelations(
+          activity,
+          'next'
+        );
+
+      const relationToCanonical =
+        relation => {
+          const activityName =
+            sbRelationName(
+              relation
+            );
+
+          if(!activityName){
+            return null;
+          }
+
+          const target =
+            activityByName.get(
+              activityName.toLowerCase()
+            );
+
+          return {
+            activity_id:
+              target?.id || '',
+
+            activity_name:
+              activityName,
+
+            label:
+              sbRelationLabel(
+                relation
+              )
+          };
+        };
+
+      const previousNoteIds =
+        Array.isArray(
+          previousActivity?.note_ids
+        )
+          ? previousActivity.note_ids
+              .map(String)
+          : [];
+
+      const previousLinkedNotes =
+        previousNotes.filter(note =>
+          previousNoteIds.includes(
+            String(
+              note?.id || ''
+            )
+          )
+        );
+
+      const editorNote =
+        sbCleanEditorActivityNote(
+          activity?.note ||
+          activity?.notes ||
+          ''
+        );
+
+      const previousNoteText =
+        previousLinkedNotes
+          .map(note =>
+            normalizeText(
+              note?.text ||
+              note?.content ||
+              ''
+            )
+          )
+          .filter(Boolean)
+          .join('\n');
+
+      const noteIds =
+        [];
+
+      if(editorNote){
+        if(
+          previousLinkedNotes.length &&
+          normalizeText(
+            previousNoteText
+          ) ===
+          normalizeText(
+            editorNote
+          )
+        ){
+          previousLinkedNotes.forEach(note => {
+            const id =
+              sbTakeStableId(
+                note?.id,
+                usedNoteIds,
+                nextNoteId
+              );
+
+            noteIds.push(
+              id
+            );
+
+            clarifyingNotes.push({
+              ...sbDeepClone(note),
+
+              id,
+
+              activity_id:
+                draft.id,
+
+              activity_name:
+                draft.name
+            });
+          });
+        }else{
+          const previousNote =
+            previousLinkedNotes[0];
+
+          const noteId =
+            sbTakeStableId(
+              previousNote?.id,
+              usedNoteIds,
+              nextNoteId
+            );
+
+          noteIds.push(
+            noteId
+          );
+
+          clarifyingNotes.push({
+            id:
+              noteId,
+
+            activity_id:
+              draft.id,
+
+            activity_name:
+              draft.name,
+
+            text:
+              editorNote,
+
+            type:
+              previousNote?.type ||
+              'clarifying',
+
+            source:
+              previousNote?.source ||
+              'sipoc_builder'
+          });
+        }
+      }
+
+      return {
+        id:
+          draft.id,
+
+        sequence:
+          draft.sequence,
+
+        actor_lane_id:
+          actorIdByName.get(
+            normalizeText(
+              activity?.actor ||
+              activity?.lane ||
+              ''
+            ).toLowerCase()
+          ) || '',
+
+        name:
+          draft.name,
+
+        type:
+          normalizeText(
+            activity?.type
+          ).toLowerCase() ===
+            'decision'
+              ? 'decision'
+              : 'actividad',
+
+        previous:
+          previousRelations
+            .map(
+              relationToCanonical
+            )
+            .filter(Boolean),
+
+        next:
+          nextRelations
+            .map(
+              relationToCanonical
+            )
+            .filter(Boolean),
+
+        inputs:
+          sbEditorIOItems(
+            activity,
+            'input'
+          ),
+
+        outputs:
+          sbEditorIOItems(
+            activity,
+            'output'
+          ),
+
+        note_ids:
+          noteIds
+      };
+    });
+
+
+  const contract = {
+    contract_code:
+      'LMP_TO_SB',
+
+    contract_version:
+      '3.0',
+
+    source_module:
+      previousEnvelope.source_module ||
+      (
+        S.loadTrace?.source ===
+          'guided_capture'
+          ? 'SIPOC_BUILDER'
+          : 'LMP'
+      ),
+
+    target_module:
+      'SIPOC_BUILDER',
+
+    generated_at:
+      new Date().toISOString(),
+
+    sipoc_input: {
+      process_code:
+        normalizeText(
+          $('g_code')?.value || ''
+        ),
+
+      process_name:
+        normalizeText(
+          $('g_name')?.value || ''
+        ),
+
+      purpose:
+        normalizeText(
+          $('g_purpose')?.value || ''
+        ),
+
+      lanes: {
+        suppliers_inputs:
+          suppliersInputs,
+
+        actors,
+
+        outputs_customers:
+          outputsCustomers
+      },
+
+      activities,
+
+      clarifying_notes:
+        clarifyingNotes
+    }
+  };
+
+  S.contract =
+    contract;
+
+  /*
+   * Adaptador temporal para el generador XML actual.
+   * La fuente oficial sigue siendo S.contract.
+   */
+  const normalizedPayload =
+    normalizeIncomingPayload(
+      contract
+    );
+
+  S.sp =
+    normalizedPayload.normalized;
+
+  return contract;
+}
+
+
+function buildSP(){
+  sbSyncEditorToContract();
+
+  return S.sp;
+}
+
+
+function exportJSON(){
+  const contract =
+    sbSyncEditorToContract();
+
+  dlText(
+    JSON.stringify(
+      contract,
+      null,
+      2
+    ),
+
+    'LMP_TO_SB.json'
+  );
+}
+
+
+function goToTemplate(){
+  if(
+    !$('g_name')?.value.trim()
+  ){
+    gMsg(
+      'warn',
+      'Completa el nombre del proceso.'
+    );
+
+    return;
+  }
+
+  if(!S.acts.length){
+    gMsg(
+      'warn',
+      'Agrega al menos una actividad.'
+    );
+
+    return;
+  }
+
+  resetSBGeneratedArtifacts();
+
+  buildSP();
+
   genTemplate();
 }
 
