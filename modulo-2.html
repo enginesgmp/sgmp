@@ -9310,30 +9310,23 @@ function sbSvgText(
 }
 
 
-function sbBuildStaticPreview(
-  contract
-){
-  const input =
-    contract?.sipoc_input ||
-    {};
-
-  const lanes =
-    input.lanes ||
-    {};
+function sbBuildStaticPreview(contract){
+  const input = contract?.sipoc_input || {};
+  const sourceLanes = input.lanes || {};
 
   const suppliersInputs =
     sbArray(
-      lanes.suppliers_inputs
+      sourceLanes.suppliers_inputs
     );
 
   const outputsCustomers =
     sbArray(
-      lanes.outputs_customers
+      sourceLanes.outputs_customers
     );
 
   const actors =
     sbArray(
-      lanes.actors
+      sourceLanes.actors
     ).slice();
 
   const activities =
@@ -9343,30 +9336,46 @@ function sbBuildStaticPreview(
       .slice()
       .sort(
         (left, right) =>
-          Number(left?.sequence || 0) -
-          Number(right?.sequence || 0)
+          Number(
+            left?.sequence || 0
+          ) -
+          Number(
+            right?.sequence || 0
+          )
       );
 
   if(!activities.length){
+    S.diagramModel =
+      createEmptySBDiagramModel();
+
     return '';
   }
 
   const actorIds =
     new Set(
-      actors.map(actor =>
-        normalizeText(
-          actor?.id || ''
+      actors
+        .map(actor =>
+          normalizeText(
+            actor?.id || ''
+          )
         )
-      )
+        .filter(Boolean)
     );
 
-  if(
+  const requiresUnassignedLane =
+    !actors.length ||
     activities.some(activity =>
       !actorIds.has(
         normalizeText(
           activity?.actor_lane_id || ''
         )
       )
+    );
+
+  if(
+    requiresUnassignedLane &&
+    !actorIds.has(
+      'LANE-UNASSIGNED'
     )
   ){
     actors.push({
@@ -9378,65 +9387,91 @@ function sbBuildStaticPreview(
     });
   }
 
-  const laneRows =
-    actors.length
-      ? actors
-      : [
-          {
-            id:
-              'LANE-UNASSIGNED',
-
-            name:
-              'Sin actor'
-          }
-        ];
-
-  const columnWidth =
-    180;
-
-  const processWidth =
-    Math.max(
-      680,
-      activities.length * 185 + 120
-    );
-
-  const gap =
-    14;
-
-  const headerHeight =
-    42;
-
-  const laneHeight =
-    110;
-
-  const supplierX =
+  /*
+   * Dimensiones oficiales del preview estático.
+   * Todos los carriles son verticales.
+   */
+  const MARGIN =
     16;
+
+  const LANE_GAP =
+    10;
+
+  const LANE_WIDTH =
+    190;
+
+  const NODE_WIDTH =
+    150;
+
+  const DECISION_WIDTH =
+    130;
+
+  const NODE_HEIGHT =
+    60;
+
+  const TOP_HEADER_Y =
+    8;
+
+  const TOP_HEADER_HEIGHT =
+    34;
+
+  const ACTOR_HEADER_Y =
+    46;
+
+  const ACTOR_HEADER_HEIGHT =
+    34;
+
+  const BODY_TOP =
+    ACTOR_HEADER_Y +
+    ACTOR_HEADER_HEIGHT;
+
+  const ACTIVITY_STEP =
+    84;
+
+  const EXTERNAL_STEP =
+    76;
+
+
+  /*
+   * Posición horizontal de cada zona.
+   */
+  const supplierX =
+    MARGIN;
 
   const inputX =
     supplierX +
-    columnWidth +
-    gap;
+    LANE_WIDTH +
+    LANE_GAP;
 
-  const processX =
+  const actorStartX =
     inputX +
-    columnWidth +
-    gap;
+    LANE_WIDTH +
+    LANE_GAP;
+
+  const processWidth =
+    actors.length *
+    LANE_WIDTH;
 
   const outputX =
-    processX +
+    actorStartX +
     processWidth +
-    gap;
+    LANE_GAP;
 
   const customerX =
     outputX +
-    columnWidth +
-    gap;
+    LANE_WIDTH +
+    LANE_GAP;
 
-  const width =
+  const canvasWidth =
     customerX +
-    columnWidth +
-    16;
+    LANE_WIDTH +
+    MARGIN;
 
+
+  /*
+   * El alto se determina por la cantidad de actividades,
+   * no por la cantidad de actores.
+   */
   const externalRows =
     Math.max(
       suppliersInputs.length,
@@ -9446,131 +9481,1196 @@ function sbBuildStaticPreview(
 
   const bodyHeight =
     Math.max(
-      laneRows.length *
-        laneHeight,
+      320,
+
+      activities.length *
+        ACTIVITY_STEP +
+        34,
 
       externalRows *
-        74 +
-        24
+        EXTERNAL_STEP +
+        32
     );
 
-  const height =
-    headerHeight +
+  const canvasHeight =
+    BODY_TOP +
     bodyHeight +
     18;
 
-  const laneIndex =
-    new Map(
-      laneRows.map(
-        (actor, index) => [
+
+  /*
+   * Carriles oficiales del modelo.
+   */
+  const lanes = [
+    {
+      id:
+        'LANE-SUPPLIERS',
+
+      kind:
+        'supplier',
+
+      label:
+        'SUPPLIERS',
+
+      x:
+        supplierX,
+
+      y:
+        BODY_TOP,
+
+      width:
+        LANE_WIDTH,
+
+      height:
+        bodyHeight
+    },
+
+    {
+      id:
+        'LANE-INPUTS',
+
+      kind:
+        'input',
+
+      label:
+        'INPUTS',
+
+      x:
+        inputX,
+
+      y:
+        BODY_TOP,
+
+      width:
+        LANE_WIDTH,
+
+      height:
+        bodyHeight
+    },
+
+    ...actors.map(
+      (actor, index) => ({
+        id:
           normalizeText(
-            actor?.id || ''
+            actor?.id ||
+            `LANE-${String(
+              index + 1
+            ).padStart(
+              3,
+              '0'
+            )}`
           ),
-          index
-        ]
-      )
+
+        kind:
+          'actor',
+
+        label:
+          normalizeText(
+            actor?.name ||
+            'Sin actor'
+          ),
+
+        x:
+          actorStartX +
+          index *
+          LANE_WIDTH,
+
+        y:
+          BODY_TOP,
+
+        width:
+          LANE_WIDTH,
+
+        height:
+          bodyHeight
+      })
+    ),
+
+    {
+      id:
+        'LANE-OUTPUTS',
+
+      kind:
+        'output',
+
+      label:
+        'OUTPUTS',
+
+      x:
+        outputX,
+
+      y:
+        BODY_TOP,
+
+      width:
+        LANE_WIDTH,
+
+      height:
+        bodyHeight
+    },
+
+    {
+      id:
+        'LANE-CUSTOMERS',
+
+      kind:
+        'customer',
+
+      label:
+        'CUSTOMERS',
+
+      x:
+        customerX,
+
+      y:
+        BODY_TOP,
+
+      width:
+        LANE_WIDTH,
+
+      height:
+        bodyHeight
+    }
+  ];
+
+
+  const laneById =
+    new Map(
+      lanes.map(lane => [
+        lane.id,
+        lane
+      ])
     );
 
   const nodes =
-    activities.map(
-      (activity, index) => {
-        const actorId =
-          normalizeText(
-            activity?.actor_lane_id ||
-            ''
-          );
+    [];
 
-        return {
-          activity,
-
-          x:
-            processX +
-            95 +
-            index * 185,
-
-          y:
-            headerHeight +
-            (
-              laneIndex.get(actorId) ??
-              laneIndex.get(
-                'LANE-UNASSIGNED'
-              ) ??
-              0
-            ) *
-            laneHeight +
-            42
-        };
-      }
-    );
+  const edges =
+    [];
 
   const nodeById =
     new Map();
 
-  const nodeByName =
+  const activityById =
     new Map();
 
-  nodes.forEach(node => {
-    const id =
-      normalizeText(
-        node.activity?.id || ''
-      );
+  const activityByName =
+    new Map();
 
-    const name =
-      normalizeText(
-        node.activity?.name || ''
-      );
+  const inputsByName =
+    new Map();
 
-    if(id){
-      nodeById.set(
-        id,
-        node
+  const outputsByName =
+    new Map();
+
+  const edgeKeys =
+    new Set();
+
+
+  function addNode(node){
+    if(
+      !node ||
+      !normalizeText(
+        node.id || ''
+      )
+    ){
+      return null;
+    }
+
+    nodes.push(
+      node
+    );
+
+    nodeById.set(
+      node.id,
+      node
+    );
+
+    return node;
+  }
+
+
+  function addNameNode(
+    map,
+    name,
+    node
+  ){
+    const key =
+      normalizeText(
+        name || ''
+      ).toLowerCase();
+
+    if(
+      !key ||
+      !node
+    ){
+      return;
+    }
+
+    if(!map.has(key)){
+      map.set(
+        key,
+        []
       );
     }
 
-    if(name){
-      nodeByName.set(
-        name.toLowerCase(),
+    map
+      .get(key)
+      .push(node);
+  }
+
+
+  function addEdge(
+    id,
+    family,
+    source,
+    target,
+    label = ''
+  ){
+    if(
+      !source ||
+      !target ||
+      source === target
+    ){
+      return false;
+    }
+
+    const cleanLabel =
+      normalizeText(
+        label || ''
+      );
+
+    const key =
+      [
+        family,
+        source,
+        target,
+        cleanLabel.toLowerCase()
+      ].join('|');
+
+    if(edgeKeys.has(key)){
+      return false;
+    }
+
+    edgeKeys.add(
+      key
+    );
+
+    edges.push({
+      id,
+      family,
+      source,
+      target,
+      label:
+        cleanLabel
+    });
+
+    return true;
+  }
+
+
+  /*
+   * Nodos Supplier e Input.
+   */
+  suppliersInputs.forEach(
+    (row, index) => {
+      const rowId =
+        normalizeText(
+          row?.id ||
+          `SI-${String(
+            index + 1
+          ).padStart(
+            3,
+            '0'
+          )}`
+        );
+
+      const y =
+        BODY_TOP +
+        16 +
+        index *
+        EXTERNAL_STEP;
+
+      const supplierNode =
+        addNode({
+          id:
+            `SUP-${rowId}`,
+
+          kind:
+            'supplier',
+
+          label:
+            normalizeText(
+              row?.supplier || ''
+            ),
+
+          lane_id:
+            'LANE-SUPPLIERS',
+
+          x:
+            supplierX +
+            20,
+
+          y,
+
+          width:
+            NODE_WIDTH,
+
+          height:
+            NODE_HEIGHT,
+
+          shape:
+            'rectangle',
+
+          source_ref:
+            rowId
+        });
+
+      const inputNode =
+        addNode({
+          id:
+            `INP-${rowId}`,
+
+          kind:
+            'input',
+
+          label:
+            normalizeText(
+              row?.input || ''
+            ),
+
+          lane_id:
+            'LANE-INPUTS',
+
+          x:
+            inputX +
+            20,
+
+          y,
+
+          width:
+            NODE_WIDTH,
+
+          height:
+            NODE_HEIGHT,
+
+          shape:
+            'rectangle',
+
+          source_ref:
+            rowId
+        });
+
+      addNameNode(
+        inputsByName,
+        inputNode?.label,
+        inputNode
+      );
+
+      if(
+        supplierNode &&
+        inputNode
+      ){
+        addEdge(
+          `EDGE-SI-${rowId}`,
+          'input',
+          supplierNode.id,
+          inputNode.id
+        );
+      }
+    }
+  );
+
+
+  /*
+   * Nodos Output y Customer.
+   */
+  outputsCustomers.forEach(
+    (row, index) => {
+      const rowId =
+        normalizeText(
+          row?.id ||
+          `OC-${String(
+            index + 1
+          ).padStart(
+            3,
+            '0'
+          )}`
+        );
+
+      const y =
+        BODY_TOP +
+        16 +
+        index *
+        EXTERNAL_STEP;
+
+      const outputNode =
+        addNode({
+          id:
+            `OUT-${rowId}`,
+
+          kind:
+            'output',
+
+          label:
+            normalizeText(
+              row?.output || ''
+            ),
+
+          lane_id:
+            'LANE-OUTPUTS',
+
+          x:
+            outputX +
+            20,
+
+          y,
+
+          width:
+            NODE_WIDTH,
+
+          height:
+            NODE_HEIGHT,
+
+          shape:
+            'rectangle',
+
+          source_ref:
+            rowId
+        });
+
+      const customerNode =
+        addNode({
+          id:
+            `CUS-${rowId}`,
+
+          kind:
+            'customer',
+
+          label:
+            normalizeText(
+              row?.customer || ''
+            ),
+
+          lane_id:
+            'LANE-CUSTOMERS',
+
+          x:
+            customerX +
+            20,
+
+          y,
+
+          width:
+            NODE_WIDTH,
+
+          height:
+            NODE_HEIGHT,
+
+          shape:
+            'rectangle',
+
+          source_ref:
+            rowId
+        });
+
+      addNameNode(
+        outputsByName,
+        outputNode?.label,
+        outputNode
+      );
+
+      if(
+        outputNode &&
+        customerNode
+      ){
+        addEdge(
+          `EDGE-OC-${rowId}`,
+          'output',
+          outputNode.id,
+          customerNode.id
+        );
+      }
+    }
+  );
+
+
+  /*
+   * Actividades:
+   * X depende del actor.
+   * Y depende de la secuencia general.
+   */
+  activities.forEach(
+    (activity, index) => {
+      const actorLane =
+        laneById.get(
+          normalizeText(
+            activity?.actor_lane_id ||
+            ''
+          )
+        ) ||
+        laneById.get(
+          'LANE-UNASSIGNED'
+        );
+
+      if(!actorLane){
+        return;
+      }
+
+      const isDecision =
+        normalizeText(
+          activity?.type || ''
+        ).toLowerCase() ===
+        'decision';
+
+      const width =
+        isDecision
+          ? DECISION_WIDTH
+          : NODE_WIDTH;
+
+      const id =
+        normalizeText(
+          activity?.id ||
+          `ACT-${String(
+            index + 1
+          ).padStart(
+            3,
+            '0'
+          )}`
+        );
+
+      const node =
+        addNode({
+          id,
+
+          kind:
+            'activity',
+
+          label:
+            normalizeText(
+              activity?.name ||
+              `Actividad ${index + 1}`
+            ),
+
+          lane_id:
+            actorLane.id,
+
+          x:
+            actorLane.x +
+            (
+              actorLane.width -
+              width
+            ) /
+            2,
+
+          y:
+            BODY_TOP +
+            18 +
+            index *
+            ACTIVITY_STEP,
+
+          width,
+
+          height:
+            NODE_HEIGHT,
+
+          shape:
+            isDecision
+              ? 'decision'
+              : 'activity',
+
+          sequence:
+            Number(
+              activity?.sequence ||
+              index + 1
+            ) ||
+            index + 1,
+
+          source_ref:
+            id,
+
+          activity:
+            sbDeepClone(
+              activity
+            )
+        });
+
+      if(!node){
+        return;
+      }
+
+      activityById.set(
+        node.id,
+        node
+      );
+
+      activityByName.set(
+        node.label.toLowerCase(),
         node
       );
     }
-  });
+  );
 
-  const header = (
+
+  /*
+   * Conexiones construidas desde el contrato.
+   */
+  activities.forEach(
+    (activity, index) => {
+      const source =
+        activityById.get(
+          normalizeText(
+            activity?.id || ''
+          )
+        ) ||
+        activityByName.get(
+          normalizeText(
+            activity?.name || ''
+          ).toLowerCase()
+        );
+
+      if(!source){
+        return;
+      }
+
+
+      /*
+       * Actividad → Actividad.
+       */
+      sbArray(
+        activity?.next
+      ).forEach(
+        (
+          relation,
+          relationIndex
+        ) => {
+          const target =
+            activityById.get(
+              sbPreviewRelationId(
+                relation
+              )
+            ) ||
+            activityByName.get(
+              sbPreviewRelationName(
+                relation
+              ).toLowerCase()
+            );
+
+          if(!target){
+            return;
+          }
+
+          addEdge(
+            `EDGE-ACT-${index + 1}-${relationIndex + 1}`,
+            'internal',
+            source.id,
+            target.id,
+            sbRelationLabel(
+              relation
+            )
+          );
+        }
+      );
+
+
+      /*
+       * Input → Actividad.
+       */
+      sbArray(
+        activity?.inputs
+      ).forEach(
+        (
+          item,
+          itemIndex
+        ) => {
+          const inputName =
+            sbPreviewIOName(
+              item,
+              'input'
+            ).toLowerCase();
+
+          const candidates =
+            inputsByName.get(
+              inputName
+            ) ||
+            [];
+
+          candidates.forEach(
+            (
+              inputNode,
+              candidateIndex
+            ) => {
+              addEdge(
+                `EDGE-IN-${index + 1}-${itemIndex + 1}-${candidateIndex + 1}`,
+                'input',
+                inputNode.id,
+                source.id,
+                typeof item ===
+                  'object'
+                    ? normalizeText(
+                        item?.label ||
+                        item?.connector ||
+                        ''
+                      )
+                    : ''
+              );
+            }
+          );
+        }
+      );
+
+
+      /*
+       * Actividad → Output.
+       */
+      sbArray(
+        activity?.outputs
+      ).forEach(
+        (
+          item,
+          itemIndex
+        ) => {
+          const outputName =
+            sbPreviewIOName(
+              item,
+              'output'
+            ).toLowerCase();
+
+          const candidates =
+            outputsByName.get(
+              outputName
+            ) ||
+            [];
+
+          candidates.forEach(
+            (
+              outputNode,
+              candidateIndex
+            ) => {
+              addEdge(
+                `EDGE-OUT-${index + 1}-${itemIndex + 1}-${candidateIndex + 1}`,
+                'output',
+                source.id,
+                outputNode.id,
+                typeof item ===
+                  'object'
+                    ? normalizeText(
+                        item?.label ||
+                        item?.connector ||
+                        ''
+                      )
+                    : ''
+              );
+            }
+          );
+        }
+      );
+    }
+  );
+
+
+  /*
+   * Modelo oficial reutilizable por Diagram Studio.
+   */
+  S.diagramModel = {
+    model_code:
+      'SB_DIAGRAM_MODEL',
+
+    model_version:
+      '1.0',
+
+    generated_at:
+      new Date().toISOString(),
+
+    source_contract:
+      sbDeepClone(
+        contract
+      ),
+
+    diagram_model: {
+      nodes,
+
+      edges,
+
+      lanes,
+
+      connectors:
+        [],
+
+      notes:
+        [],
+
+      layout: {
+        orientation:
+          'vertical_sipoc_swimlane',
+
+        canvas_width:
+          canvasWidth,
+
+        canvas_height:
+          canvasHeight,
+
+        body_top:
+          BODY_TOP,
+
+        body_height:
+          bodyHeight,
+
+        supplier_x:
+          supplierX,
+
+        input_x:
+          inputX,
+
+        actor_start_x:
+          actorStartX,
+
+        process_width:
+          processWidth,
+
+        output_x:
+          outputX,
+
+        customer_x:
+          customerX,
+
+        lane_width:
+          LANE_WIDTH
+      },
+
+      style_profile:
+        'executive_pastel'
+    }
+  };
+
+
+  /*
+   * Paleta visual.
+   */
+  const colors = {
+    supplier: {
+      fill:
+        '#F3F6F9',
+
+      stroke:
+        '#AAB6C2',
+
+      header:
+        '#667383'
+    },
+
+    input: {
+      fill:
+        '#EEF7FC',
+
+      stroke:
+        '#8FB9D0',
+
+      header:
+        '#6F9FBC'
+    },
+
+    actor: {
+      fill:
+        '#FFFFFF',
+
+      stroke:
+        '#D5DEE7',
+
+      header:
+        '#294B66'
+    },
+
+    output: {
+      fill:
+        '#F1F8F3',
+
+      stroke:
+        '#93B8A0',
+
+      header:
+        '#769985'
+    },
+
+    customer: {
+      fill:
+        '#F3F6F9',
+
+      stroke:
+        '#AAB6C2',
+
+      header:
+        '#667383'
+    }
+  };
+
+
+  const strokeByFamily = {
+    internal:
+      '#294B66',
+
+    input:
+      '#6F9FBC',
+
+    output:
+      '#769985'
+  };
+
+
+  const markerByFamily = {
+    internal:
+      'sbArrowBlue',
+
+    input:
+      'sbArrowInput',
+
+    output:
+      'sbArrowOutput'
+  };
+
+
+  function topHeader(
     x,
+    width,
     title,
-    color,
-    widthValue = columnWidth
-  ) => `
-    <rect
-      x="${x}"
-      y="8"
-      width="${widthValue}"
-      height="34"
-      rx="4"
-      fill="${color}"
-    />
+    color
+  ){
+    return `
+      <rect
+        x="${x}"
+        y="${TOP_HEADER_Y}"
+        width="${width}"
+        height="${TOP_HEADER_HEIGHT}"
+        rx="4"
+        fill="${color}"
+      />
 
-    ${sbSvgText(
-      title,
-      x,
-      8,
-      widthValue,
-      34
-    ).replace(
-      'color:#294B66',
-      'color:#FFFFFF'
-    )}
-  `;
+      ${sbSvgText(
+        title,
+        x,
+        TOP_HEADER_Y,
+        width,
+        TOP_HEADER_HEIGHT
+      ).replace(
+        'color:#294B66',
+        'color:#FFFFFF'
+      )}
+    `;
+  }
 
+
+  /*
+   * Enrutamiento ortogonal.
+   */
+  function edgePath(
+    source,
+    target,
+    family,
+    index
+  ){
+    const sourceCenterX =
+      source.x +
+      source.width /
+      2;
+
+    const sourceCenterY =
+      source.y +
+      source.height /
+      2;
+
+    const targetCenterX =
+      target.x +
+      target.width /
+      2;
+
+    const targetCenterY =
+      target.y +
+      target.height /
+      2;
+
+
+    /*
+     * Relaciones laterales SIPOC.
+     */
+    if(
+      family === 'input' ||
+      family === 'output'
+    ){
+      const startX =
+        source.x +
+        source.width;
+
+      const endX =
+        target.x;
+
+      const channelX =
+        startX +
+        Math.max(
+          22,
+          (
+            endX -
+            startX
+          ) /
+          2
+        );
+
+      return [
+        `M ${startX} ${sourceCenterY}`,
+        `H ${channelX}`,
+        `V ${targetCenterY}`,
+        `H ${endX}`
+      ].join(' ');
+    }
+
+
+    /*
+     * Flujo interno normal:
+     * sale por abajo y entra por arriba.
+     */
+    if(
+      target.y >=
+      source.y
+    ){
+      const startY =
+        source.y +
+        source.height;
+
+      const endY =
+        target.y;
+
+      const channelY =
+        startY +
+        Math.max(
+          14,
+          (
+            endY -
+            startY
+          ) /
+          2
+        );
+
+      return [
+        `M ${sourceCenterX} ${startY}`,
+        `V ${channelY}`,
+        `H ${targetCenterX}`,
+        `V ${endY}`
+      ].join(' ');
+    }
+
+
+    /*
+     * Retornos o ciclos:
+     * se enrutan por el lateral derecho.
+     */
+    const channelX =
+      Math.max(
+        source.x +
+        source.width,
+
+        target.x +
+        target.width
+      ) +
+      24 +
+      (
+        index %
+        5
+      ) *
+      8;
+
+    return [
+      `M ${source.x + source.width} ${sourceCenterY}`,
+      `H ${channelX}`,
+      `V ${target.y - 10}`,
+      `H ${targetCenterX}`,
+      `V ${target.y}`
+    ].join(' ');
+  }
+
+
+  function edgeLabel(
+    edge,
+    source,
+    target,
+    color
+  ){
+    const label =
+      normalizeText(
+        edge?.label || ''
+      );
+
+    if(!label){
+      return '';
+    }
+
+    const x =
+      (
+        source.x +
+        source.width /
+        2 +
+        target.x +
+        target.width /
+        2
+      ) /
+      2 -
+      42;
+
+    const y =
+      (
+        source.y +
+        source.height /
+        2 +
+        target.y +
+        target.height /
+        2
+      ) /
+      2 -
+      10;
+
+    return `
+      <foreignObject
+        x="${x}"
+        y="${y}"
+        width="84"
+        height="20"
+      >
+        <div
+          xmlns="http://www.w3.org/1999/xhtml"
+          style="
+            width:100%;
+            height:100%;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:2px 5px;
+            border:1px solid ${color}55;
+            border-radius:999px;
+            background:#FFFFFF;
+            color:${color};
+            font:800 8px Segoe UI,Arial,sans-serif;
+            line-height:1;
+            text-align:center;
+            overflow:hidden;
+          "
+        >
+          ${ex(label)}
+        </div>
+      </foreignObject>
+    `;
+  }
+
+
+  /*
+   * Construcción SVG.
+   */
   let svg = `
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 ${width} ${height}"
-      preserveAspectRatio="xMinYMin meet"
+      viewBox="0 0 ${canvasWidth} ${canvasHeight}"
+      preserveAspectRatio="xMidYMin meet"
       role="img"
-      aria-label="Vista previa estática del flujo SIPOC"
-      data-canvas-width="${width}"
-      data-canvas-height="${height}"
+      aria-label="Vista previa estática del flujo SIPOC con carriles verticales"
+      data-canvas-width="${canvasWidth}"
+      data-canvas-height="${canvasHeight}"
     >
       <defs>
         <marker
@@ -9617,271 +10717,186 @@ function sbBuildStaticPreview(
       </defs>
 
       <rect
-        width="${width}"
-        height="${height}"
+        width="${canvasWidth}"
+        height="${canvasHeight}"
         fill="#FFFFFF"
       />
 
-      ${header(
+      ${topHeader(
         supplierX,
+        LANE_WIDTH,
         'SUPPLIERS',
-        '#667383'
+        colors.supplier.header
       )}
 
-      ${header(
+      ${topHeader(
         inputX,
+        LANE_WIDTH,
         'INPUTS',
-        '#6F9FBC'
+        colors.input.header
       )}
 
-      ${header(
-        processX,
+      ${topHeader(
+        actorStartX,
+        processWidth,
         'PROCESO',
-        '#294B66',
-        processWidth
+        colors.actor.header
       )}
 
-      ${header(
+      ${topHeader(
         outputX,
+        LANE_WIDTH,
         'OUTPUTS',
-        '#769985'
+        colors.output.header
       )}
 
-      ${header(
+      ${topHeader(
         customerX,
+        LANE_WIDTH,
         'CUSTOMERS',
-        '#667383'
+        colors.customer.header
       )}
   `;
 
-  [
-    [
-      supplierX,
-      columnWidth,
-      '#F3F6F9',
-      '#AAB6C2'
-    ],
-    [
-      inputX,
-      columnWidth,
-      '#EEF7FC',
-      '#8FB9D0'
-    ],
-    [
-      processX,
-      processWidth,
-      '#FFFFFF',
-      '#8AA0B3'
-    ],
-    [
-      outputX,
-      columnWidth,
-      '#F1F8F3',
-      '#93B8A0'
-    ],
-    [
-      customerX,
-      columnWidth,
-      '#F3F6F9',
-      '#AAB6C2'
-    ]
-  ].forEach(
-    ([
-      x,
-      widthValue,
-      fill,
-      stroke
-    ]) => {
+
+  /*
+   * Fondos de los carriles.
+   */
+  lanes.forEach(lane => {
+    const palette =
+      colors[lane.kind] ||
+      colors.actor;
+
+    svg += `
+      <rect
+        x="${lane.x}"
+        y="${BODY_TOP}"
+        width="${lane.width}"
+        height="${bodyHeight}"
+        fill="${palette.fill}"
+        stroke="${palette.stroke}"
+      />
+    `;
+
+    if(lane.kind === 'actor'){
       svg += `
         <rect
-          x="${x}"
-          y="${headerHeight}"
-          width="${widthValue}"
-          height="${bodyHeight}"
-          fill="${fill}"
-          stroke="${stroke}"
-        />
-      `;
-    }
-  );
-
-  laneRows.forEach(
-    (actor, index) => {
-      const y =
-        headerHeight +
-        index *
-        laneHeight;
-
-      svg += `
-        <rect
-          x="${processX}"
-          y="${y}"
-          width="${processWidth}"
-          height="${laneHeight}"
-          fill="${
-            index % 2
-              ? '#F9FBFD'
-              : '#FFFFFF'
-          }"
-          stroke="#D5DEE7"
-        />
-
-        <rect
-          x="${processX}"
-          y="${y}"
-          width="86"
-          height="${laneHeight}"
-          fill="#F0F4F8"
-          stroke="#D5DEE7"
+          x="${lane.x}"
+          y="${ACTOR_HEADER_Y}"
+          width="${lane.width}"
+          height="${ACTOR_HEADER_HEIGHT}"
+          fill="#EEF3F7"
+          stroke="#B9C7D3"
         />
 
         ${sbSvgText(
-          actor?.name ||
+          lane.label ||
           'Sin actor',
-          processX,
-          y,
-          86,
-          laneHeight
+          lane.x,
+          ACTOR_HEADER_Y,
+          lane.width,
+          ACTOR_HEADER_HEIGHT
         )}
       `;
     }
-  );
+  });
 
-  suppliersInputs.forEach(
-    (item, index) => {
-      const y =
-        headerHeight +
-        16 +
-        index * 74;
+
+  /*
+   * Las líneas se dibujan antes de los nodos
+   * para que no atraviesen visualmente los textos.
+   */
+  edges.forEach(
+    (edge, index) => {
+      const source =
+        nodeById.get(
+          edge.source
+        );
+
+      const target =
+        nodeById.get(
+          edge.target
+        );
+
+      if(
+        !source ||
+        !target
+      ){
+        return;
+      }
+
+      const family =
+        edge.family ||
+        'internal';
+
+      const stroke =
+        strokeByFamily[family] ||
+        strokeByFamily.internal;
+
+      const path =
+        edgePath(
+          source,
+          target,
+          family,
+          index
+        );
 
       svg += `
-        <rect
-          x="${supplierX + 12}"
-          y="${y}"
-          width="${columnWidth - 24}"
-          height="52"
-          fill="#FFFFFF"
-          stroke="#AAB6C2"
-        />
-
-        ${sbSvgText(
-          item?.supplier,
-          supplierX + 12,
-          y,
-          columnWidth - 24,
-          52
-        )}
-
-        <rect
-          x="${inputX + 12}"
-          y="${y}"
-          width="${columnWidth - 24}"
-          height="52"
-          fill="#F6FBFE"
-          stroke="#6F9FBC"
-        />
-
-        ${sbSvgText(
-          item?.input,
-          inputX + 12,
-          y,
-          columnWidth - 24,
-          52
-        )}
-
         <path
-          d="
-            M ${supplierX + columnWidth - 12}
-              ${y + 26}
-            H ${inputX + 12}
-          "
+          d="${path}"
           fill="none"
-          stroke="#6F9FBC"
-          stroke-width="1.4"
-          marker-end="url(#sbArrowInput)"
+          stroke="${stroke}"
+          stroke-width="${
+            family ===
+              'internal'
+                ? 1.6
+                : 1.4
+          }"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+          marker-end="url(#${
+            markerByFamily[family] ||
+            markerByFamily.internal
+          })"
         />
+
+        ${edgeLabel(
+          edge,
+          source,
+          target,
+          stroke
+        )}
       `;
     }
   );
 
-  outputsCustomers.forEach(
-    (item, index) => {
-      const y =
-        headerHeight +
-        16 +
-        index * 74;
 
-      svg += `
-        <rect
-          x="${outputX + 12}"
-          y="${y}"
-          width="${columnWidth - 24}"
-          height="52"
-          fill="#F7FCF8"
-          stroke="#769985"
-        />
-
-        ${sbSvgText(
-          item?.output,
-          outputX + 12,
-          y,
-          columnWidth - 24,
-          52
-        )}
-
-        <rect
-          x="${customerX + 12}"
-          y="${y}"
-          width="${columnWidth - 24}"
-          height="52"
-          fill="#FFFFFF"
-          stroke="#AAB6C2"
-        />
-
-        ${sbSvgText(
-          item?.customer,
-          customerX + 12,
-          y,
-          columnWidth - 24,
-          52
-        )}
-
-        <path
-          d="
-            M ${outputX + columnWidth - 12}
-              ${y + 26}
-            H ${customerX + 12}
-          "
-          fill="none"
-          stroke="#769985"
-          stroke-width="1.4"
-          marker-end="url(#sbArrowOutput)"
-        />
-      `;
-    }
-  );
-
+  /*
+   * Nodos.
+   */
   nodes.forEach(node => {
-    const isDecision =
-      normalizeText(
-        node.activity?.type || ''
-      ).toLowerCase() ===
-        'decision';
+    const palette =
+      colors[node.kind] ||
+      colors.actor;
 
-    const centerX =
-      node.x + 75;
+    if(node.shape === 'decision'){
+      const centerX =
+        node.x +
+        node.width /
+        2;
 
-    const centerY =
-      node.y + 30;
+      const centerY =
+        node.y +
+        node.height /
+        2;
 
-    if(isDecision){
       svg += `
         <polygon
           points="
-            ${centerX},${centerY - 34}
-            ${centerX + 70},${centerY}
-            ${centerX},${centerY + 34}
-            ${centerX - 70},${centerY}
+            ${centerX},${node.y}
+            ${node.x + node.width},${centerY}
+            ${centerX},${node.y + node.height}
+            ${node.x},${centerY}
           "
           fill="#FFFFFF"
           stroke="#F2994A"
@@ -9893,90 +10908,50 @@ function sbBuildStaticPreview(
         <rect
           x="${node.x}"
           y="${node.y}"
-          width="150"
-          height="60"
-          fill="#FFFFFF"
-          stroke="#294B66"
-          stroke-width="1.4"
+          width="${node.width}"
+          height="${node.height}"
+          fill="${
+            node.kind ===
+              'input'
+                ? '#F6FBFE'
+                : (
+                    node.kind ===
+                      'output'
+                        ? '#F7FCF8'
+                        : '#FFFFFF'
+                  )
+          }"
+          stroke="${
+            node.kind ===
+              'activity'
+                ? '#294B66'
+                : palette.stroke
+          }"
+          stroke-width="${
+            node.kind ===
+              'activity'
+                ? 1.4
+                : 1.2
+          }"
         />
       `;
     }
 
     svg += sbSvgText(
-      node.activity?.name,
+      node.label,
       node.x,
       node.y,
-      150,
-      60
+      node.width,
+      node.height
     );
   });
 
-  nodes.forEach(node => {
-    sbArray(
-      node.activity?.next
-    ).forEach(relation => {
-      const target =
-        nodeById.get(
-          sbPreviewRelationId(
-            relation
-          )
-        ) ||
-        nodeByName.get(
-          sbPreviewRelationName(
-            relation
-          ).toLowerCase()
-        );
-
-      if(!target){
-        return;
-      }
-
-      const sourceX =
-        node.x + 150;
-
-      const sourceY =
-        node.y + 30;
-
-      const targetX =
-        target.x;
-
-      const targetY =
-        target.y + 30;
-
-      const middleX =
-        targetX > sourceX
-          ? (
-              sourceX +
-              targetX
-            ) / 2
-          : Math.max(
-              sourceX,
-              targetX
-            ) + 34;
-
-      svg += `
-        <path
-          d="
-            M ${sourceX} ${sourceY}
-            H ${middleX}
-            V ${targetY}
-            H ${targetX}
-          "
-          fill="none"
-          stroke="#294B66"
-          stroke-width="1.5"
-          marker-end="url(#sbArrowBlue)"
-        />
-      `;
-    });
-  });
 
   svg +=
     '</svg>';
 
   return svg;
 }
-
 
 function sbRefreshDataOverview(){
   const preview =
