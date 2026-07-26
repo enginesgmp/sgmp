@@ -27293,6 +27293,9 @@ function lmpValidateRestrictionStageContract_(parsed){
   return parsed;
 }
 
+window.lmpValidateRestrictionStageContract_ =
+  lmpValidateRestrictionStageContract_;
+
 
 function lmpValidateAnalysisStageContract_(
   stageKey,
@@ -37590,6 +37593,42 @@ function syncResultsSummaryViews(){
   const REVIEW_ID =
     'analysisRestrictionReview_RESTRICCIONES';
 
+  const el = function(id){
+    return document.getElementById(id);
+  };
+
+  const getExecutableActivities =
+  function(){
+    const validated =
+      typeof lmpGetValidatedAsIsEvidence_ ===
+      'function'
+        ? lmpGetValidatedAsIsEvidence_()
+        : {
+            activities:
+              safeArray(
+                state?.asis?.activities
+              )
+          };
+
+    return safeArray(
+      validated?.activities
+    ).filter(function(activity){
+      const type =
+        typeof normalizePromptAType ===
+        'function'
+          ? normalizePromptAType(
+              activity?.type
+            )
+          : String(
+              activity?.type || ''
+            )
+              .trim()
+              .toLowerCase();
+
+      return type !== 'decision';
+    });
+  };
+
   const TYPES = {
     CAPACITY_RESOURCE:
       'Capacidad o recurso',
@@ -37744,9 +37783,20 @@ function syncResultsSummaryViews(){
     candidate.validation
       .canProceed = false;
 
-    return lmpValidateRestrictionStageContract_(
-      candidate
-    );
+    if(
+      typeof window
+        .lmpValidateRestrictionStageContract_ !==
+        'function'
+    ){
+      throw new Error(
+        'No está disponible el validador de Restricciones.'
+      );
+    }
+
+    return window
+      .lmpValidateRestrictionStageContract_(
+        candidate
+      );
   }
 
 
@@ -38129,7 +38179,7 @@ function syncResultsSummaryViews(){
       );
 
     const activities =
-      lmpGetExecutableWasteActivities_();
+      getExecutableActivities();
 
     const problems =
       new Map(
