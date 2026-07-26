@@ -37458,6 +37458,2212 @@ function syncResultsSummaryViews(){
   }
 })();
 </script>
-  
+
+<style id="sgmp-analysis-restriction-review-layer">
+.analysis-restriction-review-card{
+  border-left-color:#7C3AED !important;
+  background:linear-gradient(180deg,#FFFFFF,#FCFAFF) !important;
+}
+
+.analysis-restriction-item{
+  overflow:visible !important;
+}
+
+.analysis-restriction-item > .analysis-problem-summary{
+  background:linear-gradient(135deg,#F5F0FF,#FFFFFF);
+}
+
+.analysis-restriction-item[open] > .analysis-problem-summary{
+  background:linear-gradient(135deg,#EEE7FF,#FFFFFF);
+}
+
+.analysis-restriction-primary-badge{
+  display:inline-flex;
+  align-items:center;
+  min-height:27px;
+  padding:5px 9px;
+  border:1px solid rgba(242,153,74,.28);
+  border-radius:999px;
+  background:rgba(242,153,74,.12);
+  color:#8A570D;
+  font-size:.7rem;
+  font-weight:900;
+  line-height:1.1;
+  white-space:nowrap;
+}
+
+.analysis-restriction-primary-control{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  min-height:40px;
+  padding:10px 12px;
+  border:1px solid rgba(11,46,89,.14);
+  border-radius:12px;
+  background:#FFFFFF;
+  color:#0B2E59;
+  font-size:.8rem;
+  font-weight:800;
+  line-height:1.3;
+  cursor:pointer;
+}
+
+.analysis-restriction-primary-control input{
+  flex:0 0 auto;
+  width:16px !important;
+  height:16px !important;
+  min-height:auto !important;
+  margin:1px 0 0;
+  accent-color:#7C3AED;
+}
+
+.analysis-restriction-activity-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+  max-height:220px;
+  overflow:auto;
+  padding:8px;
+  border:1px solid rgba(11,46,89,.14);
+  border-radius:12px;
+  background:#F8FAFC;
+}
+
+.analysis-restriction-activity-option{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  padding:8px 9px;
+  border-radius:9px;
+  background:#FFFFFF;
+  color:#294866;
+  font-size:.75rem;
+  font-weight:750;
+  line-height:1.3;
+  cursor:pointer;
+}
+
+.analysis-restriction-activity-option:hover{
+  background:#EEF4FF;
+}
+
+.analysis-restriction-activity-option input{
+  flex:0 0 auto;
+  width:16px !important;
+  height:16px !important;
+  min-height:auto !important;
+  margin:1px 0 0;
+  accent-color:#1D5FD0;
+}
+
+.analysis-restriction-activity-option strong{
+  margin-right:4px;
+  color:#0B2E59;
+  font-weight:900;
+}
+
+.analysis-restriction-item
+.analysis-problem-grid textarea{
+  min-height:82px !important;
+  max-height:210px !important;
+}
+
+@media(max-width:760px){
+  .analysis-restriction-activity-list{
+    grid-template-columns:1fr;
+  }
+}
+</style>
+
+<script>
+(function(){
+  if(window.__LMP_RESTRICTION_REVIEW_V1__){
+    return;
+  }
+
+  window.__LMP_RESTRICTION_REVIEW_V1__ =
+    true;
+
+  const STAGE =
+    'RESTRICCIONES';
+
+  const REVIEW_ID =
+    'analysisRestrictionReview_RESTRICCIONES';
+
+  const TYPES = {
+    CAPACITY_RESOURCE:
+      'Capacidad o recurso',
+
+    POLICY_RULE:
+      'Política, regla o aprobación',
+
+    SYSTEM_TECHNOLOGY:
+      'Sistema o tecnología',
+
+    INFORMATION_COORDINATION:
+      'Información o coordinación',
+
+    EXTERNAL_DEPENDENCY:
+      'Dependencia externa',
+
+    OTHER:
+      'Otra restricción demostrable'
+  };
+
+  const clone = function(value){
+    return JSON.parse(
+      JSON.stringify(value)
+    );
+  };
+
+  const review = function(){
+    return el(REVIEW_ID);
+  };
+
+  const cards = function(){
+    return Array.from(
+      review()?.querySelectorAll(
+        '[data-restriction-id]'
+      ) || []
+    );
+  };
+
+  const find = function(id){
+    const restrictionId =
+      String(id || '').trim();
+
+    return cards().find(function(card){
+      return card.dataset.restrictionId ===
+        restrictionId;
+    }) || null;
+  };
+
+  const typeLabel = function(value){
+    return TYPES[
+      String(value || '')
+        .trim()
+        .toUpperCase()
+    ] || 'Sin definir';
+  };
+
+
+  function ensurePending(){
+    window.__LMP_ANALYSIS_PENDING__ =
+      window.__LMP_ANALYSIS_PENDING__ ||
+      Object.create(null);
+
+    if(
+      window.__LMP_ANALYSIS_PENDING__[
+        STAGE
+      ]
+    ){
+      return window
+        .__LMP_ANALYSIS_PENDING__[
+          STAGE
+        ];
+    }
+
+    const official =
+      state.analysisStages
+        ?.results
+        ?.[STAGE];
+
+    if(
+      !official ||
+      typeof official !== 'object' ||
+      Array.isArray(official) ||
+      !Object.keys(official).length
+    ){
+      throw new Error(
+        'No existe un resultado oficial de Restricciones para editar.'
+      );
+    }
+
+    const parsed =
+      clone(official);
+
+    const raw =
+      JSON.stringify(
+        parsed,
+        null,
+        2
+      );
+
+    window.__LMP_ANALYSIS_PENDING__[
+      STAGE
+    ] = {
+      raw,
+      parsed
+    };
+
+    const response =
+      el(
+        'analysisResponse_' +
+        STAGE
+      );
+
+    if(response){
+      response.value =
+        raw;
+    }
+
+    const save =
+      el(
+        'btnSaveAnalysisStage_' +
+        STAGE
+      );
+
+    if(save){
+      save.disabled =
+        false;
+    }
+
+    return window
+      .__LMP_ANALYSIS_PENDING__[
+        STAGE
+      ];
+  }
+
+
+  function revalidate(candidate){
+    candidate.validation =
+      (
+        candidate.validation &&
+        typeof candidate.validation ===
+          'object' &&
+        !Array.isArray(
+          candidate.validation
+        )
+      )
+        ? candidate.validation
+        : {};
+
+    candidate.validation
+      .blockingGaps = [];
+
+    candidate.validation
+      .canProceed = false;
+
+    return lmpValidateRestrictionStageContract_(
+      candidate
+    );
+  }
+
+
+  function readCard(card){
+    const value = function(name){
+      return String(
+        card.querySelector(
+          '[data-restriction-field="' +
+          name +
+          '"]'
+        )?.value || ''
+      ).trim();
+    };
+
+    const relatedActivityIds =
+      Array.from(
+        card.querySelectorAll(
+          '[data-restriction-activity]:checked'
+        )
+      )
+        .map(function(input){
+          return String(
+            input.value || ''
+          ).trim();
+        })
+        .filter(Boolean);
+
+    const relatedProblemIds =
+      JSON.parse(
+        card.dataset
+          .relatedProblemIds ||
+        '[]'
+      );
+
+    const item = {
+      id:
+        card.dataset
+          .restrictionId,
+
+      name:
+        value('name'),
+
+      constraintType:
+        value(
+          'constraintType'
+        ).toUpperCase(),
+
+      relatedActivityIds,
+
+      relatedProblemIds,
+
+      limitingEffect:
+        value(
+          'limitingEffect'
+        ),
+
+      evidence:
+        value('evidence')
+    };
+
+    const missing = [];
+
+    if(!item.name){
+      missing.push(
+        'nombre'
+      );
+    }
+
+    if(!item.constraintType){
+      missing.push(
+        'tipo'
+      );
+    }
+
+    if(
+      !item.relatedActivityIds
+        .length
+    ){
+      missing.push(
+        'actividades relacionadas'
+      );
+    }
+
+    if(!item.limitingEffect){
+      missing.push(
+        'efecto limitante'
+      );
+    }
+
+    if(!item.evidence){
+      missing.push(
+        'evidencia'
+      );
+    }
+
+    const isPrimary =
+      !!card.querySelector(
+        '[data-restriction-primary]'
+      )?.checked;
+
+    const snapshot =
+      JSON.stringify({
+        ...item,
+        isPrimary
+      });
+
+    return {
+      item,
+      missing,
+      isPrimary,
+      isComplete:
+        !missing.length,
+      snapshot
+    };
+  }
+
+
+  function updateOutput(parsed){
+    const result =
+      el(
+        'analysisResult_' +
+        STAGE
+      );
+
+    if(result){
+      result.value =
+        JSON.stringify(
+          parsed,
+          null,
+          2
+        );
+    }
+
+    const save =
+      el(
+        'btnSaveAnalysisStage_' +
+        STAGE
+      );
+
+    if(save){
+      save.disabled =
+        false;
+    }
+
+    if(
+      typeof window
+        .renderAnalysisScreenAccumulated ===
+      'function'
+    ){
+      window
+        .renderAnalysisScreenAccumulated(
+          STAGE
+        );
+    }
+  }
+
+
+  function refresh(card){
+    const data =
+      readCard(card);
+
+    const saved = !!(
+      card.dataset.savedSnapshot ===
+        data.snapshot &&
+      data.isComplete
+    );
+
+    card.classList.remove(
+      'is-saved',
+      'has-pending-changes',
+      'is-incomplete',
+      'is-complete'
+    );
+
+    card.classList.add(
+      data.isComplete
+        ? 'is-complete'
+        : 'is-incomplete'
+    );
+
+    if(saved){
+      card.classList.add(
+        'is-saved'
+      );
+
+    }else if(data.isComplete){
+      card.classList.add(
+        'has-pending-changes'
+      );
+    }
+
+    const title =
+      card.querySelector(
+        '[data-restriction-title]'
+      );
+
+    const subtitle =
+      card.querySelector(
+        '[data-restriction-subtitle]'
+      );
+
+    if(title){
+      title.textContent =
+        data.item.name ||
+        data.item.id;
+    }
+
+    if(subtitle){
+      subtitle.textContent =
+        typeLabel(
+          data.item.constraintType
+        ) +
+        ' · ' +
+        data.item
+          .relatedActivityIds
+          .length +
+        (
+          data.item
+            .relatedActivityIds
+            .length === 1
+            ? ' actividad'
+            : ' actividades'
+        );
+    }
+
+    const primary =
+      card.querySelector(
+        '[data-restriction-primary-badge]'
+      );
+
+    if(primary){
+      primary.hidden =
+        !data.isPrimary;
+    }
+
+    const stateBadge =
+      card.querySelector(
+        '[data-restriction-state]'
+      );
+
+    const message =
+      card.querySelector(
+        '[data-restriction-message]'
+      );
+
+    const button =
+      card.querySelector(
+        '[data-restriction-save]'
+      );
+
+    if(!data.isComplete){
+      stateBadge.textContent =
+        'Incompleta';
+
+      message.textContent =
+        'Completa ' +
+        data.missing.join(', ') +
+        '.';
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        'Guardar restricción';
+
+    }else if(saved){
+      stateBadge.textContent =
+        'Guardada';
+
+      message.textContent =
+        'La restricción está guardada dentro de la revisión.';
+
+      button.disabled =
+        true;
+
+      button.textContent =
+        'Restricción guardada';
+
+    }else{
+      stateBadge.textContent =
+        'Cambios pendientes';
+
+      message.textContent =
+        'Guarda la restricción para incorporar sus cambios.';
+
+      button.disabled =
+        false;
+
+      button.textContent =
+        'Guardar restricción';
+    }
+
+    refreshCounter();
+
+    return {
+      ...data,
+      isSaved:
+        saved,
+
+      hasPendingChanges:
+        data.isComplete &&
+        !saved
+    };
+  }
+
+
+  function refreshAll(){
+    cards().forEach(
+      refresh
+    );
+  }
+
+
+  function refreshCounter(){
+    const counter =
+      review()?.querySelector(
+        '.analysis-problem-review-counter'
+      );
+
+    if(!counter){
+      return;
+    }
+
+    const list =
+      cards();
+
+    const saved =
+      list.filter(function(card){
+        return card.classList
+          .contains(
+            'is-saved'
+          );
+      }).length;
+
+    counter.textContent =
+      list.length
+        ? (
+            saved +
+            ' de ' +
+            list.length +
+            ' guardadas'
+          )
+        : '0 restricciones';
+  }
+
+
+  function findPrimaryId(){
+    const selected =
+      review()?.querySelector(
+        '[data-restriction-primary]:checked'
+      )?.closest(
+        '[data-restriction-id]'
+      );
+
+    return selected
+      ?.dataset
+      ?.restrictionId ||
+      '';
+  }
+
+
+  function render(
+    parsed,
+    restored
+  ){
+    const host =
+      document.querySelector(
+        '#analisis_restricciones .cards'
+      );
+
+    if(!host){
+      return null;
+    }
+
+    el(REVIEW_ID)?.remove();
+
+    const restrictions =
+      safeArray(
+        parsed?.restrictions
+      );
+
+    const activities =
+      lmpGetExecutableWasteActivities_();
+
+    const problems =
+      new Map(
+        safeArray(
+          state.analysisStages
+            ?.results
+            ?.PROBLEMAS
+            ?.problems
+        ).map(function(problem){
+          return [
+            String(
+              problem?.id || ''
+            ).trim(),
+
+            String(
+              problem?.name || ''
+            ).trim()
+          ];
+        })
+      );
+
+    const card =
+      document.createElement(
+        'article'
+      );
+
+    card.id =
+      REVIEW_ID;
+
+    card.className =
+      'card ' +
+      'analysis-problem-review-card ' +
+      'analysis-restriction-review-card';
+
+    card.innerHTML = `
+      <div class="analysis-problem-review-head">
+        <div>
+          <h3>
+            Revisión de restricciones TOC
+          </h3>
+
+          <p>
+            Revisa nombre, tipo, actividades relacionadas,
+            efecto limitante y evidencia. Marca una sola
+            restricción primaria cuando pueda demostrarse.
+          </p>
+        </div>
+
+        <div class="analysis-problem-head-actions">
+          <div class="analysis-problem-review-counter">
+            0 de ${restrictions.length} guardadas
+          </div>
+
+          <button
+            class="analysis-problem-add-button"
+            type="button"
+            data-restriction-add
+          >
+            Agregar restricción
+          </button>
+        </div>
+      </div>
+
+      <div
+        class="analysis-problem-list"
+        data-restriction-list
+      ></div>
+    `;
+
+    const responseCard =
+      host.querySelector(
+        '.analysis-response-card'
+      );
+
+    if(responseCard){
+      responseCard.after(
+        card
+      );
+
+    }else{
+      host.appendChild(
+        card
+      );
+    }
+
+    card.querySelector(
+      '[data-restriction-add]'
+    ).onclick = function(){
+      window
+        .lmpAddRestrictionFinding_();
+    };
+
+    const list =
+      card.querySelector(
+        '[data-restriction-list]'
+      );
+
+    if(!restrictions.length){
+      list.innerHTML = `
+        <div class="analysis-problem-empty">
+          El análisis no contiene restricciones demostrables.
+          primaryConstraintId permanece en null.
+        </div>
+      `;
+
+      return card;
+    }
+
+    restrictions.forEach(
+      function(
+        restriction,
+        index
+      ){
+        const id =
+          String(
+            restriction?.id ||
+            (
+              'R-' +
+              String(
+                index + 1
+              ).padStart(
+                3,
+                '0'
+              )
+            )
+          ).trim();
+
+        const name =
+          String(
+            restriction?.name ||
+            ''
+          ).trim();
+
+        const constraintType =
+          String(
+            restriction
+              ?.constraintType ||
+            ''
+          )
+            .trim()
+            .toUpperCase();
+
+        const activityIds =
+          safeArray(
+            restriction
+              ?.relatedActivityIds
+          )
+            .map(function(value){
+              return String(
+                value || ''
+              ).trim();
+            })
+            .filter(Boolean);
+
+        const problemIds =
+          safeArray(
+            restriction
+              ?.relatedProblemIds
+          )
+            .map(function(value){
+              return String(
+                value || ''
+              ).trim();
+            })
+            .filter(Boolean);
+
+        const isPrimary =
+          String(
+            parsed
+              ?.primaryConstraintId ||
+            ''
+          ).trim() === id;
+
+        const problemText =
+          problemIds.length
+            ? problemIds
+                .map(function(problemId){
+                  const problemName =
+                    problems.get(
+                      problemId
+                    ) || '';
+
+                  return problemName
+                    ? (
+                        problemId +
+                        ' · ' +
+                        problemName
+                      )
+                    : problemId;
+                })
+                .join(' | ')
+            : 'Sin problemas vinculados';
+
+        const options =
+          Object.entries(
+            TYPES
+          )
+            .map(function(entry){
+              const value =
+                entry[0];
+
+              const label =
+                entry[1];
+
+              return `
+                <option
+                  value="${escapeHtml(
+                    value
+                  )}"
+                  ${
+                    value ===
+                    constraintType
+                      ? 'selected'
+                      : ''
+                  }
+                >
+                  ${escapeHtml(label)}
+                </option>
+              `;
+            })
+            .join('');
+
+        const activityChecks =
+          activities
+            .map(function(activity){
+              const activityId =
+                String(
+                  activity?.id ||
+                  ''
+                ).trim();
+
+              const activityName =
+                String(
+                  activity?.name ||
+                  ''
+                ).trim();
+
+              return `
+                <label
+                  class="analysis-restriction-activity-option"
+                >
+                  <input
+                    type="checkbox"
+                    data-restriction-activity
+                    value="${escapeHtml(
+                      activityId
+                    )}"
+                    ${
+                      activityIds.includes(
+                        activityId
+                      )
+                        ? 'checked'
+                        : ''
+                    }
+                  >
+
+                  <span>
+                    <strong>
+                      ${escapeHtml(
+                        activityId
+                      )}
+                    </strong>
+
+                    ${escapeHtml(
+                      activityName ||
+                      'Actividad sin nombre'
+                    )}
+                  </span>
+                </label>
+              `;
+            })
+            .join('');
+
+        const item =
+          document.createElement(
+            'details'
+          );
+
+        item.className =
+          'analysis-problem-item ' +
+          'analysis-restriction-item';
+
+        item.dataset.restrictionId =
+          id;
+
+        item.dataset.relatedProblemIds =
+          JSON.stringify(
+            problemIds
+          );
+
+        item.open =
+          index === 0 &&
+          restored !== true;
+
+        item.innerHTML = `
+          <summary class="analysis-problem-summary">
+            <div class="analysis-problem-summary-main">
+              <strong data-restriction-title>
+                ${escapeHtml(name || id)}
+              </strong>
+
+              <small data-restriction-subtitle>
+                ${escapeHtml(
+                  typeLabel(
+                    constraintType
+                  ) +
+                  ' · ' +
+                  activityIds.length +
+                  (
+                    activityIds.length === 1
+                      ? ' actividad'
+                      : ' actividades'
+                  )
+                )}
+              </small>
+            </div>
+
+            <div class="analysis-problem-summary-status">
+              <span class="analysis-problem-chip">
+                ${escapeHtml(id)}
+              </span>
+
+              <span
+                class="analysis-restriction-primary-badge"
+                data-restriction-primary-badge
+                ${isPrimary ? '' : 'hidden'}
+              >
+                Primaria
+              </span>
+
+              <span
+                class="analysis-problem-state"
+                data-restriction-state
+              >
+                Requiere revisión
+              </span>
+            </div>
+          </summary>
+
+          <div class="analysis-problem-body">
+            <div class="analysis-problem-reference">
+              <span>
+                <strong>ID:</strong>
+                ${escapeHtml(id)}
+              </span>
+
+              <span>
+                <strong>Problemas vinculados:</strong>
+                ${escapeHtml(problemText)}
+              </span>
+            </div>
+
+            <div class="analysis-problem-grid">
+              <div class="field analysis-problem-wide">
+                <label>
+                  Nombre de la restricción
+                </label>
+
+                <input
+                  type="text"
+                  data-restriction-field="name"
+                  value="${escapeHtml(name)}"
+                >
+              </div>
+
+              <div class="field">
+                <label>
+                  Tipo de restricción
+                </label>
+
+                <select
+                  data-restriction-field="constraintType"
+                >
+                  <option value="">
+                    Seleccionar tipo
+                  </option>
+
+                  ${options}
+                </select>
+              </div>
+
+              <div class="field">
+                <label>
+                  Restricción primaria
+                </label>
+
+                <label
+                  class="analysis-restriction-primary-control"
+                >
+                  <input
+                    type="radio"
+                    name="analysisRestrictionPrimary"
+                    data-restriction-primary
+                    ${isPrimary ? 'checked' : ''}
+                  >
+
+                  <span>
+                    Marcar como restricción primaria actual
+                  </span>
+                </label>
+
+                <small class="analysis-problem-field-note">
+                  Puede quedar sin selección cuando la evidencia
+                  no permita definirla.
+                </small>
+              </div>
+
+              <div class="field analysis-problem-wide">
+                <label>
+                  Actividades relacionadas
+                </label>
+
+                <div class="analysis-restriction-activity-list">
+                  ${activityChecks}
+                </div>
+              </div>
+
+              <div class="field analysis-problem-wide">
+                <label>
+                  Efecto limitante
+                </label>
+
+                <textarea
+                  data-restriction-field="limitingEffect"
+                >${escapeHtml(
+                  String(
+                    restriction
+                      ?.limitingEffect ||
+                    ''
+                  ).trim()
+                )}</textarea>
+              </div>
+
+              <div class="field analysis-problem-wide">
+                <label>
+                  Evidencia
+                </label>
+
+                <textarea
+                  data-restriction-field="evidence"
+                >${escapeHtml(
+                  String(
+                    restriction
+                      ?.evidence ||
+                    ''
+                  ).trim()
+                )}</textarea>
+              </div>
+            </div>
+
+            <div class="analysis-problem-actions">
+              <div
+                class="analysis-problem-save-message"
+                data-restriction-message
+              ></div>
+
+              <button
+                class="analysis-problem-delete-button"
+                type="button"
+                data-restriction-delete
+              >
+                Eliminar
+              </button>
+
+              <button
+                class="analysis-problem-save-button"
+                type="button"
+                data-restriction-save
+              >
+                Guardar restricción
+              </button>
+            </div>
+          </div>
+        `;
+
+        list.appendChild(
+          item
+        );
+
+        item.querySelectorAll(
+          '[data-restriction-field], ' +
+          '[data-restriction-activity]'
+        ).forEach(function(input){
+          input.addEventListener(
+            (
+              input.tagName ===
+                'SELECT' ||
+              input.type ===
+                'checkbox'
+            )
+              ? 'change'
+              : 'input',
+
+            function(){
+              ensurePending();
+              refresh(item);
+            }
+          );
+        });
+
+        item.querySelector(
+          '[data-restriction-primary]'
+        ).addEventListener(
+          'change',
+          function(){
+            ensurePending();
+            refreshAll();
+          }
+        );
+
+        item.querySelector(
+          '[data-restriction-save]'
+        ).onclick = function(event){
+          event.preventDefault();
+
+          window
+            .lmpSaveRestrictionFinding_(
+              id
+            );
+        };
+
+        item.querySelector(
+          '[data-restriction-delete]'
+        ).onclick = function(event){
+          event.preventDefault();
+
+          window
+            .lmpDeleteRestrictionFinding_(
+              id
+            );
+        };
+
+        const initial =
+          readCard(item);
+
+        if(
+          restored === true &&
+          initial.isComplete
+        ){
+          item.dataset.savedSnapshot =
+            initial.snapshot;
+        }
+
+        refresh(item);
+      }
+    );
+
+    const response =
+      el(
+        'analysisResponse_' +
+        STAGE
+      );
+
+    if(
+      response &&
+      response.dataset
+        .restrictionCleanup !==
+        '1'
+    ){
+      response.addEventListener(
+        'input',
+        function(){
+          el(REVIEW_ID)?.remove();
+        }
+      );
+
+      response.dataset
+        .restrictionCleanup =
+          '1';
+    }
+
+    return card;
+  }
+
+
+  window.lmpRenderRestrictionReview_ =
+  function(parsed, options){
+    return render(
+      parsed,
+      options?.restored === true
+    );
+  };
+
+
+  window.lmpSaveRestrictionFinding_ =
+  function(id, options){
+    const settings =
+      Object.assign(
+        {
+          silent:false,
+          closeAfterSave:true,
+          scrollOnError:true
+        },
+        options || {}
+      );
+
+    const card =
+      find(id);
+
+    try{
+      if(!card){
+        throw new Error(
+          'No se encontró la restricción ' +
+          id +
+          '.'
+        );
+      }
+
+      const pending =
+        ensurePending();
+
+      const index =
+        safeArray(
+          pending.parsed
+            ?.restrictions
+        ).findIndex(
+          function(item){
+            return String(
+              item?.id || ''
+            ).trim() === id;
+          }
+        );
+
+      if(index < 0){
+        throw new Error(
+          'La restricción no existe en el JSON pendiente.'
+        );
+      }
+
+      const data =
+        readCard(card);
+
+      if(!data.isComplete){
+        throw new Error(
+          'Completa ' +
+          data.missing.join(', ') +
+          '.'
+        );
+      }
+
+      const candidate =
+        clone(
+          pending.parsed
+        );
+
+      candidate.restrictions[
+        index
+      ] = data.item;
+
+      candidate.primaryConstraintId =
+        findPrimaryId() ||
+        null;
+
+      const validated =
+        revalidate(
+          candidate
+        );
+
+      pending.parsed =
+        clone(validated);
+
+      card.dataset.savedSnapshot =
+        data.snapshot;
+
+      updateOutput(
+        validated
+      );
+
+      refreshAll();
+
+      if(
+        settings.closeAfterSave
+      ){
+        card.open =
+          false;
+      }
+
+      if(
+        !settings.silent &&
+        typeof showMsg ===
+          'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'ok',
+
+          'Restricción ' +
+          id +
+          ' guardada dentro de la revisión. ' +
+          'Guarda la etapa completa para incorporarla al respaldo.'
+        );
+      }
+
+      return true;
+
+    }catch(error){
+      if(card){
+        card.open =
+          true;
+
+        if(
+          settings.scrollOnError
+        ){
+          card.scrollIntoView({
+            behavior:
+              'smooth',
+
+            block:
+              'center'
+          });
+        }
+      }
+
+      if(
+        !settings.silent &&
+        typeof showMsg ===
+          'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'err',
+
+          'No fue posible guardar la restricción. Detalle: ' +
+          error.message
+        );
+      }
+
+      return false;
+    }
+  };
+
+
+  window.lmpAddRestrictionFinding_ =
+  function(){
+    try{
+      const pending =
+        ensurePending();
+
+      const candidate =
+        clone(
+          pending.parsed
+        );
+
+      candidate.restrictions =
+        safeArray(
+          candidate.restrictions
+        );
+
+      if(
+        candidate.restrictions
+          .length >= 5
+      ){
+        throw new Error(
+          'La etapa admite un máximo de 5 restricciones.'
+        );
+      }
+
+      const id =
+        'R-' +
+        String(
+          candidate.restrictions
+            .length + 1
+        ).padStart(
+          3,
+          '0'
+        );
+
+      candidate.restrictions
+        .push({
+          id,
+          name:'',
+          constraintType:'',
+          relatedActivityIds:[],
+          relatedProblemIds:[],
+          limitingEffect:'',
+          evidence:''
+        });
+
+      candidate.primaryConstraintId =
+        findPrimaryId() ||
+        candidate.primaryConstraintId ||
+        null;
+
+      const validated =
+        revalidate(
+          candidate
+        );
+
+      pending.parsed =
+        clone(validated);
+
+      updateOutput(
+        validated
+      );
+
+      render(
+        validated,
+        false
+      );
+
+      const added =
+        find(id);
+
+      if(added){
+        added.open =
+          true;
+
+        added.scrollIntoView({
+          behavior:
+            'smooth',
+
+          block:
+            'center'
+        });
+      }
+
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'warn',
+
+          'Se agregó la restricción ' +
+          id +
+          '. Completa sus campos antes de guardar la etapa.'
+        );
+      }
+
+      return true;
+
+    }catch(error){
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'err',
+
+          'No fue posible agregar la restricción. Detalle: ' +
+          error.message
+        );
+      }
+
+      return false;
+    }
+  };
+
+
+  window.lmpDeleteRestrictionFinding_ =
+  function(id){
+    if(
+      !window.confirm(
+        '¿Eliminar la restricción ' +
+        id +
+        '? Los IDs posteriores se reorganizarán.'
+      )
+    ){
+      return false;
+    }
+
+    try{
+      const pending =
+        ensurePending();
+
+      const candidate =
+        clone(
+          pending.parsed
+        );
+
+      const oldPrimary =
+        findPrimaryId() ||
+        candidate.primaryConstraintId ||
+        '';
+
+      const list =
+        safeArray(
+          candidate.restrictions
+        );
+
+      const index =
+        list.findIndex(
+          function(item){
+            return String(
+              item?.id || ''
+            ).trim() === id;
+          }
+        );
+
+      if(index < 0){
+        throw new Error(
+          'La restricción no existe en el JSON pendiente.'
+        );
+      }
+
+      list.splice(
+        index,
+        1
+      );
+
+      let nextPrimary =
+        null;
+
+      list.forEach(
+        function(item, itemIndex){
+          const oldId =
+            String(
+              item.id || ''
+            ).trim();
+
+          const newId =
+            'R-' +
+            String(
+              itemIndex + 1
+            ).padStart(
+              3,
+              '0'
+            );
+
+          item.id =
+            newId;
+
+          if(
+            oldPrimary ===
+            oldId
+          ){
+            nextPrimary =
+              newId;
+          }
+        }
+      );
+
+      candidate.restrictions =
+        list;
+
+      candidate.primaryConstraintId =
+        oldPrimary === id
+          ? null
+          : nextPrimary;
+
+      const validated =
+        revalidate(
+          candidate
+        );
+
+      pending.parsed =
+        clone(validated);
+
+      updateOutput(
+        validated
+      );
+
+      render(
+        validated,
+        false
+      );
+
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'ok',
+
+          'Restricción eliminada. Los IDs y la restricción primaria fueron recalculados.'
+        );
+      }
+
+      return true;
+
+    }catch(error){
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'err',
+
+          'No fue posible eliminar la restricción. Detalle: ' +
+          error.message
+        );
+      }
+
+      return false;
+    }
+  };
+
+
+  window.lmpSavePendingRestrictionFindings_ =
+  function(options){
+    const settings =
+      Object.assign(
+        {
+          closeAfterSave:true,
+          scrollOnError:true
+        },
+        options || {}
+      );
+
+    const pending =
+      window.__LMP_ANALYSIS_PENDING__
+        ?.[STAGE];
+
+    if(!pending){
+      return {
+        ok:false,
+        savedCount:0,
+        error:
+          'Primero valida el JSON de Restricciones.'
+      };
+    }
+
+    const reviewCards =
+      cards();
+
+    const expected =
+      safeArray(
+        pending.parsed
+          ?.restrictions
+      );
+
+    if(
+      reviewCards.length !==
+      expected.length
+    ){
+      return {
+        ok:false,
+        savedCount:0,
+        error:
+          'La cantidad de tarjetas no coincide con el JSON pendiente.'
+      };
+    }
+
+    const current =
+      reviewCards.map(
+        function(card){
+          return {
+            card,
+            data:
+              readCard(card)
+          };
+        }
+      );
+
+    const incomplete =
+      current.find(
+        function(entry){
+          return !entry
+            .data
+            .isComplete;
+        }
+      );
+
+    if(incomplete){
+      incomplete.card.open =
+        true;
+
+      if(
+        settings.scrollOnError
+      ){
+        incomplete.card
+          .scrollIntoView({
+            behavior:
+              'smooth',
+
+            block:
+              'center'
+          });
+      }
+
+      return {
+        ok:false,
+        savedCount:0,
+        error:
+          'La restricción ' +
+          incomplete.data.item.id +
+          ' está incompleta.'
+      };
+    }
+
+    try{
+      const candidate =
+        clone(
+          pending.parsed
+        );
+
+      candidate.restrictions =
+        current.map(
+          function(entry){
+            return entry
+              .data
+              .item;
+          }
+        );
+
+      candidate.primaryConstraintId =
+        findPrimaryId() ||
+        null;
+
+      const validated =
+        revalidate(
+          candidate
+        );
+
+      if(
+        validated.validation
+          ?.canProceed !== true
+      ){
+        throw new Error(
+          'Restricciones contiene brechas bloqueantes.'
+        );
+      }
+
+      pending.parsed =
+        clone(validated);
+
+      current.forEach(
+        function(entry){
+          entry.card.dataset
+            .savedSnapshot =
+              entry.data.snapshot;
+
+          if(
+            settings.closeAfterSave
+          ){
+            entry.card.open =
+              false;
+          }
+        }
+      );
+
+      updateOutput(
+        validated
+      );
+
+      refreshAll();
+
+      return {
+        ok:true,
+        savedCount:
+          current.length,
+        error:''
+      };
+
+    }catch(error){
+      return {
+        ok:false,
+        savedCount:0,
+        error:
+          error.message
+      };
+    }
+  };
+
+
+  const baseProcess =
+    window
+      .processAnalysisScreenStage;
+
+  window.processAnalysisScreenStage =
+  function(stageKey){
+    const result =
+      baseProcess(
+        stageKey
+      );
+
+    const stage =
+      String(
+        stageKey || ''
+      )
+        .trim()
+        .toUpperCase();
+
+    if(
+      result === true &&
+      stage === STAGE
+    ){
+      render(
+        window
+          .__LMP_ANALYSIS_PENDING__[
+            STAGE
+          ].parsed,
+
+        false
+      );
+
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_' +
+          STAGE,
+
+          'ok',
+
+          'El JSON de Restricciones fue validado. Revisa y guarda cada tarjeta antes de continuar.'
+        );
+      }
+    }
+
+    return result;
+  };
+
+
+  const baseSave =
+    window
+      .saveValidatedAnalysisStage;
+
+  window.saveValidatedAnalysisStage =
+  function(stageKey){
+    const stage =
+      String(
+        stageKey || ''
+      )
+        .trim()
+        .toUpperCase();
+
+    if(stage === STAGE){
+      const result =
+        window
+          .lmpSavePendingRestrictionFindings_({
+            closeAfterSave:
+              true,
+
+            scrollOnError:
+              true
+          });
+
+      if(
+        !result ||
+        result.ok !== true
+      ){
+        if(
+          typeof showMsg ===
+          'function'
+        ){
+          showMsg(
+            'analysisMsg_' +
+            STAGE,
+
+            'err',
+
+            'No fue posible guardar Restricciones. Detalle: ' +
+            (
+              result?.error ||
+              'Error no identificado.'
+            )
+          );
+        }
+
+        return false;
+      }
+    }
+
+    return baseSave(
+      stageKey
+    );
+  };
+
+
+  const baseRenderState =
+    window.renderAnalysisFromState ||
+    renderAnalysisFromState;
+
+  const restoreState =
+  function(){
+    const result =
+      baseRenderState();
+
+    el(REVIEW_ID)?.remove();
+
+    if(
+      window
+        .__LMP_ANALYSIS_PENDING__
+    ){
+      delete window
+        .__LMP_ANALYSIS_PENDING__[
+          STAGE
+        ];
+    }
+
+    const official =
+      state.analysisStages
+        ?.results
+        ?.[STAGE];
+
+    if(
+      official &&
+      typeof official ===
+        'object' &&
+      !Array.isArray(
+        official
+      ) &&
+      Object.keys(
+        official
+      ).length
+    ){
+      const raw =
+        JSON.stringify(
+          official,
+          null,
+          2
+        );
+
+      const response =
+        el(
+          'analysisResponse_' +
+          STAGE
+        );
+
+      const output =
+        el(
+          'analysisResult_' +
+          STAGE
+        );
+
+      if(response){
+        response.value =
+          raw;
+      }
+
+      if(output){
+        output.value =
+          raw;
+      }
+
+      render(
+        clone(official),
+        true
+      );
+
+      const save =
+        el(
+          'btnSaveAnalysisStage_' +
+          STAGE
+        );
+
+      if(save){
+        save.disabled =
+          false;
+      }
+    }
+
+    return result;
+  };
+
+  window.renderAnalysisFromState =
+    restoreState;
+
+  renderAnalysisFromState =
+    restoreState;
+
+
+  const baseRun =
+    window
+      .runAnalysisScreenStage;
+
+  window.runAnalysisScreenStage =
+  async function(stageKey){
+    const stage =
+      String(
+        stageKey || ''
+      )
+        .trim()
+        .toUpperCase();
+
+    if(stage === STAGE){
+      el(REVIEW_ID)?.remove();
+    }
+
+    const result =
+      await baseRun(
+        stageKey
+      );
+
+    if(
+      stage === STAGE &&
+      !String(
+        result || ''
+      ).trim()
+    ){
+      const official =
+        state.analysisStages
+          ?.results
+          ?.[STAGE];
+
+      if(official){
+        const raw =
+          JSON.stringify(
+            official,
+            null,
+            2
+          );
+
+        const response =
+          el(
+            'analysisResponse_' +
+            STAGE
+          );
+
+        const output =
+          el(
+            'analysisResult_' +
+            STAGE
+          );
+
+        if(response){
+          response.value =
+            raw;
+        }
+
+        if(output){
+          output.value =
+            raw;
+        }
+
+        render(
+          clone(official),
+          true
+        );
+      }
+    }
+
+    return result;
+  };
+
+
+  const baseDownload =
+    window.downloadBackup ||
+    downloadBackup;
+
+  window.downloadBackup =
+  function(){
+    if(
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.[STAGE]
+    ){
+      const saved =
+        window
+          .saveValidatedAnalysisStage(
+            STAGE
+          );
+
+      if(saved !== true){
+        if(
+          typeof showMsg ===
+          'function'
+        ){
+          showMsg(
+            'analysisMsg_' +
+            STAGE,
+
+            'err',
+
+            'El respaldo no se descargó porque Restricciones contiene cambios pendientes o campos incompletos.'
+          );
+        }
+
+        return false;
+      }
+    }
+
+    return baseDownload();
+  };
+
+  downloadBackup =
+    window.downloadBackup;
+
+
+  const baseAssemble =
+    window
+      .sgmpAssembleStagedAnalysisPayload;
+
+  window.sgmpAssembleStagedAnalysisPayload =
+  function(){
+    const payload =
+      baseAssemble();
+
+    const restriction =
+      state.analysisStages
+        ?.results
+        ?.[STAGE] ||
+      {};
+
+    const primary =
+      restriction
+        .primaryConstraintId ??
+      null;
+
+    delete payload
+      .bottlenecks;
+
+    delete payload
+      .primaryConstraint;
+
+    payload.primaryConstraintId =
+      primary;
+
+    payload.findings =
+      payload.findings ||
+      {};
+
+    delete payload.findings
+      .bottlenecks;
+
+    delete payload.findings
+      .primaryConstraint;
+
+    payload.findings
+      .primaryConstraintId =
+        primary;
+
+    return payload;
+  };
+})();
+</script>
+
 </body>
 </html>
