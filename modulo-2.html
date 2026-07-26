@@ -7394,12 +7394,159 @@ function sbCollectAllInlineActivities(){
   return S.acts;
 }
 
-
-function sbReopenInlineActivity(
+function sbCaptureInlineViewState(
   index,
   section
 ){
-  requestAnimationFrame(() => {
+  const card =
+    document.querySelector(
+      `.sb-activity-card[data-index="${index}"]`
+    );
+
+  const subsection =
+    card && section
+      ? card.querySelector(
+          `[data-inline-section="${section}"]`
+        )
+      : null;
+
+  /*
+   * Se utiliza el botón Agregar como ancla visual.
+   * Al insertar una fila, el botón permanecerá
+   * aproximadamente en la misma posición de pantalla.
+   */
+  const anchor =
+    subsection?.querySelector(
+      '.sb-inline-add-row'
+    ) ||
+    subsection ||
+    card;
+
+  const openCards =
+    Array.from(
+      document.querySelectorAll(
+        '.sb-activity-card[open]'
+      )
+    )
+      .map(item =>
+        Number(
+          item.dataset.index
+        )
+      )
+      .filter(Number.isInteger);
+
+  const openSections =
+    Array.from(
+      document.querySelectorAll(
+        '.sb-activity-card ' +
+        '.sb-inline-section[open]'
+      )
+    )
+      .map(item => {
+        const parentCard =
+          item.closest(
+            '.sb-activity-card'
+          );
+
+        const cardIndex =
+          Number(
+            parentCard?.dataset.index
+          );
+
+        const sectionName =
+          normalizeText(
+            item.dataset.inlineSection ||
+            ''
+          );
+
+        if(
+          !Number.isInteger(cardIndex) ||
+          !sectionName
+        ){
+          return null;
+        }
+
+        return {
+          index:
+            cardIndex,
+
+          section:
+            sectionName
+        };
+      })
+      .filter(Boolean);
+
+  return {
+    index,
+
+    section,
+
+    pageY:
+      window.scrollY,
+
+    anchorTop:
+      anchor
+        ? anchor.getBoundingClientRect().top
+        : null,
+
+    openCards,
+
+    openSections
+  };
+}
+
+
+function sbReopenInlineActivity(
+  index,
+  section,
+  viewState = null,
+  focusSelector = ''
+){
+  let focusApplied =
+    false;
+
+  const restoreView = () => {
+    /*
+     * Restaura todas las tarjetas abiertas antes
+     * de calcular nuevamente la posición.
+     */
+    (
+      Array.isArray(
+        viewState?.openCards
+      )
+        ? viewState.openCards
+        : []
+    ).forEach(cardIndex => {
+      const openCard =
+        document.querySelector(
+          `.sb-activity-card[data-index="${cardIndex}"]`
+        );
+
+      if(openCard){
+        openCard.open =
+          true;
+      }
+    });
+
+    (
+      Array.isArray(
+        viewState?.openSections
+      )
+        ? viewState.openSections
+        : []
+    ).forEach(item => {
+      const openSection =
+        document.querySelector(
+          `.sb-activity-card[data-index="${item.index}"] ` +
+          `[data-inline-section="${item.section}"]`
+        );
+
+      if(openSection){
+        openSection.open =
+          true;
+      }
+    });
+
     const card =
       document.querySelector(
         `.sb-activity-card[data-index="${index}"]`
@@ -7412,17 +7559,126 @@ function sbReopenInlineActivity(
     card.open =
       true;
 
-    if(section){
-      const subsection =
-        card.querySelector(
-          `[data-inline-section="${section}"]`
+    const subsection =
+      section
+        ? card.querySelector(
+            `[data-inline-section="${section}"]`
+          )
+        : null;
+
+    if(subsection){
+      subsection.open =
+        true;
+    }
+
+    const anchor =
+      subsection?.querySelector(
+        '.sb-inline-add-row'
+      ) ||
+      subsection ||
+      card;
+
+    /*
+     * Compensa exactamente el movimiento provocado
+     * por la reconstrucción del HTML.
+     */
+    if(
+      viewState &&
+      Number.isFinite(
+        viewState.anchorTop
+      ) &&
+      anchor
+    ){
+      const displacement =
+        anchor
+          .getBoundingClientRect()
+          .top -
+        viewState.anchorTop;
+
+      if(
+        Number.isFinite(
+          displacement
+        ) &&
+        Math.abs(
+          displacement
+        ) > 0.5
+      ){
+        window.scrollBy({
+          top:
+            displacement,
+
+          left:
+            0,
+
+          behavior:
+            'auto'
+        });
+      }
+    }else if(
+      viewState &&
+      Number.isFinite(
+        viewState.pageY
+      )
+    ){
+      window.scrollTo({
+        top:
+          viewState.pageY,
+
+        left:
+          0,
+
+        behavior:
+          'auto'
+      });
+    }
+
+    /*
+     * En una fila nueva posiciona el cursor en
+     * el selector, pero sin desplazar la página.
+     */
+    if(
+      !focusApplied &&
+      focusSelector
+    ){
+      const focusTarget =
+        (
+          subsection ||
+          card
+        ).querySelector(
+          focusSelector
         );
 
-      if(subsection){
-        subsection.open =
+      if(focusTarget){
+        try{
+          focusTarget.focus({
+            preventScroll:
+              true
+          });
+        }catch(error){
+          focusTarget.focus();
+        }
+
+        focusApplied =
           true;
       }
     }
+  };
+
+  /*
+   * Se repite después de los ciclos de layout
+   * para evitar saltos tardíos del navegador.
+   */
+  requestAnimationFrame(() => {
+    restoreView();
+
+    requestAnimationFrame(
+      restoreView
+    );
+
+    setTimeout(
+      restoreView,
+      60
+    );
   });
 }
 
@@ -7431,6 +7687,12 @@ function sbAddInlineRelation(
   index,
   direction
 ){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      direction
+    );
+
   const current =
     sbCollectInlineActivity(
       index
@@ -7466,7 +7728,12 @@ function sbAddInlineRelation(
 
   sbReopenInlineActivity(
     index,
-    direction
+    direction,
+    viewState,
+    (
+      '.sb-inline-relation-row:last-child ' +
+      '.sb-inline-related-activity'
+    )
   );
 
   return true;
@@ -7478,6 +7745,12 @@ function sbRemoveInlineRelation(
   direction,
   relationIndex
 ){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      direction
+    );
+
   const current =
     sbCollectInlineActivity(
       index
@@ -7516,7 +7789,8 @@ function sbRemoveInlineRelation(
 
   sbReopenInlineActivity(
     index,
-    direction
+    direction,
+    viewState
   );
 
   return true;
@@ -7527,6 +7801,12 @@ function sbAddInlineIO(
   index,
   kind
 ){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      kind
+    );
+
   const current =
     sbCollectInlineActivity(
       index
@@ -7563,7 +7843,12 @@ function sbAddInlineIO(
 
   sbReopenInlineActivity(
     index,
-    kind
+    kind,
+    viewState,
+    (
+      '.sb-inline-io-row:last-child ' +
+      '.sb-inline-io-select'
+    )
   );
 
   return true;
@@ -7575,6 +7860,12 @@ function sbRemoveInlineIO(
   kind,
   relationIndex
 ){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      kind
+    );
+
   const current =
     sbCollectInlineActivity(
       index
@@ -7608,12 +7899,12 @@ function sbRemoveInlineIO(
 
   sbReopenInlineActivity(
     index,
-    kind
+    kind,
+    viewState
   );
 
   return true;
 }
-
 
 function addSBInlineActivity(){
   sbCollectAllInlineActivities();
