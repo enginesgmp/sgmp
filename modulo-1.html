@@ -36818,6 +36818,203 @@ window.renderAnalysisScreenAccumulated = function(stageKey){
     `);
   }
 
+  /* =========================
+     FILA 4 · RESTRICCIONES
+  ========================= */
+
+  if(shouldShowStage('RESTRICCIONES')){
+    const restrictionResult =
+      getStageResult(
+        'RESTRICCIONES'
+      );
+
+    const restrictions =
+      safeArray(
+        restrictionResult?.restrictions
+      );
+
+    const primaryConstraintId =
+      String(
+        restrictionResult
+          ?.primaryConstraintId ||
+        ''
+      ).trim();
+
+    const primaryRestriction =
+      restrictions.find(function(item){
+        return String(
+          item?.id || ''
+        ).trim() ===
+          primaryConstraintId;
+      }) || null;
+
+    const affectedActivityIds =
+      new Set();
+
+    restrictions.forEach(function(item){
+      safeArray(
+        item?.relatedActivityIds
+      ).forEach(function(activityId){
+        const normalizedId =
+          String(
+            activityId || ''
+          ).trim();
+
+        if(normalizedId){
+          affectedActivityIds.add(
+            normalizedId
+          );
+        }
+      });
+    });
+
+    const restrictionSourceControl =
+      restrictionResult?.source_control &&
+      typeof restrictionResult.source_control ===
+        'object'
+        ? restrictionResult.source_control
+        : {};
+
+    const sourceActivityCount =
+      hasFiniteNumber(
+        restrictionSourceControl
+          .source_activity_count
+      )
+        ? toFiniteNumber(
+            restrictionSourceControl
+              .source_activity_count
+          )
+        : affectedActivityIds.size;
+
+    const affectedActivityPercent =
+      sourceActivityCount
+        ? round2(
+            affectedActivityIds.size /
+            sourceActivityCount *
+            100
+          )
+        : 0;
+
+    const primaryName =
+      String(
+        primaryRestriction?.name ||
+        ''
+      ).trim();
+
+    const primaryDetail =
+      primaryName.length > 55
+        ? primaryName.slice(
+            0,
+            52
+          ) + '...'
+        : (
+            primaryName ||
+            (
+              restrictions.length
+                ? 'requiere selección'
+                : 'no aplica'
+            )
+          );
+
+    rows.push(`
+      <div
+        class="analysis-summary-stage-row"
+        data-analysis-summary-row="RESTRICCIONES"
+      >
+        <div class="analysis-summary-stage-row-head">
+          <div>
+            <strong>
+              Análisis de restricciones
+            </strong>
+
+            <small>
+              Limitaciones TOC demostrables que condicionan
+              el desempeño global del proceso.
+            </small>
+          </div>
+
+          <span class="analysis-summary-stage-badge">
+            TOC
+          </span>
+        </div>
+
+        <div
+          class="
+            analysis-summary-stage-grid
+            analysis-summary-stage-grid--restrictions
+          "
+        >
+          ${kpiCard(
+            'Restricciones identificadas',
+            formatInteger(
+              restrictions.length
+            ),
+            restrictions.length === 1
+              ? 'restricción R-xxx'
+              : 'restricciones R-xxx',
+            {
+              metric:'TOTAL_RESTRICTIONS',
+              tone:'gray'
+            }
+          )}
+
+          ${kpiCard(
+            'Restricción primaria',
+            primaryRestriction
+              ? primaryConstraintId
+              : (
+                  restrictions.length
+                    ? 'No definida'
+                    : 'Sin restricción'
+                ),
+            primaryDetail,
+            {
+              metric:'PRIMARY_RESTRICTION',
+              valueKind:'text',
+              tone:
+                primaryRestriction
+                  ? 'red'
+                  : (
+                      restrictions.length
+                        ? 'orange'
+                        : 'gray'
+                    )
+            }
+          )}
+
+          ${kpiCard(
+            'Actividades afectadas',
+            formatInteger(
+              affectedActivityIds.size
+            ) +
+              ' de ' +
+              formatInteger(
+                sourceActivityCount
+              ),
+            formatPercent(
+              affectedActivityPercent
+            ) + ' del proceso',
+            {
+              metric:
+                'RESTRICTION_AFFECTED_ACTIVITIES',
+
+              valueKind:'text',
+
+              tone:
+                affectedActivityIds.size >= 3
+                  ? 'red'
+                  : (
+                      affectedActivityIds.size > 0
+                        ? 'orange'
+                        : 'gray'
+                    )
+            }
+          )}
+        </div>
+      </div>
+    `);
+  }
+  
   summaryCard.innerHTML = `
     <h3>Resumen acumulado</h3>
 
@@ -37493,6 +37690,10 @@ function syncResultsSummaryViews(){
   font-weight:900;
   line-height:1.1;
   white-space:nowrap;
+}
+
+  .analysis-restriction-primary-badge[hidden]{
+  display:none !important;
 }
 
 .analysis-restriction-primary-control{
