@@ -27297,6 +27297,878 @@ window.lmpValidateRestrictionStageContract_ =
   lmpValidateRestrictionStageContract_;
 
 
+function lmpValidateQuickWinStageContract_(parsed){
+  const TYPES = [
+    'STANDARD_WORK','VISUAL_MANAGEMENT','FLOW_SIMPLIFICATION',
+    'CONTROL_CLARIFICATION','INFORMATION_STANDARDIZATION',
+    'WORKPLACE_ORGANIZATION','EXISTING_TOOL_CONFIGURATION','OTHER'
+  ];
+
+  const REASONS = [
+    'REQUIRES_PROJECT','HIGH_EFFORT','MAJOR_INVESTMENT',
+    'CROSS_FUNCTIONAL_DEPENDENCY','TECHNOLOGY_DEVELOPMENT',
+    'INSUFFICIENT_EVIDENCE'
+  ];
+
+  const TOP_KEYS = [
+    'stage','analysis_type','methodology','source_control',
+    'quickWins','outOfScope','warnings','dataGaps','validation'
+  ];
+
+  const SOURCE_KEYS = [
+    'source_activity_count','analyzed_activity_count',
+    'preserved_activity_ids','used_ava_result','used_waste_result',
+    'used_problem_result','used_restriction_result'
+  ];
+
+  const QUICK_WIN_KEYS = [
+    'id','name','quickWinType','relatedActivityIds','sourceRefs',
+    'actionMechanismAndTimeline','expectedResultAndValidation',
+    'justification'
+  ];
+
+  const OUT_KEYS = [
+    'name',
+    'reasonCode',
+    'sourceRefs'
+  ];
+
+  const text = value =>
+    String(value ?? '').trim();
+
+  const requireObject = function(value, path){
+    if(
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un objeto.'
+      );
+    }
+  };
+
+  const requireArray = function(value, path){
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+  };
+
+  const rejectUnknownKeys = function(
+    value,
+    allowed,
+    path
+  ){
+    Object.keys(value).forEach(function(key){
+      if(!allowed.includes(key)){
+        throw new Error(
+          'El campo "' +
+          path +
+          '" contiene la propiedad no permitida "' +
+          key +
+          '".'
+        );
+      }
+    });
+  };
+
+  if(
+    text(parsed.analysis_type) !==
+    'quick_win_analysis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "quick_win_analysis".'
+    );
+  }
+
+  if(
+    text(parsed.methodology) !==
+    'Impact_Effort_Kaizen_PDSA'
+  ){
+    throw new Error(
+      'methodology debe ser "Impact_Effort_Kaizen_PDSA".'
+    );
+  }
+
+  rejectUnknownKeys(
+    parsed,
+    TOP_KEYS,
+    'contrato QUICK_WINS'
+  );
+
+  requireObject(
+    parsed.source_control,
+    'source_control'
+  );
+
+  rejectUnknownKeys(
+    parsed.source_control,
+    SOURCE_KEYS,
+    'source_control'
+  );
+
+  requireArray(
+    parsed.quickWins,
+    'quickWins'
+  );
+
+  requireArray(
+    parsed.outOfScope,
+    'outOfScope'
+  );
+
+  requireArray(
+    parsed.warnings,
+    'warnings'
+  );
+
+  requireArray(
+    parsed.dataGaps,
+    'dataGaps'
+  );
+
+  requireObject(
+    parsed.validation,
+    'validation'
+  );
+
+  rejectUnknownKeys(
+    parsed.validation,
+    [
+      'canProceed',
+      'blockingGaps',
+      'warnings'
+    ],
+    'validation'
+  );
+
+  requireArray(
+    parsed.validation.blockingGaps,
+    'validation.blockingGaps'
+  );
+
+  requireArray(
+    parsed.validation.warnings,
+    'validation.warnings'
+  );
+
+  if(parsed.quickWins.length > 8){
+    throw new Error(
+      'quickWins puede contener como máximo 8 registros.'
+    );
+  }
+
+  const sourceSteps =
+    safeArray(
+      lmpGetValidatedAsIsEvidence_()
+        .activities
+    );
+
+  const isDecision = function(activity){
+    const type =
+      typeof normalizePromptAType ===
+      'function'
+        ? normalizePromptAType(
+            activity?.type
+          )
+        : text(
+            activity?.type
+          ).toLowerCase();
+
+    return type === 'decision';
+  };
+
+  const eligibleActivities =
+    sourceSteps.filter(function(activity){
+      return !isDecision(activity);
+    });
+
+  if(!eligibleActivities.length){
+    throw new Error(
+      'El AS-IS no contiene actividades ejecutables.'
+    );
+  }
+
+  const executableIds =
+    new Set();
+
+  const decisionIds =
+    new Set();
+
+  sourceSteps.forEach(function(
+    activity,
+    index
+  ){
+    const id =
+      text(activity?.id);
+
+    if(!id){
+      throw new Error(
+        'El elemento ' +
+        (index + 1) +
+        ' del AS-IS no tiene ID.'
+      );
+    }
+
+    const target =
+      isDecision(activity)
+        ? decisionIds
+        : executableIds;
+
+    if(target.has(id)){
+      throw new Error(
+        'El AS-IS contiene el ID duplicado "' +
+        id +
+        '".'
+      );
+    }
+
+    target.add(id);
+  });
+
+  const avaResult =
+    lmpGetOfficialAnalysisResult_(
+      'VA'
+    );
+
+  const wasteResult =
+    lmpGetOfficialAnalysisResult_(
+      'DESPERDICIOS'
+    );
+
+  const problemResult =
+    lmpGetOfficialAnalysisResult_(
+      'PROBLEMAS'
+    );
+
+  const restrictionResult =
+    lmpGetOfficialAnalysisResult_(
+      'RESTRICCIONES'
+    );
+
+  if(
+    !avaResult ||
+    !wasteResult ||
+    !problemResult ||
+    !restrictionResult
+  ){
+    throw new Error(
+      'Quick Wins requiere resultados oficiales de VA, Desperdicios, Problemas y Restricciones.'
+    );
+  }
+
+  const sourceRefIds =
+    new Set();
+
+  const registerIds = function(
+    items,
+    pattern,
+    label
+  ){
+    safeArray(items).forEach(function(
+      item,
+      index
+    ){
+      const id =
+        text(item?.id);
+
+      if(!pattern.test(id)){
+        throw new Error(
+          'El registro ' +
+          (index + 1) +
+          ' de ' +
+          label +
+          ' no tiene un ID oficial válido.'
+        );
+      }
+
+      if(sourceRefIds.has(id)){
+        throw new Error(
+          'El ID fuente "' +
+          id +
+          '" está duplicado.'
+        );
+      }
+
+      sourceRefIds.add(id);
+    });
+  };
+
+  registerIds(
+    wasteResult.wastes,
+    /^W-\d{3}$/,
+    'Desperdicios'
+  );
+
+  registerIds(
+    problemResult.problems,
+    /^P-\d{3}$/,
+    'Problemas'
+  );
+
+  registerIds(
+    restrictionResult.restrictions,
+    /^R-\d{3}$/,
+    'Restricciones'
+  );
+
+  const validateActivities = function(
+    values,
+    path,
+    ownerId
+  ){
+    requireArray(
+      values,
+      path
+    );
+
+    const seen =
+      new Set();
+
+    return values.map(function(
+      value,
+      index
+    ){
+      if(typeof value !== 'string'){
+        throw new Error(
+          path +
+          '[' +
+          index +
+          '] debe ser texto.'
+        );
+      }
+
+      const id =
+        value.trim();
+
+      if(!id || seen.has(id)){
+        throw new Error(
+          'La quick win "' +
+          ownerId +
+          '" contiene actividades vacías o duplicadas.'
+        );
+      }
+
+      if(decisionIds.has(id)){
+        throw new Error(
+          'La decisión "' +
+          id +
+          '" no puede incluirse en relatedActivityIds.'
+        );
+      }
+
+      if(!executableIds.has(id)){
+        throw new Error(
+          'La actividad "' +
+          id +
+          '" no existe en el AS-IS ejecutable.'
+        );
+      }
+
+      seen.add(id);
+
+      return id;
+    });
+  };
+
+  const validateSourceRefs = function(
+    values,
+    path
+  ){
+    requireArray(
+      values,
+      path
+    );
+
+    const seen =
+      new Set();
+
+    return values.map(function(
+      value,
+      index
+    ){
+      if(typeof value !== 'string'){
+        throw new Error(
+          path +
+          '[' +
+          index +
+          '] debe ser texto.'
+        );
+      }
+
+      const id =
+        value.trim();
+
+      if(
+        !/^[WPR]-\d{3}$/.test(id) ||
+        !sourceRefIds.has(id)
+      ){
+        throw new Error(
+          'La referencia "' +
+          id +
+          '" no existe en los resultados oficiales.'
+        );
+      }
+
+      if(seen.has(id)){
+        throw new Error(
+          path +
+          ' repite la referencia "' +
+          id +
+          '".'
+        );
+      }
+
+      seen.add(id);
+
+      return id;
+    });
+  };
+
+  const existingBlockingGaps =
+    safeArray(
+      parsed.validation.blockingGaps
+    )
+      .map(function(gap){
+        return typeof gap === 'string'
+          ? gap.trim()
+          : JSON.stringify(gap);
+      })
+      .filter(Boolean);
+
+  const automaticGaps = [];
+
+  const seenIds =
+    new Set();
+
+  const seenSignatures =
+    new Set();
+
+  let completeQuickWins = 0;
+
+  parsed.quickWins.forEach(function(
+    item,
+    index
+  ){
+    const path =
+      'quickWins[' +
+      index +
+      ']';
+
+    requireObject(
+      item,
+      path
+    );
+
+    rejectUnknownKeys(
+      item,
+      QUICK_WIN_KEYS,
+      path
+    );
+
+    const expectedId =
+      'QW-' +
+      String(
+        index + 1
+      ).padStart(
+        3,
+        '0'
+      );
+
+    const id =
+      text(item.id);
+
+    if(
+      !/^QW-\d{3}$/.test(id) ||
+      id !== expectedId ||
+      seenIds.has(id)
+    ){
+      throw new Error(
+        'Los IDs de quickWins deben ser únicos y consecutivos desde QW-001.'
+      );
+    }
+
+    seenIds.add(id);
+
+    const name =
+      text(item.name);
+
+    const quickWinType =
+      text(
+        item.quickWinType
+      ).toUpperCase();
+
+    if(
+      quickWinType &&
+      !TYPES.includes(
+        quickWinType
+      )
+    ){
+      throw new Error(
+        'La quick win "' +
+        id +
+        '" utiliza un tipo no permitido.'
+      );
+    }
+
+    const relatedActivityIds =
+      validateActivities(
+        item.relatedActivityIds,
+        path +
+        '.relatedActivityIds',
+        id
+      );
+
+    const sourceRefs =
+      validateSourceRefs(
+        item.sourceRefs,
+        path +
+        '.sourceRefs'
+      );
+
+    const action =
+      text(
+        item.actionMechanismAndTimeline
+      );
+
+    const result =
+      text(
+        item.expectedResultAndValidation
+      );
+
+    const justification =
+      text(
+        item.justification
+      );
+
+    const timelineMatch =
+      action.match(
+        /^Plazo:\s*(\d{1,2})\s*d[ií]as\.\s*Acci[oó]n y mecanismo:\s*[\s\S]+$/i
+      );
+
+    const days =
+      timelineMatch
+        ? Number(
+            timelineMatch[1]
+          )
+        : 0;
+
+    const signature = [
+      name
+        .toLowerCase()
+        .replace(
+          /\s+/g,
+          ' '
+        ),
+
+      relatedActivityIds
+        .slice()
+        .sort()
+        .join('|'),
+
+      sourceRefs
+        .slice()
+        .sort()
+        .join('|')
+    ].join('::');
+
+    if(
+      name &&
+      seenSignatures.has(
+        signature
+      )
+    ){
+      throw new Error(
+        'La quick win "' +
+        id +
+        '" duplica otra acción.'
+      );
+    }
+
+    if(name){
+      seenSignatures.add(
+        signature
+      );
+    }
+
+    const missing = [];
+
+    if(!name){
+      missing.push(
+        'nombre'
+      );
+    }
+
+    if(!quickWinType){
+      missing.push(
+        'tipo'
+      );
+    }
+
+    if(!relatedActivityIds.length){
+      missing.push(
+        'actividades relacionadas'
+      );
+    }
+
+    if(!sourceRefs.length){
+      missing.push(
+        'hallazgos relacionados'
+      );
+    }
+
+    if(
+      !timelineMatch ||
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > 30
+    ){
+      missing.push(
+        'acción, mecanismo y plazo de 1 a 30 días'
+      );
+    }
+
+    if(
+      !/^Resultado esperado:\s*\S/i.test(
+        result
+      ) ||
+      !/Validaci[oó]n:\s*\S/i.test(
+        result
+      )
+    ){
+      missing.push(
+        'resultado esperado y validación'
+      );
+    }
+
+    if(
+      !/^Impacto alto:\s*\S/i.test(
+        justification
+      ) ||
+      !/Bajo esfuerzo:\s*\S/i.test(
+        justification
+      )
+    ){
+      missing.push(
+        'justificación de impacto alto y bajo esfuerzo'
+      );
+    }
+
+    if(missing.length){
+      automaticGaps.push(
+        'Quick win ' +
+        id +
+        ': completar ' +
+        missing.join(', ') +
+        '.'
+      );
+
+    }else{
+      completeQuickWins += 1;
+    }
+
+    Object.assign(
+      item,
+      {
+        id,
+        name,
+        quickWinType,
+        relatedActivityIds,
+        sourceRefs,
+        actionMechanismAndTimeline:
+          action,
+        expectedResultAndValidation:
+          result,
+        justification
+      }
+    );
+  });
+
+  const seenOut =
+    new Set();
+
+  let completeOut = 0;
+
+  parsed.outOfScope.forEach(function(
+    item,
+    index
+  ){
+    const path =
+      'outOfScope[' +
+      index +
+      ']';
+
+    requireObject(
+      item,
+      path
+    );
+
+    rejectUnknownKeys(
+      item,
+      OUT_KEYS,
+      path
+    );
+
+    const name =
+      text(item.name);
+
+    const reasonCode =
+      text(
+        item.reasonCode
+      ).toUpperCase();
+
+    if(
+      reasonCode &&
+      !REASONS.includes(
+        reasonCode
+      )
+    ){
+      throw new Error(
+        path +
+        '.reasonCode no pertenece al catálogo permitido.'
+      );
+    }
+
+    const sourceRefs =
+      validateSourceRefs(
+        item.sourceRefs,
+        path +
+        '.sourceRefs'
+      );
+
+    const signature = [
+      name
+        .toLowerCase()
+        .replace(
+          /\s+/g,
+          ' '
+        ),
+      reasonCode,
+      sourceRefs
+        .slice()
+        .sort()
+        .join('|')
+    ].join('::');
+
+    if(
+      name &&
+      seenOut.has(signature)
+    ){
+      throw new Error(
+        path +
+        ' duplica otra oportunidad fuera de alcance.'
+      );
+    }
+
+    if(name){
+      seenOut.add(
+        signature
+      );
+    }
+
+    const missing = [];
+
+    if(!name){
+      missing.push(
+        'nombre'
+      );
+    }
+
+    if(!reasonCode){
+      missing.push(
+        'motivo'
+      );
+    }
+
+    if(!sourceRefs.length){
+      missing.push(
+        'hallazgos relacionados'
+      );
+    }
+
+    if(missing.length){
+      automaticGaps.push(
+        'Oportunidad fuera de alcance ' +
+        (index + 1) +
+        ': completar ' +
+        missing.join(', ') +
+        '.'
+      );
+
+    }else{
+      completeOut += 1;
+    }
+
+    Object.assign(
+      item,
+      {
+        name,
+        reasonCode,
+        sourceRefs
+      }
+    );
+  });
+
+  const blockingGaps =
+    Array.from(
+      new Set(
+        existingBlockingGaps.concat(
+          automaticGaps
+        )
+      )
+    );
+
+  parsed.source_control = {
+    source_activity_count:
+      eligibleActivities.length,
+
+    analyzed_activity_count:
+      eligibleActivities.length,
+
+    preserved_activity_ids:
+      true,
+
+    used_ava_result:
+      true,
+
+    used_waste_result:
+      true,
+
+    used_problem_result:
+      true,
+
+    used_restriction_result:
+      true
+  };
+
+  parsed.validation = {
+    canProceed:
+      completeQuickWins ===
+        parsed.quickWins.length &&
+      completeOut ===
+        parsed.outOfScope.length &&
+      blockingGaps.length === 0,
+
+    blockingGaps,
+
+    warnings:
+      safeArray(
+        parsed.validation.warnings
+      )
+  };
+
+  return parsed;
+}
+
+window.lmpValidateQuickWinStageContract_ =
+  lmpValidateQuickWinStageContract_;  
+
 function lmpValidateAnalysisStageContract_(
   stageKey,
   rawText
@@ -27507,12 +28379,7 @@ function lmpValidateAnalysisStageContract_(
     }
   };
 
-  if(
-    stage === 'QUICK_WINS' &&
-    parsed.outOfScope === undefined
-  ){
-    parsed.outOfScope = [];
-  }
+
 
   if(
     stage === 'MEJORAS' &&
@@ -27556,6 +28423,12 @@ function lmpValidateAnalysisStageContract_(
 
   if(stage === 'RESTRICCIONES'){
     lmpValidateRestrictionStageContract_(
+      parsed
+    );
+  }
+
+  if(stage === 'QUICK_WINS'){
+    lmpValidateQuickWinStageContract_(
       parsed
     );
   }
