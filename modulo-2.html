@@ -12614,17 +12614,35 @@ function sbBuildStaticPreview(
         index *
         EXTERNAL_STEP;
 
+            const supplierType =
+        sbNormalizePartyType(
+          row?.supplier_type ||
+          (
+            row?.supplier_code
+              ? 'process'
+              : 'external'
+          )
+        );
+
+      const supplierIsProcess =
+        supplierType ===
+        'process';
+
       const supplierNode =
         addNode({
           id:
             `SUP-${rowId}`,
 
           kind:
-            'supplier',
+            supplierIsProcess
+              ? 'related_process'
+              : 'supplier',
 
           label:
             normalizeText(
-              row?.supplier || ''
+              row?.supplier_name ||
+              row?.supplier ||
+              ''
             ),
 
           lane_id:
@@ -12643,7 +12661,20 @@ function sbBuildStaticPreview(
             NODE_HEIGHT,
 
           shape:
-            'rectangle',
+            supplierIsProcess
+              ? 'related_process'
+              : 'rectangle',
+
+          party_type:
+            supplierType,
+
+          process_code:
+            supplierIsProcess
+              ? normalizeText(
+                  row?.supplier_code ||
+                  ''
+                ).toUpperCase()
+              : '',
 
           source_ref:
             rowId
@@ -12762,17 +12793,35 @@ function sbBuildStaticPreview(
             rowId
         });
 
+      const customerType =
+        sbNormalizePartyType(
+          row?.customer_type ||
+          (
+            row?.customer_code
+              ? 'process'
+              : 'external'
+          )
+        );
+
+      const customerIsProcess =
+        customerType ===
+        'process';
+
       const customerNode =
         addNode({
           id:
             `CUS-${rowId}`,
 
           kind:
-            'customer',
+            customerIsProcess
+              ? 'related_process'
+              : 'customer',
 
           label:
             normalizeText(
-              row?.customer || ''
+              row?.customer_name ||
+              row?.customer ||
+              ''
             ),
 
           lane_id:
@@ -12791,7 +12840,20 @@ function sbBuildStaticPreview(
             NODE_HEIGHT,
 
           shape:
-            'rectangle',
+            customerIsProcess
+              ? 'related_process'
+              : 'rectangle',
+
+          party_type:
+            customerType,
+
+          process_code:
+            customerIsProcess
+              ? normalizeText(
+                  row?.customer_code ||
+                  ''
+                ).toUpperCase()
+              : '',
 
           source_ref:
             rowId
@@ -13185,17 +13247,7 @@ layout: {
    * Paleta visual.
    */
   const colors = {
-    supplier: {
-      fill:
-        '#F3F6F9',
-
-      stroke:
-        '#AAB6C2',
-
-      header:
-        '#667383'
-    },
-
+supplier: {
     input: {
       fill:
         '#EEF7FC',
@@ -13770,63 +13822,110 @@ nodes.forEach(node => {
     'sb-svg-selectable sb-svg-node'
   );
 
-  if(node.shape === 'decision'){
-      const centerX =
-        node.x +
-        node.width /
-        2;
+  if(
+    node.shape ===
+    'related_process'
+  ){
+    const processSideOffset =
+      11;
 
-      const centerY =
-        node.y +
-        node.height /
-        2;
+    svg += `
+      <rect
+        x="${node.x}"
+        y="${node.y}"
+        width="${node.width}"
+        height="${node.height}"
+        fill="#FFFFFF"
+        stroke="#294B66"
+        stroke-width="1.5"
+      />
 
-      svg += `
-        <polygon
-          points="
-            ${centerX},${node.y}
-            ${node.x + node.width},${centerY}
-            ${centerX},${node.y + node.height}
-            ${node.x},${centerY}
-          "
-          fill="#FFFFFF"
-          stroke="#F2994A"
-          stroke-width="1.5"
-        />
-      `;
-    }else{
-      svg += `
-        <rect
-          x="${node.x}"
-          y="${node.y}"
-          width="${node.width}"
-          height="${node.height}"
-          fill="${
-            node.kind ===
-              'input'
-                ? '#F6FBFE'
-                : (
-                    node.kind ===
-                      'output'
-                        ? '#F7FCF8'
-                        : '#FFFFFF'
-                  )
-          }"
-          stroke="${
-            node.kind ===
-              'activity'
-                ? '#294B66'
-                : palette.stroke
-          }"
-          stroke-width="${
-            node.kind ===
-              'activity'
-                ? 1.4
-                : 1.2
-          }"
-        />
-      `;
-    }
+      <line
+        x1="${node.x + processSideOffset}"
+        y1="${node.y}"
+        x2="${node.x + processSideOffset}"
+        y2="${node.y + node.height}"
+        stroke="#294B66"
+        stroke-width="1.5"
+      />
+
+      <line
+        x1="${
+          node.x +
+          node.width -
+          processSideOffset
+        }"
+        y1="${node.y}"
+        x2="${
+          node.x +
+          node.width -
+          processSideOffset
+        }"
+        y2="${node.y + node.height}"
+        stroke="#294B66"
+        stroke-width="1.5"
+      />
+    `;
+  }else if(
+    node.shape ===
+    'decision'
+  ){
+    const centerX =
+      node.x +
+      node.width /
+      2;
+
+    const centerY =
+      node.y +
+      node.height /
+      2;
+
+    svg += `
+      <polygon
+        points="
+          ${centerX},${node.y}
+          ${node.x + node.width},${centerY}
+          ${centerX},${node.y + node.height}
+          ${node.x},${centerY}
+        "
+        fill="#FFFFFF"
+        stroke="#F2994A"
+        stroke-width="1.5"
+      />
+    `;
+  }else{
+    svg += `
+      <rect
+        x="${node.x}"
+        y="${node.y}"
+        width="${node.width}"
+        height="${node.height}"
+        fill="${
+          node.kind ===
+            'input'
+              ? '#F6FBFE'
+              : (
+                  node.kind ===
+                    'output'
+                      ? '#F7FCF8'
+                      : '#FFFFFF'
+                )
+        }"
+        stroke="${
+          node.kind ===
+            'activity'
+              ? '#294B66'
+              : palette.stroke
+        }"
+        stroke-width="${
+          node.kind ===
+            'activity'
+              ? 1.4
+              : 1.2
+        }"
+      />
+    `;
+  }
 
     svg += sbSvgText(
       node.label,
@@ -17978,12 +18077,262 @@ $('tpl_info').innerHTML =
   `Decisiones: 130×60 · ` +
   `Carriles externos: ancho fijo ${EXTERNAL_LANE_W}px`;
 
+if(
+  !sbApplyRelatedProcessDrawioStyles()
+){
+  gMsg(
+    'warn',
+    'La plantilla fue generada, pero no fue posible aplicar la simbología de procesos internos.'
+  );
+}
+
 switchTab(
   'tab_tpl'
 );
 
 return runSBContractPreflight();
 }
+
+function sbApplyRelatedProcessDrawioStyles(){
+  const xml =
+    String(
+      S.tplXml ||
+      ''
+    ).trim();
+
+  if(!xml){
+    return false;
+  }
+
+  const lanes =
+    S.contract
+      ?.sipoc_input
+      ?.lanes ||
+    {};
+
+  const suppliers =
+    Array.isArray(
+      lanes.suppliers_inputs
+    )
+      ? lanes.suppliers_inputs
+      : [];
+
+  const customers =
+    Array.isArray(
+      lanes.outputs_customers
+    )
+      ? lanes.outputs_customers
+      : [];
+
+  const idMap =
+    parseIdReference();
+
+  const processCells =
+    [];
+
+
+  suppliers.forEach(row => {
+    const type =
+      sbNormalizePartyType(
+        row?.supplier_type ||
+        (
+          row?.supplier_code
+            ? 'process'
+            : 'external'
+        )
+      );
+
+    if(type !== 'process'){
+      return;
+    }
+
+    const name =
+      normalizeText(
+        row?.supplier_name ||
+        row?.supplier ||
+        ''
+      );
+
+    const cell =
+      idMap.suppliers[
+        name.toLowerCase()
+      ];
+
+    if(!cell?.id){
+      return;
+    }
+
+    processCells.push({
+      id:
+        cell.id,
+
+      code:
+        normalizeText(
+          row?.supplier_code ||
+          ''
+        ).toUpperCase()
+    });
+  });
+
+
+  customers.forEach(row => {
+    const type =
+      sbNormalizePartyType(
+        row?.customer_type ||
+        (
+          row?.customer_code
+            ? 'process'
+            : 'external'
+        )
+      );
+
+    if(type !== 'process'){
+      return;
+    }
+
+    const name =
+      normalizeText(
+        row?.customer_name ||
+        row?.customer ||
+        ''
+      );
+
+    const cell =
+      idMap.customers[
+        name.toLowerCase()
+      ];
+
+    if(!cell?.id){
+      return;
+    }
+
+    processCells.push({
+      id:
+        cell.id,
+
+      code:
+        normalizeText(
+          row?.customer_code ||
+          ''
+        ).toUpperCase()
+    });
+  });
+
+
+  if(!processCells.length){
+    return true;
+  }
+
+  const parser =
+    new DOMParser();
+
+  const documentXML =
+    parser.parseFromString(
+      xml,
+      'application/xml'
+    );
+
+  if(
+    documentXML.getElementsByTagName(
+      'parsererror'
+    )[0]
+  ){
+    return false;
+  }
+
+  const cellsById =
+    new Map(
+      Array
+        .from(
+          documentXML.getElementsByTagName(
+            'mxCell'
+          )
+        )
+        .map(cell => [
+          cell.getAttribute(
+            'id'
+          ),
+
+          cell
+        ])
+    );
+
+
+  processCells.forEach(item => {
+    const cell =
+      cellsById.get(
+        item.id
+      );
+
+    if(!cell){
+      return;
+    }
+
+    cell.setAttribute(
+      'style',
+
+      sbMergeDrawioStyle(
+        cell.getAttribute(
+          'style'
+        ) ||
+        '',
+
+        {
+          shape:
+            'process',
+
+          backgroundOutline:
+            '1',
+
+          rounded:
+            '0',
+
+          fillColor:
+            '#FFFFFF',
+
+          strokeColor:
+            '#294B66',
+
+          strokeWidth:
+            '1.5',
+
+          fontColor:
+            '#223042',
+
+          fontStyle:
+            '1',
+
+          align:
+            'center',
+
+          verticalAlign:
+            'middle'
+        }
+      )
+    );
+
+    cell.setAttribute(
+      'data-sgmp-party-type',
+      'process'
+    );
+
+    if(item.code){
+      cell.setAttribute(
+        'data-sgmp-process-code',
+        item.code
+      );
+    }
+  });
+
+
+  S.tplXml =
+    new XMLSerializer()
+      .serializeToString(
+        documentXML
+      );
+
+  return true;
+}  
   
 // ═══════════════════════════════════════════════════════════════
 // INJECT HEADER + FOOTER
