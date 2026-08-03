@@ -2951,6 +2951,60 @@ body{font-size:14px !important}
   id="sb_acc_process_base"
   open
 >
+  <summary>
+    <div class="sb-data-summary-main">
+      <span>Datos generales</span>
+
+      <small>
+        Identificación y finalidad del proceso.
+        Las notas aclaratorias se gestionan únicamente dentro de cada actividad.
+      </small>
+    </div>
+  </summary>
+
+  <div class="sb-data-accordion-body">
+    <div class="g2">
+
+      <div class="field">
+        <label>Código del proceso</label>
+
+        <input
+          id="g_code"
+          placeholder="Ej: PR-30211"
+        />
+      </div>
+
+      <div class="field">
+        <label>Nombre del proceso *</label>
+
+        <input
+          id="g_name"
+          placeholder="Ej: Gestión de Donaciones"
+        />
+      </div>
+
+      <div class="field full">
+        <label>Finalidad *</label>
+
+        <input
+          id="g_purpose"
+          placeholder="Ej: Ejecutar donaciones a terceros que generen impacto positivo"
+        />
+      </div>
+
+    </div>
+
+    <div class="btn-row right">
+      <button
+        class="primary"
+        id="btn_save_process_base"
+        type="button"
+      >
+        Guardar datos generales
+      </button>
+    </div>
+  </div>
+</details>
       <summary>
         <div class="sb-data-summary-main">
           <span>Datos generales</span>
@@ -9431,11 +9485,11 @@ function sbInlineActivityTemplate(
             </div>
 
             <div class="field full">
-              <label>Nota aclaratoria</label>
+              <label>Notas aclaratorias — una por línea</label>
 
               <textarea
                 class="sb-inline-note"
-                placeholder="Nota vinculada a esta actividad"
+                placeholder="Escribe una nota por línea. La numeración 5.2, 5.3, 5.4... se genera automáticamente."
               >${ex(
                 sbCleanEditorActivityNote(
                   activity?.note ||
@@ -14404,32 +14458,10 @@ function sbSyncEditorToContract(){
       ])
     );
 
-
   /*
-   * Notas contextuales.
+   * Las notas aclaratorias se construyen
+   * exclusivamente desde las actividades.
    */
-  const previousContextNotes =
-    previousNotes.filter(note =>
-      !normalizeText(
-        note?.activity_id || ''
-      ) &&
-      !normalizeText(
-        note?.activity_name || ''
-      )
-    );
-
-  const previousContextNoteByText =
-    new Map(
-      previousContextNotes.map(note => [
-        normalizeText(
-          note?.text ||
-          note?.content ||
-          ''
-        ).toLowerCase(),
-        note
-      ])
-    );
-
   const usedNoteIds =
     new Set();
 
@@ -14441,45 +14473,6 @@ function sbSyncEditorToContract(){
 
   const clarifyingNotes =
     [];
-
-  String(
-    $('g_notes')?.value || ''
-  )
-    .split(/\r?\n/)
-    .map(normalizeText)
-    .filter(Boolean)
-    .forEach(text => {
-      const previousNote =
-        previousContextNoteByText.get(
-          text.toLowerCase()
-        );
-
-      clarifyingNotes.push({
-        id:
-          sbTakeStableId(
-            previousNote?.id,
-            usedNoteIds,
-            nextNoteId
-          ),
-
-        activity_id:
-          '',
-
-        activity_name:
-          '',
-
-        text,
-
-        type:
-          previousNote?.type ||
-          'clarifying',
-
-        source:
-          previousNote?.source ||
-          'sipoc_builder'
-      });
-    });
-
 
   /*
    * Construcción canónica de actividades
@@ -14860,27 +14853,160 @@ function normalizeNoteText(v) {
   return String(v).replace(/\s+/g, ' ').replace(/\[object Object\]/gi, '').trim();
 }
 
-function buildActivityNotePack(activities){
-  let counter = 0;
-  const refs = new Map();
-  const notes = [];
-  (activities || []).forEach((activity, idx) => {
-    const text = normalizeNoteText(activity?.note || activity?.notes || '');
-    if(!text) return;
-    counter += 1;
-    refs.set(idx, counter);
-    notes.push({
-      number: counter,
-      activity: normalizeText(activity?.name || `Actividad ${idx + 1}`),
-      text
-    });
+function sbActivityNoteLines(activity){
+  const input =
+    S.contract?.sipoc_input ||
+    {};
+
+  const contractActivities =
+    Array.isArray(input.activities)
+      ? input.activities
+      : [];
+
+  const contractNotes =
+    Array.isArray(input.clarifying_notes)
+      ? input.clarifying_notes
+      : [];
+
+  const activityId =
+    normalizeText(activity?.id || '');
+
+  const activityName =
+    normalizeText(activity?.name || '')
+      .toLowerCase();
+
+  const contractActivity =
+    contractActivities.find(item =>
+      (
+        activityId &&
+        normalizeText(item?.id || '') ===
+          activityId
+      ) ||
+      (
+        activityName &&
+        normalizeText(item?.name || '')
+          .toLowerCase() ===
+          activityName
+      )
+    );
+
+  const noteIds =
+    new Set(
+      Array.isArray(contractActivity?.note_ids)
+        ? contractActivity.note_ids.map(String)
+        : []
+    );
+
+  const linkedNotes =
+    contractNotes.filter(note =>
+      noteIds.has(String(note?.id || '')) ||
+      (
+        activityId &&
+        normalizeText(note?.activity_id || '') ===
+          activityId
+      ) ||
+      (
+        activityName &&
+        normalizeText(note?.activity_name || '')
+          .toLowerCase() ===
+          activityName
+      )
+    );
+
+  const sourceValues =
+    linkedNotes.length
+      ? linkedNotes.map(note =>
+          note?.text ||
+          note?.content ||
+          ''
+        )
+      : [
+          activity?.note ||
+          activity?.notes ||
+          ''
+        ];
+
+  const result = [];
+  const seen = new Set();
+
+  sourceValues.forEach(value => {
+    String(value || '')
+      .split(/\r?\n/)
+      .map(normalizeText)
+      .filter(line =>
+        line &&
+        !/^rutas\s*:/i.test(line)
+      )
+      .forEach(line => {
+        const key =
+          line.toLowerCase();
+
+        if(seen.has(key)){
+          return;
+        }
+
+        seen.add(key);
+        result.push(line);
+      });
   });
-  return { refs, notes };
+
+  return result;
 }
 
+
+function buildActivityNotePack(activities){
+  let noteSequence = 2;
+
+  const refs = new Map();
+  const notes = [];
+
+  (activities || []).forEach(
+    (activity, activityIndex) => {
+      const activityRefs = [];
+
+      sbActivityNoteLines(activity)
+        .forEach(text => {
+          const reference =
+            `5.${noteSequence}`;
+
+          noteSequence += 1;
+          activityRefs.push(reference);
+
+          notes.push({
+            reference,
+
+            activity:
+              normalizeText(
+                activity?.name ||
+                `Actividad ${activityIndex + 1}`
+              ),
+
+            text
+          });
+        });
+
+      if(activityRefs.length){
+        refs.set(
+          activityIndex,
+          activityRefs.join(', ')
+        );
+      }
+    }
+  );
+
+  return {
+    refs,
+    notes
+  };
+}
+
+
 function buildFooterNotesFromActivities(activities){
-  return buildActivityNotePack(activities).notes
-    .map(item => `${item.number}. ${item.activity}: ${item.text}`)
+  return buildActivityNotePack(activities)
+    .notes
+    .map(item =>
+      `${item.reference}. ${item.text}`
+    )
     .join('\n');
 }
 
@@ -16853,10 +16979,6 @@ S.acts =
     if ($('g_name')) $('g_name').value = sp.process_name || '';
     if ($('g_code')) $('g_code').value = sp.process_code || '';
     if ($('g_purpose')) $('g_purpose').value = sp.purpose || '';
-    if($('g_notes')){
-  $('g_notes').value =
-    sp.notes || '';
-}
 
     ['suppliers', 'inputs', 'outputs', 'customers', 'actors', 'documents'].forEach(type => {
       if (typeof renderCatTable === 'function') renderCatTable(type);
@@ -17883,7 +18005,7 @@ function injectHeader(xmlStr, sp) {
     );
 
     nc.push(
-      `<mxCell id="${nid()}" value="NOTAS:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontStyle=1;fontSize=9;fontColor=#294B66;" vertex="1" parent="1"><mxGeometry x="${leftX + 8}" y="${yF + 5}" width="55" height="${noteH - 10}" as="geometry"/></mxCell>`
+      `<mxCell id="${nid()}" value="NOTAS ACLARATORIAS:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontStyle=1;fontSize=9;fontColor=#294B66;" vertex="1" parent="1"><mxGeometry x="${leftX + 8}" y="${yF + 5}" width="120" height="${noteH - 10}" as="geometry"/></mxCell>`
     );
 
     const notesVal = nl
@@ -17891,7 +18013,7 @@ function injectHeader(xmlStr, sp) {
       .join('&#xa;');
 
     nc.push(
-      `<mxCell id="${nid()}" value="${notesVal}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=9;fontColor=#435466;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="${leftX + 66}" y="${yF + 5}" width="${totalW - 80}" height="${noteH - 10}" as="geometry"/></mxCell>`
+      `<mxCell id="${nid()}" value="${notesVal}" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=9;fontColor=#435466;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="${leftX + 132}" y="${yF + 5}" width="${totalW - 146}" height="${noteH - 10}" as="geometry"/></mxCell>`
     );
 
     const neededH = yF + noteH + 40;
