@@ -13246,53 +13246,73 @@ layout: {
   /*
    * Paleta visual.
    */
-  const colors = {
-supplier: {
-    input: {
-      fill:
-        '#EEF7FC',
+const colors = {
+  supplier: {
+    fill:
+      '#F3F6F9',
 
-      stroke:
-        '#8FB9D0',
+    stroke:
+      '#AAB6C2',
 
-      header:
-        '#6F9FBC'
-    },
+    header:
+      '#667383'
+  },
 
-    actor: {
-      fill:
-        '#FFFFFF',
+  related_process: {
+    fill:
+      '#FFFFFF',
 
-      stroke:
-        '#D5DEE7',
+    stroke:
+      '#294B66',
 
-      header:
-        '#294B66'
-    },
+    header:
+      '#294B66'
+  },
 
-    output: {
-      fill:
-        '#F1F8F3',
+  input: {
+    fill:
+      '#EEF7FC',
 
-      stroke:
-        '#93B8A0',
+    stroke:
+      '#8FB9D0',
 
-      header:
-        '#769985'
-    },
+    header:
+      '#6F9FBC'
+  },
 
-    customer: {
-      fill:
-        '#F3F6F9',
+  actor: {
+    fill:
+      '#FFFFFF',
 
-      stroke:
-        '#AAB6C2',
+    stroke:
+      '#D5DEE7',
 
-      header:
-        '#667383'
-    }
-  };
+    header:
+      '#294B66'
+  },
 
+  output: {
+    fill:
+      '#F1F8F3',
+
+    stroke:
+      '#93B8A0',
+
+    header:
+      '#769985'
+  },
+
+  customer: {
+    fill:
+      '#F3F6F9',
+
+    stroke:
+      '#AAB6C2',
+
+    header:
+      '#667383'
+  }
+};
 
   const strokeByFamily = {
     internal:
@@ -13815,6 +13835,15 @@ nodes.forEach(node => {
     colors[node.kind] ||
     colors.actor;
 
+  const executionVisual =
+    node.kind ===
+      'activity'
+      ? sbExecutionVisualDescriptor(
+          node.activity ||
+          {}
+        )
+      : null;
+
   svg += sbOpenSelectableGroup(
     'node',
     node.id,
@@ -13888,8 +13917,16 @@ nodes.forEach(node => {
           ${centerX},${node.y + node.height}
           ${node.x},${centerY}
         "
-        fill="#FFFFFF"
-        stroke="#F2994A"
+        fill="${
+          executionVisual?.is_system
+            ? executionVisual.node_fill
+            : '#FFFFFF'
+        }"
+        stroke="${
+          executionVisual?.is_system
+            ? executionVisual.node_stroke
+            : '#F2994A'
+        }"
         stroke-width="1.5"
       />
     `;
@@ -13902,41 +13939,67 @@ nodes.forEach(node => {
         height="${node.height}"
         fill="${
           node.kind ===
-            'input'
-              ? '#F6FBFE'
-              : (
-                  node.kind ===
-                    'output'
-                      ? '#F7FCF8'
-                      : '#FFFFFF'
-                )
+            'activity'
+            ? (
+                executionVisual?.is_system
+                  ? executionVisual.node_fill
+                  : '#FFFFFF'
+              )
+            : (
+                node.kind ===
+                  'input'
+                  ? '#F6FBFE'
+                  : (
+                      node.kind ===
+                        'output'
+                        ? '#F7FCF8'
+                        : '#FFFFFF'
+                    )
+              )
         }"
         stroke="${
           node.kind ===
             'activity'
-              ? '#294B66'
-              : palette.stroke
+            ? (
+                executionVisual?.is_system
+                  ? executionVisual.node_stroke
+                  : '#294B66'
+              )
+            : palette.stroke
         }"
         stroke-width="${
           node.kind ===
             'activity'
-              ? 1.4
+              ? 1.5
               : 1.2
         }"
       />
     `;
   }
 
-    svg += sbSvgText(
-      node.label,
-      node.x,
-      node.y,
-      node.width,
-      node.height
-    );
+  svg += sbSvgText(
+    node.label,
+    node.x,
+    node.y,
+    node.width,
+    node.height
+  );
+
+  if(
+    node.kind ===
+    'activity'
+  ){
     svg +=
-  '</g>';
-  });
+      sbSvgExecutionIdentifier(
+        node,
+        node.activity ||
+        {}
+      );
+  }
+
+  svg +=
+    '</g>';
+});
 
 
   svg +=
@@ -18077,12 +18140,19 @@ $('tpl_info').innerHTML =
   `Decisiones: 130×60 · ` +
   `Carriles externos: ancho fijo ${EXTERNAL_LANE_W}px`;
 
+const relatedProcessStylesOk =
+  sbApplyRelatedProcessDrawioStyles();
+
+const activityExecutionStylesOk =
+  sbApplyActivityExecutionDrawioStyles();
+
 if(
-  !sbApplyRelatedProcessDrawioStyles()
+  !relatedProcessStylesOk ||
+  !activityExecutionStylesOk
 ){
   gMsg(
     'warn',
-    'La plantilla fue generada, pero no fue posible aplicar la simbología de procesos internos.'
+    'La plantilla fue generada, pero no fue posible aplicar completamente la simbología automática.'
   );
 }
 
@@ -18333,6 +18403,438 @@ function sbApplyRelatedProcessDrawioStyles(){
 
   return true;
 }  
+
+function sbApplyActivityExecutionDrawioStyles(){
+  const xml =
+    String(
+      S.tplXml ||
+      ''
+    ).trim();
+
+  if(!xml){
+    return false;
+  }
+
+  const parser =
+    new DOMParser();
+
+  const documentXML =
+    parser.parseFromString(
+      xml,
+      'application/xml'
+    );
+
+  if(
+    documentXML.getElementsByTagName(
+      'parsererror'
+    )[0]
+  ){
+    return false;
+  }
+
+  const root =
+    documentXML.getElementsByTagName(
+      'root'
+    )[0];
+
+  if(!root){
+    return false;
+  }
+
+  /*
+   * Evita duplicar identificadores cuando
+   * la plantilla se reconstruye.
+   */
+  Array
+    .from(
+      documentXML.querySelectorAll(
+        '[data-sgmp-execution-badge="1"], ' +
+        '[data-sgmp-execution-icon="1"]'
+      )
+    )
+    .forEach(cell =>
+      cell.remove()
+    );
+
+  const cellsById =
+    new Map(
+      Array
+        .from(
+          documentXML.getElementsByTagName(
+            'mxCell'
+          )
+        )
+        .map(cell => [
+          cell.getAttribute(
+            'id'
+          ),
+
+          cell
+        ])
+    );
+
+  const idMap =
+    parseIdReference();
+
+  const activities =
+    Array.isArray(
+      S.sp?.activities
+    )
+      ? S.sp.activities
+      : [];
+
+  activities.forEach(activity => {
+    const name =
+      normalizeText(
+        activity?.name ||
+        ''
+      );
+
+    if(!name){
+      return;
+    }
+
+    const nodeId =
+      idMap.activities[
+        name.toLowerCase()
+      ]?.id;
+
+    const cell =
+      cellsById.get(
+        nodeId
+      );
+
+    if(!cell){
+      return;
+    }
+
+    const visual =
+      sbExecutionVisualDescriptor(
+        activity
+      );
+
+    cell.setAttribute(
+      'data-sgmp-execution-mode',
+      visual.is_system
+        ? 'system'
+        : 'manual'
+    );
+
+    cell.setAttribute(
+      'data-sgmp-execution-code',
+      visual.code ||
+      ''
+    );
+
+    if(
+      visual.is_system
+    ){
+      cell.setAttribute(
+        'style',
+
+        sbMergeDrawioStyle(
+          cell.getAttribute(
+            'style'
+          ) ||
+          '',
+
+          {
+            fillColor:
+              visual.node_fill,
+
+            strokeColor:
+              visual.node_stroke,
+
+            fontColor:
+              visual.node_text
+          }
+        )
+      );
+    }
+
+    if(!visual.visible){
+      return;
+    }
+
+    const geometry =
+      Array
+        .from(
+          cell.children
+        )
+        .find(child =>
+          child.tagName ===
+          'mxGeometry'
+        );
+
+    if(!geometry){
+      return;
+    }
+
+    const nodeX =
+      Number(
+        geometry.getAttribute(
+          'x'
+        ) ||
+        0
+      );
+
+    const nodeY =
+      Number(
+        geometry.getAttribute(
+          'y'
+        ) ||
+        0
+      );
+
+    const nodeWidth =
+      Number(
+        geometry.getAttribute(
+          'width'
+        ) ||
+        0
+      );
+
+    const nodeHeight =
+      Number(
+        geometry.getAttribute(
+          'height'
+        ) ||
+        0
+      );
+
+    const badgeWidth =
+      38;
+
+    const badgeHeight =
+      16;
+
+    const badge =
+      documentXML.createElement(
+        'mxCell'
+      );
+
+    badge.setAttribute(
+      'id',
+      `sb_exec_badge_${nodeId}`
+    );
+
+    badge.setAttribute(
+      'value',
+      visual.badge
+    );
+
+    badge.setAttribute(
+      'style',
+      [
+        'rounded=1',
+        'whiteSpace=wrap',
+        'html=1',
+        `fillColor=${visual.badge_fill}`,
+        `strokeColor=${visual.badge_stroke}`,
+        'strokeWidth=1',
+        `fontColor=${visual.badge_text}`,
+        'fontSize=7',
+        'fontStyle=1',
+        'align=center',
+        'verticalAlign=middle',
+        'spacing=1'
+      ].join(';') + ';'
+    );
+
+    badge.setAttribute(
+      'vertex',
+      '1'
+    );
+
+    badge.setAttribute(
+      'parent',
+      '1'
+    );
+
+    badge.setAttribute(
+      'data-sgmp-execution-badge',
+      '1'
+    );
+
+    badge.setAttribute(
+      'data-sgmp-execution-code',
+      visual.code
+    );
+
+    const badgeGeometry =
+      documentXML.createElement(
+        'mxGeometry'
+      );
+
+    badgeGeometry.setAttribute(
+      'x',
+      String(
+        Math.round(
+          nodeX +
+          nodeWidth -
+          badgeWidth -
+          5
+        )
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'y',
+      String(
+        Math.round(
+          nodeY +
+          nodeHeight -
+          badgeHeight -
+          4
+        )
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'width',
+      String(
+        badgeWidth
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'height',
+      String(
+        badgeHeight
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'as',
+      'geometry'
+    );
+
+    badge.appendChild(
+      badgeGeometry
+    );
+
+    root.appendChild(
+      badge
+    );
+
+    if(
+      visual.icon_url
+    ){
+      const icon =
+        documentXML.createElement(
+          'mxCell'
+        );
+
+      icon.setAttribute(
+        'id',
+        `sb_exec_icon_${nodeId}`
+      );
+
+      icon.setAttribute(
+        'value',
+        ''
+      );
+
+      icon.setAttribute(
+        'style',
+        [
+          'shape=image',
+          'verticalLabelPosition=bottom',
+          'verticalAlign=top',
+          'imageAspect=0',
+          'aspect=fixed',
+          `image=${visual.icon_url}`
+        ].join(';') + ';'
+      );
+
+      icon.setAttribute(
+        'vertex',
+        '1'
+      );
+
+      icon.setAttribute(
+        'parent',
+        '1'
+      );
+
+      icon.setAttribute(
+        'data-sgmp-execution-icon',
+        '1'
+      );
+
+      icon.setAttribute(
+        'data-sgmp-execution-code',
+        visual.code
+      );
+
+      const iconGeometry =
+        documentXML.createElement(
+          'mxGeometry'
+        );
+
+      iconGeometry.setAttribute(
+        'x',
+        String(
+          Math.round(
+            nodeX +
+            nodeWidth -
+            badgeWidth -
+            2
+          )
+        )
+      );
+
+      iconGeometry.setAttribute(
+        'y',
+        String(
+          Math.round(
+            nodeY +
+            nodeHeight -
+            badgeHeight -
+            2
+          )
+        )
+      );
+
+      iconGeometry.setAttribute(
+        'width',
+        String(
+          badgeWidth -
+          6
+        )
+      );
+
+      iconGeometry.setAttribute(
+        'height',
+        String(
+          badgeHeight -
+          6
+        )
+      );
+
+      iconGeometry.setAttribute(
+        'as',
+        'geometry'
+      );
+
+      icon.appendChild(
+        iconGeometry
+      );
+
+      root.appendChild(
+        icon
+      );
+    }
+  });
+
+  S.tplXml =
+    new XMLSerializer()
+      .serializeToString(
+        documentXML
+      );
+
+  return true;
+}
   
 // ═══════════════════════════════════════════════════════════════
 // INJECT HEADER + FOOTER
@@ -18947,18 +19449,18 @@ const SB_SUPPORT_TOOLS =
 
     {
       code:
-        'WSS',
-
-      name:
-        'WhatsApp'
-    },
-
-    {
-      code:
         'DRIVE',
 
       name:
         'Drive'
+    },
+
+    {
+      code:
+        'WSS',
+
+      name:
+        'WhatsApp'
     }
   ]);
 
@@ -19056,7 +19558,317 @@ function sbExecutionCatalogItem(
   ) || null;
 }
 
+const SB_EXECUTION_VISUALS =
+  Object.freeze({
+    system: {
+      SIAA: {
+        badge:
+          'SIAA',
 
+        icon_url:
+          ''
+      },
+
+      '4TUNA': {
+        badge:
+          '4T',
+
+        icon_url:
+          ''
+      },
+
+      SAP: {
+        badge:
+          'SAP',
+
+        icon_url:
+          ''
+      },
+
+      BLZ: {
+        badge:
+          'BLZ',
+
+        icon_url:
+          ''
+      }
+    },
+
+    support: {
+      EXCEL: {
+        badge:
+          'XLS',
+
+        icon_url:
+          '',
+
+        badge_stroke:
+          '#217346',
+
+        badge_text:
+          '#217346'
+      },
+
+      DRIVE: {
+        badge:
+          'DRV',
+
+        icon_url:
+          '',
+
+        badge_stroke:
+          '#4285F4',
+
+        badge_text:
+          '#315FA8'
+      },
+
+      WSS: {
+        badge:
+          'WSS',
+
+        icon_url:
+          '',
+
+        badge_stroke:
+          '#25A65A',
+
+        badge_text:
+          '#1E7A45'
+      }
+    },
+
+    system_node: {
+      fill:
+        '#FCE4D6',
+
+      stroke:
+        '#C87941',
+
+      text:
+        '#6B3A17'
+    }
+  });
+
+
+function sbExecutionVisualDescriptor(
+  activity
+){
+  const execution =
+    sbNormalizeActivityExecution(
+      activity
+    );
+
+  const isSystem =
+    execution.execution_mode ===
+    'system';
+
+  const code =
+    isSystem
+      ? execution.system_code
+      : execution.support_tool_code;
+
+  if(!code){
+    return {
+      visible:
+        false,
+
+      is_system:
+        isSystem,
+
+      code:
+        '',
+
+      badge:
+        '',
+
+      icon_url:
+        '',
+
+      node_fill:
+        '#FFFFFF',
+
+      node_stroke:
+        '#294B66',
+
+      node_text:
+        '#294B66',
+
+      badge_fill:
+        '#FFFFFF',
+
+      badge_stroke:
+        '#8A9BAB',
+
+      badge_text:
+        '#294B66'
+    };
+  }
+
+  const visual =
+    (
+      isSystem
+        ? SB_EXECUTION_VISUALS
+            .system
+        : SB_EXECUTION_VISUALS
+            .support
+    )[code] ||
+    {};
+
+  return {
+    visible:
+      true,
+
+    is_system:
+      isSystem,
+
+    code,
+
+    badge:
+      normalizeText(
+        visual.badge ||
+        code
+      ).toUpperCase(),
+
+    icon_url:
+      normalizeText(
+        visual.icon_url ||
+        ''
+      ),
+
+    node_fill:
+      isSystem
+        ? SB_EXECUTION_VISUALS
+            .system_node
+            .fill
+        : '#FFFFFF',
+
+    node_stroke:
+      isSystem
+        ? SB_EXECUTION_VISUALS
+            .system_node
+            .stroke
+        : '#294B66',
+
+    node_text:
+      isSystem
+        ? SB_EXECUTION_VISUALS
+            .system_node
+            .text
+        : '#294B66',
+
+    badge_fill:
+      '#FFFFFF',
+
+    badge_stroke:
+      normalizeText(
+        visual.badge_stroke ||
+        (
+          isSystem
+            ? SB_EXECUTION_VISUALS
+                .system_node
+                .stroke
+            : '#8A9BAB'
+        )
+      ),
+
+    badge_text:
+      normalizeText(
+        visual.badge_text ||
+        (
+          isSystem
+            ? SB_EXECUTION_VISUALS
+                .system_node
+                .text
+            : '#294B66'
+        )
+      )
+  };
+}
+
+
+function sbSvgExecutionIdentifier(
+  node,
+  activity
+){
+  const visual =
+    sbExecutionVisualDescriptor(
+      activity
+    );
+
+  if(!visual.visible){
+    return '';
+  }
+
+  const badgeWidth =
+    38;
+
+  const badgeHeight =
+    16;
+
+  const x =
+    node.x +
+    node.width -
+    badgeWidth -
+    5;
+
+  const y =
+    node.y +
+    node.height -
+    badgeHeight -
+    4;
+
+  return `
+    <g
+      class="sb-svg-execution-identifier"
+      data-sb-execution-code="${ex(
+        visual.code
+      )}"
+    >
+      <rect
+        x="${x}"
+        y="${y}"
+        width="${badgeWidth}"
+        height="${badgeHeight}"
+        rx="3"
+        fill="${visual.badge_fill}"
+        stroke="${visual.badge_stroke}"
+        stroke-width="1"
+      />
+
+      <text
+        x="${x + badgeWidth / 2}"
+        y="${y + 11.5}"
+        text-anchor="middle"
+        fill="${visual.badge_text}"
+        font-family="Segoe UI,Arial,sans-serif"
+        font-size="7"
+        font-weight="800"
+      >
+        ${ex(visual.badge)}
+      </text>
+
+      ${
+        visual.icon_url
+          ? `
+            <image
+              href="${ex(
+                visual.icon_url
+              )}"
+              x="${x + 2}"
+              y="${y + 2}"
+              width="${badgeWidth - 4}"
+              height="${badgeHeight - 4}"
+              preserveAspectRatio="xMidYMid meet"
+            />
+          `
+          : ''
+      }
+    </g>
+  `;
+}
+
+  
 function sbNormalizeActivityExecution(
   activity
 ){
@@ -19276,7 +20088,7 @@ function sbExecutionEditorMarkup(
       }
     >
       <label>
-        Sistema *
+        Sistema donde se realiza *
       </label>
 
       <select
@@ -19288,7 +20100,7 @@ function sbExecutionEditorMarkup(
           sbExecutionOptions(
             sbExecutionSystemCatalog(),
             execution.system_code,
-            'Selecciona un sistema'
+            'Selecciona SIAA, 4TUNA, SAP o BLZ'
           )
         }
       </select>
@@ -19308,7 +20120,7 @@ function sbExecutionEditorMarkup(
       }
     >
       <label>
-        Identificador visual opcional
+        Dónde se realiza — opcional
       </label>
 
       <select
@@ -19320,14 +20132,13 @@ function sbExecutionEditorMarkup(
           sbExecutionOptions(
             sbExecutionSupportCatalog(),
             execution.support_tool_code,
-            'Sin identificador'
+            'Ninguno'
           )
         }
       </select>
     </div>
   `;
 }
-
 
 function sbToggleInlineExecutionMode(
   index
@@ -19349,6 +20160,10 @@ function sbToggleInlineExecutionMode(
         ? 'system'
         : 'manual';
 
+  const isSystem =
+    mode ===
+    'system';
+
   const systemField =
     card.querySelector(
       '.sb-inline-system-field'
@@ -19364,24 +20179,59 @@ function sbToggleInlineExecutionMode(
       '.sb-inline-system-code'
     );
 
+  const supportSelect =
+    card.querySelector(
+      '.sb-inline-support-tool-code'
+    );
+
   if(systemField){
     systemField.hidden =
-      mode !== 'system';
+      !isSystem;
+
+    systemField.setAttribute(
+      'aria-hidden',
+      String(!isSystem)
+    );
   }
 
   if(supportField){
     supportField.hidden =
-      mode === 'system';
+      isSystem;
+
+    supportField.setAttribute(
+      'aria-hidden',
+      String(isSystem)
+    );
   }
 
   if(systemSelect){
+    systemSelect.disabled =
+      !isSystem;
+
     systemSelect.required =
-      mode === 'system';
+      isSystem;
+
+    if(!isSystem){
+      systemSelect.value =
+        '';
+    }
+  }
+
+  if(supportSelect){
+    supportSelect.disabled =
+      isSystem;
+
+    supportSelect.required =
+      false;
+
+    if(isSystem){
+      supportSelect.value =
+        '';
+    }
   }
 
   return true;
 }
-
 
 function sbInjectInlineExecutionEditors(){
   document
