@@ -19583,6 +19583,990 @@ sbCollectStructuralIssues =
 
 
 // ═══════════════════════════════════════════════════════════════
+// DOCUMENTOS MANUALES VINCULADOS A ACTIVIDADES
+// Nombre y código. Sin catálogo, estado, tipo o acción documental.
+// ═══════════════════════════════════════════════════════════════
+
+function sbDocumentSourceRows(
+  activity
+){
+  if(
+    Array.isArray(
+      activity?.documents
+    )
+  ){
+    return activity.documents;
+  }
+
+  if(
+    Array.isArray(
+      activity?.document_references
+    )
+  ){
+    return activity.document_references;
+  }
+
+  const legacyName =
+    normalizeText(
+      activity?.document_name ||
+      activity?.document ||
+      ''
+    );
+
+  const legacyCode =
+    normalizeText(
+      activity?.document_code ||
+      activity?.document_ref ||
+      ''
+    );
+
+  return (
+    legacyName ||
+    legacyCode
+  )
+    ? [{
+        name:
+          legacyName,
+
+        code:
+          legacyCode
+      }]
+    : [];
+}
+
+
+function sbNormalizeDocumentCode(
+  value
+){
+  return normalizeText(
+    value || ''
+  )
+    .replace(
+      /\s*-\s*/g,
+      '-'
+    )
+    .toUpperCase();
+}
+
+
+function sbNormalizeActivityDocuments(
+  activity,
+  keepEmpty = false
+){
+  const seen =
+    new Set();
+
+  return sbDocumentSourceRows(
+    activity
+  )
+    .map(item => ({
+      name:
+        normalizeText(
+          typeof item ===
+            'string'
+            ? item
+            : (
+                item?.name ||
+                item?.document_name ||
+                item?.title ||
+                ''
+              )
+        ),
+
+      code:
+        sbNormalizeDocumentCode(
+          typeof item ===
+            'object'
+            ? (
+                item?.code ||
+                item?.document_code ||
+                item?.ref ||
+                ''
+              )
+            : ''
+        )
+    }))
+    .filter(item =>
+      keepEmpty ||
+      item.name ||
+      item.code
+    )
+    .filter(item => {
+      if(
+        !item.name &&
+        !item.code
+      ){
+        return keepEmpty;
+      }
+
+      const key =
+        (
+          item.code.toLowerCase() +
+          '__' +
+          item.name.toLowerCase()
+        );
+
+      if(seen.has(key)){
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    });
+}
+
+
+function sbInlineDocumentRows(
+  activity,
+  index
+){
+  const documents =
+    sbNormalizeActivityDocuments(
+      activity,
+      true
+    );
+
+  if(!documents.length){
+    return `
+      <div class="sb-inline-empty">
+        Sin documentos vinculados.
+      </div>
+    `;
+  }
+
+  return documents
+    .map(
+      (
+        documentItem,
+        documentIndex
+      ) => `
+        <div
+          class="
+            sb-inline-row
+            sb-inline-document-row
+          "
+          data-document-index="${documentIndex}"
+        >
+          <input
+            class="sb-inline-document-name"
+            value="${ex(
+              documentItem.name ||
+              ''
+            )}"
+            placeholder="Nombre del documento"
+          />
+
+          <input
+            class="sb-inline-document-code"
+            value="${ex(
+              documentItem.code ||
+              ''
+            )}"
+            placeholder="Código"
+            oninput="
+              this.value =
+                sbNormalizeDocumentCode(
+                  this.value
+                )
+            "
+          />
+
+          <button
+            class="sb-inline-row-delete"
+            type="button"
+            onclick="
+              sbRemoveInlineDocument(
+                ${index},
+                ${documentIndex}
+              )
+            "
+            aria-label="Eliminar documento"
+          >
+            ×
+          </button>
+        </div>
+      `
+    )
+    .join('');
+}
+
+
+function sbInlineDocumentSection(
+  activity,
+  index
+){
+  const count =
+    sbNormalizeActivityDocuments(
+      activity,
+      true
+    ).length;
+
+  return `
+    <details
+      class="sb-inline-section"
+      data-inline-section="documents"
+    >
+      <summary>
+        <strong>
+          Documentos vinculados
+        </strong>
+
+        <span>
+          ${count}
+        </span>
+      </summary>
+
+      <div class="sb-inline-section-body">
+        <div
+          class="sb-inline-row-list"
+          data-inline-kind="documents"
+        >
+          ${sbInlineDocumentRows(
+            activity,
+            index
+          )}
+        </div>
+
+        <button
+          class="sb-inline-add-row"
+          type="button"
+          onclick="
+            sbAddInlineDocument(
+              ${index}
+            )
+          "
+        >
+          + Agregar documento
+        </button>
+      </div>
+    </details>
+  `;
+}
+
+
+function sbInjectInlineDocumentEditors(){
+  document
+    .querySelectorAll(
+      '.sb-activity-card[data-index]'
+    )
+    .forEach(card => {
+      if(
+        card.querySelector(
+          '[data-inline-section="documents"]'
+        )
+      ){
+        return;
+      }
+
+      const index =
+        Number(
+          card.dataset.index
+        );
+
+      const firstSubsection =
+        card.querySelector(
+          '.sb-inline-section'
+        );
+
+      if(
+        !Number.isInteger(index) ||
+        !firstSubsection
+      ){
+        return;
+      }
+
+      firstSubsection
+        .insertAdjacentHTML(
+          'beforebegin',
+
+          sbInlineDocumentSection(
+            S.acts[index] ||
+            {},
+
+            index
+          )
+        );
+    });
+}
+
+
+const sbRenderActsTableDocumentsBase =
+  renderActsTable;
+
+
+renderActsTable =
+  function(){
+    const result =
+      sbRenderActsTableDocumentsBase
+        .apply(
+          this,
+          arguments
+        );
+
+    sbInjectInlineDocumentEditors();
+
+    return result;
+  };
+
+
+const sbCollectInlineActivityDocumentsBase =
+  sbCollectInlineActivity;
+
+
+sbCollectInlineActivity =
+  function(
+    index
+  ){
+    const activity =
+      sbCollectInlineActivityDocumentsBase(
+        index
+      );
+
+    const card =
+      document.querySelector(
+        `.sb-activity-card[data-index="${index}"]`
+      );
+
+    if(
+      !activity ||
+      !card
+    ){
+      return activity;
+    }
+
+    const documents =
+      Array.from(
+        card.querySelectorAll(
+          '[data-inline-kind="documents"] ' +
+          '.sb-inline-document-row'
+        )
+      )
+        .map(row => ({
+          name:
+            normalizeText(
+              row.querySelector(
+                '.sb-inline-document-name'
+              )?.value ||
+              ''
+            ),
+
+          code:
+            sbNormalizeDocumentCode(
+              row.querySelector(
+                '.sb-inline-document-code'
+              )?.value ||
+              ''
+            )
+        }))
+        .filter(item =>
+          item.name ||
+          item.code
+        );
+
+    return {
+      ...activity,
+
+      documents
+    };
+  };
+
+
+function sbAddInlineDocument(
+  index
+){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      'documents'
+    );
+
+  const current =
+    sbCollectInlineActivity(
+      index
+    );
+
+  if(!current){
+    return false;
+  }
+
+  current.documents =
+    sbNormalizeActivityDocuments(
+      current,
+      true
+    );
+
+  current.documents.push({
+    name:
+      '',
+
+    code:
+      ''
+  });
+
+  S.acts[index] =
+    current;
+
+  renderActsTable();
+
+  sbReopenInlineActivity(
+    index,
+    'documents',
+    viewState,
+    (
+      '.sb-inline-document-row:last-child ' +
+      '.sb-inline-document-name'
+    )
+  );
+
+  return true;
+}
+
+
+function sbRemoveInlineDocument(
+  index,
+  documentIndex
+){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      'documents'
+    );
+
+  const current =
+    sbCollectInlineActivity(
+      index
+    );
+
+  if(!current){
+    return false;
+  }
+
+  current.documents =
+    sbNormalizeActivityDocuments(
+      current,
+      true
+    )
+      .filter(
+        (
+          _,
+          indexValue
+        ) =>
+          indexValue !==
+          documentIndex
+      );
+
+  S.acts[index] =
+    current;
+
+  renderActsTable();
+
+  sbReopenInlineActivity(
+    index,
+    'documents',
+    viewState
+  );
+
+  return true;
+}
+
+
+function sbDocumentIncomingInput(
+  parsed
+){
+  const finalSipoc =
+    parsed
+      ?.final_outputs
+      ?.sipoc_builder ||
+
+    parsed
+      ?.finalOutputs
+      ?.sipoc_builder ||
+
+    parsed
+      ?.finalOutputs
+      ?.sipocBuilder ||
+
+    parsed
+      ?.outputs
+      ?.sipoc_builder;
+
+  const directSipoc =
+    parsed?.sipoc_builder ||
+    parsed?.sipocBuilder;
+
+  return (
+    parsed?.sipoc_input ||
+
+    finalSipoc?.sipoc_input ||
+
+    finalSipoc ||
+
+    directSipoc?.sipoc_input ||
+
+    directSipoc ||
+
+    parsed?.structured_process ||
+
+    parsed ||
+
+    {}
+  );
+}
+
+
+const sbNormalizeIncomingPayloadDocumentsBase =
+  normalizeIncomingPayload;
+
+
+normalizeIncomingPayload =
+  function(
+    parsed
+  ){
+    const payload =
+      sbNormalizeIncomingPayloadDocumentsBase(
+        parsed
+      );
+
+    const input =
+      sbDocumentIncomingInput(
+        parsed
+      );
+
+    const sourceActivities =
+      Array.isArray(
+        input?.activities
+      )
+        ? input.activities
+        : [];
+
+    const sourceById =
+      new Map(
+        sourceActivities
+          .filter(activity =>
+            normalizeText(
+              activity?.id ||
+              ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.id
+            ),
+
+            activity
+          ])
+      );
+
+    const sourceByName =
+      new Map(
+        sourceActivities
+          .filter(activity =>
+            normalizeText(
+              activity?.name ||
+              ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.name
+            ).toLowerCase(),
+
+            activity
+          ])
+      );
+
+    if(
+      Array.isArray(
+        payload
+          ?.normalized
+          ?.activities
+      )
+    ){
+      payload.normalized.activities =
+        payload
+          .normalized
+          .activities
+          .map(
+            (
+              activity,
+              index
+            ) => {
+              const source =
+                sourceById.get(
+                  normalizeText(
+                    activity?.id ||
+                    ''
+                  )
+                ) ||
+
+                sourceByName.get(
+                  normalizeText(
+                    activity?.name ||
+                    ''
+                  ).toLowerCase()
+                ) ||
+
+                sourceActivities[index] ||
+
+                activity;
+
+              return {
+                ...activity,
+
+                documents:
+                  sbNormalizeActivityDocuments(
+                    source
+                  )
+              };
+            }
+          );
+    }
+
+    return payload;
+  };
+
+
+const sbSyncEditorToContractDocumentsBase =
+  sbSyncEditorToContract;
+
+
+sbSyncEditorToContract =
+  function(){
+    const contract =
+      sbSyncEditorToContractDocumentsBase();
+
+    const sourceById =
+      new Map(
+        (
+          S.acts ||
+          []
+        )
+          .filter(activity =>
+            normalizeText(
+              activity?.id ||
+              ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.id
+            ),
+
+            activity
+          ])
+      );
+
+    const sourceByName =
+      new Map(
+        (
+          S.acts ||
+          []
+        )
+          .filter(activity =>
+            normalizeText(
+              activity?.name ||
+              ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.name
+            ).toLowerCase(),
+
+            activity
+          ])
+      );
+
+    const activities =
+      Array.isArray(
+        contract
+          ?.sipoc_input
+          ?.activities
+      )
+        ? contract
+            .sipoc_input
+            .activities
+        : [];
+
+    contract.sipoc_input.activities =
+      activities.map(
+        (
+          activity,
+          index
+        ) => {
+          const source =
+            sourceById.get(
+              normalizeText(
+                activity?.id ||
+                ''
+              )
+            ) ||
+
+            sourceByName.get(
+              normalizeText(
+                activity?.name ||
+                ''
+              ).toLowerCase()
+            ) ||
+
+            S.acts?.[index] ||
+
+            activity;
+
+          return {
+            ...activity,
+
+            documents:
+              sbNormalizeActivityDocuments(
+                source
+              )
+          };
+        }
+      );
+
+    S.contract =
+      contract;
+
+    S.sp =
+      normalizeIncomingPayload(
+        contract
+      ).normalized;
+
+    return contract;
+  };
+
+
+function sbCollectActivityDocumentIssues(
+  activities
+){
+  const issues =
+    [];
+
+  const globalCodes =
+    new Map();
+
+  (
+    activities ||
+    []
+  ).forEach(
+    (
+      activity,
+      activityIndex
+    ) => {
+      const documents =
+        sbNormalizeActivityDocuments(
+          activity
+        );
+
+      const localCodes =
+        new Set();
+
+      documents.forEach(
+        (
+          documentItem,
+          documentIndex
+        ) => {
+          const activityName =
+            normalizeText(
+              activity?.name ||
+              `Actividad ${
+                activityIndex + 1
+              }`
+            );
+
+          if(
+            !documentItem.name ||
+            !documentItem.code
+          ){
+            issues.push({
+              title:
+                `${activityName} tiene un documento incompleto`,
+
+              detail:
+                (
+                  'Completa nombre y código ' +
+                  `en el documento ${
+                    documentIndex + 1
+                  }.`
+                ),
+
+              targetId:
+                'sb_acc_activities',
+
+              activityIndex
+            });
+
+            return;
+          }
+
+          const codeKey =
+            documentItem
+              .code
+              .toLowerCase();
+
+          if(
+            localCodes.has(
+              codeKey
+            )
+          ){
+            issues.push({
+              title:
+                (
+                  `${activityName} repite ` +
+                  `el documento ${
+                    documentItem.code
+                  }`
+                ),
+
+              detail:
+                (
+                  'Un mismo documento debe aparecer ' +
+                  'una sola vez dentro de la actividad.'
+                ),
+
+              targetId:
+                'sb_acc_activities',
+
+              activityIndex
+            });
+          }else{
+            localCodes.add(
+              codeKey
+            );
+          }
+
+          const registeredName =
+            globalCodes.get(
+              codeKey
+            );
+
+          if(
+            registeredName &&
+            registeredName !==
+              documentItem
+                .name
+                .toLowerCase()
+          ){
+            issues.push({
+              title:
+                (
+                  `El código ${
+                    documentItem.code
+                  } tiene nombres diferentes`
+                ),
+
+              detail:
+                (
+                  'El mismo código documental debe ' +
+                  'conservar exactamente el mismo ' +
+                  'nombre en todo el proceso.'
+                ),
+
+              targetId:
+                'sb_acc_activities',
+
+              activityIndex
+            });
+          }else if(
+            !registeredName
+          ){
+            globalCodes.set(
+              codeKey,
+
+              documentItem
+                .name
+                .toLowerCase()
+            );
+          }
+        }
+      );
+    }
+  );
+
+  return issues;
+}
+
+
+const sbCollectStructuralIssuesDocumentsBase =
+  sbCollectStructuralIssues;
+
+
+sbCollectStructuralIssues =
+  function(
+    contract
+  ){
+    const issues =
+      sbCollectStructuralIssuesDocumentsBase(
+        contract
+      );
+
+    return issues.concat(
+      sbCollectActivityDocumentIssues(
+        contract
+          ?.sipoc_input
+          ?.activities ||
+        []
+      )
+    );
+  };
+
+
+const sbGoToTemplateDocumentsBase =
+  goToTemplate;
+
+
+goToTemplate =
+  function(){
+    sbCollectAllInlineActivities();
+
+    const documentIssues =
+      sbCollectActivityDocumentIssues(
+        S.acts
+      );
+
+    if(documentIssues.length){
+      const firstIssue =
+        documentIssues[0];
+
+      if(
+        $('sb_acc_activities')
+      ){
+        $('sb_acc_activities').open =
+          true;
+      }
+
+      if(
+        Number.isInteger(
+          firstIssue.activityIndex
+        )
+      ){
+        sbReopenInlineActivity(
+          firstIssue.activityIndex,
+          'documents'
+        );
+      }
+
+      gMsg(
+        'warn',
+
+        firstIssue.title +
+        '. ' +
+        firstIssue.detail
+      );
+
+      return;
+    }
+
+    return sbGoToTemplateDocumentsBase
+      .apply(
+        this,
+        arguments
+      );
+  };
+
+
+// ═══════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
   
