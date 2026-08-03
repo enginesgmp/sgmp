@@ -2956,6 +2956,71 @@ body{font-size:14px !important}
       <span>Datos generales</span>
 
       <small>
+        Identificación, macroproceso y finalidad del proceso.
+        Las notas aclaratorias se gestionan únicamente dentro de cada actividad.
+      </small>
+    </div>
+  </summary>
+
+  <div class="sb-data-accordion-body">
+    <div class="g2">
+
+      <div class="field">
+        <label>Código del proceso</label>
+
+        <input
+          id="g_code"
+          placeholder="Ej: PR-30211"
+        />
+      </div>
+
+      <div class="field">
+        <label>Nombre del proceso *</label>
+
+        <input
+          id="g_name"
+          placeholder="Ej: Gestión de Donaciones"
+        />
+      </div>
+
+      <div class="field full">
+        <label>Macroproceso</label>
+
+        <select id="g_macroprocess">
+          <option value="">
+            Selecciona un macroproceso
+          </option>
+        </select>
+      </div>
+
+      <div class="field full">
+        <label>Finalidad *</label>
+
+        <input
+          id="g_purpose"
+          placeholder="Ej: Ejecutar donaciones a terceros que generen impacto positivo"
+        />
+      </div>
+
+    </div>
+
+    <div class="btn-row right">
+      <button
+        class="primary"
+        id="btn_save_process_base"
+        type="button"
+      >
+        Guardar datos generales
+      </button>
+    </div>
+  </div>
+</details>
+    
+  <summary>
+    <div class="sb-data-summary-main">
+      <span>Datos generales</span>
+
+      <small>
         Identificación y finalidad del proceso.
         Las notas aclaratorias se gestionan únicamente dentro de cada actividad.
       </small>
@@ -14797,6 +14862,8 @@ function exportJSON(){
 
 
 function goToTemplate(){
+  sbCollectAllInlineActivities();
+
   if(
     !$('g_name')?.value.trim()
   ){
@@ -14812,6 +14879,59 @@ function goToTemplate(){
     gMsg(
       'warn',
       'Agrega al menos una actividad.'
+    );
+
+    return;
+  }
+
+  const invalidExecutionIndex =
+    S.acts.findIndex(
+      activity => {
+        const execution =
+          sbNormalizeActivityExecution(
+            activity
+          );
+
+        return (
+          execution.execution_mode ===
+            'system' &&
+          !execution.system_code
+        );
+      }
+    );
+
+  if(
+    invalidExecutionIndex >=
+    0
+  ){
+    const activity =
+      S.acts[
+        invalidExecutionIndex
+      ];
+
+    if(
+      $('sb_acc_activities')
+    ){
+      $('sb_acc_activities').open =
+        true;
+    }
+
+    sbReopenInlineActivity(
+      invalidExecutionIndex
+    );
+
+    gMsg(
+      'warn',
+
+      'La actividad "' +
+      normalizeText(
+        activity?.name ||
+        `Actividad ${
+          invalidExecutionIndex +
+          1
+        }`
+      ) +
+      '" está marcada como En sistema, pero no tiene un sistema seleccionado.'
     );
 
     return;
@@ -18044,6 +18164,1423 @@ function renderOutReport() {
       <strong>Importar en draw.io:</strong> Extras &rarr; Edit Diagram &rarr; pega el XML &rarr; Cerrar. Usa Ctrl+Shift+H para ajustar la vista.
     </div>`;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CATÁLOGOS MAESTROS · MACROPROCESO
+// Capa preparada para futura conexión con Google Sheets.
+// ═══════════════════════════════════════════════════════════════
+
+if(
+  !S.masterCatalogs ||
+  typeof S.masterCatalogs !== 'object'
+){
+  S.masterCatalogs = {
+    macroprocesses:
+      [],
+
+    processes:
+      [],
+
+    systems:
+      []
+  };
+}
+
+
+function sbNormalizeMasterCatalog(items){
+  const seen =
+    new Set();
+
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  )
+    .map(item => ({
+      code:
+        normalizeText(
+          item?.code ||
+          item?.codigo ||
+          ''
+        ),
+
+      name:
+        normalizeText(
+          item?.name ||
+          item?.nombre ||
+          ''
+        )
+    }))
+    .filter(item => {
+      if(
+        !item.code ||
+        !item.name
+      ){
+        return false;
+      }
+
+      const key =
+        item.code.toLowerCase();
+
+      if(seen.has(key)){
+        return false;
+      }
+
+      seen.add(key);
+
+      return true;
+    });
+}
+
+
+function sbReadMacroprocessFromSource(source){
+  const finalSipoc =
+    source?.final_outputs?.sipoc_builder ||
+    source?.finalOutputs?.sipoc_builder ||
+    source?.finalOutputs?.sipocBuilder ||
+    source?.outputs?.sipoc_builder;
+
+  const directSipoc =
+    source?.sipoc_builder ||
+    source?.sipocBuilder;
+
+  const sipocInput =
+    source?.sipoc_input ||
+    finalSipoc?.sipoc_input ||
+    finalSipoc ||
+    directSipoc?.sipoc_input ||
+    directSipoc ||
+    source?.structured_process ||
+    source ||
+    {};
+
+  return {
+    code:
+      normalizeText(
+        sipocInput.macroprocess_code ||
+        sipocInput.macroprocess?.code ||
+        ''
+      ),
+
+    name:
+      normalizeText(
+        sipocInput.macroprocess_name ||
+        sipocInput.macroprocess?.name ||
+        ''
+      )
+  };
+}
+
+
+function sbGetSelectedMacroprocess(){
+  const select =
+    $('g_macroprocess');
+
+  const option =
+    select?.selectedOptions?.[0];
+
+  return {
+    code:
+      normalizeText(
+        select?.value ||
+        ''
+      ),
+
+    name:
+      normalizeText(
+        option?.dataset?.name ||
+        ''
+      )
+  };
+}
+
+
+function sbRenderMacroprocessOptions(selected){
+  const select =
+    $('g_macroprocess');
+
+  if(!select){
+    return;
+  }
+
+  const current = {
+    code:
+      normalizeText(
+        selected?.code ||
+        selected?.macroprocess_code ||
+        ''
+      ),
+
+    name:
+      normalizeText(
+        selected?.name ||
+        selected?.macroprocess_name ||
+        ''
+      )
+  };
+
+  const items =
+    sbNormalizeMasterCatalog(
+      S.masterCatalogs.macroprocesses
+    );
+
+  /*
+   * Si el proceso cargado ya contiene un
+   * macroproceso y el catálogo todavía no
+   * está disponible, se conserva temporalmente.
+   */
+  if(
+    current.code &&
+    current.name &&
+    !items.some(item =>
+      item.code.toLowerCase() ===
+      current.code.toLowerCase()
+    )
+  ){
+    items.push(
+      current
+    );
+  }
+
+  select.innerHTML =
+    '';
+
+  const placeholder =
+    document.createElement(
+      'option'
+    );
+
+  placeholder.value =
+    '';
+
+  placeholder.textContent =
+    'Selecciona un macroproceso';
+
+  select.appendChild(
+    placeholder
+  );
+
+  items.forEach(item => {
+    const option =
+      document.createElement(
+        'option'
+      );
+
+    option.value =
+      item.code;
+
+    option.dataset.name =
+      item.name;
+
+    option.textContent =
+      `${item.code} · ${item.name}`;
+
+    select.appendChild(
+      option
+    );
+  });
+
+  select.value =
+    current.code;
+}
+
+
+function sbSetMasterCatalogs(catalogs){
+  const source =
+    catalogs &&
+    typeof catalogs === 'object'
+      ? catalogs
+      : {};
+
+  const current =
+    sbGetSelectedMacroprocess();
+
+  S.masterCatalogs.macroprocesses =
+    sbNormalizeMasterCatalog(
+      source.macroprocesses
+    );
+
+  S.masterCatalogs.processes =
+    sbNormalizeMasterCatalog(
+      source.processes
+    );
+
+  S.masterCatalogs.systems =
+    sbNormalizeMasterCatalog(
+      source.systems
+    );
+
+  sbRenderMacroprocessOptions(
+    current
+  );
+}
+
+
+/*
+ * Amplía el contrato vacío utilizado
+ * para crear procesos manualmente.
+ */
+const sbBuildEmptySBContractBase =
+  buildEmptySBContract;
+
+buildEmptySBContract =
+  function(){
+    const contract =
+      sbBuildEmptySBContractBase();
+
+    contract.sipoc_input.macroprocess_code =
+      '';
+
+    contract.sipoc_input.macroprocess_name =
+      '';
+
+    return contract;
+  };
+
+
+/*
+ * Conserva el macroproceso al normalizar
+ * JSON provenientes del LMP o del propio SB.
+ */
+const sbNormalizeIncomingPayloadBase =
+  normalizeIncomingPayload;
+
+normalizeIncomingPayload =
+  function(parsed){
+    const payload =
+      sbNormalizeIncomingPayloadBase(
+        parsed
+      );
+
+    const macroprocess =
+      sbReadMacroprocessFromSource(
+        parsed
+      );
+
+    if(
+      payload?.normalized &&
+      typeof payload.normalized === 'object'
+    ){
+      payload.normalized.macroprocess_code =
+        macroprocess.code;
+
+      payload.normalized.macroprocess_name =
+        macroprocess.name;
+    }
+
+    return payload;
+  };
+
+
+/*
+ * Añade el macroproceso cuando un JSON
+ * anterior se convierte al contrato canónico.
+ */
+const sbBuildCanonicalContractBase =
+  sbBuildCanonicalContract;
+
+sbBuildCanonicalContract =
+  function(
+    parsed,
+    sp,
+    source
+  ){
+    const contract =
+      sbBuildCanonicalContractBase(
+        parsed,
+        sp,
+        source
+      );
+
+    const fromParsed =
+      sbReadMacroprocessFromSource(
+        parsed
+      );
+
+    const fromNormalized =
+      sbReadMacroprocessFromSource(
+        sp
+      );
+
+    contract.sipoc_input.macroprocess_code =
+      fromParsed.code ||
+      fromNormalized.code;
+
+    contract.sipoc_input.macroprocess_name =
+      fromParsed.name ||
+      fromNormalized.name;
+
+    return contract;
+  };
+
+
+/*
+ * Guarda la selección del desplegable
+ * cada vez que el editor reconstruye
+ * el contrato del proceso.
+ */
+const sbSyncEditorToContractBase =
+  sbSyncEditorToContract;
+
+sbSyncEditorToContract =
+  function(){
+    const contract =
+      sbSyncEditorToContractBase();
+
+    const macroprocess =
+      sbGetSelectedMacroprocess();
+
+    contract.sipoc_input.macroprocess_code =
+      macroprocess.code;
+
+    contract.sipoc_input.macroprocess_name =
+      macroprocess.name;
+
+    S.contract =
+      contract;
+
+    const normalizedPayload =
+      normalizeIncomingPayload(
+        contract
+      );
+
+    S.sp =
+      normalizedPayload.normalized;
+
+    return contract;
+  };
+
+
+/*
+ * Después de cargar un proceso, refleja
+ * automáticamente el macroproceso recibido.
+ */
+const sbProcessIncomingJsonBase =
+  processIncomingJson;
+
+processIncomingJson =
+  function(
+    raw,
+    source = 'unknown'
+  ){
+    const result =
+      sbProcessIncomingJsonBase(
+        raw,
+        source
+      );
+
+    const macroprocess =
+      sbReadMacroprocessFromSource(
+        S.contract ||
+        S.sp ||
+        {}
+      );
+
+    sbRenderMacroprocessOptions(
+      macroprocess
+    );
+
+    return result;
+  };
+
+
+sbRenderMacroprocessOptions();
+
+
+// ═══════════════════════════════════════════════════════════════
+// MODALIDAD DE EJECUCIÓN · SISTEMAS E IDENTIFICADORES
+// ═══════════════════════════════════════════════════════════════
+
+const SB_FALLBACK_SYSTEMS =
+  Object.freeze([
+    {
+      code:
+        'SIAA',
+
+      name:
+        'SIAA'
+    },
+
+    {
+      code:
+        '4TUNA',
+
+      name:
+        '4TUNA Mantenimiento'
+    },
+
+    {
+      code:
+        'SAP',
+
+      name:
+        'SAP'
+    },
+
+    {
+      code:
+        'BLZ',
+
+      name:
+        'Sistema de Balanzas'
+    }
+  ]);
+
+
+const SB_SUPPORT_TOOLS =
+  Object.freeze([
+    {
+      code:
+        'EXCEL',
+
+      name:
+        'Excel'
+    },
+
+    {
+      code:
+        'WSS',
+
+      name:
+        'WhatsApp'
+    },
+
+    {
+      code:
+        'DRIVE',
+
+      name:
+        'Drive'
+    }
+  ]);
+
+
+function sbExecutionCatalogItems(
+  items
+){
+  const seen =
+    new Set();
+
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  )
+    .map(item => ({
+      code:
+        normalizeText(
+          item?.code ||
+          item?.codigo ||
+          ''
+        ).toUpperCase(),
+
+      name:
+        normalizeText(
+          item?.name ||
+          item?.nombre ||
+          ''
+        )
+    }))
+    .filter(item => {
+      if(
+        !item.code ||
+        !item.name
+      ){
+        return false;
+      }
+
+      if(
+        seen.has(
+          item.code
+        )
+      ){
+        return false;
+      }
+
+      seen.add(
+        item.code
+      );
+
+      return true;
+    });
+}
+
+
+function sbExecutionSystemCatalog(){
+  const configured =
+    sbExecutionCatalogItems(
+      S.masterCatalogs?.systems
+    );
+
+  return configured.length
+    ? configured
+    : SB_FALLBACK_SYSTEMS.map(
+        item => ({
+          ...item
+        })
+      );
+}
+
+
+function sbExecutionSupportCatalog(){
+  return SB_SUPPORT_TOOLS.map(
+    item => ({
+      ...item
+    })
+  );
+}
+
+
+function sbExecutionCatalogItem(
+  items,
+  code
+){
+  const key =
+    normalizeText(
+      code || ''
+    ).toUpperCase();
+
+  return (
+    items || []
+  ).find(item =>
+    item.code ===
+    key
+  ) || null;
+}
+
+
+function sbNormalizeActivityExecution(
+  activity
+){
+  const rawMode =
+    normalizeText(
+      activity?.execution_mode ||
+      activity?.executionMode ||
+      activity?.execution?.mode ||
+      ''
+    ).toLowerCase();
+
+  const rawSystemCode =
+    normalizeText(
+      activity?.system_code ||
+      activity?.systemCode ||
+      activity?.system?.code ||
+      activity?.execution
+        ?.system_code ||
+      ''
+    ).toUpperCase();
+
+  const rawSupportCode =
+    normalizeText(
+      activity?.support_tool_code ||
+      activity?.supportToolCode ||
+      activity?.support_tool?.code ||
+      activity?.execution
+        ?.support_tool_code ||
+      ''
+    ).toUpperCase();
+
+  const mode =
+    (
+      rawMode ===
+        'system' ||
+      rawMode ===
+        'sistema' ||
+      rawMode ===
+        'en sistema' ||
+      rawMode ===
+        'en_sistema' ||
+      rawSystemCode
+    )
+      ? 'system'
+      : 'manual';
+
+  const systemCatalog =
+    sbExecutionSystemCatalog();
+
+  const supportCatalog =
+    sbExecutionSupportCatalog();
+
+  const systemItem =
+    sbExecutionCatalogItem(
+      systemCatalog,
+      rawSystemCode
+    );
+
+  const supportItem =
+    sbExecutionCatalogItem(
+      supportCatalog,
+      rawSupportCode
+    );
+
+  return {
+    execution_mode:
+      mode,
+
+    system_code:
+      mode === 'system'
+        ? rawSystemCode
+        : '',
+
+    system_name:
+      mode === 'system'
+        ? normalizeText(
+            activity?.system_name ||
+            activity?.systemName ||
+            activity?.system?.name ||
+            activity?.execution
+              ?.system_name ||
+            systemItem?.name ||
+            rawSystemCode
+          )
+        : '',
+
+    support_tool_code:
+      mode === 'manual'
+        ? rawSupportCode
+        : '',
+
+    support_tool_name:
+      mode === 'manual'
+        ? normalizeText(
+            activity
+              ?.support_tool_name ||
+            activity
+              ?.supportToolName ||
+            activity
+              ?.support_tool?.name ||
+            activity
+              ?.execution
+              ?.support_tool_name ||
+            supportItem?.name ||
+            rawSupportCode
+          )
+        : ''
+  };
+}
+
+
+function sbExecutionOptions(
+  items,
+  selectedCode,
+  emptyLabel
+){
+  const selected =
+    normalizeText(
+      selectedCode || ''
+    ).toUpperCase();
+
+  return [
+    `
+      <option value="">
+        ${ex(emptyLabel)}
+      </option>
+    `,
+
+    ...(
+      items || []
+    ).map(item => `
+      <option
+        value="${ex(item.code)}"
+        data-name="${ex(item.name)}"
+        ${
+          item.code === selected
+            ? 'selected'
+            : ''
+        }
+      >
+        ${ex(item.code)} ·
+        ${ex(item.name)}
+      </option>
+    `)
+  ].join('');
+}
+
+
+function sbExecutionEditorMarkup(
+  activity,
+  index
+){
+  const execution =
+    sbNormalizeActivityExecution(
+      activity
+    );
+
+  const isSystem =
+    execution.execution_mode ===
+    'system';
+
+  return `
+    <div
+      class="
+        field
+        sb-inline-execution-mode-field
+      "
+    >
+      <label>
+        Modalidad de ejecución *
+      </label>
+
+      <select
+        class="
+          sb-inline-execution-mode
+        "
+        onchange="
+          sbToggleInlineExecutionMode(
+            ${index}
+          )
+        "
+      >
+        <option
+          value="manual"
+          ${
+            !isSystem
+              ? 'selected'
+              : ''
+          }
+        >
+          Manual
+        </option>
+
+        <option
+          value="system"
+          ${
+            isSystem
+              ? 'selected'
+              : ''
+          }
+        >
+          En sistema
+        </option>
+      </select>
+    </div>
+
+
+    <div
+      class="
+        field
+        sb-inline-system-field
+      "
+      ${
+        isSystem
+          ? ''
+          : 'hidden'
+      }
+    >
+      <label>
+        Sistema *
+      </label>
+
+      <select
+        class="
+          sb-inline-system-code
+        "
+      >
+        ${
+          sbExecutionOptions(
+            sbExecutionSystemCatalog(),
+            execution.system_code,
+            'Selecciona un sistema'
+          )
+        }
+      </select>
+    </div>
+
+
+    <div
+      class="
+        field
+        full
+        sb-inline-support-field
+      "
+      ${
+        isSystem
+          ? 'hidden'
+          : ''
+      }
+    >
+      <label>
+        Identificador visual opcional
+      </label>
+
+      <select
+        class="
+          sb-inline-support-tool-code
+        "
+      >
+        ${
+          sbExecutionOptions(
+            sbExecutionSupportCatalog(),
+            execution.support_tool_code,
+            'Sin identificador'
+          )
+        }
+      </select>
+    </div>
+  `;
+}
+
+
+function sbToggleInlineExecutionMode(
+  index
+){
+  const card =
+    document.querySelector(
+      `.sb-activity-card[data-index="${index}"]`
+    );
+
+  if(!card){
+    return false;
+  }
+
+  const mode =
+    card.querySelector(
+      '.sb-inline-execution-mode'
+    )?.value ===
+      'system'
+        ? 'system'
+        : 'manual';
+
+  const systemField =
+    card.querySelector(
+      '.sb-inline-system-field'
+    );
+
+  const supportField =
+    card.querySelector(
+      '.sb-inline-support-field'
+    );
+
+  const systemSelect =
+    card.querySelector(
+      '.sb-inline-system-code'
+    );
+
+  if(systemField){
+    systemField.hidden =
+      mode !== 'system';
+  }
+
+  if(supportField){
+    supportField.hidden =
+      mode === 'system';
+  }
+
+  if(systemSelect){
+    systemSelect.required =
+      mode === 'system';
+  }
+
+  return true;
+}
+
+
+function sbInjectInlineExecutionEditors(){
+  document
+    .querySelectorAll(
+      '.sb-activity-card[data-index]'
+    )
+    .forEach(card => {
+      if(
+        card.querySelector(
+          '.sb-inline-execution-mode'
+        )
+      ){
+        return;
+      }
+
+      const index =
+        Number(
+          card.dataset.index
+        );
+
+      const actorField =
+        card.querySelector(
+          '.sb-inline-actor'
+        )?.closest(
+          '.field'
+        );
+
+      if(
+        !Number.isInteger(index) ||
+        !actorField
+      ){
+        return;
+      }
+
+      actorField.insertAdjacentHTML(
+        'afterend',
+
+        sbExecutionEditorMarkup(
+          S.acts[index] || {},
+          index
+        )
+      );
+
+      sbToggleInlineExecutionMode(
+        index
+      );
+    });
+}
+
+
+const sbRenderActsTableExecutionBase =
+  renderActsTable;
+
+
+renderActsTable =
+  function(){
+    const result =
+      sbRenderActsTableExecutionBase
+        .apply(
+          this,
+          arguments
+        );
+
+    sbInjectInlineExecutionEditors();
+
+    return result;
+  };
+
+
+const sbCollectInlineActivityExecutionBase =
+  sbCollectInlineActivity;
+
+
+sbCollectInlineActivity =
+  function(
+    index
+  ){
+    const activity =
+      sbCollectInlineActivityExecutionBase(
+        index
+      );
+
+    const card =
+      document.querySelector(
+        `.sb-activity-card[data-index="${index}"]`
+      );
+
+    if(
+      !activity ||
+      !card
+    ){
+      return activity;
+    }
+
+    const mode =
+      card.querySelector(
+        '.sb-inline-execution-mode'
+      )?.value ===
+        'system'
+          ? 'system'
+          : 'manual';
+
+    const systemSelect =
+      card.querySelector(
+        '.sb-inline-system-code'
+      );
+
+    const supportSelect =
+      card.querySelector(
+        '.sb-inline-support-tool-code'
+      );
+
+    return {
+      ...activity,
+
+      ...sbNormalizeActivityExecution({
+        execution_mode:
+          mode,
+
+        system_code:
+          systemSelect?.value ||
+          '',
+
+        system_name:
+          systemSelect
+            ?.selectedOptions?.[0]
+            ?.dataset?.name ||
+          '',
+
+        support_tool_code:
+          supportSelect?.value ||
+          '',
+
+        support_tool_name:
+          supportSelect
+            ?.selectedOptions?.[0]
+            ?.dataset?.name ||
+          ''
+      })
+    };
+  };
+
+
+function sbExecutionIncomingInput(
+  parsed
+){
+  const finalSipoc =
+    parsed?.final_outputs
+      ?.sipoc_builder ||
+    parsed?.finalOutputs
+      ?.sipoc_builder ||
+    parsed?.finalOutputs
+      ?.sipocBuilder ||
+    parsed?.outputs
+      ?.sipoc_builder;
+
+  const directSipoc =
+    parsed?.sipoc_builder ||
+    parsed?.sipocBuilder;
+
+  return (
+    parsed?.sipoc_input ||
+    finalSipoc?.sipoc_input ||
+    finalSipoc ||
+    directSipoc?.sipoc_input ||
+    directSipoc ||
+    parsed?.structured_process ||
+    parsed ||
+    {}
+  );
+}
+
+
+const sbNormalizeIncomingPayloadExecutionBase =
+  normalizeIncomingPayload;
+
+
+normalizeIncomingPayload =
+  function(
+    parsed
+  ){
+    const payload =
+      sbNormalizeIncomingPayloadExecutionBase(
+        parsed
+      );
+
+    const input =
+      sbExecutionIncomingInput(
+        parsed
+      );
+
+    const sourceActivities =
+      Array.isArray(
+        input?.activities
+      )
+        ? input.activities
+        : [];
+
+    const sourceById =
+      new Map(
+        sourceActivities
+          .filter(activity =>
+            normalizeText(
+              activity?.id || ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.id
+            ),
+
+            activity
+          ])
+      );
+
+    const sourceByName =
+      new Map(
+        sourceActivities
+          .filter(activity =>
+            normalizeText(
+              activity?.name || ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.name
+            ).toLowerCase(),
+
+            activity
+          ])
+      );
+
+    if(
+      Array.isArray(
+        payload?.normalized
+          ?.activities
+      )
+    ){
+      payload.normalized.activities =
+        payload.normalized.activities
+          .map(
+            (
+              activity,
+              index
+            ) => {
+              const source =
+                sourceById.get(
+                  normalizeText(
+                    activity?.id ||
+                    ''
+                  )
+                ) ||
+                sourceByName.get(
+                  normalizeText(
+                    activity?.name ||
+                    ''
+                  ).toLowerCase()
+                ) ||
+                sourceActivities[
+                  index
+                ] ||
+                {};
+
+              return {
+                ...activity,
+
+                ...sbNormalizeActivityExecution(
+                  source
+                )
+              };
+            }
+          );
+    }
+
+    return payload;
+  };
+
+
+const sbSyncEditorToContractExecutionBase =
+  sbSyncEditorToContract;
+
+
+sbSyncEditorToContract =
+  function(){
+    const contract =
+      sbSyncEditorToContractExecutionBase();
+
+    const sourceById =
+      new Map(
+        (
+          S.acts || []
+        )
+          .filter(activity =>
+            normalizeText(
+              activity?.id || ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.id
+            ),
+
+            activity
+          ])
+      );
+
+    const sourceByName =
+      new Map(
+        (
+          S.acts || []
+        )
+          .filter(activity =>
+            normalizeText(
+              activity?.name || ''
+            )
+          )
+          .map(activity => [
+            normalizeText(
+              activity.name
+            ).toLowerCase(),
+
+            activity
+          ])
+      );
+
+    const activities =
+      Array.isArray(
+        contract?.sipoc_input
+          ?.activities
+      )
+        ? contract
+            .sipoc_input
+            .activities
+        : [];
+
+    contract.sipoc_input.activities =
+      activities.map(
+        (
+          activity,
+          index
+        ) => {
+          const source =
+            sourceById.get(
+              normalizeText(
+                activity?.id ||
+                ''
+              )
+            ) ||
+            sourceByName.get(
+              normalizeText(
+                activity?.name ||
+                ''
+              ).toLowerCase()
+            ) ||
+            S.acts?.[index] ||
+            {};
+
+          return {
+            ...activity,
+
+            ...sbNormalizeActivityExecution(
+              source
+            )
+          };
+        }
+      );
+
+    S.contract =
+      contract;
+
+    S.sp =
+      normalizeIncomingPayload(
+        contract
+      ).normalized;
+
+    return contract;
+  };
+
+
+const sbCollectStructuralIssuesExecutionBase =
+  sbCollectStructuralIssues;
+
+
+sbCollectStructuralIssues =
+  function(
+    contract
+  ){
+    const issues =
+      sbCollectStructuralIssuesExecutionBase(
+        contract
+      );
+
+    const activities =
+      Array.isArray(
+        contract?.sipoc_input
+          ?.activities
+      )
+        ? contract
+            .sipoc_input
+            .activities
+        : [];
+
+    const systemCodes =
+      new Set(
+        sbExecutionSystemCatalog()
+          .map(item =>
+            item.code
+          )
+      );
+
+    const supportCodes =
+      new Set(
+        sbExecutionSupportCatalog()
+          .map(item =>
+            item.code
+          )
+      );
+
+    activities.forEach(
+      (
+        activity,
+        index
+      ) => {
+        const execution =
+          sbNormalizeActivityExecution(
+            activity
+          );
+
+        const name =
+          normalizeText(
+            activity?.name ||
+            ''
+          ) ||
+          `Actividad ${index + 1}`;
+
+        if(
+          execution.execution_mode ===
+            'system' &&
+          !execution.system_code
+        ){
+          issues.push({
+            title:
+              `${name} no tiene sistema seleccionado`,
+
+            detail:
+              'Selecciona SIAA, 4TUNA, SAP o BLZ.',
+
+            targetId:
+              'sb_acc_activities',
+
+            activityIndex:
+              index
+          });
+        }
+
+        if(
+          execution.execution_mode ===
+            'system' &&
+          execution.system_code &&
+          !systemCodes.has(
+            execution.system_code
+          )
+        ){
+          issues.push({
+            title:
+              `${name} utiliza un sistema no autorizado`,
+
+            detail:
+              `El código ${execution.system_code} no existe en el catálogo SISTEMAS.`,
+
+            targetId:
+              'sb_acc_activities',
+
+            activityIndex:
+              index
+          });
+        }
+
+        if(
+          execution.execution_mode ===
+            'manual' &&
+          execution.support_tool_code &&
+          !supportCodes.has(
+            execution
+              .support_tool_code
+          )
+        ){
+          issues.push({
+            title:
+              `${name} utiliza un identificador no autorizado`,
+
+            detail:
+              `El código ${execution.support_tool_code} no corresponde a Excel, WhatsApp o Drive.`,
+
+            targetId:
+              'sb_acc_activities',
+
+            activityIndex:
+              index
+          });
+        }
+      }
+    );
+
+    return issues;
+  };
+
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
