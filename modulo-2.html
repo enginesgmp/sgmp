@@ -19009,6 +19009,46 @@ if(
   };
 }
 
+function sbNormalizeCatalogColor(
+  value,
+  fallback = ''
+){
+  const color =
+    normalizeText(
+      value || ''
+    ).toUpperCase();
+
+  return /^#[0-9A-F]{6}$/.test(
+    color
+  )
+    ? color
+    : fallback;
+}
+
+
+function sbNormalizeCatalogIconUrl(
+  value
+){
+  const url =
+    normalizeText(
+      value || ''
+    );
+
+  if(!url){
+    return '';
+  }
+
+  /*
+   * Solo se admiten URLs web, imágenes
+   * embebidas o rutas internas del módulo.
+   */
+  return /^(https?:\/\/|data:image\/|\.{1,2}\/|\/)/i.test(
+    url
+  )
+    ? url
+    : '';
+}
+
 
 function sbNormalizeMasterCatalog(items){
   const seen =
@@ -19020,6 +19060,12 @@ function sbNormalizeMasterCatalog(items){
       : []
   )
     .map(item => ({
+      id:
+        normalizeText(
+          item?.id ||
+          ''
+        ),
+
       code:
         normalizeText(
           item?.code ||
@@ -19032,7 +19078,48 @@ function sbNormalizeMasterCatalog(items){
           item?.name ||
           item?.nombre ||
           ''
-        )
+        ),
+
+      macroprocess_id:
+        normalizeText(
+          item?.macroprocess_id ||
+          item?.macroprocessId ||
+          ''
+        ),
+
+      icon_url:
+        sbNormalizeCatalogIconUrl(
+          item?.icon_url ||
+          item?.iconUrl ||
+          ''
+        ),
+
+      fill_color:
+        sbNormalizeCatalogColor(
+          item?.fill_color ||
+          item?.background_color ||
+          ''
+        ),
+
+      stroke_color:
+        sbNormalizeCatalogColor(
+          item?.stroke_color ||
+          item?.border_color ||
+          ''
+        ),
+
+      text_color:
+        sbNormalizeCatalogColor(
+          item?.text_color ||
+          ''
+        ),
+
+      badge:
+        normalizeText(
+          item?.badge ||
+          item?.sigla ||
+          ''
+        ).toUpperCase()
     }))
     .filter(item => {
       if(
@@ -19484,25 +19571,17 @@ function sbExecutionCatalogItems(
   const seen =
     new Set();
 
-  return (
-    Array.isArray(items)
-      ? items
-      : []
+  return sbNormalizeMasterCatalog(
+    items
   )
     .map(item => ({
+      ...item,
+
       code:
         normalizeText(
-          item?.code ||
-          item?.codigo ||
+          item.code ||
           ''
-        ).toUpperCase(),
-
-      name:
-        normalizeText(
-          item?.name ||
-          item?.nombre ||
-          ''
-        )
+        ).toUpperCase()
     }))
     .filter(item => {
       if(
@@ -19651,16 +19730,16 @@ const SB_EXECUTION_VISUALS =
       }
     },
 
-    system_node: {
-      fill:
-        '#FCE4D6',
+system_node: {
+  fill:
+    '#E6F6FC',
 
-      stroke:
-        '#C87941',
+  stroke:
+    '#1687A7',
 
-      text:
-        '#6B3A17'
-    }
+  text:
+    '#0A4D68'
+}
   });
 
 
@@ -19718,15 +19797,59 @@ function sbExecutionVisualDescriptor(
     };
   }
 
-  const visual =
+  /*
+   * Solo los sistemas proceden del catálogo
+   * maestro. Excel, Drive y WhatsApp mantienen
+   * su configuración visual interna.
+   */
+  const catalogItem =
+    isSystem
+      ? sbExecutionCatalogItem(
+          sbExecutionSystemCatalog(),
+          code
+        )
+      : null;
+
+  const fallbackVisual =
     (
       isSystem
-        ? SB_EXECUTION_VISUALS
-            .system
-        : SB_EXECUTION_VISUALS
-            .support
+        ? SB_EXECUTION_VISUALS.system
+        : SB_EXECUTION_VISUALS.support
     )[code] ||
     {};
+
+  const nodeFill =
+    isSystem
+      ? sbNormalizeCatalogColor(
+          catalogItem?.fill_color,
+
+          SB_EXECUTION_VISUALS
+            .system_node
+            .fill
+        )
+      : '#FFFFFF';
+
+  const nodeStroke =
+    isSystem
+      ? sbNormalizeCatalogColor(
+          catalogItem?.stroke_color,
+
+          SB_EXECUTION_VISUALS
+            .system_node
+            .stroke
+        )
+      : '#294B66';
+
+  const nodeText =
+    isSystem
+      ? sbNormalizeCatalogColor(
+          catalogItem?.text_color,
+
+          SB_EXECUTION_VISUALS
+            .system_node
+            .text
+        )
+      : '#294B66';
 
   return {
     visible:
@@ -19739,66 +19862,47 @@ function sbExecutionVisualDescriptor(
 
     badge:
       normalizeText(
-        visual.badge ||
+        catalogItem?.badge ||
+        fallbackVisual.badge ||
         code
       ).toUpperCase(),
 
     icon_url:
-      normalizeText(
-        visual.icon_url ||
+      sbNormalizeCatalogIconUrl(
+        catalogItem?.icon_url ||
+        fallbackVisual.icon_url ||
         ''
       ),
 
     node_fill:
-      isSystem
-        ? SB_EXECUTION_VISUALS
-            .system_node
-            .fill
-        : '#FFFFFF',
+      nodeFill,
 
     node_stroke:
-      isSystem
-        ? SB_EXECUTION_VISUALS
-            .system_node
-            .stroke
-        : '#294B66',
+      nodeStroke,
 
     node_text:
-      isSystem
-        ? SB_EXECUTION_VISUALS
-            .system_node
-            .text
-        : '#294B66',
+      nodeText,
 
     badge_fill:
       '#FFFFFF',
 
     badge_stroke:
-      normalizeText(
-        visual.badge_stroke ||
-        (
-          isSystem
-            ? SB_EXECUTION_VISUALS
-                .system_node
-                .stroke
-            : '#8A9BAB'
-        )
-      ),
+      isSystem
+        ? nodeStroke
+        : sbNormalizeCatalogColor(
+            fallbackVisual.badge_stroke,
+            '#8A9BAB'
+          ),
 
     badge_text:
-      normalizeText(
-        visual.badge_text ||
-        (
-          isSystem
-            ? SB_EXECUTION_VISUALS
-                .system_node
-                .text
-            : '#294B66'
-        )
-      )
+      isSystem
+        ? nodeText
+        : sbNormalizeCatalogColor(
+            fallbackVisual.badge_text,
+            '#294B66'
+          )
   };
 }
-
 
 function sbSvgExecutionIdentifier(
   node,
@@ -19831,6 +19935,34 @@ function sbSvgExecutionIdentifier(
     badgeHeight -
     4;
 
+  const content =
+    visual.icon_url
+      ? `
+        <image
+          href="${ex(
+            visual.icon_url
+          )}"
+          x="${x + 3}"
+          y="${y + 2}"
+          width="${badgeWidth - 6}"
+          height="${badgeHeight - 4}"
+          preserveAspectRatio="xMidYMid meet"
+        />
+      `
+      : `
+        <text
+          x="${x + badgeWidth / 2}"
+          y="${y + 11.5}"
+          text-anchor="middle"
+          fill="${visual.badge_text}"
+          font-family="Segoe UI,Arial,sans-serif"
+          font-size="7"
+          font-weight="800"
+        >
+          ${ex(visual.badge)}
+        </text>
+      `;
+
   return `
     <g
       class="sb-svg-execution-identifier"
@@ -19849,34 +19981,7 @@ function sbSvgExecutionIdentifier(
         stroke-width="1"
       />
 
-      <text
-        x="${x + badgeWidth / 2}"
-        y="${y + 11.5}"
-        text-anchor="middle"
-        fill="${visual.badge_text}"
-        font-family="Segoe UI,Arial,sans-serif"
-        font-size="7"
-        font-weight="800"
-      >
-        ${ex(visual.badge)}
-      </text>
-
-      ${
-        visual.icon_url
-          ? `
-            <image
-              href="${ex(
-                visual.icon_url
-              )}"
-              x="${x + 2}"
-              y="${y + 2}"
-              width="${badgeWidth - 4}"
-              height="${badgeHeight - 4}"
-              preserveAspectRatio="xMidYMid meet"
-            />
-          `
-          : ''
-      }
+      ${content}
     </g>
   `;
 }
@@ -22800,6 +22905,36 @@ sbSetMasterCatalogs =
         ?.value ||
       '';
 
+    const openActivityIndexes =
+      Array
+        .from(
+          document.querySelectorAll(
+            '.sb-activity-card[open][data-index]'
+          )
+        )
+        .map(card =>
+          Number(
+            card.dataset.index
+          )
+        )
+        .filter(
+          Number.isInteger
+        );
+
+    /*
+     * Conserva los valores actualmente escritos
+     * antes de reconstruir las tarjetas.
+     */
+    if(
+      typeof sbCollectAllInlineActivities ===
+        'function' &&
+      document.querySelector(
+        '.sb-activity-card[data-index]'
+      )
+    ){
+      sbCollectAllInlineActivities();
+    }
+
     const result =
       sbSetMasterCatalogsPartyBase(
         catalogs
@@ -22815,27 +22950,39 @@ sbSetMasterCatalogs =
       customerCode
     );
 
+    /*
+     * Reconstruye las opciones de SIAA, 4TUNA,
+     * SAP y BLZ sin perder las actividades.
+     */
+    if(
+      typeof renderActsTable ===
+        'function' &&
+      Array.isArray(S.acts)
+    ){
+      renderActsTable();
+
+      openActivityIndexes.forEach(index => {
+        const card =
+          document.querySelector(
+            `.sb-activity-card[data-index="${index}"]`
+          );
+
+        if(card){
+          card.open =
+            true;
+        }
+      });
+    }
+
+    if(
+      typeof sbRefreshDataOverview ===
+        'function'
+    ){
+      sbRefreshDataOverview();
+    }
+
     return result;
   };
-
-
-sbRenderPartyProcessOptions(
-  'supplier'
-);
-
-sbRenderPartyProcessOptions(
-  'customer'
-);
-
-sbTogglePartyEditor(
-  'supplier'
-);
-
-sbTogglePartyEditor(
-  'customer'
-);
-
-
   
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
