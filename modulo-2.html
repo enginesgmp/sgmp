@@ -3096,25 +3096,63 @@ body{font-size:14px !important}
     <div class="card">
       <h3>Supplier → Input</h3>
 
-      <div class="g2">
-        <div class="field">
-          <label>Proveedor</label>
+<div class="g2">
 
-          <input
-            id="in_sup"
-            placeholder="Ej: Solicitante"
-          />
-        </div>
+  <div class="field">
+    <label>Tipo de proveedor *</label>
 
-        <div class="field">
-          <label>Entrada que entrega</label>
+    <select
+      id="in_sup_type"
+      onchange="sbTogglePartyEditor('supplier')"
+    >
+      <option value="external">
+        Ente externo
+      </option>
 
-          <input
-            id="in_sup_input"
-            placeholder="Ej: Solicitud o documento"
-          />
-        </div>
-      </div>
+      <option value="process">
+        Proceso interno
+      </option>
+    </select>
+  </div>
+
+
+  <div
+    class="field"
+    id="sb_sup_external_field"
+  >
+    <label>Nombre del ente externo *</label>
+
+    <input
+      id="in_sup"
+      placeholder="Ej: Proveedor externo"
+    />
+  </div>
+
+
+  <div
+    class="field hidden"
+    id="sb_sup_process_field"
+  >
+    <label>Proceso interno *</label>
+
+    <select id="in_sup_process">
+      <option value="">
+        No existen procesos disponibles
+      </option>
+    </select>
+  </div>
+
+
+  <div class="field full">
+    <label>Entrada que entrega *</label>
+
+    <input
+      id="in_sup_input"
+      placeholder="Ej: Solicitud o documento"
+    />
+  </div>
+
+</div>
 
       <div class="btn-row">
         <button
@@ -3183,25 +3221,63 @@ body{font-size:14px !important}
     <div class="card">
       <h3>Output → Customer</h3>
 
-      <div class="g2">
-        <div class="field">
-          <label>Salida</label>
+<div class="g2">
 
-          <input
-            id="in_cus_output"
-            placeholder="Ej: Informe aprobado"
-          />
-        </div>
+  <div class="field">
+    <label>Tipo de cliente o receptor *</label>
 
-        <div class="field">
-          <label>Cliente o receptor</label>
+    <select
+      id="in_cus_type"
+      onchange="sbTogglePartyEditor('customer')"
+    >
+      <option value="external">
+        Ente externo
+      </option>
 
-          <input
-            id="in_cus"
-            placeholder="Ej: Gerencia"
-          />
-        </div>
-      </div>
+      <option value="process">
+        Proceso interno
+      </option>
+    </select>
+  </div>
+
+
+  <div
+    class="field"
+    id="sb_cus_external_field"
+  >
+    <label>Nombre del ente externo *</label>
+
+    <input
+      id="in_cus"
+      placeholder="Ej: Cliente externo"
+    />
+  </div>
+
+
+  <div
+    class="field hidden"
+    id="sb_cus_process_field"
+  >
+    <label>Proceso interno *</label>
+
+    <select id="in_cus_process">
+      <option value="">
+        No existen procesos disponibles
+      </option>
+    </select>
+  </div>
+
+
+  <div class="field full">
+    <label>Salida que recibe *</label>
+
+    <input
+      id="in_cus_output"
+      placeholder="Ej: Informe aprobado"
+    />
+  </div>
+
+</div>
 
       <div class="btn-row">
         <button
@@ -20449,6 +20525,1087 @@ goToTemplate =
   };
 
 
+// ═══════════════════════════════════════════════════════════════
+// PROVEEDORES Y CLIENTES · PROCESO INTERNO O ENTE EXTERNO
+// ═══════════════════════════════════════════════════════════════
+
+const SB_PARTY_PROCESS =
+  'process';
+
+const SB_PARTY_EXTERNAL =
+  'external';
+
+
+function sbNormalizePartyType(
+  value
+){
+  const key =
+    normalizeText(
+      value || ''
+    ).toLowerCase();
+
+  return [
+    'process',
+    'proceso',
+    'proceso interno',
+    'internal_process'
+  ].includes(key)
+    ? SB_PARTY_PROCESS
+    : SB_PARTY_EXTERNAL;
+}
+
+
+function sbPartyEditorIds(
+  side
+){
+  return side === 'customer'
+    ? {
+        type:
+          'in_cus_type',
+
+        externalField:
+          'sb_cus_external_field',
+
+        externalInput:
+          'in_cus',
+
+        processField:
+          'sb_cus_process_field',
+
+        processSelect:
+          'in_cus_process'
+      }
+    : {
+        type:
+          'in_sup_type',
+
+        externalField:
+          'sb_sup_external_field',
+
+        externalInput:
+          'in_sup',
+
+        processField:
+          'sb_sup_process_field',
+
+        processSelect:
+          'in_sup_process'
+      };
+}
+
+
+function sbRenderPartyProcessOptions(
+  side,
+  selectedCode = ''
+){
+  const ids =
+    sbPartyEditorIds(
+      side
+    );
+
+  const select =
+    $(ids.processSelect);
+
+  if(!select){
+    return false;
+  }
+
+  const current =
+    normalizeText(
+      selectedCode ||
+      select.value ||
+      ''
+    ).toUpperCase();
+
+  const processes =
+    sbNormalizeMasterCatalog(
+      S.masterCatalogs?.processes ||
+      []
+    );
+
+  select.innerHTML =
+    '<option value="">' +
+    (
+      processes.length
+        ? 'Selecciona un proceso interno'
+        : 'No existen procesos disponibles'
+    ) +
+    '</option>';
+
+  processes.forEach(process => {
+    const option =
+      document.createElement(
+        'option'
+      );
+
+    option.value =
+      normalizeText(
+        process.code
+      ).toUpperCase();
+
+    option.dataset.name =
+      process.name;
+
+    option.textContent =
+      `${option.value} · ${process.name}`;
+
+    select.appendChild(
+      option
+    );
+  });
+
+  if(
+    processes.some(process =>
+      normalizeText(
+        process.code
+      ).toUpperCase() ===
+      current
+    )
+  ){
+    select.value =
+      current;
+  }
+
+  return true;
+}
+
+
+function sbTogglePartyEditor(
+  side
+){
+  const ids =
+    sbPartyEditorIds(
+      side
+    );
+
+  const isProcess =
+    sbNormalizePartyType(
+      $(ids.type)?.value
+    ) ===
+    SB_PARTY_PROCESS;
+
+  $(ids.externalField)
+    ?.classList
+    .toggle(
+      'hidden',
+      isProcess
+    );
+
+  $(ids.processField)
+    ?.classList
+    .toggle(
+      'hidden',
+      !isProcess
+    );
+
+  return true;
+}
+
+
+function sbReadPartyEditor(
+  side
+){
+  const ids =
+    sbPartyEditorIds(
+      side
+    );
+
+  const type =
+    sbNormalizePartyType(
+      $(ids.type)?.value
+    );
+
+  if(
+    type ===
+    SB_PARTY_PROCESS
+  ){
+    const select =
+      $(ids.processSelect);
+
+    const option =
+      select
+        ?.selectedOptions
+        ?.[0];
+
+    const code =
+      normalizeText(
+        select?.value ||
+        ''
+      ).toUpperCase();
+
+    const name =
+      normalizeText(
+        option?.dataset?.name ||
+        ''
+      );
+
+    return {
+      party_type:
+        SB_PARTY_PROCESS,
+
+      name,
+
+      process_code:
+        code,
+
+      process_name:
+        name
+    };
+  }
+
+  return {
+    party_type:
+      SB_PARTY_EXTERNAL,
+
+    name:
+      normalizeText(
+        $(ids.externalInput)?.value ||
+        ''
+      ),
+
+    process_code:
+      '',
+
+    process_name:
+      ''
+  };
+}
+
+
+function sbResetPartyEditor(
+  side
+){
+  const ids =
+    sbPartyEditorIds(
+      side
+    );
+
+  if($(ids.externalInput)){
+    $(ids.externalInput).value =
+      '';
+  }
+
+  if($(ids.processSelect)){
+    $(ids.processSelect).value =
+      '';
+  }
+}
+
+
+function sbPartyItemType(
+  item
+){
+  return sbNormalizePartyType(
+    item?.party_type ||
+    item?.supplier_type ||
+    item?.customer_type ||
+    (
+      item?.process_code ||
+      item?.supplier_code ||
+      item?.customer_code
+        ? 'process'
+        : 'external'
+    )
+  );
+}
+
+
+function sbAddPartyRelation(
+  type
+){
+  const isSupplier =
+    type === 'suppliers';
+
+  const side =
+    isSupplier
+      ? 'supplier'
+      : 'customer';
+
+  const party =
+    sbReadPartyEditor(
+      side
+    );
+
+  const relation =
+    normalizeText(
+      $(
+        isSupplier
+          ? 'in_sup_input'
+          : 'in_cus_output'
+      )?.value ||
+      ''
+    );
+
+  if(
+    party.party_type ===
+      SB_PARTY_PROCESS &&
+    (
+      !party.process_code ||
+      !party.process_name
+    )
+  ){
+    gMsg(
+      'warn',
+      'Selecciona un proceso interno del catálogo.'
+    );
+
+    return false;
+  }
+
+  if(
+    party.party_type ===
+      SB_PARTY_EXTERNAL &&
+    !party.name
+  ){
+    gMsg(
+      'warn',
+      'Ingresa el nombre del ente externo.'
+    );
+
+    return false;
+  }
+
+  if(!relation){
+    gMsg(
+      'warn',
+      isSupplier
+        ? 'Completa la entrada que entrega el proveedor.'
+        : 'Completa la salida que recibe el cliente.'
+    );
+
+    return false;
+  }
+
+  const collection =
+    isSupplier
+      ? S.cats.suppliers
+      : S.cats.customers;
+
+  const duplicate =
+    collection.some(item => {
+      const sameParty =
+        party.party_type ===
+          SB_PARTY_PROCESS
+          ? normalizeText(
+              item?.process_code ||
+              ''
+            ).toUpperCase() ===
+            party.process_code
+          : normalizeText(
+              item?.name ||
+              ''
+            ).toLowerCase() ===
+            party.name.toLowerCase();
+
+      const sameRelation =
+        normalizeText(
+          isSupplier
+            ? item?.input || ''
+            : item?.output || ''
+        ).toLowerCase() ===
+        relation.toLowerCase();
+
+      return (
+        sameParty &&
+        sameRelation
+      );
+    });
+
+  if(duplicate){
+    gMsg(
+      'warn',
+      'Esa relación ya está registrada.'
+    );
+
+    return false;
+  }
+
+  collection.push({
+    name:
+      party.name,
+
+    party_type:
+      party.party_type,
+
+    process_code:
+      party.process_code,
+
+    process_name:
+      party.process_name,
+
+    [
+      isSupplier
+        ? 'input'
+        : 'output'
+    ]:
+      relation
+  });
+
+  if(isSupplier){
+    if(
+      !S.cats.inputs.some(item =>
+        normalizeText(
+          item?.name
+        ).toLowerCase() ===
+        relation.toLowerCase()
+      )
+    ){
+      S.cats.inputs.push({
+        name:
+          relation,
+
+        sourceSupplier:
+          party.name
+      });
+    }
+
+    if($('in_sup_input')){
+      $('in_sup_input').value =
+        '';
+    }
+  }else{
+    if(
+      !S.cats.outputs.some(item =>
+        normalizeText(
+          item?.name
+        ).toLowerCase() ===
+        relation.toLowerCase()
+      )
+    ){
+      S.cats.outputs.push({
+        name:
+          relation,
+
+        targetCustomer:
+          party.name
+      });
+    }
+
+    if($('in_cus_output')){
+      $('in_cus_output').value =
+        '';
+    }
+  }
+
+  sbResetPartyEditor(
+    side
+  );
+
+  renderCatTable(
+    type
+  );
+
+  renderCatTable(
+    isSupplier
+      ? 'inputs'
+      : 'outputs'
+  );
+
+  syncSelects();
+
+  resetSBGeneratedArtifacts();
+
+  gMsg(
+    'ok',
+    'Relación agregada.'
+  );
+
+  return true;
+}
+
+
+const sbAddCatPartyBase =
+  addCat;
+
+
+addCat =
+  function(
+    type
+  ){
+    if(
+      type === 'suppliers' ||
+      type === 'customers'
+    ){
+      return sbAddPartyRelation(
+        type
+      );
+    }
+
+    return sbAddCatPartyBase
+      .apply(
+        this,
+        arguments
+      );
+  };
+
+
+function sbPartyMetadata(
+  item,
+  prefix
+){
+  const type =
+    sbPartyItemType(
+      item
+    );
+
+  const name =
+    normalizeText(
+      item?.process_name ||
+      item?.name ||
+      ''
+    );
+
+  const code =
+    type ===
+      SB_PARTY_PROCESS
+      ? normalizeText(
+          item?.process_code ||
+          ''
+        ).toUpperCase()
+      : '';
+
+  return {
+    [`${prefix}_type`]:
+      type,
+
+    [`${prefix}_code`]:
+      code,
+
+    [`${prefix}_name`]:
+      name
+  };
+}
+
+
+const sbSyncEditorToContractPartyBase =
+  sbSyncEditorToContract;
+
+
+sbSyncEditorToContract =
+  function(){
+    const contract =
+      sbSyncEditorToContractPartyBase();
+
+    const lanes =
+      contract
+        ?.sipoc_input
+        ?.lanes ||
+      {};
+
+    const supplierMeta =
+      new Map(
+        (
+          S.cats.suppliers ||
+          []
+        ).map(item => [
+          sbEditorKey(
+            item?.name || '',
+            item?.input || ''
+          ),
+
+          item
+        ])
+      );
+
+    const customerMeta =
+      new Map(
+        (
+          S.cats.customers ||
+          []
+        ).map(item => [
+          sbEditorKey(
+            item?.output || '',
+            item?.name || ''
+          ),
+
+          item
+        ])
+      );
+
+    lanes.suppliers_inputs =
+      (
+        lanes.suppliers_inputs ||
+        []
+      ).map(row => {
+        const item =
+          supplierMeta.get(
+            sbEditorKey(
+              row?.supplier || '',
+              row?.input || ''
+            )
+          ) ||
+          {
+            name:
+              row?.supplier ||
+              '',
+
+            party_type:
+              row?.supplier_type ||
+              'external',
+
+            process_code:
+              row?.supplier_code ||
+              '',
+
+            process_name:
+              row?.supplier_name ||
+              row?.supplier ||
+              ''
+          };
+
+        return {
+          ...row,
+          ...sbPartyMetadata(
+            item,
+            'supplier'
+          )
+        };
+      });
+
+    lanes.outputs_customers =
+      (
+        lanes.outputs_customers ||
+        []
+      ).map(row => {
+        const item =
+          customerMeta.get(
+            sbEditorKey(
+              row?.output || '',
+              row?.customer || ''
+            )
+          ) ||
+          {
+            name:
+              row?.customer ||
+              '',
+
+            party_type:
+              row?.customer_type ||
+              'external',
+
+            process_code:
+              row?.customer_code ||
+              '',
+
+            process_name:
+              row?.customer_name ||
+              row?.customer ||
+              ''
+          };
+
+        return {
+          ...row,
+          ...sbPartyMetadata(
+            item,
+            'customer'
+          )
+        };
+      });
+
+    S.contract =
+      contract;
+
+    S.sp =
+      normalizeIncomingPayload(
+        contract
+      ).normalized;
+
+    S.sp.supplier_input_links =
+      lanes.suppliers_inputs.map(
+        row => ({
+          ...row
+        })
+      );
+
+    S.sp.output_customer_links =
+      lanes.outputs_customers.map(
+        row => ({
+          ...row
+        })
+      );
+
+    return contract;
+  };
+
+
+function sbReadPartySourceRows(
+  raw
+){
+  try{
+    const parsed =
+      typeof raw === 'string'
+        ? JSON.parse(raw)
+        : raw;
+
+    const finalSipoc =
+      parsed
+        ?.final_outputs
+        ?.sipoc_builder ||
+
+      parsed
+        ?.finalOutputs
+        ?.sipoc_builder ||
+
+      parsed
+        ?.finalOutputs
+        ?.sipocBuilder ||
+
+      parsed
+        ?.outputs
+        ?.sipoc_builder;
+
+    const directSipoc =
+      parsed?.sipoc_builder ||
+      parsed?.sipocBuilder;
+
+    const input =
+      parsed?.sipoc_input ||
+
+      finalSipoc?.sipoc_input ||
+
+      finalSipoc ||
+
+      directSipoc?.sipoc_input ||
+
+      directSipoc ||
+
+      parsed?.structured_process ||
+
+      parsed ||
+
+      {};
+
+    return {
+      ok:
+        true,
+
+      suppliers:
+        Array.isArray(
+          input
+            ?.lanes
+            ?.suppliers_inputs
+        )
+          ? input
+              .lanes
+              .suppliers_inputs
+          : [],
+
+      customers:
+        Array.isArray(
+          input
+            ?.lanes
+            ?.outputs_customers
+        )
+          ? input
+              .lanes
+              .outputs_customers
+          : []
+    };
+  }catch(error){
+    return {
+      ok:
+        false,
+
+      suppliers:
+        [],
+
+      customers:
+        []
+    };
+  }
+}
+
+
+const sbProcessIncomingJsonPartyBase =
+  processIncomingJson;
+
+
+processIncomingJson =
+  function(
+    raw,
+    source = 'unknown'
+  ){
+    const sourceRows =
+      sbReadPartySourceRows(
+        raw
+      );
+
+    const result =
+      sbProcessIncomingJsonPartyBase(
+        raw,
+        source
+      );
+
+    if(
+      !sourceRows.ok ||
+      !S.contract
+        ?.sipoc_input
+        ?.lanes
+    ){
+      return result;
+    }
+
+    const lanes =
+      S.contract
+        .sipoc_input
+        .lanes;
+
+    const supplierSourceByKey =
+      new Map(
+        sourceRows.suppliers.map(row => [
+          sbEditorKey(
+            row?.supplier_name ||
+            row?.supplier ||
+            '',
+
+            row?.input ||
+            ''
+          ),
+
+          row
+        ])
+      );
+
+    const customerSourceByKey =
+      new Map(
+        sourceRows.customers.map(row => [
+          sbEditorKey(
+            row?.output ||
+            '',
+
+            row?.customer_name ||
+            row?.customer ||
+            ''
+          ),
+
+          row
+        ])
+      );
+
+    lanes.suppliers_inputs =
+      (
+        lanes.suppliers_inputs ||
+        []
+      ).map(row => {
+        const sourceRow =
+          supplierSourceByKey.get(
+            sbEditorKey(
+              row?.supplier ||
+              '',
+
+              row?.input ||
+              ''
+            )
+          ) ||
+          {};
+
+        return {
+          ...row,
+
+          supplier_type:
+            sbNormalizePartyType(
+              sourceRow?.supplier_type ||
+              (
+                sourceRow?.supplier_code
+                  ? 'process'
+                  : 'external'
+              )
+            ),
+
+          supplier_code:
+            normalizeText(
+              sourceRow?.supplier_code ||
+              ''
+            ).toUpperCase(),
+
+          supplier_name:
+            normalizeText(
+              sourceRow?.supplier_name ||
+              row?.supplier ||
+              ''
+            )
+        };
+      });
+
+    lanes.outputs_customers =
+      (
+        lanes.outputs_customers ||
+        []
+      ).map(row => {
+        const sourceRow =
+          customerSourceByKey.get(
+            sbEditorKey(
+              row?.output ||
+              '',
+
+              row?.customer ||
+              ''
+            )
+          ) ||
+          {};
+
+        return {
+          ...row,
+
+          customer_type:
+            sbNormalizePartyType(
+              sourceRow?.customer_type ||
+              (
+                sourceRow?.customer_code
+                  ? 'process'
+                  : 'external'
+              )
+            ),
+
+          customer_code:
+            normalizeText(
+              sourceRow?.customer_code ||
+              ''
+            ).toUpperCase(),
+
+          customer_name:
+            normalizeText(
+              sourceRow?.customer_name ||
+              row?.customer ||
+              ''
+            )
+        };
+      });
+
+    S.contract
+      .sipoc_input
+      .lanes =
+        lanes;
+
+    S.cats.suppliers =
+      lanes.suppliers_inputs.map(row => ({
+        id:
+          row.id,
+
+        name:
+          row.supplier_name ||
+          row.supplier,
+
+        input:
+          row.input,
+
+        party_type:
+          row.supplier_type,
+
+        process_code:
+          row.supplier_code,
+
+        process_name:
+          row.supplier_name
+      }));
+
+    S.cats.customers =
+      lanes.outputs_customers.map(row => ({
+        id:
+          row.id,
+
+        name:
+          row.customer_name ||
+          row.customer,
+
+        output:
+          row.output,
+
+        party_type:
+          row.customer_type,
+
+        process_code:
+          row.customer_code,
+
+        process_name:
+          row.customer_name
+      }));
+
+    renderCatTable(
+      'suppliers'
+    );
+
+    renderCatTable(
+      'customers'
+    );
+
+    syncSelects();
+
+    sbRenderPartyProcessOptions(
+      'supplier'
+    );
+
+    sbRenderPartyProcessOptions(
+      'customer'
+    );
+
+    sbTogglePartyEditor(
+      'supplier'
+    );
+
+    sbTogglePartyEditor(
+      'customer'
+    );
+
+    return result;
+  };
+
+
+const sbSetMasterCatalogsPartyBase =
+  sbSetMasterCatalogs;
+
+
+sbSetMasterCatalogs =
+  function(
+    catalogs
+  ){
+    const supplierCode =
+      $('in_sup_process')
+        ?.value ||
+      '';
+
+    const customerCode =
+      $('in_cus_process')
+        ?.value ||
+      '';
+
+    const result =
+      sbSetMasterCatalogsPartyBase(
+        catalogs
+      );
+
+    sbRenderPartyProcessOptions(
+      'supplier',
+      supplierCode
+    );
+
+    sbRenderPartyProcessOptions(
+      'customer',
+      customerCode
+    );
+
+    return result;
+  };
+
+
+sbRenderPartyProcessOptions(
+  'supplier'
+);
+
+sbRenderPartyProcessOptions(
+  'customer'
+);
+
+sbTogglePartyEditor(
+  'supplier'
+);
+
+sbTogglePartyEditor(
+  'customer'
+);
+
+
+  
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
