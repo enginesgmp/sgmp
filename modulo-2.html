@@ -10971,6 +10971,32 @@ function saveSBInlineActivity(
     return false;
   }
 
+  const execution =
+    sbNormalizeActivityExecution(
+      activity
+    );
+
+  if(
+    execution.execution_mode ===
+      'system' &&
+    !execution.system_code
+  ){
+    const placeSelect =
+      document.querySelector(
+        `.sb-activity-card[data-index="${index}"] ` +
+        '.sb-inline-execution-place'
+      );
+
+    placeSelect?.focus();
+
+    gMsg(
+      'warn',
+      'Selecciona el sistema donde se realiza la actividad.'
+    );
+
+    return false;
+  }
+
   S.acts[index] =
     activity;
 
@@ -20205,6 +20231,16 @@ function sbExecutionEditorMarkup(
     execution.execution_mode ===
     'system';
 
+  const selectedPlaceCode =
+    isSystem
+      ? execution.system_code
+      : execution.support_tool_code;
+
+  const placeCatalog =
+    isSystem
+      ? sbExecutionSystemCatalog()
+      : sbExecutionSupportCatalog();
+
   return `
     <div
       class="
@@ -20254,60 +20290,43 @@ function sbExecutionEditorMarkup(
     <div
       class="
         field
-        sb-inline-system-field
+        sb-inline-execution-place-field
       "
-      ${
-        isSystem
-          ? ''
-          : 'hidden'
-      }
     >
-      <label>
-        Sistema donde se realiza *
-      </label>
-
-      <select
+      <label
         class="
-          sb-inline-system-code
+          sb-inline-execution-place-label
         "
       >
         ${
-          sbExecutionOptions(
-            sbExecutionSystemCatalog(),
-            execution.system_code,
-            'Selecciona SIAA, 4TUNA, SAP o BLZ'
-          )
+          isSystem
+            ? 'Dónde se realiza *'
+            : 'Dónde se realiza — opcional'
         }
-      </select>
-    </div>
-
-
-    <div
-      class="
-        field
-        full
-        sb-inline-support-field
-      "
-      ${
-        isSystem
-          ? 'hidden'
-          : ''
-      }
-    >
-      <label>
-        Dónde se realiza — opcional
       </label>
 
       <select
         class="
-          sb-inline-support-tool-code
+          sb-inline-execution-place
         "
+        data-mode="${
+          isSystem
+            ? 'system'
+            : 'manual'
+        }"
+        ${
+          isSystem
+            ? 'required'
+            : ''
+        }
       >
         ${
           sbExecutionOptions(
-            sbExecutionSupportCatalog(),
-            execution.support_tool_code,
-            'Ninguno'
+            placeCatalog,
+            selectedPlaceCode,
+            isSystem
+              ? 'Selecciona SIAA, 4TUNA, SAP o BLZ'
+              : 'Ninguno'
           )
         }
       </select>
@@ -20339,70 +20358,81 @@ function sbToggleInlineExecutionMode(
     mode ===
     'system';
 
-  const systemField =
+  const placeSelect =
     card.querySelector(
-      '.sb-inline-system-field'
+      '.sb-inline-execution-place'
     );
 
-  const supportField =
+  const placeLabel =
     card.querySelector(
-      '.sb-inline-support-field'
+      '.sb-inline-execution-place-label'
     );
 
-  const systemSelect =
-    card.querySelector(
-      '.sb-inline-system-code'
-    );
-
-  const supportSelect =
-    card.querySelector(
-      '.sb-inline-support-tool-code'
-    );
-
-  if(systemField){
-    systemField.hidden =
-      !isSystem;
-
-    systemField.setAttribute(
-      'aria-hidden',
-      String(!isSystem)
-    );
+  if(!placeSelect){
+    return false;
   }
 
-  if(supportField){
-    supportField.hidden =
-      isSystem;
+  const previousMode =
+    placeSelect.dataset.mode ||
+    '';
 
-    supportField.setAttribute(
-      'aria-hidden',
-      String(isSystem)
+  const catalog =
+    isSystem
+      ? sbExecutionSystemCatalog()
+      : sbExecutionSupportCatalog();
+
+  const allowedCodes =
+    new Set(
+      catalog.map(item =>
+        normalizeText(
+          item.code || ''
+        ).toUpperCase()
+      )
     );
-  }
 
-  if(systemSelect){
-    systemSelect.disabled =
-      !isSystem;
+  const currentCode =
+    normalizeText(
+      placeSelect.value || ''
+    ).toUpperCase();
 
-    systemSelect.required =
-      isSystem;
+  /*
+   * Conserva la selección únicamente cuando
+   * se reconstruye el mismo modo.
+   *
+   * Al cambiar Manual ↔ En sistema,
+   * se elimina la selección incompatible.
+   */
+  const selectedCode =
+    previousMode === mode &&
+    allowedCodes.has(currentCode)
+      ? currentCode
+      : '';
 
-    if(!isSystem){
-      systemSelect.value =
-        '';
-    }
-  }
+  placeSelect.innerHTML =
+    sbExecutionOptions(
+      catalog,
+      selectedCode,
+      isSystem
+        ? 'Selecciona SIAA, 4TUNA, SAP o BLZ'
+        : 'Ninguno'
+    );
 
-  if(supportSelect){
-    supportSelect.disabled =
-      isSystem;
+  placeSelect.dataset.mode =
+    mode;
 
-    supportSelect.required =
-      false;
+  placeSelect.required =
+    isSystem;
 
-    if(isSystem){
-      supportSelect.value =
-        '';
-    }
+  placeSelect.setAttribute(
+    'aria-required',
+    String(isSystem)
+  );
+
+  if(placeLabel){
+    placeLabel.textContent =
+      isSystem
+        ? 'Dónde se realiza *'
+        : 'Dónde se realiza — opcional';
   }
 
   return true;
@@ -20509,14 +20539,23 @@ sbCollectInlineActivity =
           ? 'system'
           : 'manual';
 
-    const systemSelect =
+    const placeSelect =
       card.querySelector(
-        '.sb-inline-system-code'
+        '.sb-inline-execution-place'
       );
 
-    const supportSelect =
-      card.querySelector(
-        '.sb-inline-support-tool-code'
+    const placeCode =
+      normalizeText(
+        placeSelect?.value ||
+        ''
+      ).toUpperCase();
+
+    const placeName =
+      normalizeText(
+        placeSelect
+          ?.selectedOptions?.[0]
+          ?.dataset?.name ||
+        ''
       );
 
     return {
@@ -20527,24 +20566,24 @@ sbCollectInlineActivity =
           mode,
 
         system_code:
-          systemSelect?.value ||
-          '',
+          mode === 'system'
+            ? placeCode
+            : '',
 
         system_name:
-          systemSelect
-            ?.selectedOptions?.[0]
-            ?.dataset?.name ||
-          '',
+          mode === 'system'
+            ? placeName
+            : '',
 
         support_tool_code:
-          supportSelect?.value ||
-          '',
+          mode === 'manual'
+            ? placeCode
+            : '',
 
         support_tool_name:
-          supportSelect
-            ?.selectedOptions?.[0]
-            ?.dataset?.name ||
-          ''
+          mode === 'manual'
+            ? placeName
+            : ''
       })
     };
   };
