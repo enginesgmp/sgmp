@@ -14214,6 +14214,121 @@ function sbCleanEditorActivityNote(
     .join('\n');
 }
 
+function sbEditorActivityNoteLines(
+  value
+){
+  const cleaned =
+    sbCleanEditorActivityNote(
+      value
+    );
+
+  return cleaned
+    ? cleaned
+        .split('\n')
+        .map(normalizeText)
+        .filter(Boolean)
+    : [];
+}
+
+
+function sbMatchStableActivityNotes(
+  lines,
+  previousNotes
+){
+  const assignments =
+    new Array(
+      lines.length
+    ).fill(
+      null
+    );
+
+  const available =
+    (
+      Array.isArray(previousNotes)
+        ? previousNotes
+        : []
+    ).map(
+      (note, index) => ({
+        note,
+
+        index,
+
+        used:
+          false,
+
+        textKey:
+          normalizeText(
+            note?.text ||
+            note?.content ||
+            ''
+          ).toLowerCase()
+      })
+    );
+
+  /*
+   * Prioridad 1:
+   * el mismo texto conserva el mismo ID
+   * aunque cambie de posición.
+   */
+  lines.forEach(
+    (line, lineIndex) => {
+      const textKey =
+        normalizeText(
+          line
+        ).toLowerCase();
+
+      const match =
+        available.find(item =>
+          !item.used &&
+          item.textKey ===
+            textKey
+        );
+
+      if(!match){
+        return;
+      }
+
+      match.used =
+        true;
+
+      assignments[lineIndex] =
+        match.note;
+    }
+  );
+
+  /*
+   * Prioridad 2:
+   * una línea editada conserva el ID de
+   * la misma posición cuando sigue disponible.
+   */
+  lines.forEach(
+    (_line, lineIndex) => {
+      if(assignments[lineIndex]){
+        return;
+      }
+
+      const samePosition =
+        available.find(item =>
+          !item.used &&
+          item.index ===
+            lineIndex
+        );
+
+      if(!samePosition){
+        return;
+      }
+
+      samePosition.used =
+        true;
+
+      assignments[lineIndex] =
+        samePosition.note;
+    }
+  );
+
+  return assignments;
+}
+  
 
 function sbEditorRelations(
   activity,
@@ -14748,114 +14863,100 @@ function sbSyncEditorToContract(){
               .map(String)
           : [];
 
-      const previousLinkedNotes =
-        previousNotes.filter(note =>
-          previousNoteIds.includes(
-            String(
-              note?.id || ''
+      const previousNotesById =
+        new Map(
+          previousNotes
+            .filter(note =>
+              normalizeText(
+                note?.id ||
+                ''
+              )
             )
-          )
+            .map(note => [
+              String(
+                note.id
+              ),
+
+              note
+            ])
         );
 
-      const editorNote =
-        sbCleanEditorActivityNote(
+      /*
+       * Respeta el orden definido en note_ids.
+       */
+      const previousLinkedNotes =
+        previousNoteIds
+          .map(noteId =>
+            previousNotesById.get(
+              noteId
+            )
+          )
+          .filter(Boolean);
+
+      const noteLines =
+        sbEditorActivityNoteLines(
           activity?.note ||
           activity?.notes ||
           ''
         );
 
-      const previousNoteText =
-        previousLinkedNotes
-          .map(note =>
-            normalizeText(
-              note?.text ||
-              note?.content ||
-              ''
-            )
-          )
-          .filter(Boolean)
-          .join('\n');
+      const matchedNotes =
+        sbMatchStableActivityNotes(
+          noteLines,
+          previousLinkedNotes
+        );
 
       const noteIds =
-        [];
+        noteLines.map(
+          (text, noteIndex) => {
+            const previousNote =
+              matchedNotes[
+                noteIndex
+              ];
 
-      if(editorNote){
-        if(
-          previousLinkedNotes.length &&
-          normalizeText(
-            previousNoteText
-          ) ===
-          normalizeText(
-            editorNote
-          )
-        ){
-          previousLinkedNotes.forEach(note => {
-            const id =
+            const noteId =
               sbTakeStableId(
-                note?.id,
+                previousNote?.id,
                 usedNoteIds,
                 nextNoteId
               );
 
-            noteIds.push(
-              id
-            );
-
             clarifyingNotes.push({
-              ...sbDeepClone(note),
+              ...sbDeepClone(
+                previousNote ||
+                {}
+              ),
 
-              id,
+              id:
+                noteId,
 
               activity_id:
                 draft.id,
 
               activity_name:
-                draft.name
+                draft.name,
+
+              text,
+
+              type:
+                previousNote?.type ||
+                'clarifying',
+
+              source:
+                previousNote?.source ||
+                'sipoc_builder'
             });
-          });
-        }else{
-          const previousNote =
-            previousLinkedNotes[0];
 
-          const noteId =
-            sbTakeStableId(
-              previousNote?.id,
-              usedNoteIds,
-              nextNoteId
-            );
+            return noteId;
+          }
+        );
 
-          noteIds.push(
-            noteId
-          );
-
-          clarifyingNotes.push({
-            id:
-              noteId,
-
-            activity_id:
-              draft.id,
-
-            activity_name:
-              draft.name,
-
-            text:
-              editorNote,
-
-            type:
-              previousNote?.type ||
-              'clarifying',
-
-            source:
-              previousNote?.source ||
-              'sipoc_builder'
-          });
-        }
-      }
-
-      return {
-        id:
-          draft.id,
-
+      /*
+       * Mantiene también los IDs dentro del
+       * modelo editable de la actividad.
+       */
+      activity.note_ids =
+        noteIds.slice();
         sequence:
           draft.sequence,
 
@@ -19034,47 +19135,6 @@ if(
       []
   };
 }
-
-function sbNormalizeCatalogColor(
-  value,
-  fallback = ''
-){
-  const color =
-    normalizeText(
-      value || ''
-    ).toUpperCase();
-
-  return /^#[0-9A-F]{6}$/.test(
-    color
-  )
-    ? color
-    : fallback;
-}
-
-
-function sbNormalizeCatalogIconUrl(
-  value
-){
-  const url =
-    normalizeText(
-      value || ''
-    );
-
-  if(!url){
-    return '';
-  }
-
-  /*
-   * Solo se admiten URLs web, imágenes
-   * embebidas o rutas internas del módulo.
-   */
-  return /^(https?:\/\/|data:image\/|\.{1,2}\/|\/)/i.test(
-    url
-  )
-    ? url
-    : '';
-}
-
 
 function sbNormalizeCatalogColor(
   value,
