@@ -6906,6 +6906,15 @@ function sbStudioRenderInspector(){
       [];
 
     if(selected.type === 'node'){
+      const activityDocuments =
+        entity.kind ===
+          'activity'
+          ? sbNormalizeActivityDocuments(
+              entity.activity ||
+              {}
+            )
+          : [];
+
       rows = [
         [
           'ID',
@@ -6931,6 +6940,20 @@ function sbStudioRenderInspector(){
           '—'
         ]
       ];
+
+      if(activityDocuments.length){
+        rows.push([
+          'Documentos',
+
+          activityDocuments
+            .map(documentItem =>
+              documentItem.code +
+              ' · ' +
+              documentItem.name
+            )
+            .join(' | ')
+        ]);
+      }
     }else if(
       selected.type === 'lane'
     ){
@@ -12152,6 +12175,234 @@ function sbSvgText(
   `;
 }
 
+function sbActivityDocumentDescriptor(
+  activity
+){
+  const documents =
+    sbNormalizeActivityDocuments(
+      activity
+    );
+
+  if(!documents.length){
+    return {
+      visible:
+        false,
+
+      count:
+        0,
+
+      documents:
+        [],
+
+      primary_code:
+        '',
+
+      badge:
+        '',
+
+      title:
+        ''
+    };
+  }
+
+  const primary =
+    documents[0];
+
+  const primaryCode =
+    sbNormalizeDocumentCode(
+      primary?.code ||
+      ''
+    );
+
+  const extraCount =
+    Math.max(
+      0,
+      documents.length -
+      1
+    );
+
+  return {
+    visible:
+      true,
+
+    count:
+      documents.length,
+
+    documents,
+
+    primary_code:
+      primaryCode,
+
+    badge:
+      (
+        primaryCode ||
+        'DOC'
+      ) +
+      (
+        extraCount
+          ? ` +${extraCount}`
+          : ''
+      ),
+
+    title:
+      documents
+        .map(documentItem =>
+          (
+            documentItem.code
+              ? documentItem.code +
+                ' · '
+              : ''
+          ) +
+          documentItem.name
+        )
+        .join(' | ')
+  };
+}
+
+
+function sbSvgActivityText(
+  text,
+  x,
+  y,
+  width,
+  height
+){
+  return `
+    <foreignObject
+      x="${x}"
+      y="${y}"
+      width="${width}"
+      height="${height}"
+    >
+      <div
+        xmlns="http://www.w3.org/1999/xhtml"
+        style="
+          width:100%;
+          height:100%;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:5px 5px 21px;
+          overflow:hidden;
+          color:#294B66;
+          font:800 9px Segoe UI,Arial,sans-serif;
+          line-height:1.2;
+          text-align:center;
+          text-transform:uppercase;
+        "
+      >
+        ${ex(text || '—')}
+      </div>
+    </foreignObject>
+  `;
+}
+
+
+function sbSvgActivityDocumentIdentifier(
+  node,
+  activity
+){
+  const descriptor =
+    sbActivityDocumentDescriptor(
+      activity
+    );
+
+  if(!descriptor.visible){
+    return '';
+  }
+
+  const badgeWidth =
+    72;
+
+  const badgeHeight =
+    16;
+
+  const x =
+    node.x +
+    5;
+
+  const y =
+    node.y +
+    node.height -
+    badgeHeight -
+    4;
+
+  const iconX =
+    x +
+    4;
+
+  const iconY =
+    y +
+    1;
+
+  return `
+    <g
+      class="sb-svg-document-identifier"
+      data-sb-document-count="${descriptor.count}"
+      data-sb-document-codes="${ex(
+        descriptor.documents
+          .map(documentItem =>
+            documentItem.code
+          )
+          .join('|')
+      )}"
+    >
+      <title>
+        ${ex(descriptor.title)}
+      </title>
+
+      <rect
+        x="${x}"
+        y="${y}"
+        width="${badgeWidth}"
+        height="${badgeHeight}"
+        rx="3"
+        fill="#F7F9FB"
+        stroke="#294B66"
+        stroke-width="1"
+      />
+
+      <path
+        d="
+          M ${iconX} ${iconY}
+          H ${iconX + 8}
+          L ${iconX + 12} ${iconY + 4}
+          V ${iconY + 14}
+          H ${iconX}
+          Z
+        "
+        fill="#FFFFFF"
+        stroke="#294B66"
+        stroke-width="0.9"
+        stroke-linejoin="round"
+      />
+
+      <path
+        d="
+          M ${iconX + 8} ${iconY}
+          V ${iconY + 4}
+          H ${iconX + 12}
+        "
+        fill="none"
+        stroke="#294B66"
+        stroke-width="0.9"
+        stroke-linejoin="round"
+      />
+
+      <text
+        x="${x + 44}"
+        y="${y + 11.2}"
+        text-anchor="middle"
+        fill="#294B66"
+        font-family="Segoe UI,Arial,sans-serif"
+        font-size="6.4"
+        font-weight="800"
+      >
+        ${ex(descriptor.badge)}
+      </text>
+    </g>
+  `;
+}  
 
 function sbBuildStaticPreview(
   contract,
@@ -14003,18 +14254,35 @@ nodes.forEach(node => {
     `;
   }
 
-  svg += sbSvgText(
-    node.label,
-    node.x,
-    node.y,
-    node.width,
-    node.height
-  );
+  svg +=
+    node.kind ===
+      'activity'
+      ? sbSvgActivityText(
+          node.label,
+          node.x,
+          node.y,
+          node.width,
+          node.height
+        )
+      : sbSvgText(
+          node.label,
+          node.x,
+          node.y,
+          node.width,
+          node.height
+        );
 
   if(
     node.kind ===
     'activity'
   ){
+    svg +=
+      sbSvgActivityDocumentIdentifier(
+        node,
+        node.activity ||
+        {}
+      );
+
     svg +=
       sbSvgExecutionIdentifier(
         node,
@@ -18273,9 +18541,13 @@ const relatedProcessStylesOk =
 const activityExecutionStylesOk =
   sbApplyActivityExecutionDrawioStyles();
 
+const activityDocumentStylesOk =
+  sbApplyActivityDocumentDrawioStyles();
+
 if(
   !relatedProcessStylesOk ||
-  !activityExecutionStylesOk
+  !activityExecutionStylesOk ||
+  !activityDocumentStylesOk
 ){
   gMsg(
     'warn',
@@ -18975,6 +19247,293 @@ function sbApplyActivityExecutionDrawioStyles(){
 
   return true;
 }
+
+
+function sbApplyActivityDocumentDrawioStyles(){
+  const xml =
+    String(
+      S.tplXml ||
+      ''
+    ).trim();
+
+  if(!xml){
+    return false;
+  }
+
+  const parser =
+    new DOMParser();
+
+  const documentXML =
+    parser.parseFromString(
+      xml,
+      'application/xml'
+    );
+
+  if(
+    documentXML.getElementsByTagName(
+      'parsererror'
+    )[0]
+  ){
+    return false;
+  }
+
+  const root =
+    documentXML.getElementsByTagName(
+      'root'
+    )[0];
+
+  if(!root){
+    return false;
+  }
+
+  /*
+   * Evita duplicados al reconstruir
+   * varias veces la plantilla.
+   */
+  Array
+    .from(
+      documentXML.querySelectorAll(
+        '[data-sgmp-document-badge="1"]'
+      )
+    )
+    .forEach(cell =>
+      cell.remove()
+    );
+
+  const cellsById =
+    new Map(
+      Array
+        .from(
+          documentXML.getElementsByTagName(
+            'mxCell'
+          )
+        )
+        .map(cell => [
+          cell.getAttribute(
+            'id'
+          ),
+
+          cell
+        ])
+    );
+
+  const idMap =
+    parseIdReference();
+
+  const activities =
+    Array.isArray(
+      S.sp?.activities
+    )
+      ? S.sp.activities
+      : [];
+
+  activities.forEach(activity => {
+    const descriptor =
+      sbActivityDocumentDescriptor(
+        activity
+      );
+
+    if(!descriptor.visible){
+      return;
+    }
+
+    const name =
+      normalizeText(
+        activity?.name ||
+        ''
+      );
+
+    const nodeId =
+      idMap.activities[
+        name.toLowerCase()
+      ]?.id;
+
+    const activityCell =
+      cellsById.get(
+        nodeId
+      );
+
+    if(!activityCell){
+      return;
+    }
+
+    const geometry =
+      Array
+        .from(
+          activityCell.children
+        )
+        .find(child =>
+          child.tagName ===
+          'mxGeometry'
+        );
+
+    if(!geometry){
+      return;
+    }
+
+    const nodeHeight =
+      Number(
+        geometry.getAttribute(
+          'height'
+        ) ||
+        0
+      );
+
+    if(!nodeHeight){
+      return;
+    }
+
+    const badgeWidth =
+      72;
+
+    const badgeHeight =
+      18;
+
+    const badge =
+      documentXML.createElement(
+        'mxCell'
+      );
+
+    badge.setAttribute(
+      'id',
+      `sb_doc_badge_${nodeId}`
+    );
+
+    badge.setAttribute(
+      'value',
+      descriptor.badge
+    );
+
+    badge.setAttribute(
+      'style',
+      [
+        'shape=document',
+        'whiteSpace=wrap',
+        'html=1',
+        'boundedLbl=1',
+        'fillColor=#F7F9FB',
+        'strokeColor=#294B66',
+        'strokeWidth=1',
+        'fontColor=#294B66',
+        'fontSize=7',
+        'fontStyle=1',
+        'align=center',
+        'verticalAlign=middle',
+        'spacing=1',
+        'movable=0',
+        'resizable=0',
+        'editable=0',
+        'connectable=0',
+        'deletable=0',
+        'rotatable=0'
+      ].join(';') +
+      ';'
+    );
+
+    badge.setAttribute(
+      'vertex',
+      '1'
+    );
+
+    /*
+     * El documento queda como hijo de
+     * la actividad y se mueve con ella.
+     */
+    badge.setAttribute(
+      'parent',
+      nodeId
+    );
+
+    badge.setAttribute(
+      'data-sgmp-document-badge',
+      '1'
+    );
+
+    badge.setAttribute(
+      'data-sgmp-document-count',
+      String(
+        descriptor.count
+      )
+    );
+
+    badge.setAttribute(
+      'data-sgmp-document-codes',
+      descriptor.documents
+        .map(documentItem =>
+          documentItem.code
+        )
+        .join('|')
+    );
+
+    badge.setAttribute(
+      'data-sgmp-document-names',
+      descriptor.documents
+        .map(documentItem =>
+          documentItem.name
+        )
+        .join('|')
+    );
+
+    const badgeGeometry =
+      documentXML.createElement(
+        'mxGeometry'
+      );
+
+    /*
+     * Coordenadas relativas a la actividad.
+     */
+    badgeGeometry.setAttribute(
+      'x',
+      '5'
+    );
+
+    badgeGeometry.setAttribute(
+      'y',
+      String(
+        Math.round(
+          nodeHeight -
+          badgeHeight -
+          4
+        )
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'width',
+      String(
+        badgeWidth
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'height',
+      String(
+        badgeHeight
+      )
+    );
+
+    badgeGeometry.setAttribute(
+      'as',
+      'geometry'
+    );
+
+    badge.appendChild(
+      badgeGeometry
+    );
+
+    root.appendChild(
+      badge
+    );
+  });
+
+  S.tplXml =
+    new XMLSerializer()
+      .serializeToString(
+        documentXML
+      );
+
+  return true;
+}  
   
 // ═══════════════════════════════════════════════════════════════
 // INJECT HEADER + FOOTER
