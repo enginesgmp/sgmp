@@ -23038,198 +23038,251 @@ function continueFromDecision(){
 
 function seedImprovementsFromAnalysis(){
   state.tobe = state.tobe || {};
-  state.tobe.improvements = state.tobe.improvements || [];
+  state.tobe.improvements = safeArray(
+    state.tobe.improvements
+  );
 
-  const toArray = (value) => {
-    if(Array.isArray(value)) return value;
-    if(value === undefined || value === null || value === '') return [];
-    return [value];
+  const meaningfulText = function(value){
+    const text =
+      String(value || '').trim();
+
+    return !!(
+      text &&
+      text !== 'Mejora propuesta' &&
+      text !== 'pendiente_validacion' &&
+      text !==
+        'Resumen breve pendiente de validación.'
+    );
   };
 
-  const meaningfulText = (value) => {
-    const text = String(value || '').trim();
-    return text && text !== 'Mejora propuesta' && text !== 'Revisa la propuesta y registra una decisión.';
-  };
-
-  const userAlreadyDecided = (item = {}) => {
+  const hasHumanDecision = function(
+    item = {}
+  ){
     return (
-      ['execute','custom','reject'].includes(item.status) ||
-      meaningfulText(item.customText) ||
+      [
+        'execute',
+        'custom',
+        'reject'
+      ].includes(item.status) ||
+      meaningfulText(
+        item.customText
+      ) ||
       item.source === 'manual' ||
       item.userAdded === true
     );
   };
 
-  if(state.tobe.improvements.length && state.tobe.improvements.some(userAlreadyDecided)){
+  /*
+   * No reemplazar decisiones humanas
+   * registradas anteriormente.
+   */
+  if(
+    state.tobe.improvements.some(
+      hasHumanDecision
+    )
+  ){
     renderImprovements();
-    showMsg('tobeMsg','ok','Se conservaron las mejoras ya evaluadas por el usuario.');
+
+    showMsg(
+      'tobeMsg',
+      'ok',
+      'Se conservaron las mejoras ya evaluadas por el usuario.'
+    );
+
     return;
   }
 
-  const stageResults = state.analysisStages?.results || {};
+  const improvementStage =
+    state.analysisStages
+      ?.results
+      ?.MEJORAS || {};
 
-  const va = stageResults.VA || {};
-  const quickWinsStage = stageResults.QUICK_WINS || {};
-  const wastesStage = stageResults.DESPERDICIOS || {};
-  const restrictionsStage = stageResults.RESTRICCIONES || {};
-  const problemsStage = stageResults.PROBLEMAS || {};
-  const improvementsStage = stageResults.MEJORAS || {};
+  /*
+   * Única fuente oficial.
+   *
+   * Quick Wins, problemas, desperdicios
+   * y restricciones sustentan las mejoras,
+   * pero no generan tarjetas adicionales.
+   */
+  const sourceImprovements =
+    safeArray(
+      improvementStage.improvements
+    );
 
-  const improvementsFromStage = [
-    ...toArray(improvementsStage.improvements),
-    ...toArray(improvementsStage.mejoras),
-    ...toArray(improvementsStage.improvement_candidates),
-    ...toArray(improvementsStage.proposed_improvements),
-    ...toArray(improvementsStage.quickWins),
-    ...toArray(improvementsStage.strategicProjects)
-  ];
+  const normalizeKey = function(value){
+    return String(value || '')
+      .normalize('NFD')
+      .replace(
+        /[\u0300-\u036f]/g,
+        ''
+      )
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9]+/g,
+        ' '
+      )
+      .trim()
+      .replace(
+        /\s+/g,
+        ' '
+      );
+  };
 
-  const quickWins = [
-    ...toArray(quickWinsStage.quickWins),
-    ...toArray(quickWinsStage.quick_wins),
-    ...toArray(quickWinsStage.findings?.quickWins),
-    ...toArray(quickWinsStage.findings?.quick_wins),
-    ...toArray(improvementsStage.quickWins)
-  ];
+  const normalizeList = function(value){
+    const list =
+      Array.isArray(value)
+        ? value
+        : String(value || '')
+            .split(
+              /\n|;|,/
+            );
 
-  const wastes = [
-    ...toArray(wastesStage.wastes),
-    ...toArray(wastesStage.findings?.wastes),
-    ...toArray(wastesStage.findings?.desperdicios),
-    ...toArray(problemsStage.findings?.wastes)
-  ];
+    return Array.from(
+      new Set(
+        list
+          .map(
+            normalizeKey
+          )
+          .filter(Boolean)
+      )
+    ).sort();
+  };
 
-  const restrictions = [
-    ...toArray(restrictionsStage.restrictions),
-    ...toArray(restrictionsStage.constraints),
-    ...toArray(restrictionsStage.findings?.restrictions),
-    ...toArray(restrictionsStage.findings?.constraints),
-    ...toArray(restrictionsStage.findings?.suspected_constraints),
-    ...toArray(restrictionsStage.findings?.bottlenecks)
-  ];
+  const uniqueMap =
+    new Map();
 
-  const problems = [
-    ...toArray(problemsStage.problems),
-    ...toArray(problemsStage.findings?.problems),
-    ...toArray(problemsStage.findings?.operational_problems),
-    ...toArray(problemsStage.findings?.wastes)
-  ];
+  sourceImprovements.forEach(
+    function(rawItem){
+      const item =
+        typeof normalizeImprovement ===
+          'function'
+          ? normalizeImprovement(
+              rawItem
+            )
+          : rawItem;
 
-  const legacyAnalysis = state.analysis || {};
-  const legacyData = legacyAnalysis.raw || legacyAnalysis;
-  const legacyFindings = legacyData.findings || legacyAnalysis.findings || {};
-  const masterIssues = state.master?.issues || {};
+      if(
+        !item ||
+        ![
+          item.title,
+          item.problem,
+          item.currentState,
+          item.proposedState,
+          item.impact
+        ].some(
+          meaningfulText
+        )
+      ){
+        return;
+      }
 
-  const legacyImprovements = [
-    ...toArray(legacyData.raw_original?.improvements),
-    ...toArray(legacyData.raw_original?.mejoras),
-    ...toArray(legacyData.improvements),
-    ...toArray(legacyAnalysis.improvements),
-    ...toArray(legacyData.to_be?.improvements),
-    ...toArray(legacyData.toBe?.improvements),
-    ...toArray(legacyData.improvement_candidates)
-  ];
+      const related =
+        normalizeList([
+          ...safeArray(
+            item.relatedActivityIds
+          ),
 
-  const sourceImprovements = [
-    ...improvementsFromStage,
-    ...legacyImprovements
-  ].filter(Boolean);
+          ...safeArray(
+            item.linkedFindingRefs
+          ),
 
-  const usefulSourceImprovements = sourceImprovements.filter(item => {
-    if(!item) return false;
-    if(typeof item === 'string') return meaningfulText(item);
-    return [
-      item.title,
-      item.name,
-      item.titulo,
-      item.problem,
-      item.problem_to_solve,
-      item.problemSolved,
-      item.description,
-      item.summary,
-      item.proposedState,
-      item.proposed_state,
-      item.toBeState,
-      item.to_be_state,
-      item.action,
-      item.recommendation,
-      item.expected_benefit,
-      item.expectedBenefit,
-      item.impact,
-      item.expected_impact
-    ].some(meaningfulText);
-  });
+          ...safeArray(
+            item.sourceRefs
+          ),
 
-  state.tobe.improvements = [];
+          ...safeArray(
+            item.relatedElements
+          ),
 
-  if(usefulSourceImprovements.length){
-    usefulSourceImprovements.forEach(item => addImprovement(item));
-    renderImprovements();
-    showMsg('tobeMsg','ok','Se cargaron mejoras propuestas desde el análisis MEJORAS.');
-    return;
-  }
+          ...safeArray(
+            item.affectedActivities
+          )
+        ]).join('|');
 
-  const fallbackQuickWins = [
-    ...quickWins,
-    ...toArray(legacyFindings.quickWins),
-    ...toArray(legacyFindings.quick_wins),
-    ...toArray(legacyData.quickWins),
-    ...toArray(masterIssues.quickWins)
-  ];
+      /*
+       * Dos mejoras son duplicadas cuando
+       * coinciden en:
+       *
+       * - título;
+       * - problema;
+       * - estado actual;
+       * - estado propuesto;
+       * - actividades y hallazgos relacionados.
+       */
+      const key = [
+        normalizeKey(
+          item.title
+        ),
 
-  const fallbackRestrictions = [
-    ...restrictions,
-    ...toArray(legacyFindings.restrictions),
-    ...toArray(legacyFindings.constraints),
-    ...toArray(legacyData.restrictions),
-    ...toArray(legacyData.constraints),
-    ...toArray(masterIssues.constraints),
-    ...toArray(masterIssues.restrictions)
-  ];
+        normalizeKey(
+          item.problem
+        ),
 
-  const fallbackProblems = [
-    ...problems,
-    ...wastes,
-    ...toArray(legacyFindings.problems),
-    ...toArray(legacyData.problems),
-    ...toArray(masterIssues.keyIssues),
-    ...toArray(masterIssues.problems)
-  ];
+        normalizeKey(
+          item.currentState
+        ),
 
-  fallbackQuickWins.forEach((q, i) => addImprovement({
-    title: typeof q === 'object' ? (q.title || q.name || q.recommendation || 'Quick win ' + (i + 1)) : 'Quick win ' + (i + 1),
-    summary: 'Oportunidad rápida derivada del análisis.',
-    problemSolved: typeof q === 'string' ? q : (q.problem || q.description || q.summary || q.finding || q.title || JSON.stringify(q)),
-    proposedState: typeof q === 'string' ? 'Aplicar una mejora puntual para resolver: ' + q : (q.action || q.proposedState || q.description || q.recommendation || q.title || ''),
-    technicalRationale: typeof q === 'object' ? (q.evidence || q.justification || q.technicalRationale || '') : 'Derivada del análisis del proceso.',
-    expectedImpact: typeof q === 'string' ? 'Mejora rápida de control, trazabilidad o reducción de reproceso.' : (q.expectedImpact || q.expectedBenefit || q.impact || q.benefit || '')
-  }));
+        normalizeKey(
+          item.proposedState
+        ),
 
-  fallbackRestrictions.forEach((r, i) => addImprovement({
-    title: typeof r === 'object' ? (r.title || r.name || r.description || 'Restricción ' + (i + 1)) : 'Restricción ' + (i + 1),
-    summary: 'Mejora orientada a mitigar una restricción.',
-    problemSolved: typeof r === 'string' ? r : (r.restriction || r.problem || r.description || r.summary || r.finding || r.title || JSON.stringify(r)),
-    proposedState: typeof r === 'string' ? 'Reducir o eliminar la restricción detectada: ' + r : (r.action || r.proposedState || r.description || r.recommendation || r.title || ''),
-    technicalRationale: typeof r === 'string' ? 'La restricción afecta el flujo, el tiempo de ciclo o la capacidad del proceso.' : (r.evidence || r.impact || r.justification || r.basis || ''),
-    expectedImpact: typeof r === 'string' ? 'Reducción de bloqueo operativo o dependencia crítica.' : (r.impact || r.expectedImpact || r.expectedBenefit || r.benefit || '')
-  }));
+        related
+      ].join('||');
 
-  fallbackProblems.slice(0,8).forEach((p, i) => addImprovement({
-    title: typeof p === 'object' ? (p.title || p.name || p.finding || 'Mejora derivada de problema ' + (i + 1)) : 'Mejora derivada de problema ' + (i + 1),
-    summary: 'Propuesta construida a partir de un problema o desperdicio relevante.',
-    problemSolved: typeof p === 'string' ? p : (p.problem || p.description || p.summary || p.finding || p.title || JSON.stringify(p)),
-    proposedState: typeof p === 'string' ? 'Replantear la actividad o el control relacionado con: ' + p : (p.action || p.proposedState || p.description || p.recommendation || p.title || ''),
-    technicalRationale: typeof p === 'object' ? (p.evidence || p.justification || p.operational_impact || '') : 'Resolver este problema reduce fricción, retrabajo o demoras.',
-    expectedImpact: typeof p === 'string' ? 'Mejora del desempeño operativo del proceso.' : (p.impact || p.expectedImpact || p.expectedBenefit || p.benefit || p.operational_impact || '')
-  }));
+      if(
+        !uniqueMap.has(key)
+      ){
+        uniqueMap.set(
+          key,
+          item
+        );
+      }
+    }
+  );
+
+  const uniqueImprovements =
+    Array.from(
+      uniqueMap.values()
+    );
+
+  state.tobe.improvements =
+    uniqueImprovements;
 
   renderImprovements();
+  updateTopStatus();
 
-  if(state.tobe.improvements.length){
-    showMsg('tobeMsg','ok','Se generaron propuestas desde quick wins, desperdicios, restricciones y problemas del análisis.');
-  }else{
-    showMsg('tobeMsg','warn','No se detectaron quick wins, restricciones, problemas ni mejoras en el análisis procesado.');
+  if(
+    uniqueImprovements.length
+  ){
+    const removed =
+      sourceImprovements.length -
+      uniqueImprovements.length;
+
+    showMsg(
+      'tobeMsg',
+      'ok',
+      'Se cargaron ' +
+        uniqueImprovements.length +
+        ' mejora(s) única(s) desde MEJORAS.' +
+        (
+          removed > 0
+            ? (
+                ' Se omitieron ' +
+                removed +
+                ' duplicado(s).'
+              )
+            : ''
+        )
+    );
+
+    return;
   }
+
+  showMsg(
+    'tobeMsg',
+    'warn',
+    'No existen mejoras válidas en analysisStages.results.MEJORAS.improvements.'
+  );
 }
 
   
