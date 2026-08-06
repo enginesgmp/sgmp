@@ -3700,8 +3700,8 @@ body{font-size:14px !important}
 
           <p>
             Revisa el SIPOC completo en una vista amplia y limpia.
-            El diagrama permanece bloqueado hasta ingresar
-            al modo de diagramación.
+            El diagrama permanece bloqueado hasta activar
+            el modo de diagramación.
           </p>
         </div>
 
@@ -3745,9 +3745,28 @@ body{font-size:14px !important}
             id="btn_enter_diagram_mode"
             type="button"
           >
-            Entrar en modo de diagramación
+            Modo de diagramación
           </button>
         </div>
+      </header>
+
+
+      <section
+        id="sb_studio_fullscreen_host"
+        class="sb-studio-canvas-card"
+      >
+        <header
+          id="sb_studio_edit_bar"
+          class="sb-studio-edit-bar"
+          hidden
+        >
+          <div>
+            <strong>Modo de diagramación</strong>
+
+            <small>
+              Los cambios se confirman únicamente al cerrar y guardar.
+            </small>
+          </div>
 
           <button
             class="ok sb-studio-close-save"
@@ -3778,7 +3797,6 @@ body{font-size:14px !important}
               </div>
             </div>
           </div>
-
         </div>
       </section>
 
@@ -8076,29 +8094,85 @@ function openSBStudio(){
   );
 }
 
-
 function openSBOutput(){
-  const finalXML =
+  let finalXML =
     String(
       S.xmlFinal ||
       $('xml_final')?.value ||
       ''
     ).trim();
 
+  /*
+   * La salida no depende de entrar al editor.
+   * Si el diagrama determinista ya existe,
+   * se genera el XML final al abrir esta etapa.
+   */
+  if(!finalXML){
+    const diagramXML =
+      String(
+        S.diagramXml ||
+        $('xml_diagram')?.value ||
+        ''
+      ).trim();
+
+    if(!diagramXML){
+      gMsg(
+        'warn',
+        'La salida todavía no está disponible. Primero valida y construye el diagrama.'
+      );
+
+      openSBStudio();
+
+      return false;
+    }
+
+    const outputReady =
+      finalizeSBBuiltDiagram({
+        stayInStudio:
+          true,
+
+        silent:
+          true
+      });
+
+    if(!outputReady){
+      gMsg(
+        'err',
+        'No fue posible generar la salida porque el diagrama no superó la validación.'
+      );
+
+      openSBStudio();
+
+      return false;
+    }
+
+    finalXML =
+      String(
+        S.xmlFinal ||
+        $('xml_final')?.value ||
+        ''
+      ).trim();
+  }
+
   if(!finalXML){
     gMsg(
-      'warn',
-      'La salida todavía no está disponible. Completa la construcción del diagrama.'
+      'err',
+      'La salida final quedó vacía después de la validación.'
     );
-
-    openSBStudio();
 
     return false;
   }
 
-  return switchTab(
+  switchTab(
     'tab_out'
   );
+
+  gMsg(
+    'ok',
+    'Salida XML generada y disponible.'
+  );
+
+  return true;
 }
 
 function copyText(text) {
