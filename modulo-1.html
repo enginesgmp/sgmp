@@ -28007,18 +28007,980 @@ function lmpValidateQuickWinStageContract_(parsed){
 window.lmpValidateQuickWinStageContract_ =
   lmpValidateQuickWinStageContract_;  
 
+function lmpValidateImprovementStageContract_(parsed){
+  const TYPES = [
+    'FLOW_REDESIGN', 'STANDARDIZATION', 'CONTROL_TRACEABILITY',
+    'INFORMATION_MANAGEMENT', 'DIGITALIZATION', 'AUTOMATION_RPA',
+    'AI_ASSISTANCE', 'OTHER'
+  ];
+
+  const MODES = [
+    'MODE_A',
+    'MODE_B'
+  ];
+
+  const COVERAGE = [
+    'COVERED_BY_IMPROVEMENT',
+    'GROUPED_WITH_ANOTHER_FINDING',
+    'INSUFFICIENT_EVIDENCE',
+    'OUTSIDE_SCOPE',
+    'NOT_ACTIONABLE',
+    'PENDING_VALIDATION'
+  ];
+
+  const REQUIRED_TEXT = [
+    'title',
+    'problemFinding',
+    'currentState',
+    'proposedState',
+    'scope',
+    'justification',
+    'expectedBenefit',
+    'risks'
+  ];
+
+  const text = value =>
+    String(value ?? '').trim();
+
+  const list = value =>
+    Array.from(
+      new Set(
+        safeArray(value)
+          .map(text)
+          .filter(Boolean)
+      )
+    );
+
+  const normalizeKey = value =>
+    text(value)
+      .normalize('NFD')
+      .replace(
+        /[\u0300-\u036f]/g,
+        ''
+      )
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9]+/g,
+        ' '
+      )
+      .trim()
+      .replace(
+        /\s+/g,
+        ' '
+      );
+
+  const mergeText = function(
+    first,
+    second
+  ){
+    const a =
+      text(first);
+
+    const b =
+      text(second);
+
+    if(
+      !b ||
+      normalizeKey(a) ===
+        normalizeKey(b)
+    ){
+      return a;
+    }
+
+    return a
+      ? a + '\n' + b
+      : b;
+  };
+
+  const requireObject = function(
+    value,
+    path
+  ){
+    if(
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value)
+    ){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un objeto.'
+      );
+    }
+  };
+
+  const requireArray = function(
+    value,
+    path
+  ){
+    if(!Array.isArray(value)){
+      throw new Error(
+        'El campo "' +
+        path +
+        '" debe ser un arreglo.'
+      );
+    }
+  };
+
+  if(
+    text(parsed.analysis_type) !==
+    'improvement_proposal_analysis'
+  ){
+    throw new Error(
+      'analysis_type debe ser "improvement_proposal_analysis".'
+    );
+  }
+
+  if(
+    text(parsed.methodology) !==
+    'Lean_ECRS_TOC_BPM_Impact_Effort'
+  ){
+    throw new Error(
+      'methodology debe ser "Lean_ECRS_TOC_BPM_Impact_Effort".'
+    );
+  }
+
+  requireObject(
+    parsed.source_control,
+    'source_control'
+  );
+
+  requireArray(
+    parsed.improvements,
+    'improvements'
+  );
+
+  requireArray(
+    parsed.findingCoverage,
+    'findingCoverage'
+  );
+
+  requireArray(
+    parsed.warnings,
+    'warnings'
+  );
+
+  requireArray(
+    parsed.dataGaps,
+    'dataGaps'
+  );
+
+  requireObject(
+    parsed.validation,
+    'validation'
+  );
+
+  requireArray(
+    parsed.validation.blockingGaps,
+    'validation.blockingGaps'
+  );
+
+  requireArray(
+    parsed.validation.warnings,
+    'validation.warnings'
+  );
+
+  const sourceActivities =
+    safeArray(
+      lmpGetValidatedAsIsEvidence_()
+        .activities
+    );
+
+  const activityIds =
+    new Set(
+      sourceActivities
+        .map(
+          item =>
+            text(item?.id)
+        )
+        .filter(Boolean)
+    );
+
+  if(!activityIds.size){
+    throw new Error(
+      'El AS-IS validado no contiene actividades con ID.'
+    );
+  }
+
+  const results = {
+    VA:
+      lmpGetOfficialAnalysisResult_(
+        'VA'
+      ),
+
+    DESPERDICIOS:
+      lmpGetOfficialAnalysisResult_(
+        'DESPERDICIOS'
+      ),
+
+    PROBLEMAS:
+      lmpGetOfficialAnalysisResult_(
+        'PROBLEMAS'
+      ),
+
+    RESTRICCIONES:
+      lmpGetOfficialAnalysisResult_(
+        'RESTRICCIONES'
+      ),
+
+    QUICK_WINS:
+      lmpGetOfficialAnalysisResult_(
+        'QUICK_WINS'
+      )
+  };
+
+  Object.entries(
+    results
+  ).forEach(function(entry){
+    const stage =
+      entry[0];
+
+    const result =
+      entry[1];
+
+    if(!result){
+      throw new Error(
+        'Mejoras requiere el resultado oficial de ' +
+        lmpAnalysisStageName_(
+          stage
+        ) +
+        '.'
+      );
+    }
+  });
+
+  const findingRefs =
+    new Set();
+
+  safeArray(
+    results.VA
+      ?.ava
+      ?.activityAnalysis
+  ).forEach(function(item){
+    const id =
+      text(item?.id);
+
+    if(id){
+      findingRefs.add(
+        'AVA:' + id
+      );
+    }
+  });
+
+  const registerRefs = function(
+    items,
+    pattern,
+    label
+  ){
+    safeArray(items).forEach(function(
+      item,
+      index
+    ){
+      const id =
+        text(item?.id);
+
+      if(!pattern.test(id)){
+        throw new Error(
+          'El registro ' +
+          (index + 1) +
+          ' de ' +
+          label +
+          ' no tiene un ID oficial válido.'
+        );
+      }
+
+      findingRefs.add(id);
+    });
+  };
+
+  registerRefs(
+    results.DESPERDICIOS.wastes,
+    /^W-\d{3}$/,
+    'Desperdicios'
+  );
+
+  registerRefs(
+    results.PROBLEMAS.problems,
+    /^P-\d{3}$/,
+    'Problemas'
+  );
+
+  registerRefs(
+    results.RESTRICCIONES.restrictions,
+    /^R-\d{3}$/,
+    'Restricciones'
+  );
+
+  registerRefs(
+    results.QUICK_WINS.quickWins,
+    /^QW-\d{3}$/,
+    'Quick Wins'
+  );
+
+  const unique = [];
+
+  const uniqueByKey =
+    new Map();
+
+  const oldIdToIndex =
+    new Map();
+
+  const originalIds =
+    new Set();
+
+  parsed.improvements.forEach(function(
+    item,
+    index
+  ){
+    requireObject(
+      item,
+      'improvements[' +
+        index +
+        ']'
+    );
+
+    const improvement = {
+      id:
+        text(item.id),
+
+      title:
+        text(item.title),
+
+      problemFinding:
+        text(
+          item.problemFinding
+        ),
+
+      currentState:
+        text(
+          item.currentState
+        ),
+
+      proposedState:
+        text(
+          item.proposedState
+        ),
+
+      scope:
+        text(item.scope),
+
+      justification:
+        text(
+          item.justification
+        ),
+
+      expectedBenefit:
+        text(
+          item.expectedBenefit
+        ),
+
+      risks:
+        text(item.risks),
+
+      mode:
+        text(item.mode)
+          .toUpperCase(),
+
+      improvementType:
+        text(
+          item.improvementType
+        ).toUpperCase(),
+
+      relatedActivityIds:
+        list(
+          item.relatedActivityIds
+        ),
+
+      linkedFindingRefs:
+        list(
+          item.linkedFindingRefs
+        ),
+
+      status:
+        text(item.status)
+          .toUpperCase()
+    };
+
+    if(
+      !/^M-\d{3}$/.test(
+        improvement.id
+      )
+    ){
+      throw new Error(
+        'La mejora ' +
+        (index + 1) +
+        ' debe tener un ID con formato M-001.'
+      );
+    }
+
+    if(
+      originalIds.has(
+        improvement.id
+      )
+    ){
+      throw new Error(
+        'El ID de mejora "' +
+        improvement.id +
+        '" está duplicado.'
+      );
+    }
+
+    originalIds.add(
+      improvement.id
+    );
+
+    REQUIRED_TEXT.forEach(
+      function(field){
+        if(
+          !improvement[field]
+        ){
+          throw new Error(
+            'La mejora ' +
+            improvement.id +
+            ' no contiene el campo obligatorio "' +
+            field +
+            '".'
+          );
+        }
+      }
+    );
+
+    if(
+      !MODES.includes(
+        improvement.mode
+      )
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' contiene un mode no permitido.'
+      );
+    }
+
+    if(
+      !TYPES.includes(
+        improvement.improvementType
+      )
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' contiene un improvementType no permitido.'
+      );
+    }
+
+    if(
+      improvement.status !==
+      'PENDING_ANALYST_REVIEW'
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' debe tener status PENDING_ANALYST_REVIEW.'
+      );
+    }
+
+    if(
+      !improvement
+        .relatedActivityIds
+        .length
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' debe relacionarse con al menos un elemento del AS-IS.'
+      );
+    }
+
+    improvement
+      .relatedActivityIds
+      .forEach(function(id){
+        if(!activityIds.has(id)){
+          throw new Error(
+            'La mejora ' +
+            improvement.id +
+            ' referencia el ID AS-IS inexistente "' +
+            id +
+            '".'
+          );
+        }
+      });
+
+    if(
+      !improvement
+        .linkedFindingRefs
+        .length
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' debe incluir al menos un hallazgo relacionado.'
+      );
+    }
+
+    improvement
+      .linkedFindingRefs
+      .forEach(function(ref){
+        if(
+          !findingRefs.has(ref)
+        ){
+          throw new Error(
+            'La mejora ' +
+            improvement.id +
+            ' referencia el hallazgo inexistente "' +
+            ref +
+            '".'
+          );
+        }
+      });
+
+    const duplicateKey = [
+      normalizeKey(
+        improvement.problemFinding
+      ),
+
+      normalizeKey(
+        improvement.currentState
+      ),
+
+      normalizeKey(
+        improvement.proposedState
+      ),
+
+      improvement
+        .relatedActivityIds
+        .slice()
+        .sort()
+        .join('|'),
+
+      improvement
+        .linkedFindingRefs
+        .slice()
+        .sort()
+        .join('|')
+    ].join('||');
+
+    if(
+      uniqueByKey.has(
+        duplicateKey
+      )
+    ){
+      const uniqueIndex =
+        uniqueByKey.get(
+          duplicateKey
+        );
+
+      const current =
+        unique[uniqueIndex];
+
+      current.scope =
+        mergeText(
+          current.scope,
+          improvement.scope
+        );
+
+      current.justification =
+        mergeText(
+          current.justification,
+          improvement.justification
+        );
+
+      current.expectedBenefit =
+        mergeText(
+          current.expectedBenefit,
+          improvement.expectedBenefit
+        );
+
+      current.risks =
+        mergeText(
+          current.risks,
+          improvement.risks
+        );
+
+      current.relatedActivityIds =
+        list(
+          current
+            .relatedActivityIds
+            .concat(
+              improvement
+                .relatedActivityIds
+            )
+        );
+
+      current.linkedFindingRefs =
+        list(
+          current
+            .linkedFindingRefs
+            .concat(
+              improvement
+                .linkedFindingRefs
+            )
+        );
+
+      oldIdToIndex.set(
+        improvement.id,
+        uniqueIndex
+      );
+
+      return;
+    }
+
+    const uniqueIndex =
+      unique.length;
+
+    uniqueByKey.set(
+      duplicateKey,
+      uniqueIndex
+    );
+
+    oldIdToIndex.set(
+      improvement.id,
+      uniqueIndex
+    );
+
+    unique.push(
+      improvement
+    );
+  });
+
+  unique.forEach(function(
+    item,
+    index
+  ){
+    item.id =
+      'M-' +
+      String(index + 1)
+        .padStart(3, '0');
+  });
+
+  const oldIdToNewId =
+    new Map();
+
+  oldIdToIndex.forEach(function(
+    index,
+    oldId
+  ){
+    oldIdToNewId.set(
+      oldId,
+      unique[index].id
+    );
+  });
+
+  const coverageByRef =
+    new Map();
+
+  parsed.findingCoverage.forEach(
+    function(item, index){
+      requireObject(
+        item,
+        'findingCoverage[' +
+          index +
+          ']'
+      );
+
+      const findingRef =
+        text(
+          item.findingRef
+        );
+
+      const coverageStatus =
+        text(
+          item.coverageStatus
+        ).toUpperCase();
+
+      const explanation =
+        text(
+          item.explanation
+        );
+
+      if(
+        !findingRefs.has(
+          findingRef
+        )
+      ){
+        throw new Error(
+          'findingCoverage referencia el hallazgo inexistente "' +
+          findingRef +
+          '".'
+        );
+      }
+
+      if(
+        !COVERAGE.includes(
+          coverageStatus
+        )
+      ){
+        throw new Error(
+          'findingCoverage contiene un coverageStatus no permitido para "' +
+          findingRef +
+          '".'
+        );
+      }
+
+      if(!explanation){
+        throw new Error(
+          'findingCoverage debe explicar el tratamiento de "' +
+          findingRef +
+          '".'
+        );
+      }
+
+      const improvementIds =
+        list(
+          list(
+            item.improvementIds
+          ).map(function(id){
+            const mapped =
+              oldIdToNewId.get(
+                id
+              );
+
+            if(!mapped){
+              throw new Error(
+                'findingCoverage referencia la mejora inexistente "' +
+                id +
+                '".'
+              );
+            }
+
+            return mapped;
+          })
+        );
+
+      if(
+        [
+          'COVERED_BY_IMPROVEMENT',
+          'GROUPED_WITH_ANOTHER_FINDING'
+        ].includes(
+          coverageStatus
+        ) &&
+        !improvementIds.length
+      ){
+        throw new Error(
+          'El hallazgo "' +
+          findingRef +
+          '" debe relacionarse con al menos una mejora.'
+        );
+      }
+
+      if(
+        coverageByRef.has(
+          findingRef
+        )
+      ){
+        const current =
+          coverageByRef.get(
+            findingRef
+          );
+
+        current.improvementIds =
+          list(
+            current
+              .improvementIds
+              .concat(
+                improvementIds
+              )
+          );
+
+        current.explanation =
+          mergeText(
+            current.explanation,
+            explanation
+          );
+
+        return;
+      }
+
+      coverageByRef.set(
+        findingRef,
+        {
+          findingRef,
+          coverageStatus,
+          improvementIds,
+          explanation
+        }
+      );
+    }
+  );
+
+  const removedDuplicates =
+    parsed.improvements.length -
+    unique.length;
+
+  parsed.improvements =
+    unique;
+
+  parsed.findingCoverage =
+    Array.from(
+      coverageByRef.values()
+    );
+
+  parsed.warnings =
+    list(
+      parsed.warnings
+    );
+
+  parsed.dataGaps =
+    list(
+      parsed.dataGaps
+    );
+
+  parsed.validation
+    .blockingGaps =
+      list(
+        parsed.validation
+          .blockingGaps
+      );
+
+  parsed.validation
+    .warnings =
+      list(
+        parsed.validation
+          .warnings
+      );
+
+  if(
+    removedDuplicates > 0
+  ){
+    const warning =
+      'Se consolidaron ' +
+      removedDuplicates +
+      (
+        removedDuplicates === 1
+          ? ' propuesta duplicada.'
+          : ' propuestas duplicadas.'
+      );
+
+    parsed.warnings =
+      list(
+        parsed.warnings.concat(
+          warning
+        )
+      );
+
+    parsed.validation
+      .warnings =
+        list(
+          parsed.validation
+            .warnings
+            .concat(
+              warning
+            )
+        );
+  }
+
+  if(!unique.length){
+    parsed.validation
+      .blockingGaps =
+        list(
+          parsed.validation
+            .blockingGaps
+            .concat(
+              'No existen propuestas de mejora sustentadas para revisar.'
+            )
+        );
+  }
+
+  parsed.source_control = {
+    source_activity_count:
+      sourceActivities.length,
+
+    reviewed_activity_count:
+      sourceActivities.length,
+
+    reviewed_waste_count:
+      safeArray(
+        results.DESPERDICIOS
+          .wastes
+      ).length,
+
+    reviewed_problem_count:
+      safeArray(
+        results.PROBLEMAS
+          .problems
+      ).length,
+
+    reviewed_restriction_count:
+      safeArray(
+        results.RESTRICCIONES
+          .restrictions
+      ).length,
+
+    reviewed_quick_win_count:
+      safeArray(
+        results.QUICK_WINS
+          .quickWins
+      ).length,
+
+    identified_improvement_count:
+      unique.length,
+
+    used_ava_result:
+      true,
+
+    used_waste_result:
+      true,
+
+    used_problem_result:
+      true,
+
+    used_restriction_result:
+      true,
+
+    used_quick_win_result:
+      true,
+
+    used_additional_information:
+      parsed.source_control
+        .used_additional_information ===
+          true,
+
+    preserved_activity_ids:
+      true,
+
+    preserved_finding_ids:
+      true
+  };
+
+  parsed.validation = {
+    canProceedToRouteClosure:
+      unique.length > 0 &&
+      parsed.validation
+        .blockingGaps
+        .length === 0,
+
+    blockingGaps:
+      parsed.validation
+        .blockingGaps,
+
+    warnings:
+      parsed.validation
+        .warnings
+  };
+
+  return parsed;
+}
+
+window.lmpValidateImprovementStageContract_ =
+  lmpValidateImprovementStageContract_;
+
 function lmpValidateAnalysisStageContract_(
   stageKey,
   rawText
 ){
-  const stage = String(stageKey || '')
-    .trim()
-    .toUpperCase();
+  const stage =
+    String(stageKey || '')
+      .trim()
+      .toUpperCase();
 
   const raw =
-    String(rawText || '').trim();
+    String(rawText || '')
+      .trim();
 
-  if(!ANALYSIS_STAGE_SEQUENCE.includes(stage)){
+  if(
+    !ANALYSIS_STAGE_SEQUENCE
+      .includes(stage)
+  ){
     throw new Error(
       'La etapa indicada no pertenece al flujo vigente.'
     );
@@ -28031,7 +28993,8 @@ function lmpValidateAnalysisStageContract_(
   }
 
   const parsed =
-    typeof extractJsonFromText === 'function'
+    typeof extractJsonFromText ===
+      'function'
       ? extractJsonFromText(raw)
       : JSON.parse(raw);
 
@@ -28045,11 +29008,12 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
-  const declaredStage = String(
-    parsed.stage || ''
-  )
-    .trim()
-    .toUpperCase();
+  const declaredStage =
+    String(
+      parsed.stage || ''
+    )
+      .trim()
+      .toUpperCase();
 
   if(!declaredStage){
     throw new Error(
@@ -28057,7 +29021,9 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
-  if(declaredStage !== stage){
+  if(
+    declaredStage !== stage
+  ){
     throw new Error(
       'El JSON corresponde a la etapa ' +
       declaredStage +
@@ -28069,23 +29035,29 @@ function lmpValidateAnalysisStageContract_(
 
   if(
     typeof getMissingPreviousAnalysisStages ===
-    'function'
+      'function'
   ){
     const missingStages =
-      getMissingPreviousAnalysisStages(stage);
+      getMissingPreviousAnalysisStages(
+        stage
+      );
 
     if(missingStages.length){
       throw new Error(
         'Primero debes guardar: ' +
         missingStages
-          .map(lmpAnalysisStageName_)
+          .map(
+            lmpAnalysisStageName_
+          )
           .join(', ') +
         '.'
       );
     }
   }
 
-  const requireString = function(path){
+  const requireString = function(
+    path
+  ){
     const value =
       lmpGetPathValue_(
         parsed,
@@ -28104,7 +29076,9 @@ function lmpValidateAnalysisStageContract_(
     }
   };
 
-  const requireObject = function(path){
+  const requireObject = function(
+    path
+  ){
     const value =
       lmpGetPathValue_(
         parsed,
@@ -28124,42 +29098,42 @@ function lmpValidateAnalysisStageContract_(
     }
   };
 
-  const requireObjectArray = function(path){
-    const value =
-      lmpGetPathValue_(
-        parsed,
-        path
-      );
+  const requireObjectArray =
+    function(path){
+      const value =
+        lmpGetPathValue_(
+          parsed,
+          path
+        );
 
-    if(!Array.isArray(value)){
-      throw new Error(
-        'El campo "' +
-        path +
-        '" debe ser un arreglo.'
-      );
-    }
-
-    value.forEach(function(item, index){
-      if(
-        !item ||
-        typeof item !== 'object' ||
-        Array.isArray(item)
-      ){
+      if(!Array.isArray(value)){
         throw new Error(
-          'El elemento ' +
-          (index + 1) +
-          ' de "' +
+          'El campo "' +
           path +
-          '" no es un objeto válido.'
+          '" debe ser un arreglo.'
         );
       }
-    });
-  };
 
-  /*
-   * Validación exclusivamente estructural.
-   * No evalúa pertinencia, calidad ni profundidad metodológica.
-   */
+      value.forEach(function(
+        item,
+        index
+      ){
+        if(
+          !item ||
+          typeof item !== 'object' ||
+          Array.isArray(item)
+        ){
+          throw new Error(
+            'El elemento ' +
+            (index + 1) +
+            ' de "' +
+            path +
+            '" no es un objeto válido.'
+          );
+        }
+      });
+    };
+
   requireString(
     'analysis_type'
   );
@@ -28217,11 +29191,10 @@ function lmpValidateAnalysisStageContract_(
     }
   };
 
-
-
   if(
     stage === 'MEJORAS' &&
-    parsed.findingCoverage === undefined
+    parsed.findingCoverage ===
+      undefined
   ){
     parsed.findingCoverage = [];
   }
@@ -28247,19 +29220,25 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
-  if(stage === 'DESPERDICIOS'){
+  if(
+    stage ===
+    'DESPERDICIOS'
+  ){
     lmpValidateWasteStageContract_(
       parsed
     );
   }
-  
+
   if(stage === 'PROBLEMAS'){
     lmpValidateProblemStageContract_(
       parsed
     );
   }
 
-  if(stage === 'RESTRICCIONES'){
+  if(
+    stage ===
+    'RESTRICCIONES'
+  ){
     lmpValidateRestrictionStageContract_(
       parsed
     );
@@ -28271,10 +29250,17 @@ function lmpValidateAnalysisStageContract_(
     );
   }
 
+  if(stage === 'MEJORAS'){
+    lmpValidateImprovementStageContract_(
+      parsed
+    );
+  }
+
   return JSON.parse(
     JSON.stringify(parsed)
   );
 }
+  
 function lmpInvalidateAnalysisAfter_(stageKey){
   const stage = String(stageKey || '')
     .trim()
