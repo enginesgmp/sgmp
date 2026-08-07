@@ -10261,64 +10261,187 @@ function resolveLmpWorkRouteFromBackup(parsed){
 }
   
 async function loadRouteJson(mode){
-  const input = qs('resumeFile');
-  const file = input.files[0];
+  const input =
+    qs('resumeFile');
+
+  const file =
+    input?.files?.[0];
+
   if(!file){
-    showMsg('inicioMsg','warn','Selecciona un archivo JSON antes de continuar.');
+    showMsg(
+      'inicioMsg',
+      'warn',
+      'Selecciona un archivo JSON antes de continuar.'
+    );
+
     return;
   }
 
   try{
-    const parsed = JSON.parse(await file.text());
-    const importType = detectLmpImportType(parsed);
+    const parsed =
+      JSON.parse(
+        await file.text()
+      );
+
+    const importType =
+      detectLmpImportType(
+        parsed
+      );
+
     let detectedActivities = 0;
 
-if(importType === 'LMP_BACKUP'){
-  const resolvedRoute = resolveLmpWorkRouteFromBackup(parsed);
+    if(
+      importType ===
+      'LMP_BACKUP'
+    ){
+      const resolvedRoute =
+        resolveLmpWorkRouteFromBackup(
+          parsed
+        );
 
-  mergeLoadedState(parsed);
+      mergeLoadedState(
+        parsed
+      );
 
-  state.metadata = state.metadata || {};
-  state.metadata.route = resolvedRoute;
-  state.metadata.workRoute = resolvedRoute;
-  state.metadata.loadMode = mode || 'backup';
+      state.metadata =
+        state.metadata || {};
 
-  detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
-}
-    else if(importType === 'JSON_MAESTRO_PROCESO'){
-      detectedActivities = applyJsonMaestroProceso(parsed);
+      state.metadata.route =
+        resolvedRoute;
+
+      state.metadata.workRoute =
+        resolvedRoute;
+
+      state.metadata.loadMode =
+        mode || 'backup';
+
+      detectedActivities =
+        state.asis?.activities?.length ||
+        state.master?.activities?.length ||
+        0;
     }
-    else if(importType === 'SIPOC_EXTRACTOR_JSON'){
-      detectedActivities = applySipocExtractorJson(parsed);
+    else if(
+      importType ===
+      'JSON_MAESTRO_PROCESO'
+    ){
+      detectedActivities =
+        applyJsonMaestroProceso(
+          parsed
+        );
     }
-    else if(['ENTREVISTA_JSON','CUESTIONARIO_JSON','SIPOC_JSON'].includes(importType)){
-      detectedActivities = applySingleInstrumentJson(parsed, importType);
+    else if(
+      importType ===
+      'SIPOC_EXTRACTOR_JSON'
+    ){
+      detectedActivities =
+        applySipocExtractorJson(
+          parsed
+        );
     }
-else{
-  const resolvedRoute = resolveLmpWorkRouteFromBackup(parsed);
+    else if(
+      [
+        'ENTREVISTA_JSON',
+        'CUESTIONARIO_JSON',
+        'SIPOC_JSON'
+      ].includes(
+        importType
+      )
+    ){
+      detectedActivities =
+        applySingleInstrumentJson(
+          parsed,
+          importType
+        );
+    }
+    else{
+      const resolvedRoute =
+        resolveLmpWorkRouteFromBackup(
+          parsed
+        );
 
-  mergeLoadedState(parsed);
+      mergeLoadedState(
+        parsed
+      );
 
-  state.metadata = state.metadata || {};
-  state.metadata.route = resolvedRoute;
-  state.metadata.workRoute = resolvedRoute;
-  state.metadata.loadMode = mode || 'backup';
+      state.metadata =
+        state.metadata || {};
 
-  detectedActivities = state.asis?.activities?.length || state.master?.activities?.length || 0;
-}
+      state.metadata.route =
+        resolvedRoute;
+
+      state.metadata.workRoute =
+        resolvedRoute;
+
+      state.metadata.loadMode =
+        mode || 'backup';
+
+      detectedActivities =
+        state.asis?.activities?.length ||
+        state.master?.activities?.length ||
+        0;
+    }
 
     renderAllFromState();
+
+    /*
+     * Después de reconstruir la interfaz,
+     * restaura el trabajo pendiente.
+     */
+    const restoredSection =
+      (
+        importType ===
+          'LMP_BACKUP' ||
+        state.backupWorkspace
+      ) &&
+      typeof lmpRestoreBackupWorkspace_ ===
+        'function'
+        ? lmpRestoreBackupWorkspace_()
+        : '';
+
     updateTopStatus();
+
+    const nextStage =
+      restoredSection &&
+      stageOrder.includes(
+        restoredSection
+      )
+        ? restoredSection
+        : (
+            state.metadata.currentStage &&
+            stageOrder.includes(
+              state.metadata.currentStage
+            )
+              ? state.metadata.currentStage
+              : (
+                  detectedActivities
+                    ? 'asis'
+                    : 'inicio'
+                )
+          );
+
+    showSection(
+      nextStage
+    );
 
     showMsg(
       'inicioMsg',
       'ok',
-      `JSON cargado correctamente. Tipo detectado: ${importType}. Actividades detectadas: ${detectedActivities}. Etapa: ${labelStage(state.metadata.currentStage)}.`
+      'JSON cargado correctamente. Tipo detectado: ' +
+      importType +
+      '. Actividades detectadas: ' +
+      detectedActivities +
+      '. Etapa restaurada: ' +
+      labelStage(nextStage) +
+      '.'
     );
 
-    const nextStage =   state.metadata.currentStage && stageOrder.includes(state.metadata.currentStage)     ? state.metadata.currentStage     : detectedActivities       ? 'asis'       : 'inicio';  showSection(nextStage);
   }catch(error){
-    showMsg('inicioMsg','err',`No fue posible leer el JSON. Detalle: ${error.message}`);
+    showMsg(
+      'inicioMsg',
+      'err',
+      'No fue posible leer el JSON. Detalle: ' +
+      error.message
+    );
   }
 }
 window.loadRouteJson = loadRouteJson;
@@ -15998,38 +16121,482 @@ function stripHtml(html){
 /* =========================
    RESPALDOS Y CARGA
 ========================= */
-function syncVisibleStage(){
-  const active = document.querySelector('.section.active')?.id;
-  if(active === 'preparacion'){
-    // no obliga a guardar, pero si ya hay datos en pantalla se guardan cuando corresponde
+function lmpCloneForBackup_(value){
+  return JSON.parse(
+    JSON.stringify(
+      value ?? null
+    )
+  );
+}
+
+function lmpBuildBackupWorkspace_(){
+  const pendingSource =
+    window.__LMP_ANALYSIS_PENDING__ &&
+    typeof window.__LMP_ANALYSIS_PENDING__ === 'object'
+      ? window.__LMP_ANALYSIS_PENDING__
+      : {};
+
+  const analysisPending = {};
+
+  Object.keys(pendingSource)
+    .forEach(function(stage){
+      const entry =
+        pendingSource[stage];
+
+      if(
+        !entry ||
+        typeof entry !== 'object'
+      ){
+        return;
+      }
+
+      analysisPending[stage] =
+        lmpCloneForBackup_({
+          raw:
+            String(
+              entry.raw || ''
+            ),
+
+          parsed:
+            entry.parsed || null
+        });
+    });
+
+  /*
+   * Conserva campos actuales de la interfaz.
+   * Se excluyen archivos y contraseñas.
+   */
+  const uiFields = {};
+
+  document.querySelectorAll(
+    'input[id], textarea[id], select[id]'
+  ).forEach(function(field){
+    const type =
+      String(
+        field.type || ''
+      ).toLowerCase();
+
+    if(
+      type === 'file' ||
+      type === 'password' ||
+      type === 'button' ||
+      type === 'submit'
+    ){
+      return;
+    }
+
+    uiFields[field.id] =
+      (
+        type === 'checkbox' ||
+        type === 'radio'
+      )
+        ? {
+            kind: 'checked',
+            value: !!field.checked
+          }
+        : {
+            kind: 'value',
+            value: String(
+              field.value ?? ''
+            )
+          };
+  });
+
+  /*
+   * Copia explícita de los editores de análisis.
+   */
+  const analysisEditors = {};
+
+  safeArray(
+    typeof ANALYSIS_STAGE_SEQUENCE !==
+      'undefined'
+      ? ANALYSIS_STAGE_SEQUENCE
+      : []
+  ).forEach(function(stage){
+
+    const prompt =
+      el(
+        'analysisPrompt_' +
+        stage
+      );
+
+    const response =
+      el(
+        'analysisResponse_' +
+        stage
+      );
+
+    const result =
+      el(
+        'analysisResult_' +
+        stage
+      );
+
+    if(
+      !prompt &&
+      !response &&
+      !result
+    ){
+      return;
+    }
+
+    analysisEditors[stage] = {
+      prompt:
+        String(
+          prompt?.value || ''
+        ),
+
+      response:
+        String(
+          response?.value || ''
+        ),
+
+      result:
+        String(
+          result?.value || ''
+        )
+    };
+  });
+
+  return {
+    version: 1,
+
+    currentSection:
+      String(
+        document.querySelector(
+          '.section.active'
+        )?.id || ''
+      ).trim(),
+
+    capturedAt:
+      new Date().toISOString(),
+
+    analysisPending,
+    analysisEditors,
+    uiFields
+  };
+}
+
+function lmpRestoreBackupWorkspace_(){
+  const workspace =
+    state.backupWorkspace;
+
+  if(
+    !workspace ||
+    typeof workspace !== 'object' ||
+    Array.isArray(workspace)
+  ){
+    return '';
   }
-  if(active === 'contexto') saveContext();
+
+  const pending =
+    workspace.analysisPending &&
+    typeof workspace.analysisPending ===
+      'object' &&
+    !Array.isArray(
+      workspace.analysisPending
+    )
+      ? lmpCloneForBackup_(
+          workspace.analysisPending
+        )
+      : {};
+
+  window.__LMP_ANALYSIS_PENDING__ =
+    pending;
+
+  /*
+   * Restaura campos generales de interfaz.
+   */
+  const uiFields =
+    workspace.uiFields &&
+    typeof workspace.uiFields ===
+      'object' &&
+    !Array.isArray(
+      workspace.uiFields
+    )
+      ? workspace.uiFields
+      : {};
+
+  Object.keys(uiFields)
+    .forEach(function(id){
+      const field =
+        document.getElementById(
+          id
+        );
+
+      if(!field){
+        return;
+      }
+
+      const snapshot =
+        uiFields[id] || {};
+
+      if(
+        snapshot.kind ===
+        'checked'
+      ){
+        field.checked =
+          snapshot.value === true;
+      }else{
+        field.value =
+          String(
+            snapshot.value ?? ''
+          );
+      }
+    });
+
+  /*
+   * Restaura específicamente los editores
+   * técnicos de cada etapa.
+   */
+  const editors =
+    workspace.analysisEditors &&
+    typeof workspace.analysisEditors ===
+      'object' &&
+    !Array.isArray(
+      workspace.analysisEditors
+    )
+      ? workspace.analysisEditors
+      : {};
+
+  Object.keys(editors)
+    .forEach(function(stage){
+
+      const values =
+        editors[stage] || {};
+
+      const prompt =
+        el(
+          'analysisPrompt_' +
+          stage
+        );
+
+      const response =
+        el(
+          'analysisResponse_' +
+          stage
+        );
+
+      const result =
+        el(
+          'analysisResult_' +
+          stage
+        );
+
+      if(prompt){
+        prompt.value =
+          String(
+            values.prompt || ''
+          );
+      }
+
+      if(response){
+        response.value =
+          String(
+            values.response || ''
+          );
+      }
+
+      if(result){
+        result.value =
+          String(
+            values.result || ''
+          );
+      }
+    });
+
+  /*
+   * Reconstruye las revisiones editables
+   * cuando existe un JSON pendiente validado.
+   */
+  Object.keys(pending)
+    .forEach(function(stage){
+
+      const parsed =
+        pending[stage]
+          ?.parsed;
+
+      if(!parsed){
+        return;
+      }
+
+      if(
+        stage === 'VA' &&
+        typeof window.lmpRenderVaReview_ ===
+          'function'
+      ){
+        window.lmpRenderVaReview_(
+          lmpCloneForBackup_(
+            parsed
+          )
+        );
+      }
+
+      if(
+        stage === 'DESPERDICIOS' &&
+        typeof window.lmpRenderWasteReview_ ===
+          'function'
+      ){
+        window.lmpRenderWasteReview_(
+          lmpCloneForBackup_(
+            parsed
+          )
+        );
+      }
+
+      if(
+        stage === 'PROBLEMAS' &&
+        typeof window.lmpRenderProblemReview_ ===
+          'function'
+      ){
+        window.lmpRenderProblemReview_(
+          lmpCloneForBackup_(
+            parsed
+          )
+        );
+      }
+
+      if(
+        stage === 'MEJORAS' &&
+        typeof lmpRenderImprovementReview_ ===
+          'function'
+      ){
+        lmpRenderImprovementReview_(
+          lmpCloneForBackup_(
+            parsed
+          )
+        );
+      }
+    });
+
+  const restoredSection =
+    String(
+      workspace.currentSection ||
+      ''
+    ).trim();
+
+  /*
+   * backupWorkspace es información de transporte.
+   * No debe formar parte permanente del estado.
+   */
+  delete state.backupWorkspace;
+
+  return restoredSection;
+}
+
+function syncVisibleStage(){
+  const active =
+    document.querySelector(
+      '.section.active'
+    )?.id || '';
+
   if(active === 'carga'){
-    if(qs('masterEditor').value.trim()){
-      try{ state.master = JSON.parse(qs('masterEditor').value); }catch(e){}
+    const masterEditor =
+      qs('masterEditor');
+
+    if(
+      masterEditor &&
+      masterEditor.value.trim()
+    ){
+      try{
+        state.master =
+          JSON.parse(
+            masterEditor.value
+          );
+      }catch(error){
+        /*
+         * Aunque todavía no sea JSON válido,
+         * el texto del editor será conservado
+         * por backupWorkspace.uiFields.
+         */
+      }
     }
   }
-  if(active === 'asis'){   collectAsisActivities();   cleanEmptyAsisActivities(); }
-  if(active === 'tobe') collectImprovements();
-  state.metadata.lastSavedAt = new Date().toISOString();
+
+  if(active === 'asis'){
+    collectAsisActivities();
+    cleanEmptyAsisActivities();
+  }
+
+  /*
+   * NO ejecutar collectImprovements().
+   *
+   * Esa función pertenece al TO-BE legacy y
+   * actualmente trabaja con el contrato antiguo.
+   * Ejecutarla durante el respaldo podría
+   * degradar las mejoras nuevas.
+   */
+
+  state.metadata =
+    state.metadata || {};
+
+  state.metadata.currentStage =
+    active ||
+    state.metadata.currentStage ||
+    'inicio';
+
+  state.metadata.lastSavedAt =
+    new Date().toISOString();
 }
 
 function downloadBackup(){
   syncVisibleStage();
   cleanEmptyAsisActivities();
 
-  state.metadata = state.metadata || {};
+  state.metadata =
+    state.metadata || {};
 
-  const resolvedRoute = resolveLmpWorkRouteFromBackup(state);
+  const resolvedRoute =
+    resolveLmpWorkRouteFromBackup(
+      state
+    );
 
-  state.metadata.route = resolvedRoute;
-  state.metadata.workRoute = resolvedRoute;
-  state.metadata.lastSavedAt = new Date().toISOString();
+  state.metadata.route =
+    resolvedRoute;
 
-  const backup = JSON.stringify(state, null, 2);
-  downloadText('lmp_respaldo.json', backup, 'application/json;charset=utf-8');
+  state.metadata.workRoute =
+    resolvedRoute;
+
+  state.metadata.lastSavedAt =
+    new Date().toISOString();
+
+  /*
+   * El estado oficial se copia completo.
+   * backupWorkspace agrega el trabajo todavía
+   * pendiente sin contaminar state.
+   */
+  const backup =
+    lmpCloneForBackup_(
+      state
+    );
+
+  backup.backupWorkspace =
+    lmpBuildBackupWorkspace_();
+
+  backup.metadata =
+    backup.metadata || {};
+
+  backup.metadata.backupVersion =
+    2;
+
+  backup.metadata.backupCreatedAt =
+    new Date().toISOString();
+
+  downloadText(
+    'lmp_respaldo.json',
+    JSON.stringify(
+      backup,
+      null,
+      2
+    ),
+    'application/json;charset=utf-8'
+  );
+
+  return true;
 }
 
+window.downloadBackup =
+  downloadBackup;
 function deepMerge(target, source){
   if(Array.isArray(source)) return JSON.parse(JSON.stringify(source));
   if(source && typeof source === 'object'){
@@ -42584,47 +43151,16 @@ function syncResultsSummaryViews(){
   };
 
 
-  const baseDownload =
-    window.downloadBackup ||
-    downloadBackup;
-
-  window.downloadBackup =
-  function(){
-    if(
-      window
-        .__LMP_ANALYSIS_PENDING__
-        ?.[STAGE]
-    ){
-      const saved =
-        window
-          .saveValidatedAnalysisStage(
-            STAGE
-          );
-
-      if(saved !== true){
-        if(
-          typeof showMsg ===
-          'function'
-        ){
-          showMsg(
-            'analysisMsg_' +
-            STAGE,
-
-            'err',
-
-            'El respaldo no se descargó porque Restricciones contiene cambios pendientes o campos incompletos.'
-          );
-        }
-
-        return false;
-      }
-    }
-
-    return baseDownload();
-  };
-
-  downloadBackup =
-    window.downloadBackup;
+/*
+ * El respaldo general ya captura tanto
+ * el estado oficial como el workspace
+ * pendiente de todas las etapas.
+ *
+ * No debe existir un comportamiento
+ * especial únicamente para Restricciones.
+ */
+window.downloadBackup =
+  downloadBackup;
 
 
   const baseAssemble =
