@@ -28926,6 +28926,13 @@ function lmpValidateImprovementStageContract_(parsed){
   const findingRefs =
     new Set();
 
+  /*
+   * QUICK_WINS es la única fuente oficial
+   * para clasificar una mejora como MODE_A.
+   */
+  const quickWinRefs =
+    new Set();
+
   safeArray(
     results.VA
       ?.ava
@@ -28944,7 +28951,8 @@ function lmpValidateImprovementStageContract_(parsed){
   const registerRefs = function(
     items,
     pattern,
-    label
+    label,
+    targetSet = null
   ){
     safeArray(items).forEach(function(
       item,
@@ -28964,6 +28972,10 @@ function lmpValidateImprovementStageContract_(parsed){
       }
 
       findingRefs.add(id);
+
+      if(targetSet){
+        targetSet.add(id);
+      }
     });
   };
 
@@ -28988,7 +29000,8 @@ function lmpValidateImprovementStageContract_(parsed){
   registerRefs(
     results.QUICK_WINS.quickWins,
     /^QW-\d{3}$/,
-    'Quick Wins'
+    'Quick Wins',
+    quickWinRefs
   );
 
   const unique = [];
@@ -29208,6 +29221,38 @@ function lmpValidateImprovementStageContract_(parsed){
         }
       });
 
+    const linkedQuickWinRefs =
+      improvement
+        .linkedFindingRefs
+        .filter(function(ref){
+          return quickWinRefs.has(ref);
+        });
+
+    if(
+      improvement.mode === 'MODE_A' &&
+      !linkedQuickWinRefs.length
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' está clasificada como MODE_A · Quick Win, pero no deriva de ningún Quick Win oficial. ' +
+        'MEJORAS no puede descubrir nuevos Quick Wins; debe referenciar al menos un QW-xxx generado en QUICK_WINS.'
+      );
+    }
+
+    if(
+      improvement.mode === 'MODE_B' &&
+      linkedQuickWinRefs.length
+    ){
+      throw new Error(
+        'La mejora ' +
+        improvement.id +
+        ' está clasificada como MODE_B, pero incorpora Quick Wins oficiales (' +
+        linkedQuickWinRefs.join(', ') +
+        '). Mantén esos Quick Wins como mejoras MODE_A separadas y utiliza MODE_B para la solución estructural.'
+      );
+    }
+
     const duplicateKey = [
       normalizeKey(
         improvement.problemFinding
@@ -29326,6 +29371,43 @@ function lmpValidateImprovementStageContract_(parsed){
       String(index + 1)
         .padStart(3, '0');
   });
+
+  /*
+   * Todo Quick Win oficial debe sobrevivir dentro
+   * de MEJORAS como al menos una propuesta MODE_A.
+   * Se permite agrupar varios QW en una misma mejora.
+   */
+  const incorporatedQuickWinRefs =
+    new Set();
+
+  unique.forEach(function(item){
+    if(item.mode !== 'MODE_A'){
+      return;
+    }
+
+    safeArray(
+      item.linkedFindingRefs
+    ).forEach(function(ref){
+      if(quickWinRefs.has(ref)){
+        incorporatedQuickWinRefs.add(ref);
+      }
+    });
+  });
+
+  const missingQuickWinRefs =
+    Array.from(quickWinRefs)
+      .filter(function(ref){
+        return !incorporatedQuickWinRefs.has(ref);
+      });
+
+  if(missingQuickWinRefs.length){
+    throw new Error(
+      'MEJORAS debe incorporar todos los Quick Wins oficiales como propuestas MODE_A. ' +
+      'Faltan: ' +
+      missingQuickWinRefs.join(', ') +
+      '.'
+    );
+  }
 
   const oldIdToNewId =
     new Map();
