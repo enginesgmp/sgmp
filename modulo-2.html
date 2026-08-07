@@ -7617,7 +7617,6 @@ function sbStudioSelectableFromEvent(
   );
 }
   
-
 function sbRenderDiagramStudio(
   options = {}
 ){
@@ -7640,25 +7639,101 @@ function sbRenderDiagramStudio(
       'No existe un contrato para construir el diagrama.' +
       '</div>';
 
+    S.studio.rendered =
+      false;
+
     return false;
   }
 
-  const wasRendered =
-    S.studio.rendered;
+  const forceRebuild =
+    options.forceRebuild ===
+      true;
+
+  const currentModel =
+    S.diagramModel
+      ?.diagram_model;
+
+  const existingSvg =
+    canvas.querySelector(
+      'svg'
+    );
 
   /*
-   * Utiliza exactamente el mismo generador
-   * visual de la vista previa.
+   * Si Diagram Studio ya fue construido y el contrato
+   * no fue invalidado, conserva exactamente el lienzo
+   * y el modelo existentes.
+   *
+   * Esto es indispensable para que las futuras
+   * modificaciones geométricas no desaparezcan
+   * al cambiar de etapa y volver a Diagram Studio.
+   */
+  if(
+    !forceRebuild &&
+    S.studio.rendered &&
+    currentModel &&
+    existingSvg
+  ){
+    const canvasWidth =
+      Number(
+        currentModel.layout
+          ?.canvas_width
+      ) ||
+      1200;
+
+    const canvasHeight =
+      Number(
+        currentModel.layout
+          ?.canvas_height
+      ) ||
+      700;
+
+    canvas.style.width =
+      canvasWidth +
+      'px';
+
+    canvas.style.height =
+      canvasHeight +
+      'px';
+
+    stage.style.width =
+      canvasWidth +
+      'px';
+
+    stage.style.height =
+      canvasHeight +
+      'px';
+
+    sbStudioSetEditingUI(
+      S.studio.editing
+    );
+
+    if(
+      typeof sbStudioApplySelectionHighlight ===
+        'function'
+    ){
+      sbStudioApplySelectionHighlight();
+    }
+
+    sbStudioApplyTransform();
+
+    if(options.resetCamera){
+      requestAnimationFrame(
+        sbStudioResetPreviewCamera
+      );
+    }
+
+    return true;
+  }
+
+  /*
+   * Primera construcción o reconstrucción explícita.
+   * Solo en este punto se vuelve a generar el modelo
+   * desde el contrato AS-IS.
    */
   const svg =
     sbBuildStaticPreview(
       S.contract,
       {
-        /*
-         * El SVG queda preparado para editar,
-         * pero CSS bloquea toda interacción
-         * fuera del modo de diagramación.
-         */
         interactive:
           true
       }
@@ -7676,6 +7751,9 @@ function sbRenderDiagramStudio(
       '<div class="sb-studio-empty">' +
       'No fue posible construir el modelo visual.' +
       '</div>';
+
+    S.studio.rendered =
+      false;
 
     return false;
   }
@@ -7717,23 +7795,24 @@ function sbRenderDiagramStudio(
     S.studio.editing
   );
 
+  if(
+    typeof sbStudioApplySelectionHighlight ===
+      'function'
+  ){
+    sbStudioApplySelectionHighlight();
+  }
+
   S.studio.rendered =
     true;
 
   sbStudioApplyTransform();
 
-  if(
-    options.resetCamera ||
-    !wasRendered
-  ){
-    requestAnimationFrame(
-      sbStudioResetPreviewCamera
-    );
-  }
+  requestAnimationFrame(
+    sbStudioResetPreviewCamera
+  );
 
   return true;
 }
-
 
 function sbRebuildDiagramStudio(){
   S.studio.rendered =
