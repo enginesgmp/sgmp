@@ -4790,6 +4790,81 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
     background:linear-gradient(135deg,#EAF7FF,#FFFFFF) !important;
   }
 
+  /* MEJORAS · contador y estados visibles */
+  #analysisImprovementReview_MEJORAS .analysis-improvement-counter{
+    background:#EEF4FF !important;
+    border:1px solid rgba(26,86,219,.20) !important;
+    color:#1749A6 !important;
+    opacity:1 !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .analysis-improvement-mode-chip,
+  #analysisImprovementReview_MEJORAS .analysis-improvement-review-state{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    min-height:28px !important;
+    padding:6px 10px !important;
+    border-radius:999px !important;
+    font-size:.72rem !important;
+    font-weight:900 !important;
+    line-height:1.1 !important;
+    white-space:nowrap !important;
+    opacity:1 !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .analysis-improvement-mode-chip.is-quick-win{
+    background:rgba(39,174,96,.10) !important;
+    border:1px solid rgba(39,174,96,.24) !important;
+    color:#1E6B3D !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .analysis-improvement-mode-chip.is-mode-b{
+    background:rgba(26,86,219,.09) !important;
+    border:1px solid rgba(26,86,219,.22) !important;
+    color:#1749A6 !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .analysis-improvement-review-state{
+    background:rgba(242,153,74,.11) !important;
+    border:1px solid rgba(242,153,74,.26) !important;
+    color:#8A570D !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.is-saved{
+    border-left:4px solid #27AE60 !important;
+    background:linear-gradient(180deg,#FFFFFF,#FBFFFC) !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.is-saved
+  .analysis-improvement-review-state{
+    background:rgba(39,174,96,.10) !important;
+    border-color:rgba(39,174,96,.24) !important;
+    color:#1E6B3D !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.has-pending-changes{
+    border-left:4px solid #1A56DB !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.has-pending-changes
+  .analysis-improvement-review-state{
+    background:rgba(26,86,219,.09) !important;
+    border-color:rgba(26,86,219,.22) !important;
+    color:#1749A6 !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.is-incomplete{
+    border-left:4px solid #C0392B !important;
+  }
+
+  #analysisImprovementReview_MEJORAS .improvement-card.is-incomplete
+  .analysis-improvement-review-state{
+    background:rgba(192,57,43,.08) !important;
+    border-color:rgba(192,57,43,.22) !important;
+    color:#9C2F24 !important;
+  }
+
   @media(max-width:720px){
     .improvement-summary{
       flex-direction:column !important;
@@ -36791,7 +36866,324 @@ function lmpReadImprovementReviewItem_(card){
   };
 }
 
+function lmpImprovementModeLabel_(value){
+  const mode =
+    String(value || '')
+      .trim()
+      .toUpperCase();
+
+  if(mode === 'MODE_A'){
+    return 'Modo A · Quick Win';
+  }
+
+  if(mode === 'MODE_B'){
+    return 'Modo B';
+  }
+
+  return mode || 'Modo sin definir';
+}
+
+function lmpEnhanceImprovementReviewUi_(){
+  const reviewCard =
+    el(
+      'analysisImprovementReview_MEJORAS'
+    );
+
+  if(!reviewCard){
+    return;
+  }
+
+  const counter =
+    reviewCard.querySelector(
+      '.improvement-head > .status-badge'
+    );
+
+  if(counter){
+    counter.classList.add(
+      'analysis-improvement-counter'
+    );
+  }
+
+  Array.from(
+    reviewCard.querySelectorAll(
+      '.improvement-card[data-improvement-id]'
+    )
+  ).forEach(function(card){
+
+    const actions =
+      card.querySelector(
+        '.improvement-summary-actions'
+      );
+
+    const reviewBadge =
+      card.querySelector(
+        '[data-role="review-state"]'
+      );
+
+    if(reviewBadge){
+      reviewBadge.classList.add(
+        'analysis-improvement-review-state'
+      );
+    }
+
+    const modeSelect =
+      card.querySelector(
+        '[data-improvement-field="mode"]'
+      );
+
+    if(modeSelect){
+      const modeA =
+        modeSelect.querySelector(
+          'option[value="MODE_A"]'
+        );
+
+      const modeB =
+        modeSelect.querySelector(
+          'option[value="MODE_B"]'
+        );
+
+      if(modeA){
+        modeA.textContent =
+          'Modo A · Quick Win';
+      }
+
+      if(modeB){
+        modeB.textContent =
+          'Modo B';
+      }
+
+      let modeBadge =
+        card.querySelector(
+          '[data-role="improvement-mode-state"]'
+        );
+
+      if(
+        !modeBadge &&
+        actions
+      ){
+        modeBadge =
+          document.createElement(
+            'span'
+          );
+
+        modeBadge.dataset.role =
+          'improvement-mode-state';
+
+        modeBadge.className =
+          'analysis-improvement-mode-chip';
+
+        actions.insertBefore(
+          modeBadge,
+          reviewBadge || null
+        );
+      }
+
+      if(modeBadge){
+        const mode =
+          String(
+            modeSelect.value || ''
+          )
+            .trim()
+            .toUpperCase();
+
+        modeBadge.textContent =
+          lmpImprovementModeLabel_(
+            mode
+          );
+
+        modeBadge.classList.toggle(
+          'is-quick-win',
+          mode === 'MODE_A'
+        );
+
+        modeBadge.classList.toggle(
+          'is-mode-b',
+          mode === 'MODE_B'
+        );
+      }
+    }
+
+    card.classList.remove(
+      'is-saved',
+      'has-pending-changes',
+      'is-incomplete'
+    );
+
+    const badgeText =
+      String(
+        reviewBadge?.textContent || ''
+      )
+        .trim()
+        .toLowerCase();
+
+    if(
+      card.dataset.reviewed ===
+      '1'
+    ){
+      card.classList.add(
+        'is-saved'
+      );
+    }
+    else if(
+      badgeText.includes(
+        'cambios'
+      )
+    ){
+      card.classList.add(
+        'has-pending-changes'
+      );
+    }
+    else if(
+      badgeText.includes(
+        'requerida'
+      )
+    ){
+      card.classList.add(
+        'is-incomplete'
+      );
+    }
+
+    /*
+     * Igual que los análisis previos:
+     * después de guardar correctamente
+     * una tarjeta individual, se cierra.
+     */
+    const saveButton =
+      Array.from(
+        card.querySelectorAll(
+          'button'
+        )
+      ).find(function(button){
+        return String(
+          button.getAttribute(
+            'onclick'
+          ) || ''
+        ).includes(
+          'lmpSaveImprovementReviewItem_'
+        );
+      });
+
+    if(
+      saveButton &&
+      saveButton.dataset
+        .lmpCloseBound !==
+        '1'
+    ){
+      saveButton.dataset
+        .lmpCloseBound =
+          '1';
+
+      saveButton.addEventListener(
+        'click',
+        function(){
+
+          setTimeout(function(){
+            if(
+              card.dataset.reviewed ===
+              '1'
+            ){
+              card.open = false;
+
+              lmpEnhanceImprovementReviewUi_();
+            }
+          }, 0);
+        }
+      );
+    }
+  });
+}
+
+function lmpImprovementReviewCompleteness_(item){
+  const requiredText = [
+    ['title', 'Título'],
+    ['problemFinding', 'Problema / hallazgo'],
+    ['currentState', 'Estado actual AS-IS'],
+    ['proposedState', 'Estado propuesto'],
+    ['scope', 'Alcance'],
+    ['justification', 'Sustento / justificación'],
+    ['expectedBenefit', 'Beneficio esperado'],
+    ['risks', 'Riesgos / dependencias']
+  ];
+
+  for(const entry of requiredText){
+    const field =
+      entry[0];
+
+    const label =
+      entry[1];
+
+    if(
+      !String(
+        item?.[field] || ''
+      ).trim()
+    ){
+      return {
+        ok:false,
+        field,
+        error:
+          'Falta completar "' +
+          label +
+          '".'
+      };
+    }
+  }
+
+  if(
+    ![
+      'MODE_A',
+      'MODE_B'
+    ].includes(
+      String(
+        item?.mode || ''
+      )
+        .trim()
+        .toUpperCase()
+    )
+  ){
+    return {
+      ok:false,
+      field:'mode',
+      error:
+        'Selecciona un modo válido.'
+    };
+  }
+
+  if(
+    !safeArray(
+      item?.relatedActivityIds
+    ).length
+  ){
+    return {
+      ok:false,
+      field:'relatedActivityIds',
+      error:
+        'Relaciona al menos una actividad AS-IS.'
+    };
+  }
+
+  if(
+    !safeArray(
+      item?.linkedFindingRefs
+    ).length
+  ){
+    return {
+      ok:false,
+      field:'linkedFindingRefs',
+      error:
+        'Relaciona al menos un hallazgo.'
+    };
+  }
+
+  return {
+    ok:true,
+    field:'',
+    error:''
+  };
+}
+
 function lmpUpdateImprovementReviewSaveState_(){
+  lmpEnhanceImprovementReviewUi_();
+
   const reviewCard =
     el(
       'analysisImprovementReview_MEJORAS'
@@ -36815,16 +37207,335 @@ function lmpUpdateImprovementReviewSaveState_(){
         )
       : [];
 
+  const pending =
+    window
+      .__LMP_ANALYSIS_PENDING__
+      ?.MEJORAS;
+
+  /*
+   * Ya no exige guardar las tarjetas
+   * una por una.
+   *
+   * Guardar y continuar realizará
+   * el guardado masivo.
+   */
   saveButton.disabled = !(
-    cards.length &&
-    cards.every(function(card){
-      return (
-        card.dataset.reviewed ===
-        '1'
-      );
-    })
+    pending?.parsed &&
+    cards.length
   );
 }
+
+window.lmpSavePendingImprovementReviews_ =
+function(options = {}){
+
+  const closeAfterSave =
+    options.closeAfterSave !== false;
+
+  const scrollOnError =
+    options.scrollOnError !== false;
+
+  try{
+    const pending =
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.MEJORAS;
+
+    if(!pending?.parsed){
+      throw new Error(
+        'No existe un resultado de Mejoras pendiente de revisión.'
+      );
+    }
+
+    const reviewCard =
+      el(
+        'analysisImprovementReview_MEJORAS'
+      );
+
+    if(!reviewCard){
+      throw new Error(
+        'No está disponible la revisión editable de Mejoras. Valida nuevamente el JSON.'
+      );
+    }
+
+    const cards =
+      Array.from(
+        reviewCard.querySelectorAll(
+          '.improvement-card[data-improvement-id]'
+        )
+      );
+
+    if(!cards.length){
+      throw new Error(
+        'No existen propuestas de mejora para guardar.'
+      );
+    }
+
+    const rows =
+      cards.map(function(card){
+        const item =
+          lmpReadImprovementReviewItem_(
+            card
+          );
+
+        return {
+          card,
+          item,
+          check:
+            lmpImprovementReviewCompleteness_(
+              item
+            )
+        };
+      });
+
+    const incomplete =
+      rows.find(function(row){
+        return row.check.ok !== true;
+      });
+
+    if(incomplete){
+      incomplete.card.dataset.reviewed =
+        '0';
+
+      const badge =
+        incomplete.card.querySelector(
+          '[data-role="review-state"]'
+        );
+
+      if(badge){
+        badge.textContent =
+          'Revisión requerida';
+      }
+
+      incomplete.card.open =
+        true;
+
+      const field =
+        incomplete.card.querySelector(
+          '[data-improvement-field="' +
+          incomplete.check.field +
+          '"]'
+        );
+
+      field?.focus();
+
+      lmpEnhanceImprovementReviewUi_();
+
+      if(scrollOnError){
+        incomplete.card.scrollIntoView({
+          behavior:'smooth',
+          block:'center'
+        });
+      }
+
+      return {
+        ok:false,
+        savedCount:0,
+        incompleteId:
+          incomplete.item.id,
+        error:
+          'La mejora ' +
+          incomplete.item.id +
+          ' está incompleta. ' +
+          incomplete.check.error
+      };
+    }
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.improvements =
+      rows.map(function(row){
+        return row.item;
+      });
+
+    const validated =
+      lmpValidateImprovementStageContract_(
+        candidate
+      );
+
+    if(
+      validated.validation
+        ?.canProceedToRouteClosure !==
+      true
+    ){
+      throw new Error(
+        safeArray(
+          validated.validation
+            ?.blockingGaps
+        ).join(' ') ||
+        'Mejoras contiene brechas bloqueantes.'
+      );
+    }
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    const resultBox =
+      el(
+        'analysisResult_MEJORAS'
+      );
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          validated,
+          null,
+          2
+        );
+    }
+
+    const structureChanged =
+      validated.improvements.length !==
+        rows.length ||
+
+      validated.improvements.some(
+        function(item, index){
+          return (
+            String(
+              item?.id || ''
+            ) !==
+            String(
+              rows[index]
+                ?.item
+                ?.id || ''
+            )
+          );
+        }
+      );
+
+    if(structureChanged){
+      lmpRenderImprovementReview_(
+        validated
+      );
+
+      Array.from(
+        document.querySelectorAll(
+          '#analysisImprovementReview_MEJORAS .improvement-card[data-improvement-id]'
+        )
+      ).forEach(function(card){
+        card.dataset.reviewed =
+          '1';
+
+        const badge =
+          card.querySelector(
+            '[data-role="review-state"]'
+          );
+
+        if(badge){
+          badge.textContent =
+            'Guardada';
+        }
+
+        if(closeAfterSave){
+          card.open = false;
+        }
+      });
+
+    }else{
+      rows.forEach(function(row){
+        row.card.dataset.reviewed =
+          '1';
+
+        const badge =
+          row.card.querySelector(
+            '[data-role="review-state"]'
+          );
+
+        if(badge){
+          badge.textContent =
+            'Guardada';
+        }
+
+        if(closeAfterSave){
+          row.card.open = false;
+        }
+      });
+    }
+
+    lmpUpdateImprovementReviewSaveState_();
+
+    return {
+      ok:true,
+      savedCount:
+        validated.improvements.length,
+      incompleteId:'',
+      error:''
+    };
+
+  }catch(error){
+
+    const match =
+      String(
+        error.message || ''
+      ).match(
+        /\bM-\d{3}\b/i
+      );
+
+    if(match){
+      const targetId =
+        match[0].toUpperCase();
+
+      const target =
+        Array.from(
+          document.querySelectorAll(
+            '#analysisImprovementReview_MEJORAS .improvement-card[data-improvement-id]'
+          )
+        ).find(function(card){
+          return (
+            String(
+              card.dataset
+                .improvementId || ''
+            ).toUpperCase() ===
+            targetId
+          );
+        });
+
+      if(target){
+        target.dataset.reviewed =
+          '0';
+
+        const badge =
+          target.querySelector(
+            '[data-role="review-state"]'
+          );
+
+        if(badge){
+          badge.textContent =
+            'Revisión requerida';
+        }
+
+        target.open = true;
+
+        lmpEnhanceImprovementReviewUi_();
+
+        if(scrollOnError){
+          target.scrollIntoView({
+            behavior:'smooth',
+            block:'center'
+          });
+        }
+      }
+    }
+
+    return {
+      ok:false,
+      savedCount:0,
+      incompleteId:
+        match
+          ? match[0].toUpperCase()
+          : '',
+      error:error.message
+    };
+  }
+};
 
 function lmpRenderImprovementReview_(parsed){
   const cards =
@@ -37728,14 +38439,20 @@ function(stageKey){
       );
 
     if(saveButton){
-      /*
-       * En Mejoras el analista debe revisar
-       * y guardar cada tarjeta antes de
-       * habilitar el cierre de la etapa.
-       */
-      saveButton.disabled =
-        stage ===
-        'MEJORAS';
+      if(stage === 'MEJORAS'){
+        /*
+         * El botón queda disponible desde la validación.
+         * Al pulsarlo se ejecutará el guardado masivo de
+         * todas las tarjetas válidas pendientes.
+         */
+        saveButton.disabled =
+          !safeArray(
+            parsed.improvements
+          ).length;
+      }else{
+        saveButton.disabled =
+          false;
+      }
     }
 
     if(
@@ -37779,7 +38496,7 @@ function(stageKey){
         'MEJORAS'
       ){
         message =
-          'El JSON de Mejoras fue validado. Revisa y guarda cada propuesta antes de continuar.';
+          'El JSON de Mejoras fue validado. Puedes revisar y guardar tarjetas individualmente; Guardar y continuar guardará automáticamente todas las propuestas válidas pendientes.';
       }
 
       showMsg(
@@ -38516,6 +39233,52 @@ window.saveAnalysisStageAndContinue = function(
    * Existe un nuevo JSON validado pendiente de guardar.
    */
   if(pending){
+
+    /*
+     * MEJORAS sigue el mismo patrón de los análisis
+     * previos: Guardar y continuar absorbe todas las
+     * tarjetas válidas que todavía estén pendientes.
+     */
+    if(stage === 'MEJORAS'){
+      if(
+        typeof window
+          .lmpSavePendingImprovementReviews_ !==
+        'function'
+      ){
+        showMsg(
+          msgId,
+          'err',
+          'No está disponible el guardado masivo de Mejoras.'
+        );
+
+        return false;
+      }
+
+      const massSave =
+        window
+          .lmpSavePendingImprovementReviews_({
+            closeAfterSave:true,
+            scrollOnError:true
+          });
+
+      if(
+        !massSave ||
+        massSave.ok !== true
+      ){
+        showMsg(
+          msgId,
+          'err',
+          'No fue posible guardar todas las mejoras pendientes. Detalle: ' +
+          (
+            massSave?.error ||
+            'Revisa las tarjetas incompletas.'
+          )
+        );
+
+        return false;
+      }
+    }
+
     const saved =
       window.saveValidatedAnalysisStage(
         stage
@@ -38545,7 +39308,7 @@ window.saveAnalysisStageAndContinue = function(
       stage
     )?.value.trim() || '';
 
-    const hasSavedResult = !!(
+  const hasSavedResult = !!(
     savedResult &&
     typeof savedResult === 'object' &&
     !Array.isArray(savedResult) &&
@@ -38603,8 +39366,7 @@ window.saveAnalysisStageAndContinue = function(
   }
 
   return false;
-};  
-
+};
 window.lmpInitializeAnalysisStageWorkflowUi = function(){
   ANALYSIS_STAGE_SEQUENCE.forEach(function(stage){
     const section =
