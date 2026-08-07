@@ -36107,31 +36107,1004 @@ function(options){
   }
 };
 
-window.processAnalysisScreenStage = function(stageKey){
-  const stage = String(stageKey || '')
-    .trim()
-    .toUpperCase();
+function lmpImprovementTypeLabel_(value){
+  const labels = {
+    FLOW_REDESIGN:
+      'Rediseño del flujo',
+
+    STANDARDIZATION:
+      'Estandarización',
+
+    CONTROL_TRACEABILITY:
+      'Control y trazabilidad',
+
+    INFORMATION_MANAGEMENT:
+      'Gestión de información',
+
+    DIGITALIZATION:
+      'Digitalización',
+
+    AUTOMATION_RPA:
+      'Automatización / BOT-RPA',
+
+    AI_ASSISTANCE:
+      'Asistencia con IA',
+
+    OTHER:
+      'Otro'
+  };
+
+  const key =
+    String(value || '')
+      .trim()
+      .toUpperCase();
+
+  return labels[key] ||
+    key ||
+    'Sin definir';
+}
+
+function lmpReadImprovementReviewItem_(card){
+  if(!card){
+    throw new Error(
+      'No se encontró la tarjeta de mejora.'
+    );
+  }
+
+  const read = function(field){
+    return String(
+      card.querySelector(
+        '[data-improvement-field="' +
+        field +
+        '"]'
+      )?.value || ''
+    ).trim();
+  };
+
+  const list = function(field){
+    return Array.from(
+      new Set(
+        read(field)
+          .split(/\r?\n|;|,/)
+          .map(function(value){
+            return value.trim();
+          })
+          .filter(Boolean)
+      )
+    );
+  };
+
+  return {
+    id:
+      String(
+        card.dataset
+          .improvementId || ''
+      ).trim(),
+
+    title:
+      read('title'),
+
+    problemFinding:
+      read('problemFinding'),
+
+    currentState:
+      read('currentState'),
+
+    proposedState:
+      read('proposedState'),
+
+    scope:
+      read('scope'),
+
+    justification:
+      read('justification'),
+
+    expectedBenefit:
+      read('expectedBenefit'),
+
+    risks:
+      read('risks'),
+
+    mode:
+      read('mode')
+        .toUpperCase(),
+
+    improvementType:
+      read('improvementType')
+        .toUpperCase(),
+
+    relatedActivityIds:
+      list('relatedActivityIds'),
+
+    linkedFindingRefs:
+      list('linkedFindingRefs'),
+
+    status:
+      'PENDING_ANALYST_REVIEW'
+  };
+}
+
+function lmpUpdateImprovementReviewSaveState_(){
+  const reviewCard =
+    el(
+      'analysisImprovementReview_MEJORAS'
+    );
+
+  const saveButton =
+    el(
+      'btnSaveAnalysisStage_MEJORAS'
+    );
+
+  if(!saveButton){
+    return;
+  }
+
+  const cards =
+    reviewCard
+      ? Array.from(
+          reviewCard.querySelectorAll(
+            '.improvement-card[data-improvement-id]'
+          )
+        )
+      : [];
+
+  saveButton.disabled = !(
+    cards.length &&
+    cards.every(function(card){
+      return (
+        card.dataset.reviewed ===
+        '1'
+      );
+    })
+  );
+}
+
+function lmpRenderImprovementReview_(parsed){
+  const cards =
+    document.querySelector(
+      '#analisis_mejoras .cards'
+    );
+
+  if(!cards){
+    return null;
+  }
+
+  el(
+    'analysisImprovementReview_MEJORAS'
+  )?.remove();
+
+  const improvements =
+    safeArray(
+      parsed?.improvements
+    );
+
+  const reviewCard =
+    document.createElement(
+      'article'
+    );
+
+  reviewCard.id =
+    'analysisImprovementReview_MEJORAS';
+
+  reviewCard.className =
+    'card';
+
+  reviewCard.innerHTML = `
+    <div class="improvement-head">
+      <div>
+        <h3 style="margin:0 0 6px">
+          Revisión de mejoras propuestas
+        </h3>
+
+        <p>
+          Revisa y ajusta cada propuesta antes de cerrar la etapa.
+          Todos los campos son editables y la clasificación utiliza
+          los ocho tipos aprobados.
+        </p>
+      </div>
+
+      <span class="status-badge">
+        ${improvements.length}
+        propuesta${improvements.length === 1 ? '' : 's'}
+      </span>
+    </div>
+
+    <div
+      class="list"
+      id="analysisImprovementReviewList_MEJORAS"
+    ></div>
+  `;
+
+  const responseCard =
+    cards.querySelector(
+      '.analysis-response-card'
+    );
+
+  if(responseCard){
+    responseCard.after(
+      reviewCard
+    );
+  }else{
+    cards.appendChild(
+      reviewCard
+    );
+  }
+
+  const list =
+    el(
+      'analysisImprovementReviewList_MEJORAS'
+    );
+
+  if(!improvements.length){
+    list.innerHTML = `
+      <div class="note">
+        El JSON validado no contiene propuestas
+        de mejora para revisar.
+      </div>
+    `;
+
+    lmpUpdateImprovementReviewSaveState_();
+
+    return reviewCard;
+  }
+
+  const typeOptions = [
+    'FLOW_REDESIGN',
+    'STANDARDIZATION',
+    'CONTROL_TRACEABILITY',
+    'INFORMATION_MANAGEMENT',
+    'DIGITALIZATION',
+    'AUTOMATION_RPA',
+    'AI_ASSISTANCE',
+    'OTHER'
+  ];
+
+  improvements.forEach(
+    function(rawItem){
+
+      const item =
+        typeof normalizeImprovement ===
+          'function'
+          ? normalizeImprovement(
+              rawItem
+            )
+          : rawItem;
+
+      const id =
+        String(
+          item.id || ''
+        ).trim();
+
+      const safeId =
+        escapeHtml(id);
+
+      const jsId =
+        id
+          .replace(
+            /\\/g,
+            '\\\\'
+          )
+          .replace(
+            /'/g,
+            "\\'"
+          );
+
+      const typeHtml =
+        typeOptions
+          .map(function(type){
+
+            return `
+              <option
+                value="${type}"
+                ${
+                  item.improvementType ===
+                  type
+                    ? 'selected'
+                    : ''
+                }
+              >
+                ${
+                  escapeHtml(
+                    lmpImprovementTypeLabel_(
+                      type
+                    )
+                  )
+                }
+              </option>
+            `;
+          })
+          .join('');
+
+      list.insertAdjacentHTML(
+        'beforeend',
+        `
+        <details
+          class="improvement-card improvement-accordion"
+          data-improvement-id="${safeId}"
+          data-reviewed="0"
+        >
+          <summary class="improvement-summary">
+
+            <div class="improvement-summary-main">
+              <h4>
+                ${
+                  escapeHtml(
+                    item.title ||
+                    id ||
+                    'Mejora propuesta'
+                  )
+                }
+              </h4>
+
+              <p>
+                ${
+                  escapeHtml(
+                    item.problemFinding ||
+                    'Revisión pendiente del analista.'
+                  )
+                }
+              </p>
+            </div>
+
+            <div class="improvement-summary-actions">
+              <span
+                class="status-badge"
+                data-role="review-state"
+              >
+                Pendiente de revisión
+              </span>
+            </div>
+
+          </summary>
+
+          <div class="improvement-body">
+
+            <div class="field-grid">
+
+              <div class="field w-6">
+                <label>Título</label>
+
+                <input
+                  data-improvement-field="title"
+                  value="${
+                    escapeHtml(
+                      item.title || ''
+                    )
+                  }"
+                />
+              </div>
+
+              <div class="field w-3">
+                <label>Modo</label>
+
+                <select
+                  data-improvement-field="mode"
+                >
+                  <option
+                    value="MODE_A"
+                    ${
+                      item.mode ===
+                      'MODE_A'
+                        ? 'selected'
+                        : ''
+                    }
+                  >
+                    Modo A
+                  </option>
+
+                  <option
+                    value="MODE_B"
+                    ${
+                      item.mode ===
+                      'MODE_B'
+                        ? 'selected'
+                        : ''
+                    }
+                  >
+                    Modo B
+                  </option>
+                </select>
+              </div>
+
+              <div class="field w-3">
+                <label>Tipo de mejora</label>
+
+                <select
+                  data-improvement-field="improvementType"
+                >
+                  ${typeHtml}
+                </select>
+              </div>
+
+              <div class="field w-12">
+                <label>
+                  Problema / hallazgo
+                </label>
+
+                <textarea
+                  data-improvement-field="problemFinding"
+                >${
+                  escapeHtml(
+                    item.problemFinding ||
+                    ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Estado actual AS-IS
+                </label>
+
+                <textarea
+                  data-improvement-field="currentState"
+                >${
+                  escapeHtml(
+                    item.currentState ||
+                    ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Estado propuesto
+                </label>
+
+                <textarea
+                  data-improvement-field="proposedState"
+                >${
+                  escapeHtml(
+                    item.proposedState ||
+                    ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-12">
+                <label>Alcance</label>
+
+                <textarea
+                  data-improvement-field="scope"
+                >${
+                  escapeHtml(
+                    item.scope || ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Sustento / justificación
+                </label>
+
+                <textarea
+                  data-improvement-field="justification"
+                >${
+                  escapeHtml(
+                    item.justification ||
+                    ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Beneficio esperado
+                </label>
+
+                <textarea
+                  data-improvement-field="expectedBenefit"
+                >${
+                  escapeHtml(
+                    item.expectedBenefit ||
+                    ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-12">
+                <label>
+                  Riesgos / dependencias
+                </label>
+
+                <textarea
+                  data-improvement-field="risks"
+                >${
+                  escapeHtml(
+                    item.risks || ''
+                  )
+                }</textarea>
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Actividades relacionadas
+                </label>
+
+                <input
+                  data-improvement-field="relatedActivityIds"
+                  value="${
+                    escapeHtml(
+                      safeArray(
+                        item.relatedActivityIds
+                      ).join(', ')
+                    )
+                  }"
+                  placeholder="ACT-001, ACT-002"
+                />
+              </div>
+
+              <div class="field w-6">
+                <label>
+                  Hallazgos relacionados
+                </label>
+
+                <input
+                  data-improvement-field="linkedFindingRefs"
+                  value="${
+                    escapeHtml(
+                      safeArray(
+                        item.linkedFindingRefs
+                      ).join(', ')
+                    )
+                  }"
+                  placeholder="P-001, R-001, QW-001"
+                />
+              </div>
+
+            </div>
+
+            <div class="actions">
+              <div class="actions-left">
+
+                <button
+                  class="btn"
+                  type="button"
+                  onclick="lmpSaveImprovementReviewItem_('${jsId}')"
+                >
+                  Guardar
+                </button>
+
+                <button
+                  class="btn-danger"
+                  type="button"
+                  onclick="lmpDeleteImprovementReviewItem_('${jsId}')"
+                >
+                  Eliminar
+                </button>
+
+              </div>
+            </div>
+
+          </div>
+        </details>
+        `
+      );
+    }
+  );
+
+  Array.from(
+    reviewCard.querySelectorAll(
+      '.improvement-card[data-improvement-id]'
+    )
+  ).forEach(function(card){
+
+    card.addEventListener(
+      'input',
+      function(){
+
+        card.dataset.reviewed =
+          '0';
+
+        const badge =
+          card.querySelector(
+            '[data-role="review-state"]'
+          );
+
+        if(badge){
+          badge.textContent =
+            'Cambios sin guardar';
+        }
+
+        lmpUpdateImprovementReviewSaveState_();
+      }
+    );
+  });
+
+  lmpUpdateImprovementReviewSaveState_();
+
+  return reviewCard;
+}
+
+window.lmpSaveImprovementReviewItem_ =
+function(id){
+
+  try{
+
+    const pending =
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.MEJORAS;
+
+    if(!pending?.parsed){
+      throw new Error(
+        'No existe un resultado de Mejoras pendiente de revisión.'
+      );
+    }
+
+    const card =
+      Array.from(
+        document.querySelectorAll(
+          '#analysisImprovementReview_MEJORAS .improvement-card[data-improvement-id]'
+        )
+      ).find(function(item){
+
+        return (
+          String(
+            item.dataset
+              .improvementId ||
+            ''
+          ) ===
+          String(id || '')
+        );
+      });
+
+    if(!card){
+      throw new Error(
+        'No se encontró la mejora seleccionada.'
+      );
+    }
+
+    const edited =
+      lmpReadImprovementReviewItem_(
+        card
+      );
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    const index =
+      safeArray(
+        candidate.improvements
+      ).findIndex(function(item){
+
+        return (
+          String(
+            item?.id || ''
+          ) ===
+          edited.id
+        );
+      });
+
+    if(index < 0){
+      throw new Error(
+        'La mejora ' +
+        edited.id +
+        ' no existe en el JSON pendiente.'
+      );
+    }
+
+    candidate.improvements[
+      index
+    ] = edited;
+
+    const validated =
+      lmpValidateImprovementStageContract_(
+        candidate
+      );
+
+    const structureChanged =
+      validated.improvements.length !==
+        candidate.improvements.length ||
+
+      validated.improvements.some(
+        function(item, itemIndex){
+
+          return (
+            String(
+              item?.id || ''
+            ) !==
+            String(
+              candidate
+                .improvements[
+                  itemIndex
+                ]?.id || ''
+            )
+          );
+        }
+      );
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    const resultBox =
+      el(
+        'analysisResult_MEJORAS'
+      );
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          validated,
+          null,
+          2
+        );
+    }
+
+    /*
+     * Si la validación consolidó dos propuestas
+     * o modificó su numeración, reconstruye
+     * toda la revisión para mantener coherencia.
+     */
+    if(structureChanged){
+
+      lmpRenderImprovementReview_(
+        validated
+      );
+
+      showMsg(
+        'analysisMsg_MEJORAS',
+        'warn',
+        'La revisión consolidó o renumeró propuestas. Revisa y guarda nuevamente las tarjetas resultantes.'
+      );
+
+      return true;
+    }
+
+    card.dataset.reviewed =
+      '1';
+
+    const badge =
+      card.querySelector(
+        '[data-role="review-state"]'
+      );
+
+    if(badge){
+      badge.textContent =
+        'Guardada';
+    }
+
+    lmpUpdateImprovementReviewSaveState_();
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'ok',
+      'Mejora ' +
+      edited.id +
+      ' guardada correctamente.'
+    );
+
+    return true;
+
+  }catch(error){
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'err',
+      'No fue posible guardar la mejora. Detalle: ' +
+      error.message
+    );
+
+    return false;
+  }
+};
+
+window.lmpDeleteImprovementReviewItem_ =
+function(id){
+
+  try{
+
+    const pending =
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.MEJORAS;
+
+    if(!pending?.parsed){
+      throw new Error(
+        'No existe un resultado de Mejoras pendiente de revisión.'
+      );
+    }
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    const targetId =
+      String(id || '')
+        .trim();
+
+    const before =
+      safeArray(
+        candidate.improvements
+      ).length;
+
+    candidate.improvements =
+      safeArray(
+        candidate.improvements
+      ).filter(function(item){
+
+        return (
+          String(
+            item?.id || ''
+          ).trim() !==
+          targetId
+        );
+      });
+
+    if(
+      candidate.improvements.length ===
+      before
+    ){
+      throw new Error(
+        'No se encontró la mejora ' +
+        targetId +
+        '.'
+      );
+    }
+
+    /*
+     * Mantiene consistente findingCoverage
+     * cuando una propuesta es eliminada.
+     */
+    candidate.findingCoverage =
+      safeArray(
+        candidate.findingCoverage
+      ).map(function(item){
+
+        const copy =
+          Object.assign(
+            {},
+            item
+          );
+
+        copy.improvementIds =
+          safeArray(
+            copy.improvementIds
+          ).filter(
+            function(improvementId){
+
+              return (
+                String(
+                  improvementId ||
+                  ''
+                ).trim() !==
+                targetId
+              );
+            }
+          );
+
+        if(
+          !copy.improvementIds.length &&
+          [
+            'COVERED_BY_IMPROVEMENT',
+            'GROUPED_WITH_ANOTHER_FINDING'
+          ].includes(
+            String(
+              copy.coverageStatus ||
+              ''
+            )
+              .trim()
+              .toUpperCase()
+          )
+        ){
+          copy.coverageStatus =
+            'PENDING_VALIDATION';
+
+          copy.explanation =
+            (
+              String(
+                copy.explanation ||
+                ''
+              ).trim() +
+              ' La propuesta asociada fue eliminada durante la revisión del analista.'
+            ).trim();
+        }
+
+        return copy;
+      });
+
+    const validated =
+      lmpValidateImprovementStageContract_(
+        candidate
+      );
+
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          validated
+        )
+      );
+
+    const resultBox =
+      el(
+        'analysisResult_MEJORAS'
+      );
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          validated,
+          null,
+          2
+        );
+    }
+
+    /*
+     * La eliminación puede renumerar M-001,
+     * M-002, etc.; por eso se reconstruyen
+     * todas las tarjetas.
+     */
+    lmpRenderImprovementReview_(
+      validated
+    );
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'warn',
+      'Mejora eliminada. Revisa y guarda nuevamente las propuestas restantes.'
+    );
+
+    return true;
+
+  }catch(error){
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'err',
+      'No fue posible eliminar la mejora. Detalle: ' +
+      error.message
+    );
+
+    return false;
+  }
+};
+
+window.processAnalysisScreenStage =
+function(stageKey){
+
+  const stage =
+    String(stageKey || '')
+      .trim()
+      .toUpperCase();
 
   const msgId =
-    'analysisMsg_' + stage;
+    'analysisMsg_' +
+    stage;
 
   const raw =
     el(
       'analysisResponse_' +
       stage
-    )?.value.trim() || '';
+    )?.value.trim() ||
+    '';
 
   try{
+
     const parsed =
       lmpValidateAnalysisStageContract_(
         stage,
         raw
       );
 
-    window.__LMP_ANALYSIS_PENDING__[stage] = {
-      raw,
-      parsed
-    };
+    window
+      .__LMP_ANALYSIS_PENDING__[
+        stage
+      ] = {
+        raw,
+        parsed
+      };
 
     if(stage === 'VA'){
       lmpRenderVaReview_(
@@ -36139,14 +37112,29 @@ window.processAnalysisScreenStage = function(stageKey){
       );
     }
 
-    if(stage === 'DESPERDICIOS'){
+    if(
+      stage ===
+      'DESPERDICIOS'
+    ){
       lmpRenderWasteReview_(
         parsed
       );
     }
 
-    if(stage === 'PROBLEMAS'){
+    if(
+      stage ===
+      'PROBLEMAS'
+    ){
       lmpRenderProblemReview_(
+        parsed
+      );
+    }
+
+    if(
+      stage ===
+      'MEJORAS'
+    ){
+      lmpRenderImprovementReview_(
         parsed
       );
     }
@@ -36173,60 +37161,102 @@ window.processAnalysisScreenStage = function(stageKey){
       );
 
     if(saveButton){
+      /*
+       * En Mejoras el analista debe revisar
+       * y guardar cada tarjeta antes de
+       * habilitar el cierre de la etapa.
+       */
       saveButton.disabled =
-        false;
+        stage ===
+        'MEJORAS';
     }
 
     if(
-      typeof window.renderAnalysisScreenAccumulated ===
+      typeof window
+        .renderAnalysisScreenAccumulated ===
       'function'
     ){
-      window.renderAnalysisScreenAccumulated(
-        stage
-      );
+      window
+        .renderAnalysisScreenAccumulated(
+          stage
+        );
     }
 
-    if(typeof showMsg === 'function'){
+    if(
+      typeof showMsg ===
+      'function'
+    ){
+
+      let message =
+        'La estructura JSON de ' +
+        lmpAnalysisStageName_(
+          stage
+        ) +
+        ' es válida. La etapa todavía no ha sido guardada.';
+
+      if(stage === 'VA'){
+        message =
+          'El JSON AVA fue validado. Revisa cada actividad antes de guardar y continuar.';
+      }
+
+      if(
+        stage ===
+        'PROBLEMAS'
+      ){
+        message =
+          'El JSON de Problemas fue validado. Revisa y guarda cada tarjeta antes de continuar.';
+      }
+
+      if(
+        stage ===
+        'MEJORAS'
+      ){
+        message =
+          'El JSON de Mejoras fue validado. Revisa y guarda cada propuesta antes de continuar.';
+      }
+
       showMsg(
         msgId,
         'ok',
-
-        stage === 'VA'
-          ? 'El JSON AVA fue validado. Revisa cada actividad antes de guardar y continuar.'
-          : (
-              stage === 'PROBLEMAS'
-                ? 'El JSON de Problemas fue validado. Revisa y guarda cada tarjeta antes de continuar.'
-                : (
-                    'La estructura JSON de ' +
-                    lmpAnalysisStageName_(stage) +
-                    ' es válida. La etapa todavía no ha sido guardada.'
-                  )
-            )
+        message
       );
     }
 
     return true;
 
   }catch(error){
+
     lmpClearAnalysisPending_(
       stage
     );
+
+    if(
+      stage ===
+      'MEJORAS'
+    ){
+      el(
+        'analysisImprovementReview_MEJORAS'
+      )?.remove();
+    }
 
     console.error(
       '[LMP validate ' +
       stage +
       '] Error:',
-
       error
     );
 
-    if(typeof showMsg === 'function'){
+    if(
+      typeof showMsg ===
+      'function'
+    ){
       showMsg(
         msgId,
         'err',
-
         'El JSON de ' +
-        lmpAnalysisStageName_(stage) +
+        lmpAnalysisStageName_(
+          stage
+        ) +
         ' no cumple la estructura esperada. Detalle: ' +
         error.message
       );
