@@ -21473,55 +21473,139 @@ function normalizeImprovement(item = {}){
   if(typeof item === 'string'){
     item = {
       title: item,
-      summary: item,
-      problem: item
+      problemFinding: item
     };
   }
 
   const toText = value => {
-    if(Array.isArray(value)) return value.filter(Boolean).join(', ');
-    if(value && typeof value === 'object') return JSON.stringify(value);
+    if(Array.isArray(value)){
+      return value
+        .map(x => String(x ?? '').trim())
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    if(
+      value &&
+      typeof value === 'object'
+    ){
+      return JSON.stringify(value);
+    }
+
     return String(value ?? '').trim();
   };
 
   const toArray = value => {
-    if(Array.isArray(value)) return value.map(x => toText(x)).filter(Boolean);
-    if(typeof value === 'string'){
-      return value
-        .split(/\n|;|,/)
-        .map(x => x.trim())
-        .filter(Boolean);
+    if(Array.isArray(value)){
+      return Array.from(
+        new Set(
+          value
+            .map(toText)
+            .filter(Boolean)
+        )
+      );
     }
+
+    if(typeof value === 'string'){
+      return Array.from(
+        new Set(
+          value
+            .split(/\n|;|,/)
+            .map(x => x.trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
     return [];
   };
 
-  const id = String(item.id || cryptoRandom());
+  const normalizeMode = value => {
+    const raw = toText(value);
+
+    const key = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, '_');
+
+    if(
+      key === 'MODE_A' ||
+      key === 'MODO_A'
+    ){
+      return 'MODE_A';
+    }
+
+    if(
+      key === 'MODE_B' ||
+      key === 'MODO_B'
+    ){
+      return 'MODE_B';
+    }
+
+    return raw;
+  };
+
+  const normalizeType = value => {
+    const raw = toText(value);
+
+    const key = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    const aliases = {
+      FLOW_REDESIGN: 'FLOW_REDESIGN',
+      REDISENO_FLUJO: 'FLOW_REDESIGN',
+      REDISENO_DE_FLUJO: 'FLOW_REDESIGN',
+
+      STANDARDIZATION: 'STANDARDIZATION',
+      ESTANDARIZACION: 'STANDARDIZATION',
+
+      CONTROL_TRACEABILITY: 'CONTROL_TRACEABILITY',
+      CONTROL_Y_TRAZABILIDAD: 'CONTROL_TRACEABILITY',
+
+      INFORMATION_MANAGEMENT: 'INFORMATION_MANAGEMENT',
+      GESTION_DE_INFORMACION: 'INFORMATION_MANAGEMENT',
+
+      DIGITALIZATION: 'DIGITALIZATION',
+      DIGITALIZACION: 'DIGITALIZATION',
+
+      AUTOMATION_RPA: 'AUTOMATION_RPA',
+      AUTOMATIZACION: 'AUTOMATION_RPA',
+      BOT_RPA: 'AUTOMATION_RPA',
+
+      AI_ASSISTANCE: 'AI_ASSISTANCE',
+      ASISTENCIA_IA: 'AI_ASSISTANCE',
+      ASISTENCIA_CON_IA: 'AI_ASSISTANCE',
+
+      OTHER: 'OTHER',
+      OTRO: 'OTHER'
+    };
+
+    return aliases[key] || raw;
+  };
+
+  const id =
+    toText(item.id) ||
+    cryptoRandom();
 
   const title = toText(
     item.title ||
     item.name ||
     item.titulo ||
-    item.header ||
-    'Mejora propuesta'
+    item.header
   );
 
-  const summary = toText(
-    item.summary ||
-    item.elevatorPitch ||
-    item.description ||
-    item.recommendation ||
-    ''
-  );
-
-  const problem = toText(
+  const problemFinding = toText(
+    item.problemFinding ||
     item.problem ||
     item.problemOrigin ||
     item.problemSolved ||
     item.problem_to_solve ||
-    item.problemSolved ||
-    item.consequence ||
-    item.issue ||
-    ''
+    item.issue
   );
 
   const currentState = toText(
@@ -21531,8 +21615,7 @@ function normalizeImprovement(item = {}){
     item.as_is_state ||
     item.cause ||
     item.rootCause ||
-    item.root_cause ||
-    ''
+    item.root_cause
   );
 
   const proposedState = toText(
@@ -21541,79 +21624,116 @@ function normalizeImprovement(item = {}){
     item.toBeState ||
     item.to_be_state ||
     item.action ||
-    item.expectedBenefit ||
-    item.expected_benefit ||
-    ''
+    item.recommendation
   );
 
-  const support = toText(
+  const scope = toText(
+    item.scope ||
+    item.alcance ||
+    item.relatedElements ||
+    item.related_elements
+  );
+
+  const justification = toText(
+    item.justification ||
     item.support ||
     item.evidence ||
-    item.justification ||
     item.technicalRationale ||
     item.technical_rationale ||
-    item.rationale ||
-    ''
+    item.rationale
   );
 
-  const impact = toText(
+  const expectedBenefit = toText(
+    item.expectedBenefit ||
+    item.expected_benefit ||
     item.impact ||
     item.expectedImpact ||
     item.expected_impact ||
-    item.benefit ||
-    item.expectedBenefit ||
-    item.expected_benefit ||
-    ''
+    item.benefit
   );
 
-  const mode = toText(
-    item.mode ||
-    item.improvementMode ||
-    item.improvement_mode ||
-    ''
+  const risks = toText(
+    item.risks ||
+    item.risk ||
+    item.dependencies ||
+    item.dependency
   );
 
-  const improvementType = toText(
-    item.improvementType ||
-    item.improvement_type ||
-    item.type ||
-    item.category ||
-    ''
-  );
-
-  const relatedElements = toArray(
-    item.relatedElements ||
-    item.related_elements ||
-    item.affectedActivities ||
-    item.affected_activities ||
+  const relatedActivityIds = toArray(
+    item.relatedActivityIds ||
     item.relatedActivities ||
     item.related_activities ||
+    item.affectedActivities ||
+    item.affected_activities ||
     []
   );
 
+  const linkedFindingRefs = toArray(
+    item.linkedFindingRefs ||
+    item.sourceRefs ||
+    item.source_refs ||
+    item.linkedFinding ||
+    item.linked_finding ||
+    []
+  );
+
+  const mode = normalizeMode(
+    item.mode ||
+    item.improvementMode ||
+    item.improvement_mode
+  );
+
+  const improvementType = normalizeType(
+    item.improvementType ||
+    item.improvement_type ||
+    item.type ||
+    item.category
+  );
+
+  const rawStatus =
+    toText(item.status);
+
+  const status =
+    !rawStatus ||
+    rawStatus.toLowerCase() === 'pending'
+      ? 'PENDING_ANALYST_REVIEW'
+      : rawStatus;
+
   return {
     ...item,
-    id,
-    title: title || 'Mejora propuesta',
-    summary: summary || 'Resumen breve pendiente de validación.',
-    problem: problem || 'pendiente_validacion',
-    currentState: currentState || 'pendiente_validacion',
-    proposedState: proposedState || 'pendiente_validacion',
-    support: support || 'pendiente_validacion',
-    impact: impact || 'pendiente_validacion',
-    mode: mode || 'pendiente_validacion',
-    improvementType: improvementType || 'pendiente_validacion',
-    relatedElements,
-    status: item.status || 'pending',
 
-    // Compatibilidad con campos anteriores
-    problemOrigin: item.problemOrigin || problem || '',
-    affectedActivities: item.affectedActivities || relatedElements || [],
-    expectedBenefit: item.expectedBenefit || proposedState || impact || '',
-    evidence: item.evidence || support || ''
+    /* Contrato oficial vigente */
+    id,
+    title,
+    problemFinding,
+    currentState,
+    proposedState,
+    scope,
+    justification,
+    expectedBenefit,
+    risks,
+    mode,
+    improvementType,
+    relatedActivityIds,
+    linkedFindingRefs,
+    status,
+
+    /*
+     * Compatibilidad temporal con la
+     * interfaz antigua de mejoras.
+     * Se eliminará al reconstruir las tarjetas.
+     */
+    summary: toText(item.summary),
+    problem: problemFinding,
+    support: justification,
+    impact: expectedBenefit,
+    relatedElements: relatedActivityIds.slice(),
+
+    problemOrigin: problemFinding,
+    affectedActivities: relatedActivityIds.slice(),
+    evidence: justification
   };
 }
-
 function firstObject(...items){
   return items.find(x => x && typeof x === 'object' && !Array.isArray(x)) || {};
 }
