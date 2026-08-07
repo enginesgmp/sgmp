@@ -23157,56 +23157,60 @@ function continueFromDecision(){
 }
 
 function seedImprovementsFromAnalysis(){
-  state.tobe = state.tobe || {};
-  state.tobe.improvements = safeArray(
-    state.tobe.improvements
-  );
+  state.tobe =
+    state.tobe || {};
 
-  const meaningfulText = function(value){
-    const text =
-      String(value || '').trim();
-
-    return !!(
-      text &&
-      text !== 'Mejora propuesta' &&
-      text !== 'pendiente_validacion' &&
-      text !==
-        'Resumen breve pendiente de validación.'
+  state.tobe.improvements =
+    safeArray(
+      state.tobe.improvements
     );
-  };
-
-  const hasHumanDecision = function(
-    item = {}
-  ){
-    return (
-      [
-        'execute',
-        'custom',
-        'reject'
-      ].includes(item.status) ||
-      meaningfulText(
-        item.customText
-      ) ||
-      item.source === 'manual' ||
-      item.userAdded === true
-    );
-  };
 
   /*
-   * No reemplazar decisiones humanas
-   * registradas anteriormente.
+   * Compatibilidad temporal:
+   * mientras exista la interfaz TO-BE antigua,
+   * no sobrescribir decisiones humanas ya tomadas.
    */
+  const hasHumanDecision =
+    function(item = {}){
+      const status =
+        String(
+          item.status || ''
+        )
+          .trim()
+          .toLowerCase();
+
+      return (
+        [
+          'execute',
+          'custom',
+          'reject'
+        ].includes(status) ||
+
+        String(
+          item.customText || ''
+        ).trim() !== '' ||
+
+        item.source === 'manual' ||
+        item.userAdded === true
+      );
+    };
+
   if(
     state.tobe.improvements.some(
       hasHumanDecision
     )
   ){
-    renderImprovements();
+    if(
+      typeof renderImprovements ===
+        'function'
+    ){
+      renderImprovements();
+    }
 
     showMsg(
       'tobeMsg',
       'ok',
-      'Se conservaron las mejoras ya evaluadas por el usuario.'
+      'Se conservaron las mejoras que ya tienen decisiones registradas.'
     );
 
     return;
@@ -23215,184 +23219,97 @@ function seedImprovementsFromAnalysis(){
   const improvementStage =
     state.analysisStages
       ?.results
-      ?.MEJORAS || {};
-
-  /*
-   * Única fuente oficial.
-   *
-   * Quick Wins, problemas, desperdicios
-   * y restricciones sustentan las mejoras,
-   * pero no generan tarjetas adicionales.
-   */
-  const sourceImprovements =
-    safeArray(
-      improvementStage.improvements
-    );
-
-  const normalizeKey = function(value){
-    return String(value || '')
-      .normalize('NFD')
-      .replace(
-        /[\u0300-\u036f]/g,
-        ''
-      )
-      .toLowerCase()
-      .replace(
-        /[^a-z0-9]+/g,
-        ' '
-      )
-      .trim()
-      .replace(
-        /\s+/g,
-        ' '
-      );
-  };
-
-  const normalizeList = function(value){
-    const list =
-      Array.isArray(value)
-        ? value
-        : String(value || '')
-            .split(
-              /\n|;|,/
-            );
-
-    return Array.from(
-      new Set(
-        list
-          .map(
-            normalizeKey
-          )
-          .filter(Boolean)
-      )
-    ).sort();
-  };
-
-  const uniqueMap =
-    new Map();
-
-  sourceImprovements.forEach(
-    function(rawItem){
-      const item =
-        typeof normalizeImprovement ===
-          'function'
-          ? normalizeImprovement(
-              rawItem
-            )
-          : rawItem;
-
-      if(
-        !item ||
-        ![
-          item.title,
-          item.problem,
-          item.currentState,
-          item.proposedState,
-          item.impact
-        ].some(
-          meaningfulText
-        )
-      ){
-        return;
-      }
-
-      const related =
-        normalizeList([
-          ...safeArray(
-            item.relatedActivityIds
-          ),
-
-          ...safeArray(
-            item.linkedFindingRefs
-          ),
-
-          ...safeArray(
-            item.sourceRefs
-          ),
-
-          ...safeArray(
-            item.relatedElements
-          ),
-
-          ...safeArray(
-            item.affectedActivities
-          )
-        ]).join('|');
-
-      /*
-       * Dos mejoras son duplicadas cuando
-       * coinciden en:
-       *
-       * - título;
-       * - problema;
-       * - estado actual;
-       * - estado propuesto;
-       * - actividades y hallazgos relacionados.
-       */
-      const key = [
-        normalizeKey(
-          item.title
-        ),
-
-        normalizeKey(
-          item.problem
-        ),
-
-        normalizeKey(
-          item.currentState
-        ),
-
-        normalizeKey(
-          item.proposedState
-        ),
-
-        related
-      ].join('||');
-
-      if(
-        !uniqueMap.has(key)
-      ){
-        uniqueMap.set(
-          key,
-          item
-        );
-      }
-    }
-  );
-
-  const uniqueImprovements =
-    Array.from(
-      uniqueMap.values()
-    );
-
-  state.tobe.improvements =
-    uniqueImprovements;
-
-  renderImprovements();
-  updateTopStatus();
+      ?.MEJORAS;
 
   if(
-    uniqueImprovements.length
+    !improvementStage ||
+    !Array.isArray(
+      improvementStage.improvements
+    )
   ){
-    const removed =
-      sourceImprovements.length -
-      uniqueImprovements.length;
+    state.tobe.improvements = [];
 
+    if(
+      typeof renderImprovements ===
+        'function'
+    ){
+      renderImprovements();
+    }
+
+    if(
+      typeof updateTopStatus ===
+        'function'
+    ){
+      updateTopStatus();
+    }
+
+    showMsg(
+      'tobeMsg',
+      'warn',
+      'No existe un resultado oficial validado de Mejoras.'
+    );
+
+    return;
+  }
+
+  /*
+   * MEJORAS.improvements ya fue:
+   *
+   * - validado;
+   * - deduplicado;
+   * - renumerado;
+   * - trazado contra AS-IS y hallazgos.
+   *
+   * Aquí solo se normaliza para consumo
+   * de la interfaz.
+   */
+  const improvements =
+    improvementStage.improvements
+      .map(function(item){
+        return (
+          typeof normalizeImprovement ===
+            'function'
+        )
+          ? normalizeImprovement(item)
+          : item;
+      })
+      .filter(function(item){
+        return (
+          item &&
+          typeof item === 'object' &&
+          String(
+            item.id || ''
+          ).trim() &&
+          String(
+            item.title || ''
+          ).trim()
+        );
+      });
+
+  state.tobe.improvements =
+    improvements;
+
+  if(
+    typeof renderImprovements ===
+      'function'
+  ){
+    renderImprovements();
+  }
+
+  if(
+    typeof updateTopStatus ===
+      'function'
+  ){
+    updateTopStatus();
+  }
+
+  if(improvements.length){
     showMsg(
       'tobeMsg',
       'ok',
       'Se cargaron ' +
-        uniqueImprovements.length +
-        ' mejora(s) única(s) desde MEJORAS.' +
-        (
-          removed > 0
-            ? (
-                ' Se omitieron ' +
-                removed +
-                ' duplicado(s).'
-              )
-            : ''
-        )
+        improvements.length +
+        ' propuesta(s) oficiales de Mejora.'
     );
 
     return;
@@ -23401,7 +23318,7 @@ function seedImprovementsFromAnalysis(){
   showMsg(
     'tobeMsg',
     'warn',
-    'No existen mejoras válidas en analysisStages.results.MEJORAS.improvements.'
+    'El resultado oficial de Mejoras no contiene propuestas para revisar.'
   );
 }
 
