@@ -16353,17 +16353,23 @@ function lmpBuildBackupWorkspace_(){
 }
 
 function lmpRestoreBackupWorkspace_(){
+  const rawWorkspace =
+    state.backupWorkspace;
+
   const workspace =
-    state.backupWorkspace &&
-    typeof state.backupWorkspace === 'object' &&
-    !Array.isArray(state.backupWorkspace)
-      ? state.backupWorkspace
+    rawWorkspace &&
+    typeof rawWorkspace === 'object' &&
+    !Array.isArray(rawWorkspace)
+      ? rawWorkspace
       : {};
 
   const pending =
     workspace.analysisPending &&
-    typeof workspace.analysisPending === 'object' &&
-    !Array.isArray(workspace.analysisPending)
+    typeof workspace.analysisPending ===
+      'object' &&
+    !Array.isArray(
+      workspace.analysisPending
+    )
       ? lmpCloneForBackup_(
           workspace.analysisPending
         )
@@ -16373,20 +16379,24 @@ function lmpRestoreBackupWorkspace_(){
     pending;
 
   /*
-   * Restaura campos generales de interfaz cuando
-   * el respaldo pertenece al formato nuevo.
+   * Restaura campos generales de interfaz.
    */
   const uiFields =
     workspace.uiFields &&
-    typeof workspace.uiFields === 'object' &&
-    !Array.isArray(workspace.uiFields)
+    typeof workspace.uiFields ===
+      'object' &&
+    !Array.isArray(
+      workspace.uiFields
+    )
       ? workspace.uiFields
       : {};
 
   Object.keys(uiFields)
     .forEach(function(id){
       const field =
-        document.getElementById(id);
+        document.getElementById(
+          id
+        );
 
       if(!field){
         return;
@@ -16395,7 +16405,10 @@ function lmpRestoreBackupWorkspace_(){
       const snapshot =
         uiFields[id] || {};
 
-      if(snapshot.kind === 'checked'){
+      if(
+        snapshot.kind ===
+        'checked'
+      ){
         field.checked =
           snapshot.value === true;
       }else{
@@ -16407,53 +16420,75 @@ function lmpRestoreBackupWorkspace_(){
     });
 
   /*
-   * Restaura los editores técnicos de análisis.
+   * Restaura específicamente los editores
+   * técnicos de cada etapa.
    */
   const editors =
     workspace.analysisEditors &&
-    typeof workspace.analysisEditors === 'object' &&
-    !Array.isArray(workspace.analysisEditors)
+    typeof workspace.analysisEditors ===
+      'object' &&
+    !Array.isArray(
+      workspace.analysisEditors
+    )
       ? workspace.analysisEditors
       : {};
 
   Object.keys(editors)
     .forEach(function(stage){
+
       const values =
         editors[stage] || {};
 
       const prompt =
-        el('analysisPrompt_' + stage);
+        el(
+          'analysisPrompt_' +
+          stage
+        );
 
       const response =
-        el('analysisResponse_' + stage);
+        el(
+          'analysisResponse_' +
+          stage
+        );
 
       const result =
-        el('analysisResult_' + stage);
+        el(
+          'analysisResult_' +
+          stage
+        );
 
       if(prompt){
         prompt.value =
-          String(values.prompt || '');
+          String(
+            values.prompt || ''
+          );
       }
 
       if(response){
         response.value =
-          String(values.response || '');
+          String(
+            values.response || ''
+          );
       }
 
       if(result){
         result.value =
-          String(values.result || '');
+          String(
+            values.result || ''
+          );
       }
     });
 
   /*
-   * Reconstruye revisiones que todavía estaban
-   * pendientes al momento de generar el respaldo.
+   * Reconstruye las revisiones editables
+   * cuando existe un JSON pendiente validado.
    */
   Object.keys(pending)
     .forEach(function(stage){
+
       const parsed =
-        pending[stage]?.parsed;
+        pending[stage]
+          ?.parsed;
 
       if(!parsed){
         return;
@@ -16465,7 +16500,9 @@ function lmpRestoreBackupWorkspace_(){
           'function'
       ){
         window.lmpRenderVaReview_(
-          lmpCloneForBackup_(parsed)
+          lmpCloneForBackup_(
+            parsed
+          )
         );
       }
 
@@ -16475,7 +16512,9 @@ function lmpRestoreBackupWorkspace_(){
           'function'
       ){
         window.lmpRenderWasteReview_(
-          lmpCloneForBackup_(parsed)
+          lmpCloneForBackup_(
+            parsed
+          )
         );
       }
 
@@ -16485,7 +16524,9 @@ function lmpRestoreBackupWorkspace_(){
           'function'
       ){
         window.lmpRenderProblemReview_(
-          lmpCloneForBackup_(parsed)
+          lmpCloneForBackup_(
+            parsed
+          )
         );
       }
 
@@ -16495,164 +16536,132 @@ function lmpRestoreBackupWorkspace_(){
           'function'
       ){
         lmpRenderImprovementReview_(
-          lmpCloneForBackup_(parsed)
+          lmpCloneForBackup_(
+            parsed
+          )
         );
       }
     });
 
   /*
-   * Compatibilidad con respaldos anteriores y con
-   * MEJORAS ya guardada oficialmente.
+   * Un resultado oficial de MEJORAS no forma parte de
+   * analysisPending. Antes, al cargar un respaldo ya
+   * guardado, el JSON se recuperaba pero las tarjetas
+   * editables no se reconstruían hasta volver a validar.
    *
-   * Al guardar MEJORAS se limpia el pending.
-   * Antes esto provocaba que las propuestas siguieran
-   * en state, pero sus tarjetas no reaparecieran.
+   * Se crea una copia de trabajo desde el resultado
+   * oficial para que la etapa vuelva exactamente al
+   * estado editable esperado.
    */
-  const officialImprovements =
+  const officialImprovementResult =
     state.analysisStages
       ?.results
       ?.MEJORAS;
 
   if(
-    !pending.MEJORAS &&
-    officialImprovements &&
-    typeof officialImprovements === 'object' &&
-    !Array.isArray(officialImprovements) &&
+    !pending.MEJORAS?.parsed &&
+    officialImprovementResult &&
+    typeof officialImprovementResult ===
+      'object' &&
+    !Array.isArray(
+      officialImprovementResult
+    ) &&
     safeArray(
-      officialImprovements.improvements
+      officialImprovementResult.improvements
     ).length &&
     typeof lmpRenderImprovementReview_ ===
       'function'
   ){
-    const officialClone =
+    const restoredImprovement =
       lmpCloneForBackup_(
-        officialImprovements
+        officialImprovementResult
       );
 
-    const officialRaw =
+    const restoredRaw =
       JSON.stringify(
-        officialClone,
+        restoredImprovement,
         null,
         2
       );
 
-    const responseBox =
-      el('analysisResponse_MEJORAS');
+    pending.MEJORAS = {
+      raw:
+        restoredRaw,
+      parsed:
+        lmpCloneForBackup_(
+          restoredImprovement
+        )
+    };
 
-    const resultBox =
-      el('analysisResult_MEJORAS');
-
-    if(
-      responseBox &&
-      !String(
-        responseBox.value || ''
-      ).trim()
-    ){
-      responseBox.value =
-        officialRaw;
-    }
-
-    if(resultBox){
-      resultBox.value =
-        officialRaw;
-    }
-
-    lmpRenderImprovementReview_(
-      officialClone
-    );
-
-    Array.from(
-      document.querySelectorAll(
-        '#analysisImprovementReview_MEJORAS .improvement-card[data-improvement-id]'
-      )
-    ).forEach(function(card){
-      card.dataset.reviewed =
-        '1';
-
-      card.open =
-        false;
-
-      card.classList.remove(
-        'has-pending-changes',
-        'is-incomplete'
+    const response =
+      el(
+        'analysisResponse_MEJORAS'
       );
 
-      card.classList.add(
-        'is-saved'
+    const result =
+      el(
+        'analysisResult_MEJORAS'
       );
 
-      const badge =
-        card.querySelector(
-          '[data-role="review-state"]'
-        );
+    if(response){
+      response.value =
+        restoredRaw;
+    }
 
-      if(badge){
-        badge.textContent =
-          'Guardada';
+    if(result){
+      result.value =
+        restoredRaw;
+    }
+
+    const reviewCard =
+      lmpRenderImprovementReview_(
+        lmpCloneForBackup_(
+          restoredImprovement
+        )
+      );
+
+    if(reviewCard){
+      Array.from(
+        reviewCard.querySelectorAll(
+          '.improvement-card[data-improvement-id]'
+        )
+      ).forEach(function(card){
+        card.dataset.reviewed =
+          '1';
+
+        const badge =
+          card.querySelector(
+            '[data-role="review-state"]'
+          );
+
+        if(badge){
+          badge.textContent =
+            'Guardada';
+        }
+
+        card.open = false;
+      });
+
+      if(
+        typeof lmpUpdateImprovementReviewSaveState_ ===
+          'function'
+      ){
+        lmpUpdateImprovementReviewSaveState_();
       }
-    });
-
-    /*
-     * Si el respaldo estaba detenido exactamente
-     * en MEJORAS, permite continuar trabajando
-     * sobre las tarjetas sin volver a pulsar
-     * "Validar y preparar revisión".
-     */
-    const restoredStage =
-      String(
-        workspace.currentSection ||
-        state.metadata?.currentStage ||
-        ''
-      ).trim();
-
-    if(
-      restoredStage ===
-      'analisis_mejoras'
-    ){
-      window
-        .__LMP_ANALYSIS_PENDING__
-        .MEJORAS = {
-          raw:
-            String(
-              responseBox?.value ||
-              officialRaw
-            ),
-
-          parsed:
-            lmpCloneForBackup_(
-              officialClone
-            ),
-
-          restoredFromOfficialBackup:
-            true
-        };
-    }
-
-    if(
-      typeof lmpEnhanceImprovementReviewUi_ ===
-        'function'
-    ){
-      lmpEnhanceImprovementReviewUi_();
-    }
-
-    if(
-      typeof lmpUpdateImprovementReviewSaveState_ ===
-        'function'
-    ){
-      lmpUpdateImprovementReviewSaveState_();
     }
   }
 
   const restoredSection =
     String(
       workspace.currentSection ||
-      state.metadata?.currentStage ||
       ''
     ).trim();
 
-  if(state.backupWorkspace){
-    delete state.backupWorkspace;
-  }
+  /*
+   * backupWorkspace es información de transporte.
+   * No debe formar parte permanente del estado.
+   */
+  delete state.backupWorkspace;
 
   return restoredSection;
 }
