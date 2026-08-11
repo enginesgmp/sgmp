@@ -2334,19 +2334,220 @@ async function api(action,payload={}){
   return json.data;
 }
 
-async function apiWrite(action,payload={}){
-  if(!apiReady()) throw new Error("API no configurada");
+function getActivitySaveState(){
+  if(!window.__RADAR_ACTIVITY_SAVE_STATE){
+    window.__RADAR_ACTIVITY_SAVE_STATE = {
+      queue: new Map(),
+      timer: null,
+      inFlight: null
+    };
+  }
 
-  await fetch(API_URL, {
-    method:"POST",
-    mode:"no-cors",
-    headers:{
-      "Content-Type":"text/plain;charset=utf-8"
-    },
-    body:JSON.stringify({action,payload})
+  return window.__RADAR_ACTIVITY_SAVE_STATE;
+}
+
+function queueActivitySave(activityId, checked){
+  const state = getActivitySaveState();
+  const id = String(activityId || "").trim();
+
+  if(!id) return;
+
+  /*
+   * Si el usuario cambia varias veces el mismo check
+   * antes del guardado, solo se conserva su estado final.
+   */
+  state.queue.set(id, {
+    actividad_id: id,
+    completado: Boolean(checked)
   });
 
-  return { sent:true };
+  /*
+   * Cada nuevo check reinicia el pequeño tiempo de espera.
+   * Así se pueden marcar muchas actividades seguidas.
+   */
+  if(state.timer){
+    clearTimeout(state.timer);
+  }
+
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    void flushActivitySaveQueue();
+  }, 600);
+}
+
+async function flushActivitySaveQueue(){
+  const state = getActivitySaveState();
+
+  if(state.timer){
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+
+  if(!apiReady() || !SESSION){
+    state.queue.clear();
+    return true;
+  }
+
+  /*
+   * Si ya existe un lote guardándose, esperamos.
+   * Los nuevos checks permanecen en la cola.
+   */
+  if(state.inFlight){
+    const currentOk = await state.inFlight;
+
+    if(!currentOk){
+      return false;
+    }
+
+    if(state.queue.size){
+      return flushActivitySaveQueue();
+    }
+
+    return true;
+  }
+
+  if(!state.queue.size){
+    return true;
+  }
+
+  const batch = Array.from(state.queue.values());
+
+  /*
+   * Vaciar únicamente lo que entra en este lote.
+   * Los checks realizados mientras viaja la petición
+   * se agregarán nuevamente a la cola.
+   */
+  state.queue.clear();
+
+  state.inFlight = (async () => {
+    try{
+      const result = await api("update_activity", {
+        username: SESSION.username,
+        cambios: batch
+      });
+
+      /*
+       * El backend devuelve los procesos recalculados.
+       * Actualizamos también sus campos almacenados
+       * para mantener el frontend coherente.
+       */
+      const processResults = Array.isArray(result?.procesos)
+        ? result.procesos
+        : [];
+
+      processResults.forEach(item => {
+        const process = (DATA.procesos || []).find(p =>
+          String(p.proceso_id || "") ===
+          String(item.proceso_id || "")
+        );
+
+        if(!process) return;
+
+        if(item.avance_pct !== undefined){
+          process.avance_pct = item.avance_pct;
+        }
+
+        if(item.estado_proceso !== undefined){
+          process.estado_proceso = item.estado_proceso;
+          process.estado_general = item.estado_proceso;
+        }
+      });
+
+      toast(
+        batch.length === 1
+          ? "1 check guardado."
+          : `${batch.length} checks guardados.`
+      );
+
+      return true;
+
+    }catch(error){
+      /*
+       * Si falla el lote, los cambios vuelven a quedar
+       * pendientes. Si durante el envío el usuario cambió
+       * nuevamente una actividad, prevalece el cambio nuevo.
+       */
+      batch.forEach(change => {
+        if(!state.queue.has(change.actividad_id)){
+          state.queue.set(
+            change.actividad_id,
+            change
+          );
+        }
+      });
+
+      console.error(
+        "Error guardando checks en lote:",
+        error
+      );
+
+      toast(
+        `No se pudieron guardar ${batch.length} check(s). ` +
+        "Los cambios permanecen pendientes."
+      );
+
+      return false;
+
+    }finally{
+      state.inFlight = null;
+    }
+  })();
+
+  const ok = await state.inFlight;
+
+  /*
+   * Si mientras se guardaba este lote aparecieron
+   * nuevos checks, programamos el siguiente.
+   */
+  if(
+    ok &&
+    state.queue.size &&
+    !state.timer
+  ){
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      void flushActivitySaveQueue();
+    }, 300);
+  }
+
+  return ok;
+}
+
+async function waitForPendingActivitySaves(){
+  const state = getActivitySaveState();
+
+  /*
+   * Si había un guardado esperando los 600 ms,
+   * se fuerza inmediatamente.
+   */
+  if(state.timer){
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+
+  while(
+    state.inFlight ||
+    state.queue.size
+  ){
+    if(state.inFlight){
+      const ok = await state.inFlight;
+
+      if(!ok){
+        return false;
+      }
+
+      continue;
+    }
+
+    const ok =
+      await flushActivitySaveQueue();
+
+    if(!ok){
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function toast(msg){
@@ -2470,9 +2671,26 @@ async function syncData(){
 
   try{
     if(apiReady() && SESSION){
-      const rawBootstrap = await api("bootstrap", {
-        username: SESSION.username
-      });
+
+      /*
+       * Antes de consultar nuevamente Sheets,
+       * asegurar que todos los checks pendientes
+       * hayan sido persistidos.
+       */
+      const checksSaved =
+        await waitForPendingActivitySaves();
+
+      if(!checksSaved){
+        throw new Error(
+          "Existen checks pendientes de guardar. " +
+          "RADAR no actualizará los datos para evitar perderlos."
+        );
+      }
+
+      const rawBootstrap =
+        await api("bootstrap", {
+          username: SESSION.username
+        });
 
       applyBootstrapData(rawBootstrap);
     }
@@ -2486,17 +2704,39 @@ async function syncData(){
     toast("Información actualizada.");
 
   }catch(error){
-    console.error("Error actualizando RADAR:", error);
+    console.error(
+      "Error actualizando RADAR:",
+      error
+    );
 
     if(savedState){
       restoreAdminControlState(savedState);
     }
 
-    toast("No se pudo actualizar: " + error.message);
+    toast(
+      "No se pudo actualizar: " +
+      error.message
+    );
   }
 }
-  
-function logout(){ SESSION=null; location.reload(); }
+
+async function logout(){
+  if(apiReady() && SESSION){
+    const checksSaved =
+      await waitForPendingActivitySaves();
+
+    if(!checksSaved){
+      toast(
+        "No se cerró la sesión porque existen " +
+        "checks pendientes de guardar."
+      );
+      return;
+    }
+  }
+
+  SESSION = null;
+  location.reload();
+}
 
 function getVisibleProcesses(){
   if(!SESSION) return [];
@@ -6433,36 +6673,40 @@ function renderAnalystHome(){
 }
 
 async function toggleActivity(id,checked){
-  const a = activeActivities().find(x => x.actividad_id === id);
+  const a = activeActivities().find(
+    x => x.actividad_id === id
+  );
+
   if(!a) return;
 
-  const previous = {
-    completado: a.completado,
-    estado: a.estado
-  };
-
+  /*
+   * Actualización inmediata local.
+   * El usuario no espera al backend para
+   * continuar marcando actividades.
+   */
   a.completado = checked;
-  a.estado = checked ? "Completado" : "Pendiente";
+  a.estado = checked
+    ? "Completado"
+    : "Pendiente";
 
+  /*
+   * Los porcentajes visibles se actualizan
+   * inmediatamente desde las actividades.
+   */
   render();
 
-  try{
-    if(apiReady()){
-      await apiWrite("update_activity",{
-        actividad_id:id,
-        completado:checked,
-        estado:a.estado,
-        username:SESSION.username
-      });
-      toast("Check actualizado.");
-    }
-  }catch(e){
-    a.completado = previous.completado;
-    a.estado = previous.estado;
-    render();
-    toast("No se pudo guardar el check: " + e.message);
+  /*
+   * El guardado real queda en cola.
+   * No se genera una petición por cada click.
+   */
+  if(apiReady() && SESSION){
+    queueActivitySave(
+      id,
+      checked
+    );
   }
 }
+  
 async function updateProcess(pid,field,value){
   const p=DATA.procesos.find(x=>x.proceso_id===pid);
   if(!p) return;
