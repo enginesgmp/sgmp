@@ -5811,7 +5811,7 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
   Mejoras propuestas
   <small>Mejoras candidatas trazables para construir el TO-BE.</small>
 </button>  
-  <button class="step-btn" data-target="decision">Decisión AS-IS / TO-BE<small>Cerrar con AS-IS o continuar hacia TO-BE.</small></button>
+  <button class="step-btn" data-target="decision">   Ruta de cierre   <small>Cerrar el análisis AS-IS o continuar hacia la construcción TO-BE.</small> </button>
 <button class="step-btn" data-target="tobe">TO-BE<small>Diseño futuro del proceso.</small></button>
 <button class="step-btn" data-target="resultados">Resultados<small>Resultados, síntesis y cierre del análisis.</small></button>
 <button class="step-btn" data-target="outputs">Outputs SGMP<small>Contratos JSON para módulos SGMP.</small></button>
@@ -8097,36 +8097,94 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
   </div>
 </section>
   
-<!-- DECISION -->
-  
+<!-- RUTA DE CIERRE -->
+
 <section class="section" id="decision">
-<div class="section-head">
-<div>
-<h2>Decisión</h2>
-<p>Decide si el proceso cierra con AS IS o si continúa a TO BE. Esta decisión gobierna la siguiente etapa.</p>
-</div>
-<div class="step-pill">Paso 6</div>
-</div>
-<div class="route-grid">
-<article class="route-card" id="decision_asis">
-<h3>Cerrar con AS IS</h3>
-<p>Usa esta opción si el proceso debe terminar formalizado en su estado actual sin construir estado futuro.</p>
-<div class="mini-note">El módulo pasará directo a resultados.</div>
-<button class="btn-danger" onclick="setDecisionRoute('asis')" type="button">Elegir AS IS</button>
-</article>
-<article class="route-card" id="decision_tobe">
-<h3>Continuar a TO BE</h3>
-<p>Usa esta opción si el proceso avanzará a evaluación de mejoras y definición del estado futuro.</p>
-<div class="mini-note">Se habilitará la gestión de mejoras en la siguiente etapa.</div>
-<button class="btn-ok" onclick="setDecisionRoute('tobe')" type="button">Elegir TO BE</button>
-</article>
-</div>
-<div class="msg" id="decisionMsg"></div>
-<div class="actions">
-<div class="actions-left"><button class="btn-ghost" onclick="goToPrev('decision')" type="button">Volver</button></div>
-<div class="actions-right"><button class="btn" onclick="continueFromDecision()" type="button">Continuar</button></div>
-</div>
+  <div class="section-head">
+    <div>
+      <h2>Ruta de cierre</h2>
+      <p>
+        El análisis del proceso AS-IS y la revisión de mejoras ya están completos.
+        Define si el trabajo se cierra con el diagnóstico actual o si continúa hacia
+        la construcción del proceso TO-BE.
+      </p>
+    </div>
+
+    <div class="step-pill">Cierre del análisis</div>
+  </div>
+
+  <div class="route-grid">
+
+    <article class="route-card" id="decision_asis">
+      <h3>Cerrar AS-IS</h3>
+
+      <p>
+        Finaliza el trabajo sin construir un estado futuro. Se conservarán el proceso
+        AS-IS, los análisis realizados, los hallazgos, Quick Wins y mejoras propuestas
+        como resultado del diagnóstico.
+      </p>
+
+      <div class="mini-note">
+        Siguiente etapa: Resultados AS-IS.
+      </div>
+
+      <button
+        class="btn-danger"
+        onclick="setDecisionRoute('asis')"
+        type="button"
+      >
+        Seleccionar cierre AS-IS
+      </button>
+    </article>
+
+    <article class="route-card" id="decision_tobe">
+      <h3>Continuar TO-BE</h3>
+
+      <p>
+        Continúa hacia el diseño del estado futuro. Las mejoras ya revisadas servirán
+        como insumo para construir el TO-BE junto con el líder del proceso.
+      </p>
+
+      <div class="mini-note">
+        Siguiente etapa: Construcción TO-BE con el líder del proceso.
+      </div>
+
+      <button
+        class="btn-ok"
+        onclick="setDecisionRoute('tobe')"
+        type="button"
+      >
+        Seleccionar continuación TO-BE
+      </button>
+    </article>
+
+  </div>
+
+  <div class="msg" id="decisionMsg"></div>
+
+  <div class="actions">
+    <div class="actions-left">
+      <button
+        class="btn-ghost"
+        onclick="goToPrev('decision')"
+        type="button"
+      >
+        Volver a Mejoras
+      </button>
+    </div>
+
+    <div class="actions-right">
+      <button
+        class="btn"
+        onclick="continueFromDecision()"
+        type="button"
+      >
+        Continuar
+      </button>
+    </div>
+  </div>
 </section>
+  
 <!-- TO BE -->
 <section class="section" id="tobe">
 <div class="section-head">
@@ -14018,24 +14076,97 @@ function saveAsIsAndContinue(){
 /* =========================
    DECISIÓN
 ========================= */
-function setDecisionRoute(route, navigate = true){
-  state.decision.route = route;
-  qs('decision_asis')?.classList.toggle('active', route === 'asis');
-  qs('decision_tobe')?.classList.toggle('active', route === 'tobe');
-  showMsg('decisionMsg','ok', route === 'asis'
-    ? 'Se eligió cerrar con AS IS. El flujo puede pasar directo a resultados.'
-    : 'Se eligió continuar a TO BE. La siguiente etapa habilita las mejoras.'
-  );
-  if(route === 'tobe' && navigate){
-    state.decision.finalMode = 'tobe';
-    seedImprovementsFromAnalysis();
-    renderImprovements();
-    renderToBeSummary();
-    showSection('tobe');
+function setDecisionRoute(
+  route,
+  navigate = true
+){
+  const selectedRoute =
+    String(
+      route || ''
+    )
+      .trim()
+      .toLowerCase();
+
+  if(
+    selectedRoute !== 'asis' &&
+    selectedRoute !== 'tobe'
+  ){
+    if(
+      typeof showMsg ===
+      'function'
+    ){
+      showMsg(
+        'decisionMsg',
+        'warn',
+        'Selecciona una ruta de cierre válida.'
+      );
+    }
+
+    return false;
   }
+
+  state.decision =
+    state.decision || {};
+
+  state.decision.route =
+    selectedRoute;
+
+  /*
+   * Cuando la selección proviene del usuario
+   * se invalida el cierre anterior.
+   *
+   * renderAllFromState() llama esta función con
+   * navigate=false al restaurar un respaldo, por lo
+   * que en ese caso se conserva finalMode.
+   */
+  if(navigate){
+    state.decision.finalMode =
+      null;
+  }
+
+  qs('decision_asis')
+    ?.classList.toggle(
+      'active',
+      selectedRoute === 'asis'
+    );
+
+  qs('decision_tobe')
+    ?.classList.toggle(
+      'active',
+      selectedRoute === 'tobe'
+    );
+
+  if(
+    typeof showMsg ===
+    'function'
+  ){
+    showMsg(
+      'decisionMsg',
+      'ok',
+      selectedRoute === 'asis'
+        ? 'Ruta seleccionada: cerrar AS-IS. Pulsa Continuar para pasar a Resultados AS-IS.'
+        : 'Ruta seleccionada: continuar TO-BE. Pulsa Continuar para iniciar la construcción del estado futuro con el líder del proceso.'
+    );
+  }
+
+  if(
+    state.metadata &&
+    typeof state.metadata ===
+      'object'
+  ){
+    state.metadata.lastSavedAt =
+      new Date().toISOString();
+  }
+
+  if(
+    typeof updateTopStatus ===
+    'function'
+  ){
+    updateTopStatus();
+  }
+
+  return true;
 }
-
-
 
 /* =========================
    TO BE
@@ -23824,17 +23955,81 @@ function renderAnalysisFromState(){
 }
 
 function continueFromDecision(){
-  if(!state.decision.route){ showMsg('decisionMsg','warn','Selecciona primero una ruta.'); return; }
-  if(state.decision.route === 'asis'){
-    state.decision.finalMode = 'asis';
-    showSection('resultados');
-    return;
+  state.decision =
+    state.decision || {};
+
+  const selectedRoute =
+    String(
+      state.decision.route || ''
+    )
+      .trim()
+      .toLowerCase();
+
+  if(
+    selectedRoute !== 'asis' &&
+    selectedRoute !== 'tobe'
+  ){
+    if(
+      typeof showMsg ===
+      'function'
+    ){
+      showMsg(
+        'decisionMsg',
+        'warn',
+        'Selecciona primero una ruta de cierre.'
+      );
+    }
+
+    return false;
   }
-  state.decision.finalMode = 'tobe';
-  seedImprovementsFromAnalysis();
-  renderImprovements();
-  renderToBeSummary();
-  showSection('tobe');
+
+  if(selectedRoute === 'asis'){
+    state.decision.finalMode =
+      'asis';
+
+    if(
+      state.metadata &&
+      typeof state.metadata ===
+        'object'
+    ){
+      state.metadata.lastSavedAt =
+        new Date().toISOString();
+    }
+
+    showSection(
+      'resultados'
+    );
+
+    return true;
+  }
+
+  state.decision.finalMode =
+    'tobe';
+
+  if(
+    state.metadata &&
+    typeof state.metadata ===
+      'object'
+  ){
+    state.metadata.lastSavedAt =
+      new Date().toISOString();
+  }
+
+  /*
+   * MEJORAS ya fue cerrada antes de llegar
+   * a esta ruta.
+   *
+   * No se vuelven a generar, copiar,
+   * reclasificar ni revisar propuestas aquí.
+   *
+   * La siguiente pantalla será la fase de
+   * construcción TO-BE con el líder.
+   */
+  showSection(
+    'tobe'
+  );
+
+  return true;
 }
 
 function seedImprovementsFromAnalysis(){
@@ -41987,21 +42182,51 @@ window.showSection = function(id){
   
 window.labelStage = function(id){
   return {
-    inicio:'Inicio',
-    documentacion_existente:'Documentación existente',
-    preparacion:'Preparación y contexto',
-    carga:'Carga y consolidación',
-    asis:'Proceso AS-IS',
-    analisis_va:'Análisis de valor agregado',
-    analisis_quick_wins:'Análisis de quick wins',
-    analisis_desperdicios:'Análisis de desperdicios',
-    analisis_restricciones:'Análisis de restricciones',
-    analisis_problemas:'Análisis de problemas',
-    analisis_mejoras:'Mejoras propuestas',
-    decision:'Decisión AS-IS / TO-BE',
-    tobe:'TO-BE',
-    resultados:'Resultados',
-    outputs:'Outputs SGMP'
+    inicio:
+      'Inicio',
+
+    documentacion_existente:
+      'Documentación existente',
+
+    preparacion:
+      'Preparación y contexto',
+
+    carga:
+      'Carga y consolidación',
+
+    asis:
+      'Proceso AS-IS',
+
+    analisis_va:
+      'Análisis de valor agregado',
+
+    analisis_quick_wins:
+      'Análisis de quick wins',
+
+    analisis_desperdicios:
+      'Análisis de desperdicios',
+
+    analisis_restricciones:
+      'Análisis de restricciones',
+
+    analisis_problemas:
+      'Análisis de problemas',
+
+    analisis_mejoras:
+      'Mejoras propuestas',
+
+    decision:
+      'Ruta de cierre',
+
+    tobe:
+      'TO-BE',
+
+    resultados:
+      'Resultados',
+
+    outputs:
+      'Outputs SGMP'
+
   }[id] || id;
 };
   
@@ -42183,14 +42408,131 @@ window.goToNext = function(current){
   return false;
 };
   
-  window.goToPrev = function(current){
-    if(typeof syncVisibleStage === 'function') syncVisibleStage();
-    if(current === 'documentacion_existente'){ showSection('preparacion'); return; }
-    if(current === 'carga'){ showSection('preparacion'); return; }
-    if(current === 'analisis_va'){ showSection('asis'); return; }
-    if(current === 'outputs'){ showSection('resultados'); return; }
-    const idx = ANALYSIS_SCREEN_ORDER.indexOf(current); if(idx > 0) showSection(ANALYSIS_SCREEN_ORDER[idx-1]);
-  };
+window.goToPrev = function(current){
+  const currentSection =
+    String(
+      current || ''
+    ).trim();
+
+  if(
+    typeof syncVisibleStage ===
+    'function'
+  ){
+    syncVisibleStage();
+  }
+
+  if(
+    currentSection ===
+    'documentacion_existente'
+  ){
+    showSection(
+      'preparacion'
+    );
+
+    return true;
+  }
+
+  if(
+    currentSection ===
+    'carga'
+  ){
+    showSection(
+      'preparacion'
+    );
+
+    return true;
+  }
+
+  if(
+    currentSection ===
+    'analisis_va'
+  ){
+    showSection(
+      'asis'
+    );
+
+    return true;
+  }
+
+  /*
+   * Ruta de cierre.
+   */
+  if(
+    currentSection ===
+    'decision'
+  ){
+    showSection(
+      'analisis_mejoras'
+    );
+
+    return true;
+  }
+
+  /*
+   * Mientras construimos el nuevo TO-BE,
+   * volver lleva nuevamente a Ruta de cierre.
+   */
+  if(
+    currentSection ===
+    'tobe'
+  ){
+    showSection(
+      'decision'
+    );
+
+    return true;
+  }
+
+  /*
+   * Resultados AS-IS vuelve a Ruta de cierre.
+   * Resultados TO-BE vuelve temporalmente a TO-BE.
+   * Esto se especializará cuando creemos
+   * Consolidación TO-BE.
+   */
+  if(
+    currentSection ===
+    'resultados'
+  ){
+    showSection(
+      state.decision?.finalMode ===
+        'tobe'
+        ? 'tobe'
+        : 'decision'
+    );
+
+    return true;
+  }
+
+  if(
+    currentSection ===
+    'outputs'
+  ){
+    showSection(
+      'resultados'
+    );
+
+    return true;
+  }
+
+  const index =
+    ANALYSIS_SCREEN_ORDER
+      .indexOf(
+        currentSection
+      );
+
+  if(index > 0){
+    showSection(
+      ANALYSIS_SCREEN_ORDER[
+        index - 1
+      ]
+    );
+
+    return true;
+  }
+
+  return false;
+};
+  
   window.saveAsIsAndContinue = function(){
     if(typeof syncAsIsFromDom === 'function') syncAsIsFromDom();
     const acts = cleanActivities(state.asis?.activities || window.sgmpGetBestAnalysisSourceActivities());
