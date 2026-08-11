@@ -16543,113 +16543,6 @@ function lmpRestoreBackupWorkspace_(){
       }
     });
 
-  /*
-   * Un resultado oficial de MEJORAS no forma parte de
-   * analysisPending. Antes, al cargar un respaldo ya
-   * guardado, el JSON se recuperaba pero las tarjetas
-   * editables no se reconstruían hasta volver a validar.
-   *
-   * Se crea una copia de trabajo desde el resultado
-   * oficial para que la etapa vuelva exactamente al
-   * estado editable esperado.
-   */
-  const officialImprovementResult =
-    state.analysisStages
-      ?.results
-      ?.MEJORAS;
-
-  if(
-    !pending.MEJORAS?.parsed &&
-    officialImprovementResult &&
-    typeof officialImprovementResult ===
-      'object' &&
-    !Array.isArray(
-      officialImprovementResult
-    ) &&
-    safeArray(
-      officialImprovementResult.improvements
-    ).length &&
-    typeof lmpRenderImprovementReview_ ===
-      'function'
-  ){
-    const restoredImprovement =
-      lmpCloneForBackup_(
-        officialImprovementResult
-      );
-
-    const restoredRaw =
-      JSON.stringify(
-        restoredImprovement,
-        null,
-        2
-      );
-
-    pending.MEJORAS = {
-      raw:
-        restoredRaw,
-      parsed:
-        lmpCloneForBackup_(
-          restoredImprovement
-        )
-    };
-
-    const response =
-      el(
-        'analysisResponse_MEJORAS'
-      );
-
-    const result =
-      el(
-        'analysisResult_MEJORAS'
-      );
-
-    if(response){
-      response.value =
-        restoredRaw;
-    }
-
-    if(result){
-      result.value =
-        restoredRaw;
-    }
-
-    const reviewCard =
-      lmpRenderImprovementReview_(
-        lmpCloneForBackup_(
-          restoredImprovement
-        )
-      );
-
-    if(reviewCard){
-      Array.from(
-        reviewCard.querySelectorAll(
-          '.improvement-card[data-improvement-id]'
-        )
-      ).forEach(function(card){
-        card.dataset.reviewed =
-          '1';
-
-        const badge =
-          card.querySelector(
-            '[data-role="review-state"]'
-          );
-
-        if(badge){
-          badge.textContent =
-            'Guardada';
-        }
-
-        card.open = false;
-      });
-
-      if(
-        typeof lmpUpdateImprovementReviewSaveState_ ===
-          'function'
-      ){
-        lmpUpdateImprovementReviewSaveState_();
-      }
-    }
-  }
 
   const restoredSection =
     String(
@@ -41414,6 +41307,243 @@ window.showSection = function(id){
   }
 
   /*
+   * MEJORAS requiere reconstruir también las tarjetas.
+   * Un resultado oficial se abre como copia de trabajo;
+   * state.analysisStages.results.MEJORAS no se modifica
+   * hasta que el usuario guarde nuevamente la etapa.
+   */
+  if(stage === 'MEJORAS'){
+    try{
+      window.__LMP_ANALYSIS_PENDING__ =
+        window.__LMP_ANALYSIS_PENDING__ ||
+        Object.create(null);
+
+      const responseBox =
+        el(
+          'analysisResponse_MEJORAS'
+        );
+
+      const currentReview =
+        el(
+          'analysisImprovementReview_MEJORAS'
+        );
+
+      let improvementPending =
+        window
+          .__LMP_ANALYSIS_PENDING__
+          .MEJORAS;
+
+      let reviewPayload =
+        improvementPending?.parsed &&
+        typeof improvementPending.parsed ===
+          'object' &&
+        !Array.isArray(
+          improvementPending.parsed
+        )
+          ? JSON.parse(
+              JSON.stringify(
+                improvementPending.parsed
+              )
+            )
+          : null;
+
+      let restoredFromOfficial =
+        false;
+
+      const hasOfficialImprovementResult = !!(
+        storedResult &&
+        typeof storedResult === 'object' &&
+        !Array.isArray(storedResult) &&
+        Object.keys(storedResult).length &&
+        safeArray(
+          storedResult.improvements
+        ).length
+      );
+
+      const officialRaw =
+        hasOfficialImprovementResult
+          ? JSON.stringify(
+              storedResult,
+              null,
+              2
+            )
+          : '';
+
+      const responseText =
+        String(
+          responseBox?.value || ''
+        ).trim();
+
+      let responseRepresentsOfficial =
+        !responseText;
+
+      if(
+        responseText &&
+        hasOfficialImprovementResult
+      ){
+        try{
+          responseRepresentsOfficial =
+            JSON.stringify(
+              JSON.parse(
+                responseText
+              )
+            ) ===
+            JSON.stringify(
+              storedResult
+            );
+
+        }catch(error){
+          responseRepresentsOfficial =
+            false;
+        }
+      }
+
+      /*
+       * Si no existe un pending real y el editor no contiene
+       * otro JSON sin validar, reconstruye automáticamente la
+       * misma copia de trabajo que produciría el botón
+       * "Validar y preparar revisión".
+       */
+      if(
+        !reviewPayload &&
+        hasOfficialImprovementResult &&
+        responseRepresentsOfficial
+      ){
+        reviewPayload =
+          typeof lmpValidateAnalysisStageContract_ ===
+            'function'
+            ? lmpValidateAnalysisStageContract_(
+                'MEJORAS',
+                officialRaw
+              )
+            : JSON.parse(
+                JSON.stringify(
+                  storedResult
+                )
+              );
+
+        improvementPending = {
+          raw:
+            officialRaw,
+          parsed:
+            JSON.parse(
+              JSON.stringify(
+                reviewPayload
+              )
+            ),
+          restoredFromOfficial:
+            true
+        };
+
+        window
+          .__LMP_ANALYSIS_PENDING__
+          .MEJORAS =
+            improvementPending;
+
+        if(responseBox){
+          responseBox.value =
+            officialRaw;
+        }
+
+        if(resultBox){
+          resultBox.value =
+            JSON.stringify(
+              reviewPayload,
+              null,
+              2
+            );
+        }
+
+        restoredFromOfficial =
+          true;
+      }
+
+      /*
+       * Si la revisión visual no existe, la reconstruye desde
+       * el pending real o desde la copia oficial recién creada.
+       */
+      let reviewCard =
+        currentReview;
+
+      if(
+        !reviewCard &&
+        reviewPayload &&
+        typeof lmpRenderImprovementReview_ ===
+          'function'
+      ){
+        reviewCard =
+          lmpRenderImprovementReview_(
+            JSON.parse(
+              JSON.stringify(
+                reviewPayload
+              )
+            )
+          );
+      }
+
+      const isOfficialWorkingCopy = !!(
+        restoredFromOfficial ||
+        improvementPending
+          ?.restoredFromOfficial ===
+          true
+      );
+
+      if(
+        reviewCard &&
+        isOfficialWorkingCopy
+      ){
+        Array.from(
+          reviewCard.querySelectorAll(
+            '.improvement-card[data-improvement-id]'
+          )
+        ).forEach(function(card){
+          card.dataset.reviewed =
+            '1';
+
+          const badge =
+            card.querySelector(
+              '[data-role="review-state"]'
+            );
+
+          if(badge){
+            badge.textContent =
+              'Guardada';
+          }
+
+          card.open =
+            false;
+        });
+      }
+
+      if(
+        reviewCard &&
+        typeof lmpUpdateImprovementReviewSaveState_ ===
+          'function'
+      ){
+        lmpUpdateImprovementReviewSaveState_();
+      }
+
+    }catch(error){
+      console.error(
+        '[LMP MEJORAS restore] No fue posible reconstruir las tarjetas.',
+        error
+      );
+
+      if(
+        typeof showMsg ===
+        'function'
+      ){
+        showMsg(
+          'analysisMsg_MEJORAS',
+          'err',
+          'El resultado oficial de Mejoras existe, pero no fue posible reconstruir sus tarjetas. Detalle: ' +
+          error.message
+        );
+      }
+    }
+  }
+
+  /*
    * Permite continuar cuando existe:
    * - una revisión pendiente; o
    * - un resultado oficial restaurado.
@@ -41437,9 +41567,30 @@ window.showSection = function(id){
   );
 
   if(saveButton){
-    saveButton.disabled =
-      !hasPending &&
-      !hasStoredResult;
+    if(stage === 'MEJORAS'){
+      const improvementReview =
+        el(
+          'analysisImprovementReview_MEJORAS'
+        );
+
+      const improvementPending =
+        window
+          .__LMP_ANALYSIS_PENDING__
+          ?.MEJORAS;
+
+      saveButton.disabled = !(
+        improvementPending?.parsed &&
+        improvementReview &&
+        improvementReview.querySelector(
+          '.improvement-card[data-improvement-id]'
+        )
+      );
+
+    }else{
+      saveButton.disabled =
+        !hasPending &&
+        !hasStoredResult;
+    }
   }
 };
   
