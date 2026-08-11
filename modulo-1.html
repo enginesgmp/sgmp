@@ -36975,14 +36975,122 @@ function lmpEnhanceImprovementReviewUi_(){
     return;
   }
 
+  const improvementHead =
+    reviewCard.querySelector(
+      '.improvement-head'
+    );
+
   const counter =
     reviewCard.querySelector(
+      '.improvement-head .analysis-improvement-counter, ' +
       '.improvement-head > .status-badge'
     );
 
   if(counter){
     counter.classList.add(
       'analysis-improvement-counter'
+    );
+  }
+
+  /*
+   * MEJORAS permite al analista incorporar
+   * propuestas manuales durante la revisión.
+   *
+   * Se agrega el control dinámicamente para
+   * conservar intacto el HTML base de la etapa.
+   */
+  if(improvementHead){
+    let headActions =
+      improvementHead.querySelector(
+        '[data-role="improvement-review-head-actions"]'
+      );
+
+    if(!headActions){
+      headActions =
+        document.createElement(
+          'div'
+        );
+
+      headActions.dataset.role =
+        'improvement-review-head-actions';
+
+      headActions.className =
+        'actions-right';
+
+      if(counter){
+        improvementHead.insertBefore(
+          headActions,
+          counter
+        );
+
+        headActions.appendChild(
+          counter
+        );
+
+      }else{
+        improvementHead.appendChild(
+          headActions
+        );
+      }
+    }
+    else if(
+      counter &&
+      counter.parentElement !==
+        headActions
+    ){
+      headActions.insertBefore(
+        counter,
+        headActions.firstChild
+      );
+    }
+
+    let addButton =
+      headActions.querySelector(
+        '[data-role="add-improvement-review"]'
+      );
+
+    if(!addButton){
+      addButton =
+        document.createElement(
+          'button'
+        );
+
+      addButton.type =
+        'button';
+
+      addButton.className =
+        'btn-ok';
+
+      addButton.dataset.role =
+        'add-improvement-review';
+
+      addButton.textContent =
+        'Agregar mejora';
+
+      addButton.addEventListener(
+        'click',
+        function(){
+          if(
+            typeof window
+              .lmpAddImprovementReviewItem_ ===
+              'function'
+          ){
+            window
+              .lmpAddImprovementReviewItem_();
+          }
+        }
+      );
+
+      headActions.appendChild(
+        addButton
+      );
+    }
+
+    addButton.disabled = !(
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.MEJORAS
+        ?.parsed
     );
   }
 
@@ -37126,8 +37234,7 @@ function lmpEnhanceImprovementReviewUi_(){
     }
 
     /*
-     * Igual que los análisis previos:
-     * después de guardar correctamente
+     * Después de guardar correctamente
      * una tarjeta individual, se cierra.
      */
     const saveButton =
@@ -37164,7 +37271,8 @@ function lmpEnhanceImprovementReviewUi_(){
               card.dataset.reviewed ===
               '1'
             ){
-              card.open = false;
+              card.open =
+                false;
 
               lmpEnhanceImprovementReviewUi_();
             }
@@ -37174,6 +37282,238 @@ function lmpEnhanceImprovementReviewUi_(){
     }
   });
 }
+
+
+window.lmpAddImprovementReviewItem_ =
+function(){
+
+  try{
+    const pending =
+      window
+        .__LMP_ANALYSIS_PENDING__
+        ?.MEJORAS;
+
+    if(!pending?.parsed){
+      throw new Error(
+        'No existe una revisión activa de Mejoras.'
+      );
+    }
+
+    const candidate =
+      JSON.parse(
+        JSON.stringify(
+          pending.parsed
+        )
+      );
+
+    candidate.improvements =
+      safeArray(
+        candidate.improvements
+      );
+
+    /*
+     * Obtiene el siguiente M-xxx disponible
+     * sin depender únicamente de la cantidad.
+     */
+    const existingIds =
+      new Set(
+        candidate.improvements
+          .map(function(item){
+            return String(
+              item?.id || ''
+            ).trim();
+          })
+          .filter(Boolean)
+      );
+
+    let nextNumber =
+      1;
+
+    let nextId =
+      '';
+
+    do{
+      nextId =
+        'M-' +
+        String(
+          nextNumber
+        ).padStart(
+          3,
+          '0'
+        );
+
+      nextNumber +=
+        1;
+
+    }while(
+      existingIds.has(
+        nextId
+      )
+    );
+
+    /*
+     * Una mejora agregada manualmente nace
+     * como MODE_B.
+     *
+     * MODE_A solo puede utilizarse posteriormente
+     * cuando el analista la vincule a un Quick Win
+     * oficial QW-xxx.
+     */
+    candidate.improvements.push({
+      id:
+        nextId,
+
+      title:
+        '',
+
+      problemFinding:
+        '',
+
+      currentState:
+        '',
+
+      proposedState:
+        '',
+
+      scope:
+        '',
+
+      justification:
+        '',
+
+      expectedBenefit:
+        '',
+
+      risks:
+        '',
+
+      mode:
+        'MODE_B',
+
+      improvementType:
+        'OTHER',
+
+      relatedActivityIds:
+        [],
+
+      linkedFindingRefs:
+        [],
+
+      status:
+        'PENDING_ANALYST_REVIEW'
+    });
+
+    /*
+     * No se ejecuta todavía el contrato final:
+     * la nueva tarjeta está intencionalmente
+     * incompleta hasta que el analista la llene.
+     */
+    pending.parsed =
+      JSON.parse(
+        JSON.stringify(
+          candidate
+        )
+      );
+
+    const resultBox =
+      el(
+        'analysisResult_MEJORAS'
+      );
+
+    if(resultBox){
+      resultBox.value =
+        JSON.stringify(
+          candidate,
+          null,
+          2
+        );
+    }
+
+    /*
+     * No se modifica analysisResponse_MEJORAS
+     * ni pending.raw.
+     *
+     * Esa respuesta continúa representando
+     * la salida original que fue validada.
+     */
+    const reviewCard =
+      lmpRenderImprovementReview_(
+        candidate
+      );
+
+    const newCard =
+      Array.from(
+        reviewCard?.querySelectorAll(
+          '.improvement-card[data-improvement-id]'
+        ) || []
+      ).find(function(card){
+        return (
+          String(
+            card.dataset
+              .improvementId || ''
+          ) ===
+          nextId
+        );
+      });
+
+    if(newCard){
+      newCard.dataset.reviewed =
+        '0';
+
+      const badge =
+        newCard.querySelector(
+          '[data-role="review-state"]'
+        );
+
+      if(badge){
+        badge.textContent =
+          'Revisión requerida';
+      }
+
+      newCard.open =
+        true;
+
+      lmpEnhanceImprovementReviewUi_();
+
+      newCard.scrollIntoView({
+        behavior:
+          'smooth',
+
+        block:
+          'center'
+      });
+
+      setTimeout(function(){
+        newCard.querySelector(
+          '[data-improvement-field="title"]'
+        )?.focus();
+      }, 0);
+    }
+
+    lmpUpdateImprovementReviewSaveState_();
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'warn',
+      'Se agregó la mejora ' +
+      nextId +
+      '. Completa sus campos y guárdala antes de cerrar la etapa.'
+    );
+
+    return true;
+
+  }catch(error){
+
+    showMsg(
+      'analysisMsg_MEJORAS',
+      'err',
+      'No fue posible agregar la mejora. Detalle: ' +
+      error.message
+    );
+
+    return false;
+  }
+};
 
 function lmpImprovementReviewCompleteness_(item){
   const requiredText = [
