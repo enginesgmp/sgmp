@@ -6158,7 +6158,7 @@ body .app .layout > aside.sidebar > .step-list .step-btn:last-child{
 </button>  
 <button class="step-btn" data-target="decision">   Ruta de cierre   <small>Cerrar el análisis AS-IS o continuar hacia la construcción TO-BE.</small> </button>
 <button class="step-btn" data-target="tobe">   Construcción TO-BE   <small>Revisión y definición de mejoras con el líder del proceso.</small> </button>
-<button class="step-btn" data-target="tobe_consolidation">   Consolidación TO-BE   <small>Integra AS-IS, análisis, mejoras y acuerdos en el TOBE_MASTER_PACK.</small> </button>
+<button class="step-btn" data-target="tobe_consolidation">   Consolidación TO-BE   <small>Integra análisis y acuerdos para definir el TO-BE.</small> </button>
 <button class="step-btn" data-target="resultados">Resultados<small>Informes finales derivados de la consolidación oficial.</small></button>
 <button class="step-btn" data-target="outputs">Outputs SGMP<small>Contratos JSON para módulos SGMP.</small></button>
 </div>
@@ -8733,56 +8733,90 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
   </div>
 
 
-  <article class="card">
+<article class="card">
 
-    <h3>Evidencia adicional de la sesión</h3>
+  <h3>Transcripción y evidencia de la sesión</h3>
 
-    <p>
-      Opcional. Registra únicamente información adicional
-      que no haya quedado recogida en los acuerdos de revisión.
-      No es obligatorio para consolidar.
-    </p>
+  <p>
+    Carga una o varias transcripciones TXT de la revisión con el líder.
+    Estos archivos se integrarán con todo el historial oficial del LMP
+    al preparar la Consolidación TO-BE.
+  </p>
 
-    <div class="field-grid">
 
-      <div class="field w-12">
+  <div class="field-grid">
 
-        <label>
-          Transcripción o notas adicionales
-        </label>
+    <div class="field w-12">
 
-        <textarea
-          id="tobeConsolidationTranscript"
-          placeholder="Opcional: acuerdos complementarios, aclaraciones o evidencia adicional de la sesión con el líder."
-        ></textarea>
+      <label>
+        Transcripciones TXT
+      </label>
 
+      <input
+        id="tobeConsolidationTranscriptFiles"
+        type="file"
+        accept=".txt,text/plain"
+        multiple
+        onchange="lmpHandleToBeTranscriptFiles_()"
+      />
+
+      <div
+        class="pre"
+        id="tobeConsolidationTranscriptList"
+        style="
+          min-height:78px;
+          max-height:180px;
+          white-space:normal;
+          margin-top:8px;
+        "
+      >
+        <div class="loaded-file-empty">
+          Sin transcripciones cargadas.
+        </div>
       </div>
 
     </div>
 
 
-    <div class="actions">
+    <div class="field w-12">
 
-      <div class="actions-left">
+      <label>
+        Notas adicionales
+      </label>
 
-        <button
-          class="btn"
-          onclick="lmpRunToBeConsolidation_()"
-          type="button"
-        >
-          Generar consolidación TO-BE
-        </button>
-
-      </div>
+      <textarea
+        id="tobeConsolidationNotes"
+        placeholder="Opcional: registra aclaraciones breves o acuerdos que no estén incluidos en las transcripciones."
+      ></textarea>
 
     </div>
 
-    <div
-      class="msg"
-      id="tobeConsolidationMsg"
-    ></div>
+  </div>
 
-  </article>
+
+  <div class="actions">
+
+    <div class="actions-left">
+
+      <button
+        class="btn"
+        onclick="lmpRunToBeConsolidation_()"
+        type="button"
+      >
+        Generar consolidación TO-BE
+      </button>
+
+    </div>
+
+  </div>
+
+
+  <div
+    class="msg"
+    id="tobeConsolidationMsg"
+  ></div>
+
+</article>
 
 
   <div
@@ -8821,14 +8855,14 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     <summary
       style="cursor:pointer;font-weight:900;color:#0B2E59;"
     >
-      Ver TOBE_MASTER_PACK
+      Ver JSON consolidado
     </summary>
 
     <pre
       class="pre"
       id="tobeConsolidationPack"
       style="margin-top:14px;"
-    >TOBE_MASTER_PACK pendiente.</pre>
+    >JSON consolidado pendiente.</pre>
 
   </details>
 
@@ -26147,26 +26181,140 @@ function lmpEnsureToBeConsolidationState_(){
       ? state.tobe.consolidation
       : {};
 
+  const validObject =
+    function(value){
+
+      return !!(
+        value &&
+        typeof value ===
+          'object' &&
+        !Array.isArray(value)
+      );
+    };
+
+
+  const normalizedFiles =
+    safeArray(
+      current.transcriptFiles
+    )
+      .map(function(item){
+
+        const source =
+          item &&
+          typeof item ===
+            'object'
+            ? item
+            : {};
+
+        return {
+
+          name:
+            String(
+              source.name ||
+              source.__fileName ||
+              'transcripcion.txt'
+            ),
+
+          content:
+            String(
+              source.content || ''
+            ),
+
+          size:
+            Number(
+              source.size
+            ) || 0,
+
+          sizeLabel:
+            String(
+              source.sizeLabel ||
+              source.__sizeLabel ||
+              ''
+            ),
+
+          mimeType:
+            String(
+              source.mimeType ||
+              source.mime_type ||
+              'text/plain'
+            ),
+
+          loadedAt:
+            source.loadedAt ||
+            source.__loadedAt ||
+            null
+        };
+      })
+
+      .filter(function(item){
+
+        return !!(
+          item.name &&
+          item.content
+        );
+      });
+
+
+  const legacyTranscript =
+    String(
+      current.transcriptText ||
+      ''
+    );
+
+
+  const generatedPack =
+    validObject(
+      current.generatedPack
+    )
+      ? current.generatedPack
+
+      : validObject(
+          current.masterPack
+        )
+        ? current.masterPack
+
+        : null;
+
+
+  const finalPack =
+    validObject(
+      current.finalPack
+    )
+      ? current.finalPack
+      : null;
+
+
   state.tobe.consolidation = {
 
     status:
       String(
-        current.status || 'PENDING'
+        current.status ||
+        'PENDING'
       )
         .trim()
         .toUpperCase() ||
       'PENDING',
 
-    transcriptText:
+    transcriptFiles:
+      normalizedFiles,
+
+    additionalNotes:
       String(
-        current.transcriptText || ''
+        current.additionalNotes !==
+          undefined
+          ? current.additionalNotes
+          : legacyTranscript
       ),
 
+    /*
+     * Compatibilidad temporal con respaldos
+     * anteriores que utilizaban un único textarea.
+     */
+    transcriptText:
+      legacyTranscript,
+
     sourceSnapshot:
-      current.sourceSnapshot &&
-      typeof current.sourceSnapshot ===
-        'object' &&
-      !Array.isArray(
+      validObject(
         current.sourceSnapshot
       )
         ? current.sourceSnapshot
@@ -26174,24 +26322,463 @@ function lmpEnsureToBeConsolidationState_(){
 
     rawResponse:
       String(
-        current.rawResponse || ''
+        current.rawResponse ||
+        ''
       ),
 
+    /*
+     * Respuesta original validada de IA.
+     * Se utilizará plenamente en el siguiente cambio.
+     */
+    generatedPack,
+
+    /*
+     * Versión revisada por el usuario.
+     * Se utilizará plenamente al implementar
+     * Guardar consolidación.
+     */
+    finalPack,
+
+    /*
+     * Alias temporal para no romper
+     * la implementación C1 actual.
+     */
     masterPack:
-      current.masterPack &&
-      typeof current.masterPack ===
-        'object' &&
-      !Array.isArray(
+      validObject(
         current.masterPack
       )
         ? current.masterPack
-        : null,
+        : finalPack ||
+          generatedPack,
+
+    validationStatus:
+      String(
+        current.validationStatus ||
+        (
+          generatedPack
+            ? 'VALIDATED'
+            : 'PENDING'
+        )
+      )
+        .trim()
+        .toUpperCase(),
 
     generatedAt:
-      current.generatedAt || null
+      current.generatedAt ||
+      null,
+
+    validatedAt:
+      current.validatedAt ||
+      null,
+
+    savedAt:
+      current.savedAt ||
+      null
   };
 
-  return state.tobe.consolidation;
+
+  return state.tobe
+    .consolidation;
+}
+
+
+function lmpInvalidateToBeConsolidationDraft_(){
+  const consolidation =
+    lmpEnsureToBeConsolidationState_();
+
+  consolidation.status =
+    'PENDING';
+
+  consolidation.sourceSnapshot =
+    null;
+
+  consolidation.rawResponse =
+    '';
+
+  consolidation.generatedPack =
+    null;
+
+  consolidation.finalPack =
+    null;
+
+  consolidation.masterPack =
+    null;
+
+  consolidation.validationStatus =
+    'PENDING';
+
+  consolidation.generatedAt =
+    null;
+
+  consolidation.validatedAt =
+    null;
+
+  consolidation.savedAt =
+    null;
+
+
+  /*
+   * Si la evidencia de C1 cambia,
+   * cualquier informe posterior deja
+   * de ser confiable.
+   */
+  if(
+    typeof lmpInvalidateResultDocuments_ ===
+      'function'
+  ){
+    lmpInvalidateResultDocuments_();
+  }
+
+
+  state.metadata =
+    state.metadata || {};
+
+  state.metadata.lastSavedAt =
+    new Date()
+      .toISOString();
+}
+
+
+function lmpRenderToBeTranscriptFiles_(){
+  const target =
+    qs(
+      'tobeConsolidationTranscriptList'
+    );
+
+  if(!target){
+    return;
+  }
+
+
+  const files =
+    safeArray(
+      lmpEnsureToBeConsolidationState_()
+        .transcriptFiles
+    );
+
+
+  if(!files.length){
+
+    target.innerHTML =
+      '<div class="loaded-file-empty">Sin transcripciones cargadas.</div>';
+
+    return;
+  }
+
+
+  target.innerHTML =
+    '<div class="loaded-file-list">' +
+
+    files
+      .map(function(
+        item,
+        index
+      ){
+
+        const sizeLabel =
+          item.sizeLabel ||
+
+          `${Math.max(
+            1,
+            Math.round(
+              (
+                Number(
+                  item.size
+                ) || 0
+              ) / 1024
+            )
+          )} KB`;
+
+
+        return `
+          <div class="loaded-file-card">
+
+            <div>
+
+              <strong>
+                ${escapeHtml(
+                  item.name
+                )}
+              </strong>
+
+              <small>
+                ${escapeHtml(
+                  sizeLabel
+                )}
+                ·
+                ${escapeHtml(
+                  String(
+                    item.content ||
+                    ''
+                  ).length
+                )}
+                caracteres
+              </small>
+
+            </div>
+
+
+            <button
+              class="loaded-file-remove"
+              type="button"
+              title="Quitar transcripción"
+              onclick="lmpRemoveToBeTranscriptFile_(${index})"
+            >
+              ×
+            </button>
+
+          </div>
+        `;
+      })
+      .join('') +
+
+    '</div>';
+}
+
+
+async function lmpHandleToBeTranscriptFiles_(){
+  const input =
+    qs(
+      'tobeConsolidationTranscriptFiles'
+    );
+
+  const files =
+    Array.from(
+      input?.files ||
+      []
+    );
+
+
+  if(!files.length){
+    return [];
+  }
+
+
+  const consolidation =
+    lmpEnsureToBeConsolidationState_();
+
+  const loaded = [];
+  const rejected = [];
+  const duplicated = [];
+
+
+  for(const file of files){
+
+    const isTxt =
+      /\.txt$/i.test(
+        file.name
+      ) ||
+
+      String(
+        file.type || ''
+      ) ===
+        'text/plain';
+
+
+    if(!isTxt){
+
+      rejected.push(
+        file.name
+      );
+
+      continue;
+    }
+
+
+    try{
+
+      const content =
+        await file.text();
+
+
+      const duplicate =
+        safeArray(
+          consolidation
+            .transcriptFiles
+        )
+          .some(function(item){
+
+            return (
+              String(
+                item.name
+              ) ===
+                String(
+                  file.name
+                ) &&
+
+              String(
+                item.content
+              ) ===
+                String(
+                  content
+                )
+            );
+          });
+
+
+      if(duplicate){
+
+        duplicated.push(
+          file.name
+        );
+
+        continue;
+      }
+
+
+      const sizeKb =
+        Math.max(
+          1,
+
+          Math.round(
+            (
+              file.size ||
+              0
+            ) / 1024
+          )
+        );
+
+
+      loaded.push({
+
+        name:
+          file.name,
+
+        content,
+
+        size:
+          file.size ||
+          0,
+
+        sizeLabel:
+          `${sizeKb} KB`,
+
+        mimeType:
+          file.type ||
+          'text/plain',
+
+        loadedAt:
+          new Date()
+            .toISOString()
+      });
+
+    }catch(error){
+
+      rejected.push(
+        file.name
+      );
+    }
+  }
+
+
+  if(loaded.length){
+
+    consolidation.transcriptFiles = [
+
+      ...safeArray(
+        consolidation
+          .transcriptFiles
+      ),
+
+      ...loaded
+    ];
+
+
+    /*
+     * Cambió la evidencia:
+     * cualquier C1 anterior queda obsoleto.
+     */
+    lmpInvalidateToBeConsolidationDraft_();
+  }
+
+
+  if(input){
+    input.value = '';
+  }
+
+
+  lmpRenderToBeTranscriptFiles_();
+  lmpRenderToBeConsolidation_();
+
+
+  if(rejected.length){
+
+    showMsg(
+      'tobeConsolidationMsg',
+      'warn',
+
+      `Solo se permiten archivos .txt legibles. No se cargaron: ${rejected.join(', ')}`
+    );
+  }
+  else if(
+    duplicated.length &&
+    !loaded.length
+  ){
+
+    showMsg(
+      'tobeConsolidationMsg',
+      'info',
+      'Los archivos seleccionados ya estaban cargados.'
+    );
+  }
+  else{
+
+    showMsg(
+      'tobeConsolidationMsg',
+      'ok',
+
+      `${loaded.length} transcripción(es) incorporada(s) a la evidencia de Consolidación TO-BE.`
+    );
+  }
+
+
+  return loaded;
+}
+
+
+function lmpRemoveToBeTranscriptFile_(
+  index
+){
+  const consolidation =
+    lmpEnsureToBeConsolidationState_();
+
+
+  if(
+    index < 0 ||
+
+    index >=
+      consolidation
+        .transcriptFiles
+        .length
+  ){
+    return false;
+  }
+
+
+  consolidation
+    .transcriptFiles
+    .splice(
+      index,
+      1
+    );
+
+
+  lmpInvalidateToBeConsolidationDraft_();
+
+  lmpRenderToBeTranscriptFiles_();
+
+  lmpRenderToBeConsolidation_();
+
+
+  showMsg(
+    'tobeConsolidationMsg',
+    'warn',
+
+    'Transcripción retirada. La consolidación anterior quedó invalidada y deberá generarse nuevamente.'
+  );
+
+
+  return true;
 }
 
 
@@ -26336,12 +26923,15 @@ function lmpBuildToBeConsolidationSnapshot_(){
   const construction =
     lmpEnsureToBeConstructionState_();
 
+
   if(
     String(
-      construction.status || ''
+      construction.status ||
+      ''
     ).toUpperCase() !==
       'COMPLETED'
   ){
+
     throw new Error(
       'La revisión con el líder todavía no está completada.'
     );
@@ -26359,7 +26949,8 @@ function lmpBuildToBeConsolidationSnapshot_(){
     {
 
       context:
-        state.context || {},
+        state.context ||
+        {},
 
       actors_catalog:
         safeArray(
@@ -26396,19 +26987,24 @@ function lmpBuildToBeConsolidationSnapshot_(){
   const results =
     state.analysisStages
       ?.results &&
+
     typeof state.analysisStages
       .results ===
-      'object' &&
+        'object' &&
+
     !Array.isArray(
       state.analysisStages
         .results
     )
+
       ? state.analysisStages
           .results
+
       : {};
 
 
   const analyses = {};
+
 
   [
     'VA',
@@ -26417,21 +27013,57 @@ function lmpBuildToBeConsolidationSnapshot_(){
     'RESTRICCIONES',
     'QUICK_WINS',
     'MEJORAS'
-  ].forEach(
-    function(stage){
+  ]
+    .forEach(
+      function(stage){
 
-      analyses[stage] =
-        lmpCloneToBeEvidence_(
-          results[
-            stage
-          ] || null
-        );
-    }
-  );
+        analyses[stage] =
+          lmpCloneToBeEvidence_(
+
+            results[
+              stage
+            ] ||
+
+            null
+          );
+      }
+    );
 
 
   const consolidation =
     lmpEnsureToBeConsolidationState_();
+
+
+  const transcriptFiles =
+    safeArray(
+      consolidation
+        .transcriptFiles
+    )
+      .map(function(item){
+
+        return {
+
+          name:
+            String(
+              item.name ||
+              ''
+            ),
+
+          /*
+           * C1 recibe el contenido íntegro
+           * de cada transcripción.
+           */
+          content:
+            String(
+              item.content ||
+              ''
+            ),
+
+          loadedAt:
+            item.loadedAt ||
+            null
+        };
+      });
 
 
   const snapshot = {
@@ -26446,36 +27078,60 @@ function lmpBuildToBeConsolidationSnapshot_(){
       new Date()
         .toISOString(),
 
+
     processContext:
       lmpCloneToBeEvidence_(
-        state.context || {}
+        state.context ||
+        {}
       ),
+
 
     asIsOfficial:
       lmpCloneToBeEvidence_(
         officialAsIs
       ),
 
+
     analyses,
+
 
     leaderReview:
       lmpCloneToBeEvidence_(
         construction
       ),
 
+
     additionalEvidence: {
 
-      sessionTranscriptOrNotes:
+      transcriptFiles,
+
+      additionalNotes:
         String(
           consolidation
-            .transcriptText || ''
-        ).trim()
+            .additionalNotes ||
+          ''
+        ).trim(),
+
+      /*
+       * Solo para respaldos antiguos.
+       */
+      legacyTranscript:
+        transcriptFiles.length
+
+          ? ''
+
+          : String(
+              consolidation
+                .transcriptText ||
+              ''
+            ).trim()
     }
   };
 
 
   consolidation.sourceSnapshot =
     snapshot;
+
 
   return snapshot;
 }
@@ -27180,7 +27836,6 @@ function lmpStoreToBeMasterPack_(
   return consolidation.masterPack;
 }
 
-
 function lmpRenderToBeConsolidation_(){
 
   const consolidation =
@@ -27195,6 +27850,7 @@ function lmpRenderToBeConsolidation_(){
 
   setTextSafe(
     'tobeConsolidationContextProcess',
+
     state.context
       ?.processName ||
     'No definido'
@@ -27205,7 +27861,8 @@ function lmpRenderToBeConsolidation_(){
     'tobeConsolidationContextReview',
 
     String(
-      construction.status || ''
+      construction.status ||
+      ''
     ).toUpperCase() ===
       'COMPLETED'
 
@@ -27300,21 +27957,25 @@ function lmpRenderToBeConsolidation_(){
   );
 
 
-  const transcript =
+  lmpRenderToBeTranscriptFiles_();
+
+
+  const notes =
     qs(
-      'tobeConsolidationTranscript'
+      'tobeConsolidationNotes'
     );
 
 
   if(
-    transcript &&
+    notes &&
+
     document.activeElement !==
-      transcript
+      notes
   ){
 
-    transcript.value =
+    notes.value =
       consolidation
-        .transcriptText ||
+        .additionalNotes ||
       '';
   }
 
@@ -27327,6 +27988,7 @@ function lmpRenderToBeConsolidation_(){
 
   if(
     response &&
+
     document.activeElement !==
       response
   ){
@@ -27357,7 +28019,7 @@ function lmpRenderToBeConsolidation_(){
             2
           )
 
-        : 'TOBE_MASTER_PACK pendiente.';
+        : 'JSON consolidado pendiente.';
   }
 
 
@@ -27382,19 +28044,43 @@ function lmpCollectToBeConsolidationFromUi_(){
     lmpEnsureToBeConsolidationState_();
 
 
-  const transcript =
+  const notes =
     qs(
-      'tobeConsolidationTranscript'
+      'tobeConsolidationNotes'
     );
 
 
-  if(transcript){
+  if(notes){
 
-    consolidation.transcriptText =
+    const nextNotes =
       String(
-        transcript.value || ''
+        notes.value ||
+        ''
       );
+
+
+    if(
+      nextNotes !==
+      consolidation
+        .additionalNotes
+    ){
+
+      consolidation.additionalNotes =
+        nextNotes;
+
+
+      /*
+       * Si el usuario cambia la evidencia
+       * después de una consolidación,
+       * debe regenerarse C1.
+       */
+      lmpInvalidateToBeConsolidationDraft_();
+    }
   }
+
+
+  state.metadata =
+    state.metadata || {};
 
 
   state.metadata.lastSavedAt =
