@@ -3776,6 +3776,18 @@ body{font-size:14px !important}
                 Rehacer
               </button>
 
+              <button id="btn_studio_connect" type="button" onclick="sbStudioToggleConnectMode()">
+                Conectar
+              </button>
+
+              <button id="btn_studio_delete_edge" type="button" onclick="sbStudioDeleteSelectedEdge()">
+                Eliminar conexión
+              </button>
+
+              <span id="sb_studio_connection_status" style="min-height:38px;display:inline-flex;align-items:center;color:#5B6F8A;font-size:.76rem;font-weight:750">
+                Selecciona Conectar para crear o cambiar relaciones.
+              </span>
+
               <label style="display:flex;flex-direction:column;gap:3px;min-width:190px;text-transform:none">
                 Simbología
                 <select id="sb_studio_symbol_profile" onchange="sbStudioApplyVisualControls()" disabled>
@@ -7037,78 +7049,106 @@ function sbStudioEnterDiagramMode(){
 }
 
 function sbStudioCloseAndSave(options = {}){
-  if(!S.studio.editing){
-    return false;
-  }
+  if(!S.studio.editing) return false;
 
-  const host =
-    $('sb_studio_fullscreen_host');
+  const host = $('sb_studio_fullscreen_host');
 
-  /*
-   * El listener actual de fullscreen utiliza
-   * skipFullscreenExit:true cuando el usuario sale
-   * directamente con Esc. En ese caso no se guarda:
-   * se restaura la copia de seguridad de la sesión.
-   */
-  if(
-    options.skipFullscreenExit &&
-    document.fullscreenElement !== host
-  ){
-    return sbStudioCancelEditing({
-      skipFullscreenExit:true
-    });
+  if(options.skipFullscreenExit && document.fullscreenElement !== host){
+    return sbStudioCancelEditing({skipFullscreenExit:true});
   }
 
   if(!S.diagramModel){
+    gMsg('err','No existe un modelo visual para guardar.');
+    return false;
+  }
+
+  const semanticBackup = {
+    acts: sbDeepClone(S.acts || []),
+    cats: sbDeepClone(S.cats || {}),
+    contract: sbDeepClone(S.contract),
+    sp: sbDeepClone(S.sp),
+    tplXml: S.tplXml || '',
+    diagramXml: S.diagramXml || '',
+    xmlFinal: S.xmlFinal || '',
+    idRef: S.idRef || ''
+  };
+
+  const restoreSemanticBackup = () => {
+    S.acts = semanticBackup.acts;
+    S.cats = semanticBackup.cats;
+    S.contract = semanticBackup.contract;
+    S.sp = semanticBackup.sp;
+    S.tplXml = semanticBackup.tplXml;
+    S.diagramXml = semanticBackup.diagramXml;
+    S.xmlFinal = semanticBackup.xmlFinal;
+    S.idRef = semanticBackup.idRef;
+
+    ['suppliers','inputs','outputs','customers','actors','documents']
+      .forEach(type => renderCatTable(type));
+
+    renderActsTable();
+    syncSelects();
+
+    if($('xml_diagram')){
+      $('xml_diagram').value = S.diagramXml;
+    }
+
+    if($('xml_final')){
+      $('xml_final').value = S.xmlFinal;
+    }
+  };
+
+  const semanticSync =
+    sbStudioProjectDiagramToEditor();
+
+  if(!semanticSync.ok){
+    restoreSemanticBackup();
+
     gMsg(
-      'err',
-      'No existe un modelo visual para guardar.'
+      'warn',
+      semanticSync.message ||
+      'Completa las conexiones obligatorias antes de guardar.'
     );
 
     return false;
   }
 
-  S.optimizedDiagramModel =
-    sbDeepClone(
-      S.diagramModel
+  if(!genTemplate()){
+    restoreSemanticBackup();
+
+    gMsg(
+      'err',
+      'No fue posible regenerar la salida con las conexiones actualizadas.'
     );
 
-  S.optimization.status =
-    'saved';
+    return false;
+  }
 
-  S.studio.saved =
-    true;
+  S.diagramModel.source_contract =
+    sbDeepClone(S.contract);
 
-  S.studio.editing =
-    false;
+  S.optimizedDiagramModel =
+    sbDeepClone(S.diagramModel);
 
-  S.studio.editSnapshot =
-    null;
+  S.optimization.status = 'saved';
+  S.studio.saved = true;
+  S.studio.editing = false;
+  S.studio.editSnapshot = null;
+  S.studio.selectedElement = null;
+  S.studio.nodeDrag = null;
+  S.studio.dragging = false;
+  S.studio.pointerId = null;
 
-  S.studio.selectedElement =
-    null;
+  sbStudioResetConnectMode(true);
 
-  S.studio.nodeDrag =
-    null;
-
-  S.studio.dragging =
-    false;
-
-  S.studio.pointerId =
-    null;
-
-  sbStudioSetEditingUI(
-    false
-  );
-
+  sbStudioSetEditingUI(false);
   sbStudioSyncVisualControls();
 
   if(
     !options.skipFullscreenExit &&
     document.fullscreenElement === host
   ){
-    S.studio.fullscreenExitInProgress =
-      true;
+    S.studio.fullscreenExitInProgress = true;
 
     document
       .exitFullscreen()
@@ -7119,9 +7159,7 @@ function sbStudioCloseAndSave(options = {}){
         )
       )
       .finally(() => {
-        S.studio.fullscreenExitInProgress =
-          false;
-
+        S.studio.fullscreenExitInProgress = false;
         requestAnimationFrame(
           sbStudioResetPreviewCamera
         );
@@ -7134,12 +7172,11 @@ function sbStudioCloseAndSave(options = {}){
 
   gMsg(
     'ok',
-    'Diagrama guardado. El modelo visual quedó confirmado; el XML se conserva solo como compatibilidad provisional.'
+    'Diagrama guardado. Las conexiones del lienzo actualizaron las tarjetas, el contrato y la salida del proceso.'
   );
 
   return true;
 }
-
 
 function sbStudioCancelEditing(options = {}){
   if(!S.studio.editing){
@@ -7179,6 +7216,8 @@ function sbStudioCancelEditing(options = {}){
 
   S.studio.pointerId =
     null;
+
+  sbStudioResetConnectMode(true);
 
   S.optimization.status =
     S.optimizedDiagramModel
@@ -7248,7 +7287,6 @@ function sbStudioCancelEditing(options = {}){
 
   return true;
 }
-
 
 function sbStudioGetSavedDiagramModel(){
   const source =
@@ -8145,6 +8183,1467 @@ function sbStudioSelectableFromEvent(event){
 }
 
 
+function sbStudioNodeRole(node){
+  if(!node){
+    return '';
+  }
+
+  if(node.kind === 'activity'){
+    return 'activity';
+  }
+
+  if(node.kind === 'input'){
+    return 'input';
+  }
+
+  if(node.kind === 'output'){
+    return 'output';
+  }
+
+  if(node.lane_id === 'LANE-SUPPLIERS'){
+    return 'supplier';
+  }
+
+  if(node.lane_id === 'LANE-CUSTOMERS'){
+    return 'customer';
+  }
+
+  return node.kind || '';
+}
+
+
+function sbStudioEdgeFamily(
+  source,
+  target
+){
+  const from =
+    sbStudioNodeRole(
+      source
+    );
+
+  const to =
+    sbStudioNodeRole(
+      target
+    );
+
+  if(
+    from === 'supplier' &&
+    to === 'input'
+  ){
+    return 'input';
+  }
+
+  if(
+    from === 'input' &&
+    to === 'activity'
+  ){
+    return 'input';
+  }
+
+  if(
+    from === 'activity' &&
+    to === 'activity'
+  ){
+    return 'internal';
+  }
+
+  if(
+    from === 'activity' &&
+    to === 'output'
+  ){
+    return 'output';
+  }
+
+  if(
+    from === 'output' &&
+    to === 'customer'
+  ){
+    return 'output';
+  }
+
+  return '';
+}
+
+
+function sbStudioResetConnectMode(
+  silent = false
+){
+  S.studio.connecting =
+    false;
+
+  S.studio.connectionSourceId =
+    '';
+
+  const button =
+    $('btn_studio_connect');
+
+  if(button){
+    button.textContent =
+      'Conectar';
+  }
+
+  if(!silent){
+    const status =
+      $('sb_studio_connection_status');
+
+    if(status){
+      status.textContent =
+        'Selecciona Conectar para crear o cambiar relaciones.';
+    }
+  }
+
+  return true;
+}
+
+
+function sbStudioToggleConnectMode(){
+  if(!S.studio.editing){
+    return false;
+  }
+
+  if(S.studio.connecting){
+    return sbStudioResetConnectMode();
+  }
+
+  S.studio.connecting =
+    true;
+
+  S.studio.connectionSourceId =
+    '';
+
+  const button =
+    $('btn_studio_connect');
+
+  if(button){
+    button.textContent =
+      'Cancelar conexión';
+  }
+
+  const status =
+    $('sb_studio_connection_status');
+
+  if(status){
+    status.textContent =
+      'Selecciona la caja de origen.';
+  }
+
+  return true;
+}
+
+
+function sbStudioNextEditableEdgeId(){
+  const used =
+    new Set(
+      (
+        S.diagramModel
+          ?.diagram_model
+          ?.edges ||
+        []
+      ).map(edge =>
+        String(
+          edge.id ||
+          ''
+        )
+      )
+    );
+
+  let index =
+    1;
+
+  while(
+    used.has(
+      `EDGE-EDIT-${String(index).padStart(3,'0')}`
+    )
+  ){
+    index +=
+      1;
+  }
+
+  return `EDGE-EDIT-${String(index).padStart(3,'0')}`;
+}
+
+
+function sbStudioInsertEdgeElement(
+  edge,
+  root = $('sb_studio_canvas')
+){
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  const svg =
+    root
+      ?.querySelector(
+        'svg'
+      );
+
+  if(
+    !model ||
+    !svg ||
+    !edge
+  ){
+    return false;
+  }
+
+  const source =
+    model.nodes.find(
+      node =>
+        node.id ===
+        edge.source
+    );
+
+  const target =
+    model.nodes.find(
+      node =>
+        node.id ===
+        edge.target
+    );
+
+  if(
+    !source ||
+    !target
+  ){
+    return false;
+  }
+
+  const index =
+    Math.max(
+      0,
+      model.edges.findIndex(
+        item =>
+          item.id ===
+          edge.id
+      )
+    );
+
+  const marker =
+    {
+      internal:
+        'sbArrowBlue',
+
+      input:
+        'sbArrowInput',
+
+      output:
+        'sbArrowOutput'
+    }[
+      edge.family
+    ] ||
+    'sbArrowBlue';
+
+  const group =
+    document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'g'
+    );
+
+  group.setAttribute(
+    'class',
+    (
+      'sb-svg-selectable ' +
+      'sb-svg-edge ' +
+      `sb-svg-edge-${edge.family || 'internal'}`
+    )
+  );
+
+  group.dataset.sbSelectable =
+    '1';
+
+  group.dataset.sbType =
+    'edge';
+
+  group.dataset.sbId =
+    edge.id;
+
+  group.dataset.sbLabel =
+    `${source.label} → ${target.label}`;
+
+  group.innerHTML = `
+    <path
+      d="${sbStudioEdgePath(
+        source,
+        target,
+        edge.family || 'internal',
+        index
+      )}"
+      fill="none"
+      stroke="#000000"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+      marker-end="url(#${marker})"
+    />
+  `;
+
+  const firstNode =
+    svg.querySelector(
+      '[data-sb-type="node"]'
+    );
+
+  if(firstNode){
+    svg.insertBefore(
+      group,
+      firstNode
+    );
+  }else{
+    svg.appendChild(
+      group
+    );
+  }
+
+  return true;
+}
+
+
+function sbStudioSyncEdgeElements(
+  root = $('sb_studio_canvas'),
+  model = S.diagramModel?.diagram_model
+){
+  if(
+    !root ||
+    !model
+  ){
+    return false;
+  }
+
+  const validIds =
+    new Set(
+      (
+        model.edges ||
+        []
+      ).map(
+        edge =>
+          edge.id
+      )
+    );
+
+  root
+    .querySelectorAll(
+      '[data-sb-type="edge"][data-sb-id]'
+    )
+    .forEach(group => {
+      if(
+        !validIds.has(
+          group.dataset.sbId
+        )
+      ){
+        group.remove();
+      }
+    });
+
+  (
+    model.edges ||
+    []
+  ).forEach(
+    (
+      edge,
+      index
+    ) => {
+      let group =
+        sbStudioFindSelectableGroup(
+          root,
+          'edge',
+          edge.id
+        );
+
+      if(!group){
+        sbStudioInsertEdgeElement(
+          edge,
+          root
+        );
+
+        group =
+          sbStudioFindSelectableGroup(
+            root,
+            'edge',
+            edge.id
+          );
+      }
+
+      if(group){
+        sbStudioUpdateEdgeElement(
+          edge,
+          index,
+          root,
+          model
+        );
+      }
+    }
+  );
+
+  return true;
+}
+
+
+function sbStudioCreateConnection(
+  sourceId,
+  targetId
+){
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(!model){
+    return false;
+  }
+
+  const source =
+    model.nodes.find(
+      node =>
+        node.id ===
+        sourceId
+    );
+
+  const target =
+    model.nodes.find(
+      node =>
+        node.id ===
+        targetId
+    );
+
+  if(
+    !source ||
+    !target ||
+    sourceId === targetId
+  ){
+    gMsg(
+      'warn',
+      'Selecciona dos cajas diferentes.'
+    );
+
+    return false;
+  }
+
+  const family =
+    sbStudioEdgeFamily(
+      source,
+      target
+    );
+
+  if(!family){
+    gMsg(
+      'warn',
+      (
+        'Conexión no válida: usa ' +
+        'Proveedor → Entrada → Actividad → ' +
+        'Salida → Cliente o Actividad → Actividad.'
+      )
+    );
+
+    return false;
+  }
+
+  if(
+    model.edges.some(
+      edge =>
+        edge.source === sourceId &&
+        edge.target === targetId
+    )
+  ){
+    gMsg(
+      'warn',
+      'Esa conexión ya existe.'
+    );
+
+    return false;
+  }
+
+  sbStudioCheckpoint();
+
+  const edge = {
+    id:
+      sbStudioNextEditableEdgeId(),
+
+    family,
+
+    source:
+      sourceId,
+
+    target:
+      targetId,
+
+    label:
+      ''
+  };
+
+  model.edges.push(
+    edge
+  );
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioInsertEdgeElement(
+    edge
+  );
+
+  sbStudioSelectElement(
+    'edge',
+    edge.id
+  );
+
+  sbStudioResetConnectMode();
+
+  sbStudioRefreshHistoryButtons();
+
+  return true;
+}
+
+
+function sbStudioDeleteSelectedEdge(){
+  const selected =
+    S.studio.selectedElement;
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(
+    !S.studio.editing ||
+    selected?.type !== 'edge' ||
+    !model
+  ){
+    gMsg(
+      'warn',
+      'Selecciona primero una conexión.'
+    );
+
+    return false;
+  }
+
+  const index =
+    model.edges.findIndex(
+      edge =>
+        edge.id ===
+        selected.id
+    );
+
+  if(index < 0){
+    return false;
+  }
+
+  sbStudioCheckpoint();
+
+  model.edges.splice(
+    index,
+    1
+  );
+
+  sbStudioFindSelectableGroup(
+    $('sb_studio_canvas'),
+    'edge',
+    selected.id
+  )?.remove();
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioClearSelection();
+
+  sbStudioRefreshHistoryButtons();
+
+  const status =
+    $('sb_studio_connection_status');
+
+  if(status){
+    status.textContent =
+      (
+        'Conexión eliminada. ' +
+        'Usa Conectar para crear la nueva relación.'
+      );
+  }
+
+  return true;
+}
+
+
+function sbStudioProjectDiagramToEditor(){
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(!model){
+    return {
+      ok:
+        false,
+
+      message:
+        'No existe un modelo editable.'
+    };
+  }
+
+  const nodes =
+    Array.isArray(
+      model.nodes
+    )
+      ? model.nodes
+      : [];
+
+  const edges =
+    Array.isArray(
+      model.edges
+    )
+      ? model.edges
+      : [];
+
+  const nodeById =
+    new Map(
+      nodes.map(
+        node => [
+          node.id,
+          node
+        ]
+      )
+    );
+
+  const incoming =
+    id =>
+      edges.filter(
+        edge =>
+          edge.target === id
+      );
+
+  const outgoing =
+    id =>
+      edges.filter(
+        edge =>
+          edge.source === id
+      );
+
+  const suppliers =
+    nodes.filter(
+      node =>
+        sbStudioNodeRole(node) ===
+        'supplier'
+    );
+
+  const inputs =
+    nodes.filter(
+      node =>
+        sbStudioNodeRole(node) ===
+        'input'
+    );
+
+  const outputs =
+    nodes.filter(
+      node =>
+        sbStudioNodeRole(node) ===
+        'output'
+    );
+
+  const customers =
+    nodes.filter(
+      node =>
+        sbStudioNodeRole(node) ===
+        'customer'
+    );
+
+  for(const node of suppliers){
+    if(
+      !outgoing(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.target
+            )
+          ) ===
+          'input'
+      )
+    ){
+      return {
+        ok:
+          false,
+
+        message:
+          (
+            `El proveedor "${node.label}" ` +
+            'debe quedar conectado a una entrada antes de guardar.'
+          )
+      };
+    }
+  }
+
+  for(const node of inputs){
+    const hasSupplier =
+      incoming(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.source
+            )
+          ) ===
+          'supplier'
+      );
+
+    const hasActivity =
+      outgoing(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.target
+            )
+          ) ===
+          'activity'
+      );
+
+    if(
+      !hasSupplier ||
+      !hasActivity
+    ){
+      return {
+        ok:
+          false,
+
+        message:
+          (
+            `La entrada "${node.label}" debe mantener ` +
+            'Proveedor → Entrada → Actividad.'
+          )
+      };
+    }
+  }
+
+  for(const node of outputs){
+    const hasActivity =
+      incoming(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.source
+            )
+          ) ===
+          'activity'
+      );
+
+    const hasCustomer =
+      outgoing(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.target
+            )
+          ) ===
+          'customer'
+      );
+
+    if(
+      !hasActivity ||
+      !hasCustomer
+    ){
+      return {
+        ok:
+          false,
+
+        message:
+          (
+            `La salida "${node.label}" debe mantener ` +
+            'Actividad → Salida → Cliente.'
+          )
+      };
+    }
+  }
+
+  for(const node of customers){
+    if(
+      !incoming(
+        node.id
+      ).some(
+        edge =>
+          sbStudioNodeRole(
+            nodeById.get(
+              edge.source
+            )
+          ) ===
+          'output'
+      )
+    ){
+      return {
+        ok:
+          false,
+
+        message:
+          (
+            `El cliente "${node.label}" ` +
+            'debe quedar conectado a una salida antes de guardar.'
+          )
+      };
+    }
+  }
+
+  const currentById =
+    new Map(
+      (
+        S.acts ||
+        []
+      )
+        .filter(
+          activity =>
+            normalizeText(
+              activity?.id ||
+              ''
+            )
+        )
+        .map(
+          activity => [
+            normalizeText(
+              activity.id
+            ),
+
+            activity
+          ]
+        )
+    );
+
+  const activityNodes =
+    nodes
+      .filter(
+        node =>
+          sbStudioNodeRole(
+            node
+          ) ===
+          'activity'
+      )
+      .slice()
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          (
+            Number(
+              a.sequence ||
+              0
+            ) -
+            Number(
+              b.sequence ||
+              0
+            )
+          ) ||
+          (
+            Number(
+              a.y ||
+              0
+            ) -
+            Number(
+              b.y ||
+              0
+            )
+          )
+      );
+
+  const nextActivities =
+    activityNodes.map(
+      (
+        node,
+        index
+      ) => {
+        const base =
+          currentById.get(
+            normalizeText(
+              node.id
+            )
+          ) ||
+          node.activity ||
+          {};
+
+        const lane =
+          model.lanes.find(
+            item =>
+              item.id ===
+              node.lane_id
+          );
+
+        return {
+          ...sbDeepClone(
+            base
+          ),
+
+          id:
+            node.id,
+
+          order:
+            index + 1,
+
+          sequence:
+            index + 1,
+
+          name:
+            normalizeText(
+              node.label
+            ),
+
+          type:
+            node.shape ===
+            'decision'
+              ? 'decision'
+              : 'operation',
+
+          actor:
+            normalizeText(
+              lane?.label ||
+              ''
+            ),
+
+          lane:
+            normalizeText(
+              lane?.label ||
+              ''
+            ),
+
+          previous:
+            [],
+
+          next:
+            [],
+
+          previous_relations:
+            [],
+
+          next_relations:
+            [],
+
+          ext_suppliers:
+            [],
+
+          ext_inputs:
+            [],
+
+          ext_outputs:
+            [],
+
+          ext_customers:
+            [],
+
+          input_relations:
+            [],
+
+          output_relations:
+            [],
+
+          entry_links:
+            [],
+
+          exit_links:
+            []
+        };
+      }
+    );
+
+  const activityById =
+    new Map(
+      nextActivities.map(
+        activity => [
+          activity.id,
+          activity
+        ]
+      )
+    );
+
+  edges.forEach(
+    edge => {
+      const source =
+        nodeById.get(
+          edge.source
+        );
+
+      const target =
+        nodeById.get(
+          edge.target
+        );
+
+      const from =
+        sbStudioNodeRole(
+          source
+        );
+
+      const to =
+        sbStudioNodeRole(
+          target
+        );
+
+      const label =
+        normalizeText(
+          edge.label ||
+          ''
+        );
+
+      if(
+        from === 'activity' &&
+        to === 'activity'
+      ){
+        const a =
+          activityById.get(
+            source.id
+          );
+
+        const b =
+          activityById.get(
+            target.id
+          );
+
+        if(
+          a &&
+          b
+        ){
+          a.next.push(
+            b.name
+          );
+
+          a.next_relations.push({
+            activity:
+              b.name,
+
+            label
+          });
+
+          b.previous.push(
+            a.name
+          );
+
+          b.previous_relations.push({
+            activity:
+              a.name,
+
+            label
+          });
+        }
+      }
+
+      if(
+        from === 'input' &&
+        to === 'activity'
+      ){
+        const activity =
+          activityById.get(
+            target.id
+          );
+
+        if(activity){
+          activity.ext_inputs.push(
+            source.label
+          );
+
+          activity.input_relations.push({
+            name:
+              source.label,
+
+            label
+          });
+
+          incoming(
+            source.id
+          ).forEach(
+            parent => {
+              const supplier =
+                nodeById.get(
+                  parent.source
+                );
+
+              if(
+                sbStudioNodeRole(
+                  supplier
+                ) ===
+                'supplier'
+              ){
+                activity.ext_suppliers.push(
+                  supplier.label
+                );
+
+                activity.entry_links.push({
+                  supplier:
+                    supplier.label,
+
+                  input:
+                    source.label
+                });
+              }
+            }
+          );
+        }
+      }
+
+      if(
+        from === 'activity' &&
+        to === 'output'
+      ){
+        const activity =
+          activityById.get(
+            source.id
+          );
+
+        if(activity){
+          activity.ext_outputs.push(
+            target.label
+          );
+
+          activity.output_relations.push({
+            name:
+              target.label,
+
+            label
+          });
+
+          outgoing(
+            target.id
+          ).forEach(
+            child => {
+              const customer =
+                nodeById.get(
+                  child.target
+                );
+
+              if(
+                sbStudioNodeRole(
+                  customer
+                ) ===
+                'customer'
+              ){
+                activity.ext_customers.push(
+                  customer.label
+                );
+
+                activity.exit_links.push({
+                  output:
+                    target.label,
+
+                  customer:
+                    customer.label
+                });
+              }
+            }
+          );
+        }
+      }
+    }
+  );
+
+  nextActivities.forEach(
+    activity => {
+      [
+        'previous',
+        'next',
+        'ext_suppliers',
+        'ext_inputs',
+        'ext_outputs',
+        'ext_customers'
+      ].forEach(
+        key =>
+          activity[key] =
+            uniqueStrings(
+              activity[key]
+            )
+      );
+    }
+  );
+
+  S.cats.suppliers =
+    edges
+      .map(
+        edge => {
+          const source =
+            nodeById.get(
+              edge.source
+            );
+
+          const target =
+            nodeById.get(
+              edge.target
+            );
+
+          return (
+            sbStudioNodeRole(
+              source
+            ) === 'supplier' &&
+            sbStudioNodeRole(
+              target
+            ) === 'input'
+          )
+            ? {
+                name:
+                  source.label,
+
+                input:
+                  target.label,
+
+                party_type:
+                  source.party_type ||
+                  'external',
+
+                process_code:
+                  source.process_code ||
+                  '',
+
+                process_name:
+                  source.label ||
+                  ''
+              }
+            : null;
+        }
+      )
+      .filter(
+        Boolean
+      );
+
+  S.cats.inputs =
+    uniqueStrings(
+      inputs.map(
+        node =>
+          node.label
+      )
+    ).map(
+      name => ({
+        name
+      })
+    );
+
+  S.cats.outputs =
+    uniqueStrings(
+      outputs.map(
+        node =>
+          node.label
+      )
+    ).map(
+      name => ({
+        name
+      })
+    );
+
+  S.cats.customers =
+    edges
+      .map(
+        edge => {
+          const source =
+            nodeById.get(
+              edge.source
+            );
+
+          const target =
+            nodeById.get(
+              edge.target
+            );
+
+          return (
+            sbStudioNodeRole(
+              source
+            ) === 'output' &&
+            sbStudioNodeRole(
+              target
+            ) === 'customer'
+          )
+            ? {
+                output:
+                  source.label,
+
+                name:
+                  target.label,
+
+                party_type:
+                  target.party_type ||
+                  'external',
+
+                process_code:
+                  target.process_code ||
+                  '',
+
+                process_name:
+                  target.label ||
+                  ''
+              }
+            : null;
+        }
+      )
+      .filter(
+        Boolean
+      );
+
+  S.cats.actors =
+    model.lanes
+      .filter(
+        lane =>
+          lane.kind ===
+          'actor'
+      )
+      .map(
+        lane => ({
+          id:
+            lane.id,
+
+          name:
+            lane.label
+        })
+      );
+
+  S.acts =
+    nextActivities;
+
+  [
+    'suppliers',
+    'inputs',
+    'outputs',
+    'customers',
+    'actors',
+    'documents'
+  ].forEach(
+    type =>
+      renderCatTable(
+        type
+      )
+  );
+
+  renderActsTable();
+
+  syncSelects();
+
+  const contract =
+    sbSyncEditorToContract();
+
+  return {
+    ok:
+      true,
+
+    contract
+  };
+}
+
+
+function sbStudioInitConnectionInteractions(){
+  const viewport =
+    $('sb_studio_viewport');
+
+  if(
+    !viewport ||
+    viewport.dataset
+      .studioConnectionReady ===
+      '1'
+  ){
+    return false;
+  }
+
+  viewport.dataset
+    .studioConnectionReady =
+      '1';
+
+  viewport.addEventListener(
+    'pointerdown',
+    event => {
+      if(
+        !S.studio.editing ||
+        !S.studio.connecting ||
+        event.button !== 0
+      ){
+        return;
+      }
+
+      const selectable =
+        sbStudioSelectableFromEvent(
+          event
+        );
+
+      if(
+        selectable
+          ?.dataset
+          .sbType !==
+        'node'
+      ){
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const nodeId =
+        selectable.dataset.sbId;
+
+      if(
+        !S.studio.connectionSourceId
+      ){
+        S.studio.connectionSourceId =
+          nodeId;
+
+        sbStudioSelectElement(
+          'node',
+          nodeId
+        );
+
+        const status =
+          $('sb_studio_connection_status');
+
+        if(status){
+          status.textContent =
+            (
+              `Origen: ${sbStudioNodeLabel(nodeId)}. ` +
+              'Selecciona el destino.'
+            );
+        }
+
+        return;
+      }
+
+      sbStudioCreateConnection(
+        S.studio.connectionSourceId,
+        nodeId
+      );
+    },
+    true
+  );
+
+  document.addEventListener(
+    'keydown',
+    event => {
+      if(
+        !S.studio.editing ||
+        event.key !== 'Delete'
+      ){
+        return;
+      }
+
+      if(
+        S.studio
+          .selectedElement
+          ?.type !==
+        'edge'
+      ){
+        return;
+      }
+
+      const target =
+        event.target;
+
+      if(
+        target instanceof HTMLElement &&
+        target.matches(
+          'input,textarea,select,[contenteditable="true"]'
+        )
+      ){
+        return;
+      }
+
+      event.preventDefault();
+
+      sbStudioDeleteSelectedEdge();
+    }
+  );
+
+  return true;
+}
+
+
 const SB_GPP_SYMBOLS = Object.freeze({
   colors: Object.freeze({
     orange:'#FBD7BB',
@@ -8679,7 +10178,6 @@ function sbStudioUpdateEdgeElement(
   return true;
 }
 
-
 function sbStudioApplyModelVisuals(
   root = $('sb_studio_canvas'),
   model = S.diagramModel?.diagram_model
@@ -8699,14 +10197,9 @@ function sbStudioApplyModelVisuals(
       )
   );
 
-  model.edges.forEach(
-    (edge,index) =>
-      sbStudioUpdateEdgeElement(
-        edge,
-        index,
-        root,
-        model
-      )
+  sbStudioSyncEdgeElements(
+    root,
+    model
   );
 
   root
@@ -26317,6 +27810,7 @@ if($('btn_studio_close_save')){
 
 sbInitStudioInteractions();
 sbStudioInitHistoryInteractions();
+sbStudioInitConnectionInteractions();
   
   // Output
 
