@@ -9526,24 +9526,77 @@ function sgmpGlobalApiEnabled(){
 }
 
 function sgmpStageUseApi(stageCode){
-  var runtime = (window.SGMP_STAGE_CONFIG_RUNTIME || {})[stageCode] || {};
+  var runtime =
+    (window.SGMP_STAGE_CONFIG_RUNTIME || {})[
+      stageCode
+    ] || {};
 
-  if(runtime.use_api !== undefined || runtime.useApi !== undefined || runtime.api_enabled !== undefined || runtime.apiEnabled !== undefined){
-    return sgmpYes(runtime.use_api || runtime.useApi || runtime.api_enabled || runtime.apiEnabled);
+  if(
+    runtime.use_api !== undefined ||
+    runtime.useApi !== undefined ||
+    runtime.api_enabled !== undefined ||
+    runtime.apiEnabled !== undefined
+  ){
+    return sgmpYes(
+      runtime.use_api ||
+      runtime.useApi ||
+      runtime.api_enabled ||
+      runtime.apiEnabled
+    );
   }
 
-  var mode = runtime.execution_mode || runtime.executionMode || runtime.mode || runtime.DEFAULT_EXECUTION_MODE;
+  var mode =
+    runtime.execution_mode ||
+    runtime.executionMode ||
+    runtime.mode ||
+    runtime.DEFAULT_EXECUTION_MODE;
 
-  if(String(mode || '').trim().toUpperCase() === 'HYBRID') return true;
-  if(String(mode || '').trim().toUpperCase() === 'API') return true;
-  if(String(mode || '').trim().toUpperCase() === 'AUTO') return true;
+  var normalizedMode =
+    String(mode || '')
+      .trim()
+      .toUpperCase();
 
-  var meta = SGMP_STAGE_CONFIG[stageCode] || SGMP_PROMPT_META[stageCode] || {};
-  var value = meta.use_api || meta.useApi || meta.api_enabled || meta.apiEnabled;
+  if(
+    normalizedMode === 'HYBRID' ||
+    normalizedMode === 'API' ||
+    normalizedMode === 'AUTO'
+  ){
+    return true;
+  }
 
-  if(value !== undefined) return sgmpYes(value);
+  var meta =
+    SGMP_STAGE_CONFIG[stageCode] ||
+    SGMP_PROMPT_META[stageCode] ||
+    {};
 
-  if(['lmp_brief','lmp_analysis','lmp_sb_contract'].includes(stageCode)){
+  var value =
+    meta.use_api ||
+    meta.useApi ||
+    meta.api_enabled ||
+    meta.apiEnabled;
+
+  if(value !== undefined){
+    return sgmpYes(value);
+  }
+
+  /*
+   * Fallback únicamente para etapas IA
+   * vigentes del LMP.
+   *
+   * lmp_sb_contract se conserva por ahora
+   * como contrato técnico independiente.
+   */
+  if(
+    [
+      'prompt_A',
+      'lmp_analysis',
+      'lmp_sb_contract',
+      'lmp_tobe_consolidation',
+      'lmp_result_executive',
+      'lmp_result_technical',
+      'lmp_result_implementation'
+    ].includes(stageCode)
+  ){
     return true;
   }
 
@@ -12338,30 +12391,47 @@ function buildMaster(){
 
 function saveMasterAndContinue(){
   try{
-    if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
-      const rawText = qs('promptAResponseEditor')?.value.trim() || '';
+
+    if(
+      !(
+        state.asIsProcess &&
+        state.asIsProcess.as_is_process
+      )
+    ){
+      const rawText =
+        qs('promptAResponseEditor')
+          ?.value
+          ?.trim() || '';
 
       if(rawText){
-        processBriefResponse();
+        processPromptAResponse();
       }
     }
 
-    if(!(state.asIsProcess && state.asIsProcess.as_is_process)){
+    if(
+      !(
+        state.asIsProcess &&
+        state.asIsProcess.as_is_process
+      )
+    ){
       showMsg(
         'cargaMsg',
         'warn',
         'Primero pega, valida y aplica el JSON generado por Prompt A. El AS-IS solo puede cargarse desde as_is_process.'
       );
+
       return;
     }
 
     applyStructuredAsIsToLmp();
 
   }catch(error){
+
     showMsg(
       'cargaMsg',
       'err',
-      'No fue posible continuar hacia AS-IS. Detalle: ' + error.message
+      'No fue posible continuar hacia AS-IS. Detalle: ' +
+      error.message
     );
   }
 }
@@ -21480,9 +21550,6 @@ state.briefReview = {
   }
 }
 
-function processBriefResponse(){
-  return processPromptAResponse();
-}
   
 function applyStructuredAsIsToLmp(){
   try{
