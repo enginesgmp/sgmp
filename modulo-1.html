@@ -9426,25 +9426,97 @@ async function sgmpFetchJson(url){
 }
 
 async function sgmpLoadRuntimeConfig(){
-  window.SGMP_GLOBAL_CONFIG = window.SGMP_GLOBAL_CONFIG || {};
-  window.SGMP_STAGE_CONFIG_RUNTIME = window.SGMP_STAGE_CONFIG_RUNTIME || {};
+  window.SGMP_GLOBAL_CONFIG =
+    window.SGMP_GLOBAL_CONFIG || {};
+
+  window.SGMP_STAGE_CONFIG_RUNTIME =
+    window.SGMP_STAGE_CONFIG_RUNTIME || {};
+
   try{
-    const globalData = await sgmpFetchJson(SGMP_API + '?action=get_global');
-    window.SGMP_GLOBAL_CONFIG = globalData || {};
+
+    const globalData =
+      await sgmpFetchJson(
+        SGMP_API +
+        '?action=get_global'
+      );
+
+    window.SGMP_GLOBAL_CONFIG =
+      globalData || {};
+
   }catch(error){
-    console.warn('No fue posible cargar CONFIG_GLOBAL SGMP.', error);
+
+    console.warn(
+      'No fue posible cargar CONFIG_GLOBAL SGMP.',
+      error
+    );
   }
-  const stages = ['prompt_A','lmp_analysis','lmp_sb_contract'];
-  await Promise.all(stages.map(async function(stageCode){
-    try{
-      const data = await sgmpFetchJson(SGMP_API + '?action=get_execution_mode&module_code=LMP&stage_code=' + encodeURIComponent(stageCode));
-      window.SGMP_STAGE_CONFIG_RUNTIME[stageCode] = data || {};
-    }catch(error){
-      console.warn('No fue posible cargar EXECUTION_MODE para ' + stageCode + '.', error);
-      window.SGMP_STAGE_CONFIG_RUNTIME[stageCode] = window.SGMP_STAGE_CONFIG_RUNTIME[stageCode] || {};
-    }
-  }));
-  return { global: window.SGMP_GLOBAL_CONFIG, stages: window.SGMP_STAGE_CONFIG_RUNTIME };
+
+
+  const stages = [
+    'prompt_A',
+    'lmp_analysis',
+    'lmp_sb_contract',
+
+    'lmp_tobe_consolidation',
+    'lmp_result_executive',
+    'lmp_result_technical',
+    'lmp_result_implementation'
+  ];
+
+
+  await Promise.all(
+    stages.map(
+      async function(stageCode){
+
+        try{
+
+          const data =
+            await sgmpFetchJson(
+              SGMP_API +
+              '?action=get_execution_mode' +
+              '&module_code=LMP' +
+              '&stage_code=' +
+              encodeURIComponent(
+                stageCode
+              )
+            );
+
+          window
+            .SGMP_STAGE_CONFIG_RUNTIME[
+              stageCode
+            ] =
+              data || {};
+
+        }catch(error){
+
+          console.warn(
+            'No fue posible cargar EXECUTION_MODE para ' +
+            stageCode +
+            '.',
+            error
+          );
+
+          window
+            .SGMP_STAGE_CONFIG_RUNTIME[
+              stageCode
+            ] =
+              window
+                .SGMP_STAGE_CONFIG_RUNTIME[
+                  stageCode
+                ] || {};
+        }
+      }
+    )
+  );
+
+
+  return {
+    global:
+      window.SGMP_GLOBAL_CONFIG,
+
+    stages:
+      window.SGMP_STAGE_CONFIG_RUNTIME
+  };
 }
 
 function sgmpGlobalApiEnabled(){
@@ -11439,10 +11511,61 @@ function lmpCreateImportBaseState_(){
     },
 
     tobe: {
-      improvements: []
+
+      /*
+       * Compatibilidad temporal.
+       * Se retirará cuando eliminemos completamente
+       * el motor TO-BE legacy.
+       */
+      improvements: [],
+
+      construction: {
+        status: 'DRAFT',
+        reviews: [],
+        savedAt: null,
+        completedAt: null
+      },
+
+      consolidation: {
+        status: 'PENDING',
+        transcriptText: '',
+        sourceSnapshot: null,
+        rawResponse: '',
+        masterPack: null,
+        generatedAt: null
+      }
     },
 
     results: {
+
+      executive: {
+        status: 'PENDING',
+        raw: '',
+        data: null,
+        html: '',
+        generatedAt: null
+      },
+
+      technical: {
+        status: 'PENDING',
+        raw: '',
+        data: null,
+        html: '',
+        generatedAt: null
+      },
+
+      implementation: {
+        status: 'PENDING',
+        raw: '',
+        data: null,
+        html: '',
+        generatedAt: null
+      },
+
+      /*
+       * Compatibilidad temporal con resultados
+       * y outputs existentes.
+       */
       sbJson: null,
       sbValidation: null,
       executiveHtml: '',
@@ -11454,8 +11577,6 @@ function lmpCreateImportBaseState_(){
     }
   };
 }
-
-
 function lmpSanitizeImportedAnalysisStages_(analysisStages){
   const source =
     analysisStages &&
@@ -11589,10 +11710,58 @@ function lmpClearDerivedProcessState_(message){
   };
 
   state.tobe = {
-    improvements: []
+
+    /*
+     * Compatibilidad temporal con lógica legacy.
+     */
+    improvements: [],
+
+    construction: {
+      status: 'DRAFT',
+      reviews: [],
+      savedAt: null,
+      completedAt: null
+    },
+
+    consolidation: {
+      status: 'PENDING',
+      transcriptText: '',
+      sourceSnapshot: null,
+      rawResponse: '',
+      masterPack: null,
+      generatedAt: null
+    }
   };
 
   state.results = {
+
+    executive: {
+      status: 'PENDING',
+      raw: '',
+      data: null,
+      html: '',
+      generatedAt: null
+    },
+
+    technical: {
+      status: 'PENDING',
+      raw: '',
+      data: null,
+      html: '',
+      generatedAt: null
+    },
+
+    implementation: {
+      status: 'PENDING',
+      raw: '',
+      data: null,
+      html: '',
+      generatedAt: null
+    },
+
+    /*
+     * Compatibilidad temporal.
+     */
     sbJson: null,
     sbValidation: null,
     executiveHtml: '',
@@ -11620,7 +11789,9 @@ function lmpClearDerivedProcessState_(message){
     'briefPromptEditor',
     'promptAResponseEditor'
   ].forEach(function(id){
-    const node = qs(id);
+
+    const node =
+      qs(id);
 
     if(node){
       node.value = '';
@@ -11629,13 +11800,18 @@ function lmpClearDerivedProcessState_(message){
 
   LMP_OFFICIAL_ANALYSIS_STAGES_
     .forEach(function(stage){
+
       [
         'analysisPrompt_',
         'analysisResponse_',
         'analysisResult_'
       ].forEach(function(prefix){
+
         const node =
-          qs(prefix + stage);
+          qs(
+            prefix +
+            stage
+          );
 
         if(node){
           node.value = '';
@@ -11654,7 +11830,8 @@ function lmpClearDerivedProcessState_(message){
     });
 
   if(
-    typeof resetPromptAValidationState === 'function'
+    typeof resetPromptAValidationState ===
+      'function'
   ){
     resetPromptAValidationState(
       message ||
@@ -11663,25 +11840,29 @@ function lmpClearDerivedProcessState_(message){
   }
 
   if(
-    typeof renderAsIsActivities === 'function'
+    typeof renderAsIsActivities ===
+      'function'
   ){
     renderAsIsActivities();
   }
 
   if(
-    typeof renderAnalysisFromState === 'function'
+    typeof renderAnalysisFromState ===
+      'function'
   ){
     renderAnalysisFromState();
   }
 
   if(
-    typeof renderImprovements === 'function'
+    typeof renderToBeConstruction_ ===
+      'function'
   ){
-    renderImprovements();
+    renderToBeConstruction_();
   }
 
   if(
-    typeof updateTopStatus === 'function'
+    typeof updateTopStatus ===
+      'function'
   ){
     updateTopStatus();
   }
