@@ -2549,8 +2549,13 @@ body{font-size:14px !important}
   cursor:pointer;
 }
 
+.sb-studio-canvas.is-editing .sb-svg-node{
+  cursor:move;
+}
+
 .sb-studio-canvas .sb-svg-node > rect,
 .sb-studio-canvas .sb-svg-node > polygon,
+.sb-studio-canvas .sb-svg-node > path,
 .sb-studio-canvas .sb-svg-lane > rect,
 .sb-studio-canvas .sb-svg-edge > path{
   transition:
@@ -2561,7 +2566,8 @@ body{font-size:14px !important}
 }
 
 .sb-studio-canvas .sb-svg-node:hover > rect,
-.sb-studio-canvas .sb-svg-node:hover > polygon{
+.sb-studio-canvas .sb-svg-node:hover > polygon,
+.sb-studio-canvas .sb-svg-node:hover > path{
   stroke:#00AEEF !important;
   stroke-width:2.8 !important;
   filter:drop-shadow(0 3px 5px rgba(0,174,239,.24));
@@ -2586,7 +2592,8 @@ body{font-size:14px !important}
 }
 
 .sb-studio-canvas .sb-svg-node.is-selected > rect,
-.sb-studio-canvas .sb-svg-node.is-selected > polygon{
+.sb-studio-canvas .sb-svg-node.is-selected > polygon,
+.sb-studio-canvas .sb-svg-node.is-selected > path{
   stroke:#00C2FF !important;
   stroke-width:3.5 !important;
   filter:drop-shadow(0 4px 7px rgba(0,194,255,.35));
@@ -7012,37 +7019,81 @@ function sbStudioEnterDiagramMode(){
 }
 
 function sbStudioCloseAndSave(options = {}){
-  if(!S.studio.editing) return false;
-
-  if(!S.diagramModel){
-    gMsg('err','No existe un modelo visual para guardar.');
+  if(!S.studio.editing){
     return false;
   }
 
-  // El modelo visual se guarda independientemente del XML provisional.
-  S.optimizedDiagramModel = sbDeepClone(S.diagramModel);
-  S.optimization.status = 'saved';
-  S.studio.saved = true;
-  S.studio.editing = false;
-  S.studio.editSnapshot = null;
-  S.studio.selectedElement = null;
-  S.studio.nodeDrag = null;
+  const host =
+    $('sb_studio_fullscreen_host');
 
-  sbStudioSetEditingUI(false);
-
-  if(typeof sbStudioSyncVisualControls === 'function'){
-    sbStudioSyncVisualControls();
+  /*
+   * El listener actual de fullscreen utiliza
+   * skipFullscreenExit:true cuando el usuario sale
+   * directamente con Esc. En ese caso no se guarda:
+   * se restaura la copia de seguridad de la sesión.
+   */
+  if(
+    options.skipFullscreenExit &&
+    document.fullscreenElement !== host
+  ){
+    return sbStudioCancelEditing({
+      skipFullscreenExit:true
+    });
   }
 
-  const host = $('sb_studio_fullscreen_host');
+  if(!S.diagramModel){
+    gMsg(
+      'err',
+      'No existe un modelo visual para guardar.'
+    );
+
+    return false;
+  }
+
+  S.optimizedDiagramModel =
+    sbDeepClone(
+      S.diagramModel
+    );
+
+  S.optimization.status =
+    'saved';
+
+  S.studio.saved =
+    true;
+
+  S.studio.editing =
+    false;
+
+  S.studio.editSnapshot =
+    null;
+
+  S.studio.selectedElement =
+    null;
+
+  S.studio.nodeDrag =
+    null;
+
+  S.studio.dragging =
+    false;
+
+  S.studio.pointerId =
+    null;
+
+  sbStudioSetEditingUI(
+    false
+  );
+
+  sbStudioSyncVisualControls();
 
   if(
     !options.skipFullscreenExit &&
     document.fullscreenElement === host
   ){
-    S.studio.fullscreenExitInProgress = true;
+    S.studio.fullscreenExitInProgress =
+      true;
 
-    document.exitFullscreen()
+    document
+      .exitFullscreen()
       .catch(error =>
         console.warn(
           'No fue posible cerrar la pantalla completa:',
@@ -7050,16 +7101,131 @@ function sbStudioCloseAndSave(options = {}){
         )
       )
       .finally(() => {
-        S.studio.fullscreenExitInProgress = false;
-        requestAnimationFrame(sbStudioResetPreviewCamera);
+        S.studio.fullscreenExitInProgress =
+          false;
+
+        requestAnimationFrame(
+          sbStudioResetPreviewCamera
+        );
       });
   }else{
-    requestAnimationFrame(sbStudioResetPreviewCamera);
+    requestAnimationFrame(
+      sbStudioResetPreviewCamera
+    );
   }
 
   gMsg(
     'ok',
-    'Diagrama guardado. El modelo visual quedó listo para la futura salida SGMP; el XML se conserva solo como compatibilidad provisional.'
+    'Diagrama guardado. El modelo visual quedó confirmado; el XML se conserva solo como compatibilidad provisional.'
+  );
+
+  return true;
+}
+
+
+function sbStudioCancelEditing(options = {}){
+  if(!S.studio.editing){
+    return false;
+  }
+
+  const snapshot =
+    S.studio.editSnapshot ||
+    S.optimizedDiagramModel;
+
+  if(snapshot){
+    S.diagramModel =
+      sbDeepClone(
+        snapshot
+      );
+  }
+
+  S.studio.editing =
+    false;
+
+  S.studio.saved =
+    Boolean(
+      S.optimizedDiagramModel
+    );
+
+  S.studio.editSnapshot =
+    null;
+
+  S.studio.selectedElement =
+    null;
+
+  S.studio.nodeDrag =
+    null;
+
+  S.studio.dragging =
+    false;
+
+  S.studio.pointerId =
+    null;
+
+  S.optimization.status =
+    S.optimizedDiagramModel
+      ? 'saved'
+      : 'idle';
+
+  const canvas =
+    $('sb_studio_canvas');
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(
+    canvas &&
+    model
+  ){
+    sbStudioApplyModelVisuals(
+      canvas,
+      model
+    );
+  }
+
+  sbStudioSetEditingUI(
+    false
+  );
+
+  sbStudioSyncVisualControls();
+  sbStudioApplySelectionHighlight();
+
+  const host =
+    $('sb_studio_fullscreen_host');
+
+  if(
+    !options.skipFullscreenExit &&
+    document.fullscreenElement === host
+  ){
+    S.studio.fullscreenExitInProgress =
+      true;
+
+    document
+      .exitFullscreen()
+      .catch(error =>
+        console.warn(
+          'No fue posible cerrar la pantalla completa:',
+          error
+        )
+      )
+      .finally(() => {
+        S.studio.fullscreenExitInProgress =
+          false;
+
+        requestAnimationFrame(
+          sbStudioResetPreviewCamera
+        );
+      });
+  }else{
+    requestAnimationFrame(
+      sbStudioResetPreviewCamera
+    );
+  }
+
+  gMsg(
+    'info',
+    'Cambios de diagramación descartados. Se restauró el último estado confirmado.'
   );
 
   return true;
@@ -25703,6 +25869,16 @@ if($('btn_enter_diagram_mode')){
     .addEventListener(
       'click',
       sbStudioEnterDiagramMode
+    );
+}
+
+if($('btn_studio_cancel')){
+  $('btn_studio_cancel')
+    .addEventListener(
+      'click',
+
+      () =>
+        sbStudioCancelEditing()
     );
 }
 
