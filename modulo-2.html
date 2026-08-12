@@ -3758,11 +3758,24 @@ body{font-size:14px !important}
           class="sb-studio-edit-bar"
           hidden
         >
-          <div>
-            <strong>Modo de diagramación</strong>
-            <small>Selecciona y arrastra los nodos. La simbología visual no modifica la semántica del proceso.</small>
+          <div style="display:flex;flex-direction:column;gap:8px;min-width:0;flex:1">
+            <div>
+              <strong>Modo de diagramación</strong>
+              <small>
+                Arrastra nodos para ajustar la geometría. Deshacer y rehacer actúan sobre la sesión actual;
+                Cancelar descarta la sesión y Cerrar y guardar confirma el modelo visual.
+              </small>
+            </div>
 
-            <div id="sb_studio_visual_tools" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <div id="sb_studio_visual_tools" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
+              <button id="btn_studio_undo" type="button" disabled title="Deshacer último cambio">
+                Deshacer
+              </button>
+
+              <button id="btn_studio_redo" type="button" disabled title="Rehacer último cambio">
+                Rehacer
+              </button>
+
               <label style="display:flex;flex-direction:column;gap:3px;min-width:190px;text-transform:none">
                 Simbología
                 <select id="sb_studio_symbol_profile" onchange="sbStudioApplyVisualControls()" disabled>
@@ -3797,11 +3810,16 @@ body{font-size:14px !important}
             </div>
           </div>
 
-          <button class="ok sb-studio-close-save" id="btn_studio_close_save" type="button">
-            Cerrar y guardar
-          </button>
-        </header>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+            <button id="btn_studio_cancel" type="button">
+              Cancelar
+            </button>
 
+            <button class="ok sb-studio-close-save" id="btn_studio_close_save" type="button">
+              Cerrar y guardar
+            </button>
+          </div>
+        </header>
 
         <div
           id="sb_studio_viewport"
@@ -8873,6 +8891,366 @@ function sbStudioSyncVisualControls(){
   return true;
 }
 
+function sbStudioEnsureHistorySession(){
+  if(
+    S.studio.historySessionSource !==
+    S.studio.editSnapshot
+  ){
+    S.studio.history = [];
+    S.studio.future = [];
+    S.studio.historyPointerDraft = null;
+
+    S.studio.historySessionSource =
+      S.studio.editSnapshot;
+  }
+
+  return true;
+}
+
+
+function sbStudioRefreshHistoryButtons(){
+  sbStudioEnsureHistorySession();
+
+  const undo =
+    $('btn_studio_undo');
+
+  const redo =
+    $('btn_studio_redo');
+
+  if(undo){
+    undo.disabled =
+      !S.studio.editing ||
+      !S.studio.history.length;
+  }
+
+  if(redo){
+    redo.disabled =
+      !S.studio.editing ||
+      !S.studio.future.length;
+  }
+
+  return true;
+}
+
+
+function sbStudioPushHistorySnapshot(
+  snapshot
+){
+  if(
+    !S.studio.editing ||
+    !snapshot
+  ){
+    return false;
+  }
+
+  sbStudioEnsureHistorySession();
+
+  const previous =
+    S.studio.history[
+      S.studio.history.length - 1
+    ];
+
+  if(
+    previous &&
+    JSON.stringify(previous) ===
+      JSON.stringify(snapshot)
+  ){
+    return true;
+  }
+
+  S.studio.history.push(
+    sbDeepClone(snapshot)
+  );
+
+  if(S.studio.history.length > 80){
+    S.studio.history.shift();
+  }
+
+  S.studio.future = [];
+
+  sbStudioRefreshHistoryButtons();
+
+  return true;
+}
+
+
+function sbStudioCheckpoint(){
+  if(
+    !S.studio.editing ||
+    !S.diagramModel
+  ){
+    return false;
+  }
+
+  return sbStudioPushHistorySnapshot(
+    S.diagramModel
+  );
+}
+
+
+function sbStudioRestoreHistorySnapshot(
+  snapshot
+){
+  if(!snapshot){
+    return false;
+  }
+
+  S.diagramModel =
+    sbDeepClone(snapshot);
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  S.studio.selectedElement =
+    null;
+
+  const canvas =
+    $('sb_studio_canvas');
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(
+    canvas &&
+    model
+  ){
+    sbStudioApplyModelVisuals(
+      canvas,
+      model
+    );
+  }
+
+  sbStudioApplySelectionHighlight();
+  sbStudioSyncVisualControls();
+  sbStudioRefreshHistoryButtons();
+
+  return true;
+}
+
+
+function sbStudioUndo(){
+  sbStudioEnsureHistorySession();
+
+  if(
+    !S.studio.editing ||
+    !S.studio.history.length ||
+    !S.diagramModel
+  ){
+    return false;
+  }
+
+  S.studio.future.push(
+    sbDeepClone(
+      S.diagramModel
+    )
+  );
+
+  return sbStudioRestoreHistorySnapshot(
+    S.studio.history.pop()
+  );
+}
+
+
+function sbStudioRedo(){
+  sbStudioEnsureHistorySession();
+
+  if(
+    !S.studio.editing ||
+    !S.studio.future.length ||
+    !S.diagramModel
+  ){
+    return false;
+  }
+
+  S.studio.history.push(
+    sbDeepClone(
+      S.diagramModel
+    )
+  );
+
+  return sbStudioRestoreHistorySnapshot(
+    S.studio.future.pop()
+  );
+}
+
+
+function sbStudioInitHistoryInteractions(){
+  const viewport =
+    $('sb_studio_viewport');
+
+  if(
+    !viewport ||
+    viewport.dataset.studioHistoryReady === '1'
+  ){
+    return false;
+  }
+
+  viewport.dataset.studioHistoryReady =
+    '1';
+
+  viewport.addEventListener(
+    'pointerdown',
+    event => {
+      if(
+        !S.studio.editing ||
+        event.button !== 0
+      ){
+        return;
+      }
+
+      sbStudioEnsureHistorySession();
+
+      const selectable =
+        sbStudioSelectableFromEvent(
+          event
+        );
+
+      if(
+        selectable?.dataset.sbType !==
+        'node'
+      ){
+        S.studio.historyPointerDraft =
+          null;
+
+        return;
+      }
+
+      S.studio.historyPointerDraft = {
+        pointerId:event.pointerId,
+        startX:event.clientX,
+        startY:event.clientY,
+        captured:false,
+        snapshot:sbDeepClone(
+          S.diagramModel
+        )
+      };
+    },
+    true
+  );
+
+  viewport.addEventListener(
+    'pointermove',
+    event => {
+      const draft =
+        S.studio.historyPointerDraft;
+
+      if(
+        !draft ||
+        draft.pointerId !==
+          event.pointerId ||
+        draft.captured
+      ){
+        return;
+      }
+
+      if(
+        Math.abs(
+          event.clientX - draft.startX
+        ) <= 3 &&
+        Math.abs(
+          event.clientY - draft.startY
+        ) <= 3
+      ){
+        return;
+      }
+
+      sbStudioPushHistorySnapshot(
+        draft.snapshot
+      );
+
+      draft.captured =
+        true;
+    },
+    true
+  );
+
+  const clearPointerDraft =
+    event => {
+      const draft =
+        S.studio.historyPointerDraft;
+
+      if(
+        draft &&
+        draft.pointerId ===
+          event.pointerId
+      ){
+        S.studio.historyPointerDraft =
+          null;
+      }
+    };
+
+  viewport.addEventListener(
+    'pointerup',
+    clearPointerDraft,
+    true
+  );
+
+  viewport.addEventListener(
+    'pointercancel',
+    clearPointerDraft,
+    true
+  );
+
+  document.addEventListener(
+    'keydown',
+    event => {
+      if(!S.studio.editing){
+        return;
+      }
+
+      const target =
+        event.target;
+
+      const isField =
+        target instanceof HTMLElement &&
+        target.matches(
+          'input, textarea, select, [contenteditable="true"]'
+        );
+
+      if(isField){
+        return;
+      }
+
+      const modifier =
+        event.ctrlKey ||
+        event.metaKey;
+
+      if(
+        modifier &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 'z'
+      ){
+        event.preventDefault();
+
+        sbStudioUndo();
+
+        return;
+      }
+
+      if(
+        modifier &&
+        (
+          event.key.toLowerCase() === 'y' ||
+          (
+            event.shiftKey &&
+            event.key.toLowerCase() === 'z'
+          )
+        )
+      ){
+        event.preventDefault();
+
+        sbStudioRedo();
+      }
+    }
+  );
+
+  return true;
+}
+
 
 function sbStudioApplyVisualControls(){
   const selected =
@@ -8905,6 +9283,25 @@ function sbStudioApplyVisualControls(){
       ?.value ||
     'auto';
 
+  const currentSymbol =
+    node.visual_style
+      ?.symbol_profile ||
+    'auto';
+
+  const currentColor =
+    node.visual_style
+      ?.color_role ||
+    'auto';
+
+  if(
+    symbol === currentSymbol &&
+    color === currentColor
+  ){
+    return true;
+  }
+
+  sbStudioCheckpoint();
+
   if(
     symbol === 'auto' &&
     color === 'auto'
@@ -8927,6 +9324,7 @@ function sbStudioApplyVisualControls(){
   sbStudioApplySelectionHighlight();
   sbStudioUpdateConnectedEdges(node.id);
   sbStudioSyncVisualControls();
+  sbStudioRefreshHistoryButtons();
 
   return true;
 }
@@ -8937,6 +9335,7 @@ function sbStudioResetSelectedVisualStyle(){
     S.studio.selectedElement;
 
   if(
+    !S.studio.editing ||
     selected?.type !== 'node'
   ){
     return false;
@@ -8952,6 +9351,12 @@ function sbStudioResetSelectedVisualStyle(){
     return false;
   }
 
+  if(!node.visual_style){
+    return true;
+  }
+
+  sbStudioCheckpoint();
+
   delete node.visual_style;
 
   S.studio.saved =
@@ -8964,6 +9369,7 @@ function sbStudioResetSelectedVisualStyle(){
   sbStudioApplySelectionHighlight();
   sbStudioUpdateConnectedEdges(node.id);
   sbStudioSyncVisualControls();
+  sbStudioRefreshHistoryButtons();
 
   return true;
 }
@@ -25872,6 +26278,22 @@ if($('btn_enter_diagram_mode')){
     );
 }
 
+if($('btn_studio_undo')){
+  $('btn_studio_undo')
+    .addEventListener(
+      'click',
+      sbStudioUndo
+    );
+}
+
+if($('btn_studio_redo')){
+  $('btn_studio_redo')
+    .addEventListener(
+      'click',
+      sbStudioRedo
+    );
+}
+
 if($('btn_studio_cancel')){
   $('btn_studio_cancel')
     .addEventListener(
@@ -25881,6 +26303,7 @@ if($('btn_studio_cancel')){
         sbStudioCancelEditing()
     );
 }
+
 
 if($('btn_studio_close_save')){
   $('btn_studio_close_save')
@@ -25893,6 +26316,7 @@ if($('btn_studio_close_save')){
 }
 
 sbInitStudioInteractions();
+sbStudioInitHistoryInteractions();
   
   // Output
 
