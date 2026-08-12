@@ -3745,6 +3745,7 @@ body{font-size:14px !important}
         id="sb_studio_fullscreen_host"
         class="sb-studio-canvas-card"
       >
+        
         <header
           id="sb_studio_edit_bar"
           class="sb-studio-edit-bar"
@@ -3752,17 +3753,44 @@ body{font-size:14px !important}
         >
           <div>
             <strong>Modo de diagramación</strong>
+            <small>Selecciona y arrastra los nodos. La simbología visual no modifica la semántica del proceso.</small>
 
-            <small>
-              Los cambios se confirman al cerrar y guardar.
-            </small>
+            <div id="sb_studio_visual_tools" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <label style="display:flex;flex-direction:column;gap:3px;min-width:190px;text-transform:none">
+                Simbología
+                <select id="sb_studio_symbol_profile" onchange="sbStudioApplyVisualControls()" disabled>
+                  <option value="auto">Automático GPP</option>
+                  <option value="activity">Actividad</option>
+                  <option value="physical_io">Entrada / salida física</option>
+                  <option value="decision">Decisión</option>
+                  <option value="related_process">Proceso relacionado</option>
+                  <option value="document">Documento</option>
+                  <option value="system_response">Respuesta de sistema</option>
+                  <option value="external_entity">Ente externo</option>
+                </select>
+              </label>
+
+              <label style="display:flex;flex-direction:column;gap:3px;min-width:145px;text-transform:none">
+                Color
+                <select id="sb_studio_color_role" onchange="sbStudioApplyVisualControls()" disabled>
+                  <option value="auto">Automático GPP</option>
+                  <option value="orange">Anaranjado</option>
+                  <option value="gray">Gris</option>
+                  <option value="white">Blanco</option>
+                </select>
+              </label>
+
+              <button id="btn_studio_reset_visual" type="button" onclick="sbStudioResetSelectedVisualStyle()" disabled>
+                Restablecer GPP
+              </button>
+
+              <span id="sb_studio_visual_status" style="min-height:38px;display:inline-flex;align-items:center;color:#5B6F8A;font-size:.76rem;font-weight:750">
+                Selecciona un nodo.
+              </span>
+            </div>
           </div>
 
-          <button
-            class="ok sb-studio-close-save"
-            id="btn_studio_close_save"
-            type="button"
-          >
+          <button class="ok sb-studio-close-save" id="btn_studio_close_save" type="button">
             Cerrar y guardar
           </button>
         </header>
@@ -6983,70 +7011,38 @@ function sbStudioEnterDiagramMode(){
   return true;
 }
 
+function sbStudioCloseAndSave(options = {}){
+  if(!S.studio.editing) return false;
 
-function sbStudioCloseAndSave(
-  options = {}
-){
-  if(!S.studio.editing){
+  if(!S.diagramModel){
+    gMsg('err','No existe un modelo visual para guardar.');
     return false;
   }
 
-  /*
-   * Punto único de confirmación de cambios.
-   */
-  S.optimizedDiagramModel =
-    sbDeepClone(
-      S.diagramModel
-    );
+  // El modelo visual se guarda independientemente del XML provisional.
+  S.optimizedDiagramModel = sbDeepClone(S.diagramModel);
+  S.optimization.status = 'saved';
+  S.studio.saved = true;
+  S.studio.editing = false;
+  S.studio.editSnapshot = null;
+  S.studio.selectedElement = null;
+  S.studio.nodeDrag = null;
 
-  const outputReady =
-    finalizeSBBuiltDiagram({
-      stayInStudio:
-        true,
+  sbStudioSetEditingUI(false);
 
-      silent:
-        true
-    });
-
-  /*
-   * Cerrar y guardar actúa como filtro:
-   * no sale del editor cuando la validación falla.
-   */
-  if(!outputReady){
-    gMsg(
-      'err',
-      'No fue posible guardar porque el diagrama no superó la validación.'
-    );
-
-    return false;
+  if(typeof sbStudioSyncVisualControls === 'function'){
+    sbStudioSyncVisualControls();
   }
 
-  S.studio.saved =
-    true;
-
-  S.studio.editing =
-    false;
-
-  S.studio.editSnapshot =
-    null;
-
-  sbStudioSetEditingUI(
-    false
-  );
-
-  const host =
-    $('sb_studio_fullscreen_host');
+  const host = $('sb_studio_fullscreen_host');
 
   if(
     !options.skipFullscreenExit &&
-    document.fullscreenElement ===
-      host
+    document.fullscreenElement === host
   ){
-    S.studio.fullscreenExitInProgress =
-      true;
+    S.studio.fullscreenExitInProgress = true;
 
-    document
-      .exitFullscreen()
+    document.exitFullscreen()
       .catch(error =>
         console.warn(
           'No fue posible cerrar la pantalla completa:',
@@ -7054,25 +7050,30 @@ function sbStudioCloseAndSave(
         )
       )
       .finally(() => {
-        S.studio.fullscreenExitInProgress =
-          false;
-
-        requestAnimationFrame(
-          sbStudioResetPreviewCamera
-        );
+        S.studio.fullscreenExitInProgress = false;
+        requestAnimationFrame(sbStudioResetPreviewCamera);
       });
   }else{
-    requestAnimationFrame(
-      sbStudioResetPreviewCamera
-    );
+    requestAnimationFrame(sbStudioResetPreviewCamera);
   }
 
   gMsg(
     'ok',
-    'Cambios del diagrama guardados. La salida quedó actualizada.'
+    'Diagrama guardado. El modelo visual quedó listo para la futura salida SGMP; el XML se conserva solo como compatibilidad provisional.'
   );
 
   return true;
+}
+
+
+function sbStudioGetSavedDiagramModel(){
+  const source =
+    S.optimizedDiagramModel ||
+    S.diagramModel;
+
+  return source
+    ? sbDeepClone(source)
+    : null;
 }
 
 function sbStudioGetEntity(
@@ -7244,10 +7245,7 @@ function sbStudioApplySelectionHighlight(){
 }
 
 
-function sbStudioSelectElement(
-  type,
-  id
-){
+function sbStudioSelectElement(type, id){
   const entity =
     sbStudioGetEntity(
       type,
@@ -7264,8 +7262,14 @@ function sbStudioSelectElement(
   };
 
   sbStudioApplySelectionHighlight();
-
   sbStudioRenderInspector();
+
+  if(
+    typeof sbStudioSyncVisualControls ===
+      'function'
+  ){
+    sbStudioSyncVisualControls();
+  }
 
   return true;
 }
@@ -7276,8 +7280,14 @@ function sbStudioClearSelection(){
     null;
 
   sbStudioApplySelectionHighlight();
-
   sbStudioRenderInspector();
+
+  if(
+    typeof sbStudioSyncVisualControls ===
+      'function'
+  ){
+    sbStudioSyncVisualControls();
+  }
 
   return true;
 }
@@ -7943,25 +7953,856 @@ function sbStudioDeleteAnnotation(
   return true;
 }
 
+function sbStudioSelectableFromEvent(event){
+  return event.composedPath().find(item =>
+    item instanceof Element &&
+    item.dataset?.sbSelectable === '1'
+  ) || null;
+}
 
-function sbStudioSelectableFromEvent(
-  event
+
+const SB_GPP_SYMBOLS = Object.freeze({
+  colors: Object.freeze({
+    orange:'#FBD7BB',
+    gray:'#D8D8D8',
+    white:'#FFFFFF',
+    stroke:'#000000',
+    text:'#000000'
+  }),
+
+  profiles: Object.freeze({
+    activity:Object.freeze({
+      shape:'rectangle',
+      color_role:'orange'
+    }),
+
+    physical_io:Object.freeze({
+      shape:'rectangle',
+      color_role:'gray'
+    }),
+
+    decision:Object.freeze({
+      shape:'diamond',
+      color_role:'white'
+    }),
+
+    related_process:Object.freeze({
+      shape:'related_process',
+      color_role:'white'
+    }),
+
+    document:Object.freeze({
+      shape:'document',
+      color_role:'white'
+    }),
+
+    system_response:Object.freeze({
+      shape:'parallelogram',
+      color_role:'orange'
+    }),
+
+    external_entity:Object.freeze({
+      shape:'rectangle',
+      color_role:'white'
+    })
+  })
+});
+
+
+function sbStudioDefaultSymbolProfile(node){
+  if(node?.shape === 'decision'){
+    return 'decision';
+  }
+
+  if(
+    node?.shape === 'related_process' ||
+    node?.kind === 'related_process'
+  ){
+    return 'related_process';
+  }
+
+  if(node?.kind === 'activity'){
+    return 'activity';
+  }
+
+  return 'external_entity';
+}
+
+
+function sbStudioResolveNodeVisual(node){
+  const requestedProfile =
+    normalizeText(
+      node?.visual_style?.symbol_profile || ''
+    );
+
+  const profileKey =
+    requestedProfile !== 'auto' &&
+    SB_GPP_SYMBOLS.profiles[requestedProfile]
+      ? requestedProfile
+      : sbStudioDefaultSymbolProfile(node);
+
+  const profile =
+    SB_GPP_SYMBOLS.profiles[profileKey] ||
+    SB_GPP_SYMBOLS.profiles.external_entity;
+
+  const requestedColor =
+    normalizeText(
+      node?.visual_style?.color_role || ''
+    );
+
+  const colorRole =
+    requestedColor !== 'auto' &&
+    ['orange','gray','white'].includes(requestedColor)
+      ? requestedColor
+      : profile.color_role;
+
+  return {
+    profile:profileKey,
+    shape:profile.shape,
+    color_role:colorRole,
+    fill:
+      SB_GPP_SYMBOLS.colors[colorRole] ||
+      SB_GPP_SYMBOLS.colors.white,
+    stroke:SB_GPP_SYMBOLS.colors.stroke,
+    text:SB_GPP_SYMBOLS.colors.text
+  };
+}
+
+
+function sbStudioNodeShapeMarkup(node){
+  const visual =
+    sbStudioResolveNodeVisual(node);
+
+  const x = Number(node?.x || 0);
+  const y = Number(node?.y || 0);
+  const width = Number(node?.width || 0);
+  const height = Number(node?.height || 0);
+
+  if(visual.shape === 'diamond'){
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+
+    return `
+      <polygon
+        points="
+          ${centerX},${y}
+          ${x + width},${centerY}
+          ${centerX},${y + height}
+          ${x},${centerY}
+        "
+        fill="${visual.fill}"
+        stroke="${visual.stroke}"
+        stroke-width="1.5"
+      />
+    `;
+  }
+
+  if(visual.shape === 'related_process'){
+    const offset =
+      Math.min(
+        12,
+        Math.max(8,width * .08)
+      );
+
+    return `
+      <rect
+        x="${x}"
+        y="${y}"
+        width="${width}"
+        height="${height}"
+        fill="${visual.fill}"
+        stroke="${visual.stroke}"
+        stroke-width="1.5"
+      />
+
+      <line
+        x1="${x + offset}"
+        y1="${y}"
+        x2="${x + offset}"
+        y2="${y + height}"
+        stroke="${visual.stroke}"
+        stroke-width="1.2"
+      />
+
+      <line
+        x1="${x + width - offset}"
+        y1="${y}"
+        x2="${x + width - offset}"
+        y2="${y + height}"
+        stroke="${visual.stroke}"
+        stroke-width="1.2"
+      />
+    `;
+  }
+
+  if(visual.shape === 'parallelogram'){
+    const offset =
+      Math.min(
+        16,
+        Math.max(10,width * .09)
+      );
+
+    return `
+      <polygon
+        points="
+          ${x + offset},${y}
+          ${x + width},${y}
+          ${x + width - offset},${y + height}
+          ${x},${y + height}
+        "
+        fill="${visual.fill}"
+        stroke="${visual.stroke}"
+        stroke-width="1.5"
+      />
+    `;
+  }
+
+  if(visual.shape === 'document'){
+    const bottom =
+      y + height;
+
+    const wave =
+      Math.min(
+        8,
+        Math.max(5,height * .12)
+      );
+
+    return `
+      <path
+        d="
+          M ${x} ${y}
+          H ${x + width}
+          V ${bottom - wave}
+          C ${x + width * .78} ${bottom - wave * 1.8},
+            ${x + width * .64} ${bottom + wave * .25},
+            ${x + width * .50} ${bottom - wave}
+          C ${x + width * .34} ${bottom - wave * 1.8},
+            ${x + width * .18} ${bottom + wave * .25},
+            ${x} ${bottom - wave}
+          Z
+        "
+        fill="${visual.fill}"
+        stroke="${visual.stroke}"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+
+      <rect
+        x="${x}"
+        y="${y}"
+        width="${width}"
+        height="${height}"
+        fill="transparent"
+        stroke="transparent"
+        pointer-events="all"
+      />
+    `;
+  }
+
+  return `
+    <rect
+      x="${x}"
+      y="${y}"
+      width="${width}"
+      height="${height}"
+      fill="${visual.fill}"
+      stroke="${visual.stroke}"
+      stroke-width="1.5"
+    />
+  `;
+}
+
+
+function sbStudioNodeContentMarkup(node){
+  const visual =
+    sbStudioResolveNodeVisual(node);
+
+  const text =
+    (
+      node?.kind === 'activity'
+        ? sbSvgActivityText(
+            node.label,
+            node.x,
+            node.y,
+            node.width,
+            node.height
+          )
+        : sbSvgText(
+            node.label,
+            node.x,
+            node.y,
+            node.width,
+            node.height
+          )
+    ).replace(
+      'color:#294B66',
+      `color:${visual.text}`
+    );
+
+  let html =
+    sbStudioNodeShapeMarkup(node) +
+    text;
+
+  if(node?.kind === 'activity'){
+    html +=
+      sbSvgActivityDocumentIdentifier(
+        node,
+        node.activity || {}
+      );
+
+    html +=
+      sbSvgExecutionIdentifier(
+        node,
+        node.activity || {}
+      );
+  }
+
+  return html;
+}
+
+
+function sbStudioFindSelectableGroup(
+  root,
+  type,
+  id
 ){
+  if(!root){
+    return null;
+  }
+
+  return Array
+    .from(
+      root.querySelectorAll(
+        '[data-sb-selectable="1"]'
+      )
+    )
+    .find(item =>
+      item.dataset.sbType === type &&
+      item.dataset.sbId === String(id || '')
+    ) || null;
+}
+
+
+function sbStudioRenderNodeElement(
+  node,
+  root = $('sb_studio_canvas')
+){
+  const group =
+    sbStudioFindSelectableGroup(
+      root,
+      'node',
+      node?.id
+    );
+
+  if(
+    !group ||
+    !node
+  ){
+    return false;
+  }
+
+  group.innerHTML =
+    sbStudioNodeContentMarkup(node);
+
+  return true;
+}
+
+
+function sbStudioEdgePath(
+  source,
+  target,
+  family,
+  index
+){
+  const sourceCenterX =
+    source.x + source.width / 2;
+
+  const sourceCenterY =
+    source.y + source.height / 2;
+
+  const targetCenterX =
+    target.x + target.width / 2;
+
+  const targetCenterY =
+    target.y + target.height / 2;
+
+  if(
+    family === 'input' ||
+    family === 'output'
+  ){
+    const startX =
+      source.x + source.width;
+
+    const endX =
+      target.x;
+
+    const channelX =
+      startX +
+      Math.max(
+        22,
+        (endX - startX) / 2
+      );
+
+    return (
+      `M ${startX} ${sourceCenterY} ` +
+      `H ${channelX} ` +
+      `V ${targetCenterY} ` +
+      `H ${endX}`
+    );
+  }
+
+  if(target.y >= source.y){
+    const startY =
+      source.y + source.height;
+
+    const endY =
+      target.y;
+
+    const channelY =
+      startY +
+      Math.max(
+        14,
+        (endY - startY) / 2
+      );
+
+    return (
+      `M ${sourceCenterX} ${startY} ` +
+      `V ${channelY} ` +
+      `H ${targetCenterX} ` +
+      `V ${endY}`
+    );
+  }
+
+  const channelX =
+    Math.max(
+      source.x + source.width,
+      target.x + target.width
+    ) +
+    24 +
+    (index % 5) * 8;
+
   return (
-    event
-      .composedPath()
-      .find(item =>
-        item instanceof Element &&
-        item.dataset?.sbSelectable ===
-          '1'
-      ) ||
-    null
+    `M ${source.x + source.width} ${sourceCenterY} ` +
+    `H ${channelX} ` +
+    `V ${target.y - 10} ` +
+    `H ${targetCenterX} ` +
+    `V ${target.y}`
   );
 }
-  
-function sbRenderDiagramStudio(
-  options = {}
+
+
+function sbStudioUpdateEdgeElement(
+  edge,
+  index,
+  root = $('sb_studio_canvas'),
+  model = S.diagramModel?.diagram_model
 ){
+  if(
+    !root ||
+    !model ||
+    !edge
+  ){
+    return false;
+  }
+
+  const source =
+    model.nodes.find(
+      node =>
+        node.id === edge.source
+    );
+
+  const target =
+    model.nodes.find(
+      node =>
+        node.id === edge.target
+    );
+
+  const group =
+    sbStudioFindSelectableGroup(
+      root,
+      'edge',
+      edge.id
+    );
+
+  if(
+    !source ||
+    !target ||
+    !group
+  ){
+    return false;
+  }
+
+  const path =
+    Array.from(group.children)
+      .find(element =>
+        element.tagName
+          ?.toLowerCase() === 'path'
+      );
+
+  if(path){
+    path.setAttribute(
+      'd',
+      sbStudioEdgePath(
+        source,
+        target,
+        edge.family || 'internal',
+        index
+      )
+    );
+
+    path.setAttribute(
+      'stroke',
+      '#000000'
+    );
+
+    path.setAttribute(
+      'stroke-width',
+      '1.5'
+    );
+  }
+
+  const label =
+    group.querySelector(
+      'foreignObject'
+    );
+
+  if(label){
+    label.setAttribute(
+      'x',
+      String(
+        (
+          source.x +
+          source.width / 2 +
+          target.x +
+          target.width / 2
+        ) / 2 - 42
+      )
+    );
+
+    label.setAttribute(
+      'y',
+      String(
+        (
+          source.y +
+          source.height / 2 +
+          target.y +
+          target.height / 2
+        ) / 2 - 10
+      )
+    );
+  }
+
+  return true;
+}
+
+
+function sbStudioApplyModelVisuals(
+  root = $('sb_studio_canvas'),
+  model = S.diagramModel?.diagram_model
+){
+  if(
+    !root ||
+    !model
+  ){
+    return false;
+  }
+
+  model.nodes.forEach(
+    node =>
+      sbStudioRenderNodeElement(
+        node,
+        root
+      )
+  );
+
+  model.edges.forEach(
+    (edge,index) =>
+      sbStudioUpdateEdgeElement(
+        edge,
+        index,
+        root,
+        model
+      )
+  );
+
+  root
+    .querySelectorAll(
+      'marker path'
+    )
+    .forEach(path =>
+      path.setAttribute(
+        'fill',
+        '#000000'
+      )
+    );
+
+  return true;
+}
+
+
+function sbStudioUpdateConnectedEdges(nodeId){
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(!model){
+    return false;
+  }
+
+  model.edges.forEach(
+    (edge,index) => {
+      if(
+        edge.source === nodeId ||
+        edge.target === nodeId
+      ){
+        sbStudioUpdateEdgeElement(
+          edge,
+          index
+        );
+      }
+    }
+  );
+
+  return true;
+}
+
+
+function sbStudioClampNodeToLane(
+  node,
+  x,
+  y
+){
+  const lane =
+    S.diagramModel
+      ?.diagram_model
+      ?.lanes
+      ?.find(item =>
+        item.id === node?.lane_id
+      );
+
+  if(!lane){
+    return {
+      x,
+      y
+    };
+  }
+
+  const padding =
+    6;
+
+  const minX =
+    lane.x + padding;
+
+  const maxX =
+    lane.x +
+    lane.width -
+    node.width -
+    padding;
+
+  const minY =
+    lane.y + padding;
+
+  const maxY =
+    lane.y +
+    lane.height -
+    node.height -
+    padding;
+
+  return {
+    x:
+      Math.min(
+        Math.max(minX,x),
+        Math.max(minX,maxX)
+      ),
+
+    y:
+      Math.min(
+        Math.max(minY,y),
+        Math.max(minY,maxY)
+      )
+  };
+}
+
+
+function sbStudioSyncVisualControls(){
+  const symbol =
+    $('sb_studio_symbol_profile');
+
+  const color =
+    $('sb_studio_color_role');
+
+  const reset =
+    $('btn_studio_reset_visual');
+
+  const status =
+    $('sb_studio_visual_status');
+
+  if(
+    !symbol ||
+    !color ||
+    !reset
+  ){
+    return false;
+  }
+
+  const selected =
+    S.studio.selectedElement;
+
+  const node =
+    selected?.type === 'node'
+      ? sbStudioGetEntity(
+          'node',
+          selected.id
+        )
+      : null;
+
+  const enabled =
+    Boolean(
+      S.studio.editing &&
+      node
+    );
+
+  symbol.disabled =
+    !enabled;
+
+  color.disabled =
+    !enabled;
+
+  reset.disabled =
+    !enabled;
+
+  if(!node){
+    symbol.value =
+      'auto';
+
+    color.value =
+      'auto';
+
+    if(status){
+      status.textContent =
+        selected
+          ? 'La simbología se edita únicamente en nodos.'
+          : 'Selecciona un nodo.';
+    }
+
+    return true;
+  }
+
+  symbol.value =
+    node.visual_style
+      ?.symbol_profile ||
+    'auto';
+
+  color.value =
+    node.visual_style
+      ?.color_role ||
+    'auto';
+
+  if(status){
+    status.textContent =
+      node.label ||
+      node.id;
+  }
+
+  return true;
+}
+
+
+function sbStudioApplyVisualControls(){
+  const selected =
+    S.studio.selectedElement;
+
+  if(
+    !S.studio.editing ||
+    selected?.type !== 'node'
+  ){
+    return false;
+  }
+
+  const node =
+    sbStudioGetEntity(
+      'node',
+      selected.id
+    );
+
+  if(!node){
+    return false;
+  }
+
+  const symbol =
+    $('sb_studio_symbol_profile')
+      ?.value ||
+    'auto';
+
+  const color =
+    $('sb_studio_color_role')
+      ?.value ||
+    'auto';
+
+  if(
+    symbol === 'auto' &&
+    color === 'auto'
+  ){
+    delete node.visual_style;
+  }else{
+    node.visual_style = {
+      symbol_profile:symbol,
+      color_role:color
+    };
+  }
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioRenderNodeElement(node);
+  sbStudioApplySelectionHighlight();
+  sbStudioUpdateConnectedEdges(node.id);
+  sbStudioSyncVisualControls();
+
+  return true;
+}
+
+
+function sbStudioResetSelectedVisualStyle(){
+  const selected =
+    S.studio.selectedElement;
+
+  if(
+    selected?.type !== 'node'
+  ){
+    return false;
+  }
+
+  const node =
+    sbStudioGetEntity(
+      'node',
+      selected.id
+    );
+
+  if(!node){
+    return false;
+  }
+
+  delete node.visual_style;
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioRenderNodeElement(node);
+  sbStudioApplySelectionHighlight();
+  sbStudioUpdateConnectedEdges(node.id);
+  sbStudioSyncVisualControls();
+
+  return true;
+}
+  
+function sbRenderDiagramStudio(options = {}){
   const canvas =
     $('sb_studio_canvas');
 
@@ -7977,9 +8818,7 @@ function sbRenderDiagramStudio(
 
   if(!S.contract){
     canvas.innerHTML =
-      '<div class="sb-studio-empty">' +
-      'No existe un contrato para construir el diagrama.' +
-      '</div>';
+      '<div class="sb-studio-empty">No existe un contrato para construir el diagrama.</div>';
 
     S.studio.rendered =
       false;
@@ -7988,74 +8827,52 @@ function sbRenderDiagramStudio(
   }
 
   const forceRebuild =
-    options.forceRebuild ===
-      true;
+    options.forceRebuild === true;
 
   const currentModel =
     S.diagramModel
       ?.diagram_model;
 
   const existingSvg =
-    canvas.querySelector(
-      'svg'
-    );
+    canvas.querySelector('svg');
 
-  /*
-   * Si Diagram Studio ya fue construido y el contrato
-   * no fue invalidado, conserva exactamente el lienzo
-   * y el modelo existentes.
-   *
-   * Esto es indispensable para que las futuras
-   * modificaciones geométricas no desaparezcan
-   * al cambiar de etapa y volver a Diagram Studio.
-   */
   if(
     !forceRebuild &&
     S.studio.rendered &&
     currentModel &&
     existingSvg
   ){
-    const canvasWidth =
+    const width =
       Number(
         currentModel.layout
           ?.canvas_width
-      ) ||
-      1200;
+      ) || 1200;
 
-    const canvasHeight =
+    const height =
       Number(
         currentModel.layout
           ?.canvas_height
-      ) ||
-      700;
+      ) || 700;
 
     canvas.style.width =
-      canvasWidth +
-      'px';
+      stage.style.width =
+      width + 'px';
 
     canvas.style.height =
-      canvasHeight +
-      'px';
-
-    stage.style.width =
-      canvasWidth +
-      'px';
-
-    stage.style.height =
-      canvasHeight +
-      'px';
+      stage.style.height =
+      height + 'px';
 
     sbStudioSetEditingUI(
       S.studio.editing
     );
 
-    if(
-      typeof sbStudioApplySelectionHighlight ===
-        'function'
-    ){
-      sbStudioApplySelectionHighlight();
-    }
+    sbStudioApplyModelVisuals(
+      canvas,
+      currentModel
+    );
 
+    sbStudioApplySelectionHighlight();
+    sbStudioSyncVisualControls();
     sbStudioApplyTransform();
 
     if(options.resetCamera){
@@ -8067,17 +8884,11 @@ function sbRenderDiagramStudio(
     return true;
   }
 
-  /*
-   * Primera construcción o reconstrucción explícita.
-   * Solo en este punto se vuelve a generar el modelo
-   * desde el contrato AS-IS.
-   */
   const svg =
     sbBuildStaticPreview(
       S.contract,
       {
-        interactive:
-          true
+        interactive:true
       }
     );
 
@@ -8090,9 +8901,7 @@ function sbRenderDiagramStudio(
     !model
   ){
     canvas.innerHTML =
-      '<div class="sb-studio-empty">' +
-      'No fue posible construir el modelo visual.' +
-      '</div>';
+      '<div class="sb-studio-empty">No fue posible construir el modelo visual.</div>';
 
     S.studio.rendered =
       false;
@@ -8100,35 +8909,25 @@ function sbRenderDiagramStudio(
     return false;
   }
 
-  const canvasWidth =
+  const width =
     Number(
       model.layout
         ?.canvas_width
-    ) ||
-    1200;
+    ) || 1200;
 
-  const canvasHeight =
+  const height =
     Number(
       model.layout
         ?.canvas_height
-    ) ||
-    700;
+    ) || 700;
 
   canvas.style.width =
-    canvasWidth +
-    'px';
+    stage.style.width =
+    width + 'px';
 
   canvas.style.height =
-    canvasHeight +
-    'px';
-
-  stage.style.width =
-    canvasWidth +
-    'px';
-
-  stage.style.height =
-    canvasHeight +
-    'px';
+    stage.style.height =
+    height + 'px';
 
   canvas.innerHTML =
     svg;
@@ -8137,12 +8936,13 @@ function sbRenderDiagramStudio(
     S.studio.editing
   );
 
-  if(
-    typeof sbStudioApplySelectionHighlight ===
-      'function'
-  ){
-    sbStudioApplySelectionHighlight();
-  }
+  sbStudioApplyModelVisuals(
+    canvas,
+    model
+  );
+
+  sbStudioApplySelectionHighlight();
+  sbStudioSyncVisualControls();
 
   S.studio.rendered =
     true;
@@ -8169,8 +8969,7 @@ function sbInitStudioInteractions(){
 
   if(
     !viewport ||
-    viewport.dataset.studioReady ===
-      '1'
+    viewport.dataset.studioReady === '1'
   ){
     return false;
   }
@@ -8178,9 +8977,38 @@ function sbInitStudioInteractions(){
   viewport.dataset.studioReady =
     '1';
 
+  const stopPointerWork =
+    event => {
+      if(
+        S.studio.nodeDrag?.pointerId ===
+        event.pointerId
+      ){
+        S.studio.nodeDrag =
+          null;
+      }
+
+      if(
+        S.studio.pointerId !== null &&
+        event.pointerId !==
+          S.studio.pointerId
+      ){
+        return;
+      }
+
+      S.studio.dragging =
+        false;
+
+      S.studio.pointerId =
+        null;
+
+      viewport.classList.remove(
+        'is-panning'
+      );
+    };
+
+
   viewport.addEventListener(
     'pointerdown',
-
     event => {
       if(
         event.button !== 0 ||
@@ -8189,11 +9017,58 @@ function sbInitStudioInteractions(){
         return;
       }
 
+      const selectable =
+        S.studio.editing
+          ? sbStudioSelectableFromEvent(
+              event
+            )
+          : null;
+
       if(
         S.studio.editing &&
-        sbStudioSelectableFromEvent(event)
+        selectable
       ){
+        const type =
+          selectable.dataset.sbType;
+
+        const id =
+          selectable.dataset.sbId;
+
+        sbStudioSelectElement(
+          type,
+          id
+        );
+
+        if(type === 'node'){
+          const node =
+            sbStudioGetEntity(
+              'node',
+              id
+            );
+
+          if(node){
+            S.studio.nodeDrag = {
+              pointerId:event.pointerId,
+              nodeId:id,
+              startPointerX:event.clientX,
+              startPointerY:event.clientY,
+              startX:Number(node.x || 0),
+              startY:Number(node.y || 0)
+            };
+
+            viewport.setPointerCapture(
+              event.pointerId
+            );
+
+            event.preventDefault();
+          }
+        }
+
         return;
+      }
+
+      if(S.studio.editing){
+        sbStudioClearSelection();
       }
 
       S.studio.didPan =
@@ -8227,10 +9102,89 @@ function sbInitStudioInteractions(){
     }
   );
 
+
   viewport.addEventListener(
     'pointermove',
-
     event => {
+      const drag =
+        S.studio.nodeDrag;
+
+      if(
+        drag &&
+        drag.pointerId ===
+          event.pointerId
+      ){
+        const node =
+          sbStudioGetEntity(
+            'node',
+            drag.nodeId
+          );
+
+        if(!node){
+          return;
+        }
+
+        const scale =
+          Math.max(
+            .01,
+            Number(
+              S.studio.scale ||
+              1
+            )
+          );
+
+        const next =
+          sbStudioClampNodeToLane(
+            node,
+
+            drag.startX +
+              (
+                event.clientX -
+                drag.startPointerX
+              ) /
+              scale,
+
+            drag.startY +
+              (
+                event.clientY -
+                drag.startPointerY
+              ) /
+              scale
+          );
+
+        node.x =
+          Math.round(
+            next.x * 10
+          ) /
+          10;
+
+        node.y =
+          Math.round(
+            next.y * 10
+          ) /
+          10;
+
+        S.studio.saved =
+          false;
+
+        S.optimization.status =
+          'editing';
+
+        sbStudioRenderNodeElement(
+          node
+        );
+
+        sbStudioApplySelectionHighlight();
+
+        sbStudioUpdateConnectedEdges(
+          node.id
+        );
+
+        event.preventDefault();
+
+        return;
+      }
+
       if(
         !S.studio.dragging ||
         event.pointerId !==
@@ -8267,86 +9221,60 @@ function sbInitStudioInteractions(){
     }
   );
 
-  const stopPan =
-    event => {
-      if(
-        S.studio.pointerId !== null &&
-        event.pointerId !==
-          S.studio.pointerId
-      ){
-        return;
-      }
-
-      S.studio.dragging =
-        false;
-
-      S.studio.pointerId =
-        null;
-
-      viewport.classList.remove(
-        'is-panning'
-      );
-    };
 
   viewport.addEventListener(
     'pointerup',
-    stopPan
+    stopPointerWork
   );
 
   viewport.addEventListener(
     'pointercancel',
-    stopPan
+    stopPointerWork
   );
+
 
   viewport.addEventListener(
     'wheel',
-
     event => {
       event.preventDefault();
 
       const rect =
         viewport.getBoundingClientRect();
 
-      const anchorX =
-        event.clientX -
-        rect.left;
-
-      const anchorY =
-        event.clientY -
-        rect.top;
-
-      const zoomStep =
+      const step =
         Number(
           S.studio.zoomStep
         ) || 1.12;
 
       sbStudioZoomBy(
         event.deltaY < 0
-          ? zoomStep
-          : 1 / zoomStep,
-        anchorX,
-        anchorY
+          ? step
+          : 1 / step,
+
+        event.clientX -
+          rect.left,
+
+        event.clientY -
+          rect.top
       );
     },
-
     {
-      passive:
-        false
+      passive:false
     }
   );
 
+
   window.addEventListener(
     'resize',
-
     () =>
       requestAnimationFrame(
         sbStudioApplyTransform
       )
   );
 
+
   document.addEventListener(
     'fullscreenchange',
-
     () => {
       const host =
         $('sb_studio_fullscreen_host');
@@ -8357,8 +9285,7 @@ function sbInitStudioInteractions(){
         !S.studio.fullscreenExitInProgress
       ){
         sbStudioCloseAndSave({
-          skipFullscreenExit:
-            true
+          skipFullscreenExit:true
         });
 
         return;
@@ -8366,9 +9293,9 @@ function sbInitStudioInteractions(){
 
       if(
         $('tab_tpl') &&
-        !$('tab_tpl').classList.contains(
-          'hidden'
-        )
+        !$('tab_tpl')
+          .classList
+          .contains('hidden')
       ){
         setTimeout(
           sbStudioFit,
@@ -15272,27 +16199,56 @@ function sbRefreshDataOverview(){
 
   S.alerts =
     issues.map(issue => ({
-      type:
-        'structural_gap',
-
-      message:
-        issue.title
+      type:'structural_gap',
+      message:issue.title
     }));
 
   sbRenderStructuralIssues(
     issues
   );
 
+  const preserveStudioModel =
+    Boolean(
+      S.studio.rendered &&
+      S.diagramModel
+    );
+
+  const preservedDiagramModel =
+    preserveStudioModel
+      ? S.diagramModel
+      : null;
+
   const svg =
     sbBuildStaticPreview(
-      contract
+      contract,
+      {
+        interactive:true
+      }
     );
+
+  const previewModel =
+    S.diagramModel
+      ?.diagram_model ||
+    null;
 
   preview.innerHTML =
     svg ||
-    '<div class="sb-preview-empty">' +
-    'Registra al menos una actividad para visualizar el flujo.' +
-    '</div>';
+    '<div class="sb-preview-empty">Registra al menos una actividad para visualizar el flujo.</div>';
+
+  if(
+    svg &&
+    previewModel
+  ){
+    sbStudioApplyModelVisuals(
+      preview,
+      previewModel
+    );
+  }
+
+  if(preserveStudioModel){
+    S.diagramModel =
+      preservedDiagramModel;
+  }
 
   return true;
 }
