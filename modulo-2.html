@@ -3600,6 +3600,82 @@ body{font-size:14px !important}
   </div>
 </details>
 
+<details
+  class="sb-data-accordion"
+  id="sb_acc_documents"
+>
+  <summary>
+    <div class="sb-data-summary-main">
+      <span>Documentos del proceso</span>
+
+      <small>
+        Catálogo único de documentos. Registra únicamente nombre y código.
+        Todo documento debe quedar vinculado al menos a una actividad.
+      </small>
+    </div>
+  </summary>
+
+  <div class="sb-data-accordion-body">
+    <div class="card">
+      <h3>Documentos</h3>
+
+      <div class="g2">
+        <div class="field">
+          <label>Nombre del documento *</label>
+
+          <input
+            id="in_doc_name"
+            placeholder="Ej: Registro de recepción"
+          />
+        </div>
+
+        <div class="field">
+          <label>Código *</label>
+
+          <input
+            id="in_doc_code"
+            placeholder="Ej: RE-30211A"
+            oninput="this.value = sbNormalizeDocumentCode(this.value)"
+          />
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button
+          class="primary"
+          id="btn_add_doc"
+          type="button"
+        >
+          + Agregar documento
+        </button>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Código</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody id="tb_doc"></tbody>
+        </table>
+      </div>
+
+      <div class="btn-row right">
+        <button
+          id="btn_save_documents"
+          type="button"
+        >
+          Guardar documentos
+        </button>
+      </div>
+    </div>
+  </div>
+</details>
+
     <details
   class="sb-data-accordion"
   id="sb_acc_activities"
@@ -25663,6 +25739,547 @@ function sbNormalizeActivityDocuments(
 }
 
 
+function sbNormalizeDocumentCatalogItem(
+  value
+){
+  if(
+    !value ||
+    typeof value !== 'object'
+  ){
+    const name =
+      normalizeText(
+        value || ''
+      );
+
+    return {
+      name:
+        name === '[object Object]'
+          ? ''
+          : name,
+
+      code:
+        ''
+    };
+  }
+
+  const name =
+    normalizeText(
+      value.name ||
+      value.document_name ||
+      value.title ||
+      value.document ||
+      ''
+    );
+
+  return {
+    name:
+      name === '[object Object]'
+        ? ''
+        : name,
+
+    code:
+      sbNormalizeDocumentCode(
+        value.code ||
+        value.document_code ||
+        value.ref ||
+        value.document_ref ||
+        ''
+      )
+  };
+}
+
+
+function sbNormalizeDocumentCatalog(
+  ...sources
+){
+  const rawItems =
+    sources
+      .flatMap(source =>
+        Array.isArray(source)
+          ? source
+          : []
+      )
+      .map(
+        sbNormalizeDocumentCatalogItem
+      )
+      .filter(item =>
+        item.name ||
+        item.code
+      );
+
+  const completeItems =
+    rawItems.filter(item =>
+      item.name &&
+      item.code
+    );
+
+  const result =
+    [];
+
+  const seen =
+    new Set();
+
+  rawItems
+    .filter(item => {
+      if(
+        item.name &&
+        item.code
+      ){
+        return true;
+      }
+
+      /*
+       * Compatibilidad con contratos antiguos.
+       * Si antes llegaba solamente nombre o código
+       * y una actividad contiene la pareja completa,
+       * conservamos la pareja completa.
+       */
+      const legacyValue =
+        normalizeText(
+          item.name ||
+          item.code ||
+          ''
+        ).toLowerCase();
+
+      if(!legacyValue){
+        return false;
+      }
+
+      return !completeItems.some(
+        completeItem =>
+          completeItem.name
+            .toLowerCase() ===
+            legacyValue ||
+
+          completeItem.code
+            .toLowerCase() ===
+            legacyValue
+      );
+    })
+    .forEach(item => {
+      const key =
+        item.code.toLowerCase() +
+        '__' +
+        item.name.toLowerCase();
+
+      if(seen.has(key)){
+        return;
+      }
+
+      seen.add(key);
+
+      result.push(
+        item
+      );
+    });
+
+  return result;
+}
+
+
+function sbSyncDocumentCatalogFromActivities(
+  options = {}
+){
+  const activityDocuments =
+    (S.acts || [])
+      .flatMap(activity =>
+        sbNormalizeActivityDocuments(
+          activity
+        )
+      );
+
+  S.cats.documents =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents,
+      activityDocuments
+    );
+
+  if(options.render !== false){
+    renderSBDocumentsTable();
+  }
+
+  return S.cats.documents;
+}
+
+
+function sbDocumentReferenceActivities(
+  documentItem,
+  activities = S.acts
+){
+  const target =
+    sbNormalizeDocumentCatalogItem(
+      documentItem
+    );
+
+  return (activities || [])
+    .filter(activity =>
+      sbNormalizeActivityDocuments(
+        activity
+      ).some(item =>
+        target.code
+          ? (
+              item.code.toLowerCase() ===
+              target.code.toLowerCase()
+            )
+          : (
+              target.name &&
+              item.name.toLowerCase() ===
+              target.name.toLowerCase()
+            )
+      )
+    )
+    .map(
+      (activity, index) =>
+        normalizeText(
+          activity?.name ||
+          `Actividad ${index + 1}`
+        )
+    );
+}
+
+
+function sbCollectDocumentCatalogIssues(
+  catalog,
+  activities
+){
+  const issues =
+    [];
+
+  const codeRegistry =
+    new Map();
+
+  sbNormalizeDocumentCatalog(
+    catalog
+  ).forEach(
+    (
+      documentItem,
+      index
+    ) => {
+      if(
+        !documentItem.name ||
+        !documentItem.code
+      ){
+        issues.push({
+          title:
+            `Documento ${index + 1} incompleto`,
+
+          detail:
+            'Todo documento del catálogo debe tener nombre y código.',
+
+          targetId:
+            'sb_acc_documents'
+        });
+
+        return;
+      }
+
+      const codeKey =
+        documentItem.code
+          .toLowerCase();
+
+      const registeredName =
+        codeRegistry.get(
+          codeKey
+        );
+
+      if(registeredName){
+        issues.push({
+          title:
+            `Código documental duplicado: ${documentItem.code}`,
+
+          detail:
+            registeredName ===
+              documentItem.name.toLowerCase()
+              ? 'El código aparece más de una vez en el catálogo.'
+              : 'El mismo código documental está asociado a nombres diferentes.',
+
+          targetId:
+            'sb_acc_documents'
+        });
+      }else{
+        codeRegistry.set(
+          codeKey,
+          documentItem.name
+            .toLowerCase()
+        );
+      }
+
+      if(
+        !sbDocumentReferenceActivities(
+          documentItem,
+          activities
+        ).length
+      ){
+        issues.push({
+          title:
+            `${documentItem.code} no está vinculado a ninguna actividad`,
+
+          detail:
+            'Todo documento registrado debe estar referenciado al menos una vez dentro del proceso.',
+
+          targetId:
+            'sb_acc_documents'
+        });
+      }
+    }
+  );
+
+  return issues;
+}
+
+
+function renderSBDocumentsTable(){
+  const tableBody =
+    $('tb_doc');
+
+  if(!tableBody){
+    return false;
+  }
+
+  S.cats.documents =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents
+    );
+
+  if(!S.cats.documents.length){
+    tableBody.innerHTML = `
+      <tr>
+        <td
+          colspan="3"
+          style="
+            color:var(--muted);
+            text-align:center;
+          "
+        >
+          No existen documentos registrados.
+        </td>
+      </tr>
+    `;
+
+    return true;
+  }
+
+  tableBody.innerHTML =
+    S.cats.documents
+      .map(
+        (
+          documentItem,
+          index
+        ) => `
+          <tr>
+            <td>
+              ${ex(documentItem.name)}
+            </td>
+
+            <td>
+              ${ex(documentItem.code)}
+            </td>
+
+            <td>
+              <button
+                class="sm"
+                type="button"
+                onclick="removeSBDocument(${index})"
+                aria-label="Eliminar documento"
+              >
+                ×
+              </button>
+            </td>
+          </tr>
+        `
+      )
+      .join('');
+
+  return true;
+}
+
+
+function addSBDocument(){
+  const name =
+    normalizeText(
+      $('in_doc_name')?.value ||
+      ''
+    );
+
+  const code =
+    sbNormalizeDocumentCode(
+      $('in_doc_code')?.value ||
+      ''
+    );
+
+  if(
+    !name ||
+    !code
+  ){
+    gMsg(
+      'warn',
+      'Completa nombre y código antes de agregar el documento.'
+    );
+
+    return false;
+  }
+
+  const existing =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents
+    ).find(
+      documentItem =>
+        documentItem.code
+          .toLowerCase() ===
+        code.toLowerCase()
+    );
+
+  if(existing){
+    gMsg(
+      'warn',
+
+      existing.name.toLowerCase() ===
+        name.toLowerCase()
+        ? `El documento ${code} ya existe en el catálogo.`
+        : `El código ${code} ya está registrado como "${existing.name}".`
+    );
+
+    return false;
+  }
+
+  S.cats.documents.push({
+    name,
+    code
+  });
+
+  if($('in_doc_name')){
+    $('in_doc_name').value =
+      '';
+  }
+
+  if($('in_doc_code')){
+    $('in_doc_code').value =
+      '';
+  }
+
+  renderSBDocumentsTable();
+
+  resetSBGeneratedArtifacts();
+
+  gMsg(
+    'ok',
+    'Documento agregado al catálogo.'
+  );
+
+  return true;
+}
+
+
+function removeSBDocument(
+  index
+){
+  /*
+   * Antes de eliminar debemos leer cualquier
+   * edición aún abierta dentro de actividades.
+   */
+  sbCollectAllInlineActivities();
+
+  const documentItem =
+    sbNormalizeDocumentCatalogItem(
+      S.cats.documents?.[
+        index
+      ]
+    );
+
+  if(
+    !documentItem.name &&
+    !documentItem.code
+  ){
+    return false;
+  }
+
+  const references =
+    sbDocumentReferenceActivities(
+      documentItem,
+      S.acts
+    );
+
+  if(references.length){
+    gMsg(
+      'warn',
+
+      `No se puede eliminar ` +
+      `${documentItem.code || documentItem.name}: ` +
+      `está vinculado a ${references.join(', ')}.`
+    );
+
+    return false;
+  }
+
+  S.cats.documents.splice(
+    index,
+    1
+  );
+
+  renderSBDocumentsTable();
+
+  resetSBGeneratedArtifacts();
+
+  gMsg(
+    'ok',
+    'Documento eliminado del catálogo.'
+  );
+
+  return true;
+}
+
+
+function saveSBDocuments(){
+  sbCollectAllInlineActivities();
+
+  sbSyncDocumentCatalogFromActivities({
+    render:
+      true
+  });
+
+  const issues =
+    sbCollectDocumentCatalogIssues(
+      S.cats.documents,
+      S.acts
+    );
+
+  if(issues.length){
+    const firstIssue =
+      issues[0];
+
+    if($('sb_acc_documents')){
+      $('sb_acc_documents').open =
+        true;
+    }
+
+    gMsg(
+      'warn',
+
+      firstIssue.title +
+      '. ' +
+      firstIssue.detail
+    );
+
+    return false;
+  }
+
+  sbSyncEditorToContract();
+
+  resetSBGeneratedArtifacts();
+
+  sbCloseDataAccordion(
+    'sb_acc_documents'
+  );
+
+  gMsg(
+    'ok',
+    'Catálogo de documentos guardado.'
+  );
+
+  return true;
+}
+
+
 function sbInlineDocumentRows(
   activity,
   index
@@ -25737,6 +26354,55 @@ function sbInlineDocumentRows(
     .join('');
 }
 
+function sbInlineDocumentCatalogOptions(
+  activity
+){
+  const usedCodes =
+    new Set(
+      sbNormalizeActivityDocuments(
+        activity
+      )
+        .map(item =>
+          item.code.toLowerCase()
+        )
+        .filter(Boolean)
+    );
+
+  const available =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents
+    )
+      .filter(item =>
+        item.name &&
+        item.code &&
+        !usedCodes.has(
+          item.code.toLowerCase()
+        )
+      );
+
+  if(!available.length){
+    return (
+      '<option value="">' +
+      'No hay documentos disponibles' +
+      '</option>'
+    );
+  }
+
+  return (
+    '<option value="">' +
+    '— Selecciona un documento —' +
+    '</option>' +
+
+    available
+      .map(item => `
+        <option value="${ex(item.code)}">
+          ${ex(item.code)} · ${ex(item.name)}
+        </option>
+      `)
+      .join('')
+  );
+}
+
 
 function sbInlineDocumentSection(
   activity,
@@ -25764,9 +26430,36 @@ function sbInlineDocumentSection(
       </summary>
 
       <div class="sb-inline-section-body">
+
+        <div class="sb-relation-builder">
+          <div class="field">
+            <label>
+              Vincular desde el catálogo
+            </label>
+
+            <select
+              class="sb-inline-document-catalog-select"
+            >
+              ${sbInlineDocumentCatalogOptions(
+                activity
+              )}
+            </select>
+          </div>
+
+          <div class="btn-row">
+            <button
+              type="button"
+              onclick="sbLinkCatalogDocumentToActivity(${index})"
+            >
+              Vincular documento
+            </button>
+          </div>
+        </div>
+
         <div
           class="sb-inline-row-list"
           data-inline-kind="documents"
+          style="margin-top:10px"
         >
           ${sbInlineDocumentRows(
             activity,
@@ -25777,14 +26470,11 @@ function sbInlineDocumentSection(
         <button
           class="sb-inline-add-row"
           type="button"
-          onclick="
-            sbAddInlineDocument(
-              ${index}
-            )
-          "
+          onclick="sbAddInlineDocument(${index})"
         >
-          + Agregar documento
+          + Crear documento en esta actividad
         </button>
+
       </div>
     </details>
   `;
@@ -25843,6 +26533,16 @@ const sbRenderActsTableDocumentsBase =
 
 renderActsTable =
   function(){
+    /*
+     * Cualquier documento creado directamente
+     * en una actividad pasa a formar parte del
+     * catálogo documental del proceso.
+     */
+    sbSyncDocumentCatalogFromActivities({
+      render:
+        false
+    });
+
     const result =
       sbRenderActsTableDocumentsBase
         .apply(
@@ -25851,6 +26551,8 @@ renderActsTable =
         );
 
     sbInjectInlineDocumentEditors();
+
+    renderSBDocumentsTable();
 
     return result;
   };
@@ -25916,6 +26618,99 @@ sbCollectInlineActivity =
       documents
     };
   };
+
+
+function sbLinkCatalogDocumentToActivity(
+  index
+){
+  const card =
+    document.querySelector(
+      `.sb-activity-card[data-index="${index}"]`
+    );
+
+  const code =
+    sbNormalizeDocumentCode(
+      card?.querySelector(
+        '.sb-inline-document-catalog-select'
+      )?.value ||
+      ''
+    );
+
+  if(!code){
+    gMsg(
+      'warn',
+      'Selecciona un documento del catálogo.'
+    );
+
+    return false;
+  }
+
+  const documentItem =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents
+    ).find(
+      item =>
+        item.code.toLowerCase() ===
+        code.toLowerCase()
+    );
+
+  if(!documentItem){
+    return false;
+  }
+
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      'documents'
+    );
+
+  const current =
+    sbCollectInlineActivity(
+      index
+    );
+
+  if(!current){
+    return false;
+  }
+
+  current.documents =
+    sbNormalizeActivityDocuments(
+      current,
+      true
+    );
+
+  if(
+    current.documents.some(
+      item =>
+        item.code.toLowerCase() ===
+        documentItem.code.toLowerCase()
+    )
+  ){
+    gMsg(
+      'warn',
+      'Ese documento ya está vinculado a la actividad.'
+    );
+
+    return false;
+  }
+
+  current.documents.push({
+    ...documentItem
+  });
+
+  S.acts[index] =
+    current;
+
+  renderActsTable();
+
+  sbReopenInlineActivity(
+    index,
+    'documents',
+    viewState
+  );
+
+  return true;
+}
 
 
 function sbAddInlineDocument(
@@ -26283,6 +27078,41 @@ sbSyncEditorToContract =
   };
 
 
+const sbSyncEditorToContractDocumentCatalogBase =
+  sbSyncEditorToContract;
+
+
+sbSyncEditorToContract =
+  function(){
+    /*
+     * Diagramas, tarjetas y contrato utilizan
+     * el mismo catálogo documental.
+     */
+    sbSyncDocumentCatalogFromActivities({
+      render:
+        false
+    });
+
+    const contract =
+      sbSyncEditorToContractDocumentCatalogBase();
+
+    contract.sipoc_input.documents =
+      sbNormalizeDocumentCatalog(
+        S.cats.documents
+      );
+
+    S.contract =
+      contract;
+
+    S.sp =
+      normalizeIncomingPayload(
+        contract
+      ).normalized;
+
+    return contract;
+  };
+
+
 function sbCollectActivityDocumentIssues(
   activities
 ){
@@ -26447,12 +27277,26 @@ sbCollectStructuralIssues =
         contract
       );
 
+    const activities =
+      contract
+        ?.sipoc_input
+        ?.activities ||
+      [];
+
+    const catalog =
+      contract
+        ?.sipoc_input
+        ?.documents ||
+      [];
+
     return issues.concat(
       sbCollectActivityDocumentIssues(
-        contract
-          ?.sipoc_input
-          ?.activities ||
-        []
+        activities
+      ),
+
+      sbCollectDocumentCatalogIssues(
+        catalog,
+        activities
       )
     );
   };
@@ -26466,16 +27310,34 @@ goToTemplate =
   function(){
     sbCollectAllInlineActivities();
 
-    const documentIssues =
-      sbCollectActivityDocumentIssues(
+    sbSyncDocumentCatalogFromActivities({
+      render:
+        true
+    });
+
+    const documentIssues = [
+      ...sbCollectActivityDocumentIssues(
         S.acts
-      );
+      ),
+
+      ...sbCollectDocumentCatalogIssues(
+        S.cats.documents,
+        S.acts
+      )
+    ];
 
     if(documentIssues.length){
       const firstIssue =
         documentIssues[0];
 
       if(
+        firstIssue.targetId ===
+          'sb_acc_documents' &&
+        $('sb_acc_documents')
+      ){
+        $('sb_acc_documents').open =
+          true;
+      }else if(
         $('sb_acc_activities')
       ){
         $('sb_acc_activities').open =
@@ -26501,7 +27363,7 @@ goToTemplate =
         firstIssue.detail
       );
 
-      return;
+      return false;
     }
 
     return sbGoToTemplateDocumentsBase
@@ -27697,10 +28559,15 @@ if($('btn_add_doc')){
   $('btn_add_doc')
     .addEventListener(
       'click',
-      () =>
-        addCat(
-          'documents'
-        )
+      addSBDocument
+    );
+}
+
+if($('btn_save_documents')){
+  $('btn_save_documents')
+    .addEventListener(
+      'click',
+      saveSBDocuments
     );
 }
 
