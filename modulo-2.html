@@ -3908,7 +3908,43 @@ body{font-size:14px !important}
               </small>
             </div>
 
-      <div id="sb_studio_visual_tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<div id="sb_studio_visual_tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+  <button id="btn_studio_undo" type="button" disabled title="Deshacer último cambio">
+    Deshacer
+  </button>
+
+  <button id="btn_studio_redo" type="button" disabled title="Rehacer último cambio">
+    Rehacer
+  </button>
+
+  <button id="btn_studio_connect" type="button" onclick="sbStudioToggleConnectMode()">
+    Conectar
+  </button>
+
+  <button id="btn_studio_delete_edge" type="button" onclick="sbStudioDeleteSelectedEdge()" disabled>
+    Eliminar conexión
+  </button>
+
+  <button id="btn_studio_add_connector" type="button" onclick="sbStudioAddConnectorPair()" disabled>
+    + Conector
+  </button>
+
+  <button id="btn_studio_remove_connector" type="button" onclick="sbStudioRemoveConnectorPairFromSelectedEdge()" disabled>
+    Quitar conector
+  </button>
+
+  <span
+    id="sb_studio_connection_status"
+    style="min-height:38px;display:inline-flex;align-items:center;color:#5B6F8A;font-size:.76rem;font-weight:750"
+  >
+    Conecta cajas o selecciona una línea para insertar A / 1 / I automáticamente.
+  </span>
+
+  <span
+    id="sb_studio_visual_status"
+    style="min-height:38px;display:inline-flex;align-items:center;color:#5B6F8A;font-size:.76rem;font-weight:750"
+  ></span>
+</div>
   <button id="btn_studio_undo" type="button" disabled title="Deshacer último cambio">
     Deshacer
   </button>
@@ -8316,6 +8352,25 @@ function sbStudioNodeRole(node){
 }
 
 
+function sbStudioIsDecisionNode(
+  node
+){
+  if(!node){
+    return false;
+  }
+
+  return (
+    normalizeText(
+      node.shape || ''
+    ).toLowerCase() === 'decision' ||
+
+    normalizeText(
+      node.activity?.type || ''
+    ).toLowerCase() === 'decision'
+  );
+}
+
+
 function sbStudioEdgeFamily(
   source,
   target
@@ -8329,6 +8384,24 @@ function sbStudioEdgeFamily(
     sbStudioNodeRole(
       target
     );
+
+  /*
+   * Una decisión únicamente puede estar
+   * precedida y seguida por actividades.
+   */
+  if(
+    sbStudioIsDecisionNode(source) &&
+    to !== 'activity'
+  ){
+    return '';
+  }
+
+  if(
+    sbStudioIsDecisionNode(target) &&
+    from !== 'activity'
+  ){
+    return '';
+  }
 
   if(
     from === 'supplier' &&
@@ -8465,6 +8538,717 @@ function sbStudioNextEditableEdgeId(){
 
   return `EDGE-EDIT-${String(index).padStart(3,'0')}`;
 }
+
+
+function sbStudioConnectorSequenceLabel(
+  family,
+  index
+){
+  const number =
+    Math.max(
+      1,
+      Number(index) || 1
+    );
+
+  if(family === 'input'){
+    let value = number;
+    let label = '';
+
+    while(value > 0){
+      value -= 1;
+
+      label =
+        String.fromCharCode(
+          65 + value % 26
+        ) +
+        label;
+
+      value =
+        Math.floor(
+          value / 26
+        );
+    }
+
+    return label;
+  }
+
+  if(family === 'output'){
+    const romanMap = [
+      [1000,'M'],
+      [900,'CM'],
+      [500,'D'],
+      [400,'CD'],
+      [100,'C'],
+      [90,'XC'],
+      [50,'L'],
+      [40,'XL'],
+      [10,'X'],
+      [9,'IX'],
+      [5,'V'],
+      [4,'IV'],
+      [1,'I']
+    ];
+
+    let value = number;
+    let label = '';
+
+    romanMap.forEach(
+      ([unit, symbol]) => {
+        while(value >= unit){
+          label += symbol;
+          value -= unit;
+        }
+      }
+    );
+
+    return label;
+  }
+
+  return String(number);
+}
+
+
+function sbStudioNextConnectorLabel(
+  family
+){
+  const used =
+    new Set(
+      (
+        S.diagramModel
+          ?.diagram_model
+          ?.connectors ||
+        []
+      )
+        .filter(connector =>
+          connector.family === family
+        )
+        .map(connector =>
+          normalizeText(
+            connector.label || ''
+          )
+        )
+        .filter(Boolean)
+    );
+
+  let index = 1;
+
+  let label =
+    sbStudioConnectorSequenceLabel(
+      family,
+      index
+    );
+
+  while(used.has(label)){
+    index += 1;
+
+    label =
+      sbStudioConnectorSequenceLabel(
+        family,
+        index
+      );
+  }
+
+  return label;
+}
+
+
+function sbStudioConnectorVisual(
+  family
+){
+  const symbols =
+    SB_VISUAL_STANDARD.symbols;
+
+  return {
+    input:
+      symbols.connector_input,
+
+    internal:
+      symbols.connector_internal,
+
+    output:
+      symbols.connector_output
+  }[family] ||
+  symbols.connector_internal;
+}
+
+
+function sbStudioCanUseConnectorPair(
+  edge,
+  model = S.diagramModel?.diagram_model
+){
+  if(
+    !edge ||
+    !model
+  ){
+    return false;
+  }
+
+  const source =
+    model.nodes.find(
+      node =>
+        node.id === edge.source
+    );
+
+  const target =
+    model.nodes.find(
+      node =>
+        node.id === edge.target
+    );
+
+  if(
+    !source ||
+    !target
+  ){
+    return false;
+  }
+
+  const from =
+    sbStudioNodeRole(
+      source
+    );
+
+  const to =
+    sbStudioNodeRole(
+      target
+    );
+
+  /*
+   * Letras:
+   * INPUT → ACTIVIDAD
+   *
+   * Números:
+   * ACTIVIDAD → ACTIVIDAD
+   *
+   * Romanos:
+   * ACTIVIDAD → OUTPUT
+   */
+  return (
+    (
+      edge.family === 'input' &&
+      from === 'input' &&
+      to === 'activity'
+    ) ||
+
+    (
+      edge.family === 'internal' &&
+      from === 'activity' &&
+      to === 'activity'
+    ) ||
+
+    (
+      edge.family === 'output' &&
+      from === 'activity' &&
+      to === 'output'
+    )
+  );
+}
+
+
+function sbStudioConnectorPairForEdge(
+  edge,
+  model = S.diagramModel?.diagram_model
+){
+  if(
+    !edge?.connector_pair_id ||
+    !model
+  ){
+    return [];
+  }
+
+  return (
+    model.connectors ||
+    []
+  )
+    .filter(connector =>
+      connector.pair_id ===
+      edge.connector_pair_id
+    )
+    .sort(
+      (a,b) =>
+        (
+          a.side === 'source'
+            ? 0
+            : 1
+        ) -
+        (
+          b.side === 'source'
+            ? 0
+            : 1
+        )
+    );
+}
+
+
+function sbStudioRenderConnectorPair(
+  edge,
+  root = $('sb_studio_canvas'),
+  model = S.diagramModel?.diagram_model
+){
+  const svg =
+    root?.querySelector(
+      'svg'
+    );
+
+  if(
+    !svg ||
+    !edge?.connector_pair_id ||
+    !model
+  ){
+    return false;
+  }
+
+  const pair =
+    sbStudioConnectorPairForEdge(
+      edge,
+      model
+    );
+
+  if(pair.length !== 2){
+    return false;
+  }
+
+  pair.forEach(connector => {
+    let group =
+      svg.querySelector(
+        `[data-sb-connector-id="${connector.id}"]`
+      );
+
+    if(!group){
+      group =
+        document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'g'
+        );
+
+      group.setAttribute(
+        'class',
+        'sb-svg-connector-pair'
+      );
+
+      group.dataset.sbConnectorId =
+        connector.id;
+
+      svg.appendChild(
+        group
+      );
+    }
+
+    const visual =
+      sbStudioConnectorVisual(
+        connector.family
+      );
+
+    const size =
+      Number(
+        connector.width || 28
+      );
+
+    const cx =
+      Number(
+        connector.x || 0
+      ) +
+      size / 2;
+
+    const cy =
+      Number(
+        connector.y || 0
+      ) +
+      size / 2;
+
+    group.innerHTML = `
+      <circle
+        cx="${cx}"
+        cy="${cy}"
+        r="${size / 2 - 1}"
+        fill="${visual.fill}"
+        stroke="${visual.stroke}"
+        stroke-width="1.5"
+      />
+
+      <text
+        x="${cx}"
+        y="${cy + 3.5}"
+        text-anchor="middle"
+        fill="${visual.text}"
+        font-family="Segoe UI,Arial,sans-serif"
+        font-size="8.5"
+        font-weight="900"
+      >
+        ${ex(connector.label)}
+      </text>
+    `;
+  });
+
+  return true;
+}
+
+
+function sbStudioSyncConnectorPairs(
+  root = $('sb_studio_canvas'),
+  model = S.diagramModel?.diagram_model
+){
+  if(
+    !root ||
+    !model
+  ){
+    return false;
+  }
+
+  const validIds =
+    new Set(
+      (
+        model.connectors ||
+        []
+      ).map(connector =>
+        connector.id
+      )
+    );
+
+  root
+    .querySelectorAll(
+      '[data-sb-connector-id]'
+    )
+    .forEach(group => {
+      if(
+        !validIds.has(
+          group.dataset.sbConnectorId
+        )
+      ){
+        group.remove();
+      }
+    });
+
+  (
+    model.edges ||
+    []
+  ).forEach(edge =>
+    sbStudioRenderConnectorPair(
+      edge,
+      root,
+      model
+    )
+  );
+
+  return true;
+}
+
+
+function sbStudioAddConnectorPair(){
+  const selected =
+    S.studio.selectedElement;
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(
+    !S.studio.editing ||
+    selected?.type !== 'edge' ||
+    !model
+  ){
+    gMsg(
+      'warn',
+      'Selecciona primero una conexión.'
+    );
+
+    return false;
+  }
+
+  const edge =
+    model.edges.find(
+      item =>
+        item.id ===
+        selected.id
+    );
+
+  if(!edge){
+    return false;
+  }
+
+  if(
+    !sbStudioCanUseConnectorPair(
+      edge,
+      model
+    )
+  ){
+    gMsg(
+      'warn',
+      'Los conectores se usan en Entrada → Actividad, Actividad → Actividad o Actividad → Salida.'
+    );
+
+    return false;
+  }
+
+  if(edge.connector_pair_id){
+    gMsg(
+      'warn',
+      'La conexión ya tiene un par de conectores.'
+    );
+
+    return false;
+  }
+
+  const source =
+    model.nodes.find(
+      node =>
+        node.id ===
+        edge.source
+    );
+
+  const target =
+    model.nodes.find(
+      node =>
+        node.id ===
+        edge.target
+    );
+
+  const family =
+    edge.family ||
+    'internal';
+
+  const label =
+    sbStudioNextConnectorLabel(
+      family
+    );
+
+  const pairId =
+    `CONN-${family.toUpperCase()}-${Date.now()}`;
+
+  const size =
+    28;
+
+  const sourceCenter = {
+    x:
+      source.x +
+      source.width / 2,
+
+    y:
+      source.y +
+      source.height / 2
+  };
+
+  const targetCenter = {
+    x:
+      target.x +
+      target.width / 2,
+
+    y:
+      target.y +
+      target.height / 2
+  };
+
+  const centerAt =
+    ratio => ({
+      x:
+        sourceCenter.x +
+        (
+          targetCenter.x -
+          sourceCenter.x
+        ) *
+        ratio,
+
+      y:
+        sourceCenter.y +
+        (
+          targetCenter.y -
+          sourceCenter.y
+        ) *
+        ratio
+    });
+
+  const first =
+    centerAt(.28);
+
+  const second =
+    centerAt(.72);
+
+  sbStudioCheckpoint();
+
+  model.connectors =
+    Array.isArray(
+      model.connectors
+    )
+      ? model.connectors
+      : [];
+
+  model.connectors.push(
+    {
+      id:
+        `${pairId}-A`,
+
+      pair_id:
+        pairId,
+
+      edge_id:
+        edge.id,
+
+      family,
+
+      label,
+
+      side:
+        'source',
+
+      x:
+        first.x -
+        size / 2,
+
+      y:
+        first.y -
+        size / 2,
+
+      width:
+        size,
+
+      height:
+        size
+    },
+
+    {
+      id:
+        `${pairId}-B`,
+
+      pair_id:
+        pairId,
+
+      edge_id:
+        edge.id,
+
+      family,
+
+      label,
+
+      side:
+        'target',
+
+      x:
+        second.x -
+        size / 2,
+
+      y:
+        second.y -
+        size / 2,
+
+      width:
+        size,
+
+      height:
+        size
+    }
+  );
+
+  edge.connector_pair_id =
+    pairId;
+
+  edge.connector_label =
+    label;
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioSyncConnectorPairs();
+
+  sbStudioUpdateEdgeElement(
+    edge,
+    Math.max(
+      0,
+      model.edges.findIndex(
+        item =>
+          item.id === edge.id
+      )
+    )
+  );
+
+  sbStudioSyncVisualControls();
+
+  sbStudioRefreshHistoryButtons();
+
+  gMsg(
+    'ok',
+    `Conector ${label} agregado como par visual.`
+  );
+
+  return true;
+}
+
+
+function sbStudioRemoveConnectorPairFromSelectedEdge(){
+  const selected =
+    S.studio.selectedElement;
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(
+    !S.studio.editing ||
+    selected?.type !== 'edge' ||
+    !model
+  ){
+    gMsg(
+      'warn',
+      'Selecciona primero la conexión que contiene el conector.'
+    );
+
+    return false;
+  }
+
+  const edge =
+    model.edges.find(
+      item =>
+        item.id ===
+        selected.id
+    );
+
+  if(
+    !edge ||
+    !edge.connector_pair_id
+  ){
+    return false;
+  }
+
+  sbStudioCheckpoint();
+
+  model.connectors =
+    (
+      model.connectors ||
+      []
+    ).filter(connector =>
+      connector.pair_id !==
+      edge.connector_pair_id
+    );
+
+  delete edge.connector_pair_id;
+  delete edge.connector_label;
+
+  S.studio.saved =
+    false;
+
+  S.optimization.status =
+    'editing';
+
+  sbStudioSyncConnectorPairs();
+
+  sbStudioUpdateEdgeElement(
+    edge,
+    Math.max(
+      0,
+      model.edges.findIndex(
+        item =>
+          item.id === edge.id
+      )
+    )
+  );
+
+  sbStudioSyncVisualControls();
+
+  sbStudioRefreshHistoryButtons();
+
+  return true;
+}  
 
 
 function sbStudioInsertEdgeElement(
@@ -8831,6 +9615,24 @@ function sbStudioDeleteSelectedEdge(){
 
   sbStudioCheckpoint();
 
+  const edge =
+    model.edges[index];
+
+  /*
+   * La pareja de conectores pertenece
+   * únicamente a esta conexión visual.
+   */
+  if(edge.connector_pair_id){
+    model.connectors =
+      (
+        model.connectors ||
+        []
+      ).filter(connector =>
+        connector.pair_id !==
+        edge.connector_pair_id
+      );
+  }
+
   model.edges.splice(
     index,
     1
@@ -8842,6 +9644,8 @@ function sbStudioDeleteSelectedEdge(){
     selected.id
   )?.remove();
 
+  sbStudioSyncConnectorPairs();
+
   S.studio.saved =
     false;
 
@@ -8851,16 +9655,14 @@ function sbStudioDeleteSelectedEdge(){
   sbStudioClearSelection();
 
   sbStudioRefreshHistoryButtons();
+  sbStudioSyncVisualControls();
 
   const status =
     $('sb_studio_connection_status');
 
   if(status){
     status.textContent =
-      (
-        'Conexión eliminada. ' +
-        'Usa Conectar para crear la nueva relación.'
-      );
+      'Conexión eliminada. Usa Conectar para crear una nueva relación.';
   }
 
   return true;
@@ -10236,13 +11038,15 @@ function sbStudioUpdateEdgeElement(
   const source =
     model.nodes.find(
       node =>
-        node.id === edge.source
+        node.id ===
+        edge.source
     );
 
   const target =
     model.nodes.find(
       node =>
-        node.id === edge.target
+        node.id ===
+        edge.target
     );
 
   const group =
@@ -10261,21 +11065,93 @@ function sbStudioUpdateEdgeElement(
   }
 
   const path =
-    Array.from(group.children)
-      .find(element =>
-        element.tagName
-          ?.toLowerCase() === 'path'
-      );
+    Array.from(
+      group.children
+    ).find(element =>
+      element.tagName
+        ?.toLowerCase() ===
+        'path'
+    );
 
   if(path){
-    path.setAttribute(
-      'd',
+    let pathValue =
       sbStudioEdgePath(
         source,
         target,
         edge.family || 'internal',
         index
-      )
+      );
+
+    const pair =
+      sbStudioConnectorPairForEdge(
+        edge,
+        model
+      );
+
+    /*
+     * Con conector:
+     *
+     * origen → círculo
+     *
+     * círculo → destino
+     *
+     * No dibujamos la línea larga central.
+     */
+    if(pair.length === 2){
+      const first =
+        pair.find(item =>
+          item.side === 'source'
+        ) ||
+        pair[0];
+
+      const second =
+        pair.find(item =>
+          item.side === 'target'
+        ) ||
+        pair[1];
+
+      const sourceX =
+        source.x +
+        source.width / 2;
+
+      const sourceY =
+        source.y +
+        source.height / 2;
+
+      const targetX =
+        target.x +
+        target.width / 2;
+
+      const targetY =
+        target.y +
+        target.height / 2;
+
+      const firstX =
+        first.x +
+        first.width / 2;
+
+      const firstY =
+        first.y +
+        first.height / 2;
+
+      const secondX =
+        second.x +
+        second.width / 2;
+
+      const secondY =
+        second.y +
+        second.height / 2;
+
+      pathValue =
+        `M ${sourceX} ${sourceY} ` +
+        `H ${firstX} V ${firstY} ` +
+        `M ${secondX} ${secondY} ` +
+        `H ${targetX} V ${targetY}`;
+    }
+
+    path.setAttribute(
+      'd',
+      pathValue
     );
 
     path.setAttribute(
@@ -10286,37 +11162,6 @@ function sbStudioUpdateEdgeElement(
     path.setAttribute(
       'stroke-width',
       '1.5'
-    );
-  }
-
-  const label =
-    group.querySelector(
-      'foreignObject'
-    );
-
-  if(label){
-    label.setAttribute(
-      'x',
-      String(
-        (
-          source.x +
-          source.width / 2 +
-          target.x +
-          target.width / 2
-        ) / 2 - 42
-      )
-    );
-
-    label.setAttribute(
-      'y',
-      String(
-        (
-          source.y +
-          source.height / 2 +
-          target.y +
-          target.height / 2
-        ) / 2 - 10
-      )
     );
   }
 
@@ -10342,6 +11187,11 @@ function sbStudioApplyModelVisuals(
       )
   );
 
+  sbStudioSyncConnectorPairs(
+    root,
+    model
+  );
+
   sbStudioSyncEdgeElements(
     root,
     model
@@ -10360,7 +11210,6 @@ function sbStudioApplyModelVisuals(
 
   return true;
 }
-
 
 function sbStudioUpdateConnectedEdges(nodeId){
   const model =
@@ -10445,85 +11294,69 @@ function sbStudioClampNodeToLane(
   };
 }
 
-
 function sbStudioSyncVisualControls(){
-  const symbol =
-    $('sb_studio_symbol_profile');
+  const selected =
+    S.studio.selectedElement;
 
-  const color =
-    $('sb_studio_color_role');
+  const deleteEdge =
+    $('btn_studio_delete_edge');
 
-  const reset =
-    $('btn_studio_reset_visual');
+  const addConnector =
+    $('btn_studio_add_connector');
+
+  const removeConnector =
+    $('btn_studio_remove_connector');
 
   const status =
     $('sb_studio_visual_status');
 
-  if(
-    !symbol ||
-    !color ||
-    !reset
-  ){
-    return false;
-  }
-
-  const selected =
-    S.studio.selectedElement;
-
-  const node =
-    selected?.type === 'node'
+  const edge =
+    selected?.type === 'edge'
       ? sbStudioGetEntity(
-          'node',
+          'edge',
           selected.id
         )
       : null;
 
-  const enabled =
-    Boolean(
-      S.studio.editing &&
-      node
-    );
-
-  symbol.disabled =
-    !enabled;
-
-  color.disabled =
-    !enabled;
-
-  reset.disabled =
-    !enabled;
-
-  if(!node){
-    symbol.value =
-      'auto';
-
-    color.value =
-      'auto';
-
-    if(status){
-      status.textContent =
-        selected
-          ? 'La simbología se edita únicamente en nodos.'
-          : 'Selecciona un nodo.';
-    }
-
-    return true;
+  if(deleteEdge){
+    deleteEdge.disabled =
+      !(
+        S.studio.editing &&
+        edge
+      );
   }
 
-  symbol.value =
-    node.visual_style
-      ?.symbol_profile ||
-    'auto';
+  if(addConnector){
+    addConnector.disabled =
+      !(
+        S.studio.editing &&
+        edge &&
+        !edge.connector_pair_id &&
+        sbStudioCanUseConnectorPair(
+          edge
+        )
+      );
+  }
 
-  color.value =
-    node.visual_style
-      ?.color_role ||
-    'auto';
+  if(removeConnector){
+    removeConnector.disabled =
+      !(
+        S.studio.editing &&
+        edge?.connector_pair_id
+      );
+  }
 
   if(status){
     status.textContent =
-      node.label ||
-      node.id;
+      edge
+        ? (
+            'Conexión: ' +
+            sbStudioEntityTitle(
+              'edge',
+              edge
+            )
+          )
+        : 'Selecciona una caja o conexión.';
   }
 
   return true;
