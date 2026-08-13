@@ -13416,7 +13416,10 @@ function sbInlineActivityTemplate(
             <div class="field">
               <label>Tipo *</label>
 
-              <select class="sb-inline-type">
+              <select
+                class="sb-inline-type"
+                onchange="sbHandleInlineActivityTypeChange(${index})"
+              >
                 <option
                   value="operation"
                   ${!isDecision ? 'selected' : ''}
@@ -13475,21 +13478,25 @@ function sbInlineActivityTemplate(
           )
         )}
 
-        ${sbInlineSubsection(
-          index,
-          'input',
-          'Entrada / proveedor',
-          Array.isArray(
-            activity?.input_relations
-          )
-            ? activity.input_relations.length
-            : inputs.length,
-          sbInlineIORows(
-            activity,
-            index,
-            'input'
-          )
-        )}
+        ${
+          isDecision
+            ? ''
+            : sbInlineSubsection(
+                index,
+                'input',
+                'Entrada / proveedor',
+                Array.isArray(
+                  activity?.input_relations
+                )
+                  ? activity.input_relations.length
+                  : inputs.length,
+                sbInlineIORows(
+                  activity,
+                  index,
+                  'input'
+                )
+              )
+        }
 
         ${sbInlineSubsection(
           index,
@@ -13503,21 +13510,25 @@ function sbInlineActivityTemplate(
           )
         )}
 
-        ${sbInlineSubsection(
-          index,
-          'output',
-          'Salida / cliente',
-          Array.isArray(
-            activity?.output_relations
-          )
-            ? activity.output_relations.length
-            : outputs.length,
-          sbInlineIORows(
-            activity,
-            index,
-            'output'
-          )
-        )}
+        ${
+          isDecision
+            ? ''
+            : sbInlineSubsection(
+                index,
+                'output',
+                'Salida / cliente',
+                Array.isArray(
+                  activity?.output_relations
+                )
+                  ? activity.output_relations.length
+                  : outputs.length,
+                sbInlineIORows(
+                  activity,
+                  index,
+                  'output'
+                )
+              )
+        }
 
         <div class="sb-inline-card-actions">
 
@@ -13565,6 +13576,59 @@ function sbInlineActivityTemplate(
 }
 
 
+function sbHandleInlineActivityTypeChange(
+  index
+){
+  const viewState =
+    sbCaptureInlineViewState(
+      index,
+      'previous'
+    );
+
+  const activity =
+    sbCollectInlineActivity(
+      index
+    );
+
+  if(!activity){
+    return false;
+  }
+
+  if(activity.type === 'decision'){
+    activity.ext_suppliers = [];
+    activity.ext_inputs = [];
+    activity.ext_outputs = [];
+    activity.ext_customers = [];
+    activity.input_relations = [];
+    activity.output_relations = [];
+    activity.entry_links = [];
+    activity.exit_links = [];
+  }
+
+  S.acts[index] =
+    activity;
+
+  resetSBGeneratedArtifacts();
+
+  renderActsTable();
+
+  sbReopenInlineActivity(
+    index,
+    'previous',
+    viewState
+  );
+
+  if(activity.type === 'decision'){
+    gMsg(
+      'ok',
+      'Decisión configurada: solo admite actividad previa y actividades siguientes.'
+    );
+  }
+
+  return true;
+}
+
+
 function sbCollectInlineActivity(
   index
 ){
@@ -13580,7 +13644,7 @@ function sbCollectInlineActivity(
     return current || null;
   }
 
-    const {
+  const {
     observations:
       _discardedObservations,
 
@@ -13660,6 +13724,17 @@ function sbCollectInlineActivity(
           item.name
         );
 
+  const type =
+    card.querySelector(
+      '.sb-inline-type'
+    )?.value ===
+      'decision'
+        ? 'decision'
+        : 'operation';
+
+  const isDecision =
+    type === 'decision';
+
   const previousRelations =
     readRelations(
       'previous'
@@ -13671,14 +13746,18 @@ function sbCollectInlineActivity(
     );
 
   const inputItems =
-    readIO(
-      'input'
-    );
+    isDecision
+      ? []
+      : readIO(
+          'input'
+        );
 
   const outputItems =
-    readIO(
-      'output'
-    );
+    isDecision
+      ? []
+      : readIO(
+          'output'
+        );
 
   return {
     ...currentWithoutObservations,
@@ -13690,13 +13769,7 @@ function sbCollectInlineActivity(
         )?.value || ''
       ),
 
-    type:
-      card.querySelector(
-        '.sb-inline-type'
-      )?.value ===
-        'decision'
-          ? 'decision'
-          : 'operation',
+    type,
 
     actor:
       normalizeText(
@@ -14978,13 +15051,25 @@ function saveSBInlineActivity(
 
   if(
     savedActivity?.type ===
-      'decision' &&
-    savedActivity.next_relations.length <
-      2
+      'decision'
   ){
-    missing.push(
-      'dos rutas de salida'
-    );
+    if(
+      savedActivity.previous_relations.length <
+        1
+    ){
+      missing.push(
+        'una actividad previa'
+      );
+    }
+
+    if(
+      savedActivity.next_relations.length <
+        2
+    ){
+      missing.push(
+        'dos actividades siguientes'
+      );
+    }
   }
 
   if(missing.length){
