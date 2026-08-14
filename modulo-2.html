@@ -16648,7 +16648,6 @@ function sbPreviewIOName(
   );
 }
 
-
 function sbCollectStructuralIssues(
   contract
 ){
@@ -16697,56 +16696,6 @@ function sbCollectStructuralIssues(
     });
   };
 
-  if(!normalizeText(input.process_name || '')){
-    add(
-      'Falta el nombre del proceso',
-      'Completa el nombre que identificará el diagrama.',
-      'sb_acc_process_base'
-    );
-  }
-
-  if(!normalizeText(input.purpose || '')){
-    add(
-      'Falta la finalidad del proceso',
-      'Registra el propósito y alcance general.',
-      'sb_acc_process_base'
-    );
-  }
-
-  if(!actors.length){
-    add(
-      'No existen actores o carriles',
-      'Agrega al menos un actor interno.',
-      'sb_acc_actors'
-    );
-  }
-
-  if(!suppliersInputs.length){
-    add(
-      'No existen entradas y proveedores',
-      'Registra al menos una relación Proveedor → Entrada.',
-      'sb_acc_supplier_inputs'
-    );
-  }
-
-  if(!outputsCustomers.length){
-    add(
-      'No existen salidas y clientes',
-      'Registra al menos una relación Salida → Cliente.',
-      'sb_acc_output_customers'
-    );
-  }
-
-  if(!activities.length){
-    add(
-      'No existen actividades',
-      'Agrega al menos una actividad para construir el flujo.',
-      'sb_acc_activities'
-    );
-
-    return issues;
-  }
-
   const actorIds =
     new Set(
       actors
@@ -16780,67 +16729,218 @@ function sbCollectStructuralIssues(
         .filter(Boolean)
     );
 
+  const inputNames =
+    new Map();
+
+  const outputNames =
+    new Map();
+
+  /*
+   * PROVEEDOR → ENTRADA
+   */
+  suppliersInputs.forEach(
+    row => {
+      const supplier =
+        normalizeText(
+          row?.supplier || ''
+        );
+
+      const inputName =
+        sbPreviewIOName(
+          row,
+          'input'
+        );
+
+      if(
+        supplier &&
+        !inputName
+      ){
+        add(
+          `${supplier} no tiene entrada conectada`,
+          'Todo proveedor debe entregar al menos una entrada.',
+          'sb_acc_supplier_inputs'
+        );
+      }
+
+      if(
+        inputName &&
+        !supplier
+      ){
+        add(
+          `${inputName} no tiene proveedor conectado`,
+          'Toda entrada debe recibir información o material desde al menos un proveedor.',
+          'sb_acc_supplier_inputs'
+        );
+      }
+
+      if(inputName){
+        const key =
+          inputName.toLowerCase();
+
+        if(!inputNames.has(key)){
+          inputNames.set(
+            key,
+            {
+              name:
+                inputName,
+
+              activityCount:
+                0,
+
+              hasSupplier:
+                false
+            }
+          );
+        }
+
+        if(supplier){
+          inputNames.get(key)
+            .hasSupplier =
+              true;
+        }
+      }
+    }
+  );
+
+  /*
+   * SALIDA → CLIENTE
+   */
+  outputsCustomers.forEach(
+    row => {
+      const outputName =
+        sbPreviewIOName(
+          row,
+          'output'
+        );
+
+      const customer =
+        normalizeText(
+          row?.customer || ''
+        );
+
+      if(
+        outputName &&
+        !customer
+      ){
+        add(
+          `${outputName} no tiene cliente conectado`,
+          'Toda salida debe ser entregada al menos a un cliente.',
+          'sb_acc_output_customers'
+        );
+      }
+
+      if(
+        customer &&
+        !outputName
+      ){
+        add(
+          `${customer} no tiene salida conectada`,
+          'Todo cliente debe recibir al menos una salida.',
+          'sb_acc_output_customers'
+        );
+      }
+
+      if(outputName){
+        const key =
+          outputName.toLowerCase();
+
+        if(!outputNames.has(key)){
+          outputNames.set(
+            key,
+            {
+              name:
+                outputName,
+
+              activityCount:
+                0,
+
+              hasCustomer:
+                false
+            }
+          );
+        }
+
+        if(customer){
+          outputNames.get(key)
+            .hasCustomer =
+              true;
+        }
+      }
+    }
+  );
+
+  /*
+   * ACTIVIDADES Y DECISIONES
+   */
   activities.forEach(
     (activity, index) => {
       const name =
         normalizeText(
           activity?.name || ''
-        );
+        ) ||
+        `Actividad ${index + 1}`;
 
-      if(!name){
-        add(
-          `Actividad ${index + 1} sin nombre`,
-          'Completa el nombre de la actividad.',
-          'sb_acc_activities',
-          index
+      const actorLaneId =
+        normalizeText(
+          activity?.actor_lane_id || ''
         );
-      }
 
       if(
-        !normalizeText(
-          activity?.actor_lane_id || ''
-        ) ||
+        !actorLaneId ||
         !actorIds.has(
-          normalizeText(
-            activity?.actor_lane_id || ''
-          )
+          actorLaneId
         )
       ){
         add(
-          `${name || `Actividad ${index + 1}`} sin actor válido`,
-          'Selecciona un actor o carril existente.',
+          `${name} no tiene actor o carril válido`,
+          'Toda actividad debe pertenecer a un carril existente.',
           'sb_acc_activities',
           index
         );
       }
+
+      const previous =
+        sbArray(
+          activity?.previous
+        );
 
       const next =
         sbArray(
           activity?.next
         );
 
-      if(
-        normalizeText(
-          activity?.type || ''
-        ).toLowerCase() ===
-          'decision' &&
-        next.length < 2
-      ){
-        add(
-          `${name || `Decisión ${index + 1}`} tiene menos de dos rutas`,
-          'Toda decisión debe declarar al menos dos actividades siguientes.',
-          'sb_acc_activities',
-          index
-        );
-      }
-
-      [
-        'previous',
-        'next'
-      ].forEach(direction => {
+      const inputs =
         sbArray(
-          activity?.[direction]
-        ).forEach(relation => {
+          activity?.inputs
+        )
+          .map(item =>
+            sbPreviewIOName(
+              item,
+              'input'
+            )
+          )
+          .filter(Boolean);
+
+      const outputs =
+        sbArray(
+          activity?.outputs
+        )
+          .map(item =>
+            sbPreviewIOName(
+              item,
+              'output'
+            )
+          )
+          .filter(Boolean);
+
+      let resolvedPrevious =
+        0;
+
+      let resolvedNext =
+        0;
+
+      previous.forEach(
+        relation => {
           const relationId =
             sbPreviewRelationId(
               relation
@@ -16865,61 +16965,255 @@ function sbCollectStructuralIssues(
               )
             );
 
-          if(!resolved){
+          if(resolved){
+            resolvedPrevious +=
+              1;
+          }else{
             add(
-              `Relación ${
-                direction === 'previous'
-                  ? 'previa'
-                  : 'siguiente'
-              } no resuelta`,
-              `${
-                name ||
-                `Actividad ${index + 1}`
-              } → ${
-                relationName ||
-                relationId ||
-                'sin referencia'
-              }.`,
+              'Relación previa no resuelta',
+              `${name} recibe una conexión desde ${relationName || relationId || 'una actividad sin referencia válida'}.`,
               'sb_acc_activities',
               index
             );
           }
-        });
-      });
+        }
+      );
+
+      next.forEach(
+        relation => {
+          const relationId =
+            sbPreviewRelationId(
+              relation
+            );
+
+          const relationName =
+            sbPreviewRelationName(
+              relation
+            );
+
+          const resolved =
+            (
+              relationId &&
+              activityIds.has(
+                relationId
+              )
+            ) ||
+            (
+              relationName &&
+              activityNames.has(
+                relationName.toLowerCase()
+              )
+            );
+
+          if(resolved){
+            resolvedNext +=
+              1;
+          }else{
+            add(
+              'Relación siguiente no resuelta',
+              `${name} entrega una conexión hacia ${relationName || relationId || 'una actividad sin referencia válida'}.`,
+              'sb_acc_activities',
+              index
+            );
+          }
+        }
+      );
+
+      let validInputCount =
+        0;
+
+      inputs.forEach(
+        inputName => {
+          const registered =
+            inputNames.get(
+              inputName.toLowerCase()
+            );
+
+          if(
+            registered &&
+            registered.hasSupplier
+          ){
+            validInputCount +=
+              1;
+
+            registered.activityCount +=
+              1;
+          }else{
+            add(
+              `${inputName} no tiene proveedor conectado`,
+              `${name} usa esta entrada, pero no existe una relación completa Proveedor → Entrada.`,
+              'sb_acc_supplier_inputs'
+            );
+          }
+        }
+      );
+
+      let validOutputCount =
+        0;
+
+      outputs.forEach(
+        outputName => {
+          const registered =
+            outputNames.get(
+              outputName.toLowerCase()
+            );
+
+          if(
+            registered &&
+            registered.hasCustomer
+          ){
+            validOutputCount +=
+              1;
+
+            registered.activityCount +=
+              1;
+          }else{
+            add(
+              `${outputName} no tiene cliente conectado`,
+              `${name} genera esta salida, pero no existe una relación completa Salida → Cliente.`,
+              'sb_acc_output_customers'
+            );
+          }
+        }
+      );
+
+      const isDecision =
+        normalizeText(
+          activity?.type || ''
+        ).toLowerCase() ===
+          'decision';
+
+      if(isDecision){
+        if(resolvedPrevious < 1){
+          add(
+            `${name} no tiene actividad previa`,
+            'Toda decisión debe recibir una conexión desde al menos una actividad.',
+            'sb_acc_activities',
+            index
+          );
+        }
+
+        if(resolvedNext < 2){
+          add(
+            `${name} tiene menos de dos actividades siguientes`,
+            'Toda decisión debe conectar con al menos dos actividades posteriores.',
+            'sb_acc_activities',
+            index
+          );
+        }
+
+        if(
+          inputs.length ||
+          outputs.length
+        ){
+          add(
+            `${name} tiene una entrada o salida directa`,
+            'Una decisión solo puede conectarse con actividades previas y siguientes.',
+            'sb_acc_activities',
+            index
+          );
+        }
+
+        return;
+      }
+
+      /*
+       * Toda actividad normal debe tener
+       * al menos una conexión por cada lado.
+       */
+      if(
+        resolvedPrevious +
+        validInputCount <
+        1
+      ){
+        add(
+          `${name} no tiene conexión de entrada`,
+          'Toda actividad debe recibir al menos una Entrada o una Actividad previa.',
+          'sb_acc_activities',
+          index
+        );
+      }
+
+      if(
+        resolvedNext +
+        validOutputCount <
+        1
+      ){
+        add(
+          `${name} no tiene conexión de salida`,
+          'Toda actividad debe entregar al menos a una Actividad siguiente o a una Salida.',
+          'sb_acc_activities',
+          index
+        );
+      }
     }
   );
 
-  if(
-    !activities.some(activity =>
-      sbArray(
-        activity?.previous
-      ).length === 0
-    )
-  ){
-    add(
-      'No existe una actividad inicial',
-      'Debe existir al menos una actividad sin conexión previa.',
-      'sb_acc_activities'
-    );
-  }
+  /*
+   * ENTRADA debe conectar:
+   * Proveedor → Entrada → Actividad
+   */
+  inputNames.forEach(
+    inputItem => {
+      if(
+        inputItem.hasSupplier &&
+        inputItem.activityCount < 1
+      ){
+        add(
+          `${inputItem.name} no está conectada a una actividad`,
+          'Toda entrada debe recibir desde un proveedor y entregar a por lo menos una actividad.',
+          'sb_acc_supplier_inputs'
+        );
+      }
+    }
+  );
 
-  if(
-    !activities.some(activity =>
-      sbArray(
-        activity?.next
-      ).length === 0
-    )
-  ){
-    add(
-      'No existe una actividad final',
-      'Debe existir al menos una actividad sin conexión siguiente.',
-      'sb_acc_activities'
-    );
-  }
+  /*
+   * SALIDA debe conectar:
+   * Actividad → Salida → Cliente
+   */
+  outputNames.forEach(
+    outputItem => {
+      if(
+        outputItem.hasCustomer &&
+        outputItem.activityCount < 1
+      ){
+        add(
+          `${outputItem.name} no tiene actividad previa`,
+          'Toda salida debe recibir desde al menos una actividad antes de entregarse a un cliente.',
+          'sb_acc_output_customers'
+        );
+      }
+    }
+  );
 
-  return issues;
+  /*
+   * Evita alertas exactamente repetidas.
+   */
+  const uniqueIssues =
+    new Map();
+
+  issues.forEach(issue => {
+    const key =
+      [
+        issue.title,
+        issue.detail,
+        issue.targetId,
+        issue.activityIndex ?? ''
+      ].join('|');
+
+    if(!uniqueIssues.has(key)){
+      uniqueIssues.set(
+        key,
+        issue
+      );
+    }
+  });
+
+  return Array.from(
+    uniqueIssues.values()
+  );
 }
-
 
 function sbOpenDataTarget(
   targetId,
@@ -21733,7 +22027,11 @@ function validateActivitiesSemantic(activities) {
 
       if (
         target &&
-        !target.previous
+        !(
+          Array.isArray(target.previous)
+            ? target.previous
+            : []
+        )
           .map(value =>
             normalizeText(value).toLowerCase()
           )
@@ -21745,17 +22043,47 @@ function validateActivitiesSemantic(activities) {
       }
     });
 
+    const isDecision =
+      normalizeText(
+        activity.type || ''
+      ).toLowerCase() === 'decision';
+
+    if (isDecision && previous.length < 1) {
+      blockingErrors.push(
+        `La decisión "${name}" debe tener al menos una actividad previa.`
+      );
+    }
+
+    if (isDecision && next.length < 2) {
+      blockingErrors.push(
+        `La decisión "${name}" debe tener al menos dos actividades siguientes.`
+      );
+    }
+
+    const directInputs =
+      Array.isArray(activity.ext_inputs)
+        ? activity.ext_inputs
+        : [];
+
+    const directOutputs =
+      Array.isArray(activity.ext_outputs)
+        ? activity.ext_outputs
+        : [];
+
     if (
-      activity.type === 'decision' &&
-      next.length < 2
+      isDecision &&
+      (
+        directInputs.length ||
+        directOutputs.length
+      )
     ) {
       blockingErrors.push(
-        `La decisión "${name}" debe tener al menos dos rutas.`
+        `La decisión "${name}" no puede tener entradas o salidas directas.`
       );
     }
 
     if (
-      activity.type === 'decision' &&
+      isDecision &&
       Array.isArray(activity.next_relations)
     ) {
       const unlabeled =
@@ -21771,32 +22099,6 @@ function validateActivitiesSemantic(activities) {
       }
     }
   });
-
-  const startCount =
-    list.filter(activity =>
-      activity.is_start
-    ).length;
-
-  const endCount =
-    list.filter(activity =>
-      activity.is_end
-    ).length;
-
-  if (!startCount) {
-    warnings.push('No se identificó actividad inicial.');
-  }
-
-  if (!endCount) {
-    warnings.push('No se identificó actividad final.');
-  }
-
-  if (startCount > 1) {
-    warnings.push('Existe más de una actividad inicial.');
-  }
-
-  if (endCount > 1) {
-    warnings.push('Existe más de una actividad final.');
-  }
 
   return {
     blockingErrors: [...new Set(blockingErrors)],
@@ -27225,26 +27527,6 @@ function saveSBDocuments(){
       S.acts
     );
 
-  if(issues.length){
-    const firstIssue =
-      issues[0];
-
-    if($('sb_acc_documents')){
-      $('sb_acc_documents').open =
-        true;
-    }
-
-    gMsg(
-      'warn',
-
-      firstIssue.title +
-      '. ' +
-      firstIssue.detail
-    );
-
-    return false;
-  }
-
   sbSyncEditorToContract();
 
   resetSBGeneratedArtifacts();
@@ -27252,6 +27534,15 @@ function saveSBDocuments(){
   sbCloseDataAccordion(
     'sb_acc_documents'
   );
+
+  if(issues.length){
+    gMsg(
+      'warn',
+      `Catálogo de documentos guardado. Quedan ${issues.length} vacío(s) estructural(es) por corregir.`
+    );
+
+    return true;
+  }
 
   gMsg(
     'ok',
@@ -28297,49 +28588,33 @@ goToTemplate =
         true
     });
 
-    const documentIssues = [
-      ...sbCollectActivityDocumentIssues(
-        S.acts
-      ),
+    const contract =
+      sbSyncEditorToContract();
 
-      ...sbCollectDocumentCatalogIssues(
-        S.cats.documents,
-        S.acts
-      )
-    ];
+    const structuralIssues =
+      sbCollectStructuralIssues(
+        contract
+      );
 
-    if(documentIssues.length){
+    sbRenderStructuralIssues(
+      structuralIssues
+    );
+
+    if(structuralIssues.length){
       const firstIssue =
-        documentIssues[0];
+        structuralIssues[0];
 
-      if(
-        firstIssue.targetId ===
-          'sb_acc_documents' &&
-        $('sb_acc_documents')
-      ){
-        $('sb_acc_documents').open =
-          true;
-      }else if(
-        $('sb_acc_activities')
-      ){
-        $('sb_acc_activities').open =
-          true;
-      }
-
-      if(
+      sbOpenDataTarget(
+        firstIssue.targetId,
         Number.isInteger(
           firstIssue.activityIndex
         )
-      ){
-        sbReopenInlineActivity(
-          firstIssue.activityIndex,
-          'documents'
-        );
-      }
+          ? firstIssue.activityIndex
+          : null
+      );
 
       gMsg(
         'warn',
-
         firstIssue.title +
         '. ' +
         firstIssue.detail
