@@ -6662,63 +6662,1322 @@ if (typeof window.renderIndicatorsChips === "function") {
 <script>
 const LMP_CONTEXT = ${payload};
 
+/*
+ * Persistencia independiente por:
+ * - tipo de instrumento;
+ * - proceso.
+ *
+ * Esto evita que entrevista, cuestionario y status
+ * compartan accidentalmente el mismo borrador.
+ */
+const LMP_INSTRUMENT_STORAGE_KEY =
+  "SGMP_LMP_INSTRUMENT::" +
+  String(
+    document.title ||
+    "Instrumento LMP"
+  ) +
+  "::" +
+  String(
+    LMP_CONTEXT.processCode ||
+    LMP_CONTEXT.processName ||
+    "sin_proceso"
+  );
+
+let LMP_DRAFT_SAVE_TIMER = null;
+
+
+/* =========================
+   UTILIDADES GENERALES
+========================= */
+
 function esc(value){
-  return String(value ?? "").replace(/[&<>"']/g, (m) => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-  })[m]);
+  return String(
+    value ?? ""
+  )
+    .replace(
+      /[&<>"']/g,
+      function(m){
+        return {
+          "&":"&amp;",
+          "<":"&lt;",
+          ">":"&gt;",
+          '"':"&quot;",
+          "'":"&#39;"
+        }[m];
+      }
+    );
 }
 
-function downloadJson(filename, obj){
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+/* =========================
+   DISPONIBILIDAD STORAGE
+========================= */
+
+function lmpStorageAvailable(){
+  try{
+
+    const testKey =
+      "__SGMP_LMP_STORAGE_TEST__";
+
+    localStorage.setItem(
+      testKey,
+      "1"
+    );
+
+    localStorage.removeItem(
+      testKey
+    );
+
+    return true;
+
+  }catch(error){
+
+    return false;
+  }
 }
 
-function showMsg(id, type, text){
-  const el = document.getElementById(id);
-  if(!el) return;
-  el.className = "msg show " + type;
-  el.textContent = text;
+
+/* =========================
+   ESTADO VISUAL
+========================= */
+
+function lmpEnsureLocalStatus(){
+
+  let status =
+    document.getElementById(
+      "lmp_local_status"
+    );
+
+
+  if(status){
+    return status;
+  }
+
+
+  const heroRight =
+    document.querySelector(
+      ".hero-right"
+    );
+
+
+  if(!heroRight){
+    return null;
+  }
+
+
+  const saveButton =
+    document.createElement(
+      "button"
+    );
+
+  saveButton.type =
+    "button";
+
+  saveButton.className =
+    "btn-ghost";
+
+  saveButton.textContent =
+    "Guardar avance";
+
+  saveButton.addEventListener(
+    "click",
+    function(){
+
+      lmpSaveInstrumentDraft(
+        false
+      );
+    }
+  );
+
+
+  const newButton =
+    document.createElement(
+      "button"
+    );
+
+  newButton.type =
+    "button";
+
+  newButton.className =
+    "btn-ghost";
+
+  newButton.textContent =
+    "Nueva respuesta";
+
+  newButton.addEventListener(
+    "click",
+    lmpResetInstrumentDraft
+  );
+
+
+  status =
+    document.createElement(
+      "span"
+    );
+
+  status.id =
+    "lmp_local_status";
+
+  status.className =
+    "pill";
+
+  status.textContent =
+    "Guardado local pendiente";
+
+
+  /*
+   * Orden final:
+   * Guardar avance
+   * Nueva respuesta
+   * Estado
+   * Imprimir/PDF
+   * Badge
+   */
+  heroRight.prepend(
+    status
+  );
+
+  heroRight.prepend(
+    newButton
+  );
+
+  heroRight.prepend(
+    saveButton
+  );
+
+
+  return status;
 }
 
-function fillContext(prefix, data){
-  const set = (id, value) => {
-    const el = document.getElementById(prefix + "_" + id);
-    if(el) el.value = value ?? "";
-  };
-  set("company", data.company || "");
-  set("process", data.processName || "");
-  set("code", data.processCode || "");
-  set("owner", data.owner || "");
-  set("analyst", data.analyst || "");
-  set("industry", data.industry || "");
-  set("type", data.processType || "");
-  set("activity", data.activity || "");
-  set("purpose", data.purpose || "");
+
+function lmpSetLocalStatus(
+  text,
+  tone
+){
+
+  const status =
+    lmpEnsureLocalStatus();
+
+
+  if(!status){
+    return;
+  }
+
+
+  status.textContent =
+    text;
+
+
+  if(tone === "ok"){
+
+    status.style.background =
+      "rgba(31,170,84,.18)";
+
+    status.style.borderColor =
+      "rgba(31,170,84,.38)";
+  }
+
+  else if(tone === "warn"){
+
+    status.style.background =
+      "rgba(209,141,24,.18)";
+
+    status.style.borderColor =
+      "rgba(209,141,24,.38)";
+  }
+
+  else{
+
+    status.style.background =
+      "rgba(255,255,255,.12)";
+
+    status.style.borderColor =
+      "rgba(255,255,255,.18)";
+  }
 }
 
-function gatherContext(prefix){
-  const get = (id) => document.getElementById(prefix + "_" + id)?.value?.trim() || "";
+
+/* =========================
+   CAPTURA DE CAMPOS
+========================= */
+
+function lmpCollectInstrumentFields(){
+
+  const fields = {};
+
+
+  document
+    .querySelectorAll(
+      "input[id], textarea[id], select[id]"
+    )
+
+    .forEach(
+      function(el){
+
+        /*
+         * Nunca persistimos archivos.
+         */
+        if(
+          el.type === "file" ||
+          el.type === "button" ||
+          el.type === "submit"
+        ){
+          return;
+        }
+
+
+        if(
+          el.type === "checkbox" ||
+          el.type === "radio"
+        ){
+
+          fields[
+            el.id
+          ] = {
+
+            kind:
+              "checked",
+
+            checked:
+              !!el.checked
+          };
+
+          return;
+        }
+
+
+        fields[
+          el.id
+        ] = {
+
+          kind:
+            "value",
+
+          value:
+            el.value ?? ""
+        };
+      }
+    );
+
+
+  return fields;
+}
+
+
+/* =========================
+   GUARDAR BORRADOR
+========================= */
+
+function lmpSaveInstrumentDraft(
+  silent
+){
+
+  if(
+    !lmpStorageAvailable()
+  ){
+
+    if(!silent){
+
+      lmpSetLocalStatus(
+        "Guardado local no disponible",
+        "warn"
+      );
+    }
+
+    return false;
+  }
+
+
+  try{
+
+    const draft = {
+
+      contract:
+        "SGMP_LMP_INSTRUMENT_DRAFT",
+
+      version:
+        "1.0",
+
+      instrument:
+        String(
+          document.title ||
+          "Instrumento LMP"
+        ),
+
+      processCode:
+        String(
+          LMP_CONTEXT.processCode ||
+          ""
+        ),
+
+      savedAt:
+        new Date()
+          .toISOString(),
+
+      fields:
+        lmpCollectInstrumentFields()
+    };
+
+
+    localStorage.setItem(
+
+      LMP_INSTRUMENT_STORAGE_KEY,
+
+      JSON.stringify(
+        draft
+      )
+    );
+
+
+    if(!silent){
+
+      lmpSetLocalStatus(
+        "Avance guardado en este navegador",
+        "ok"
+      );
+    }
+
+
+    return true;
+
+  }catch(error){
+
+    console.error(
+      "[LMP] No fue posible guardar el borrador local.",
+      error
+    );
+
+
+    if(!silent){
+
+      lmpSetLocalStatus(
+        "No fue posible guardar el avance",
+        "warn"
+      );
+    }
+
+
+    return false;
+  }
+}
+
+
+/* =========================
+   RESTAURAR BORRADOR
+========================= */
+
+function lmpRestoreInstrumentDraft(){
+
+  if(
+    !lmpStorageAvailable()
+  ){
+
+    lmpSetLocalStatus(
+      "Guardado local no disponible",
+      "warn"
+    );
+
+    return false;
+  }
+
+
+  try{
+
+    const raw =
+      localStorage.getItem(
+        LMP_INSTRUMENT_STORAGE_KEY
+      );
+
+
+    if(!raw){
+
+      lmpSetLocalStatus(
+        "Guardado automático activo",
+        "ok"
+      );
+
+      return false;
+    }
+
+
+    const draft =
+      JSON.parse(
+        raw
+      );
+
+
+    if(
+      !draft ||
+      typeof draft !==
+        "object" ||
+      !draft.fields ||
+      typeof draft.fields !==
+        "object"
+    ){
+
+      throw new Error(
+        "Borrador local inválido."
+      );
+    }
+
+
+    Object.entries(
+      draft.fields
+    )
+      .forEach(
+        function(entry){
+
+          const id =
+            entry[0];
+
+          const saved =
+            entry[1] || {};
+
+          const el =
+            document.getElementById(
+              id
+            );
+
+
+          /*
+           * Si una versión futura elimina
+           * un campo, simplemente se ignora.
+           */
+          if(!el){
+            return;
+          }
+
+
+          if(
+            saved.kind ===
+            "checked"
+          ){
+
+            el.checked =
+              !!saved.checked;
+
+            return;
+          }
+
+
+          if(
+            saved.kind ===
+            "value"
+          ){
+
+            el.value =
+              saved.value ?? "";
+          }
+        }
+      );
+
+
+    const savedAt =
+      draft.savedAt
+        ? new Date(
+            draft.savedAt
+          )
+        : null;
+
+
+    const label =
+      savedAt &&
+      !Number.isNaN(
+        savedAt.getTime()
+      )
+
+        ? savedAt
+            .toLocaleString()
+
+        : "";
+
+
+    lmpSetLocalStatus(
+
+      label
+
+        ? "Borrador restaurado · " +
+          label
+
+        : "Borrador local restaurado",
+
+      "ok"
+    );
+
+
+    return true;
+
+  }catch(error){
+
+    console.error(
+      "[LMP] No fue posible restaurar el borrador local.",
+      error
+    );
+
+
+    lmpSetLocalStatus(
+      "Borrador local no recuperable",
+      "warn"
+    );
+
+
+    return false;
+  }
+}
+
+
+/* =========================
+   AUTOGUARDADO
+========================= */
+
+function lmpScheduleInstrumentDraftSave(){
+
+  clearTimeout(
+    LMP_DRAFT_SAVE_TIMER
+  );
+
+
+  LMP_DRAFT_SAVE_TIMER =
+    setTimeout(
+      function(){
+
+        const saved =
+          lmpSaveInstrumentDraft(
+            true
+          );
+
+
+        if(saved){
+
+          lmpSetLocalStatus(
+            "Guardado automático activo",
+            "ok"
+          );
+        }
+
+      },
+      350
+    );
+}
+
+
+/* =========================
+   NUEVA RESPUESTA
+========================= */
+
+function lmpResetInstrumentDraft(){
+
+  const confirmed =
+    window.confirm(
+      "Se eliminarán las respuestas guardadas en este navegador para este instrumento. ¿Continuar?"
+    );
+
+
+  if(!confirmed){
+    return false;
+  }
+
+
+  try{
+
+    localStorage.removeItem(
+      LMP_INSTRUMENT_STORAGE_KEY
+    );
+
+  }catch(error){
+
+    console.warn(
+      "[LMP] No fue posible limpiar localStorage.",
+      error
+    );
+  }
+
+
+  document
+    .querySelectorAll(
+      "input[id], textarea[id], select[id]"
+    )
+
+    .forEach(
+      function(el){
+
+        /*
+         * El contexto del proceso vuelve
+         * al valor original generado por LMP.
+         */
+        if(
+          el.id.startsWith(
+            "ctx_"
+          ) ||
+          el.readOnly ||
+          el.disabled
+        ){
+          return;
+        }
+
+
+        if(
+          el.type ===
+            "checkbox" ||
+          el.type ===
+            "radio"
+        ){
+
+          el.checked =
+            false;
+
+          return;
+        }
+
+
+        if(
+          el.tagName ===
+          "SELECT"
+        ){
+
+          el.selectedIndex =
+            0;
+
+          return;
+        }
+
+
+        if(
+          el.type ===
+          "hidden"
+        ){
+
+          if(
+            el.id ===
+              "interview_date" ||
+            el.id ===
+              "questionnaire_date"
+          ){
+
+            el.value =
+              new Date()
+                .toISOString()
+                .slice(
+                  0,
+                  10
+                );
+          }
+
+          return;
+        }
+
+
+        el.value =
+          "";
+      }
+    );
+
+
+  /*
+   * Recupera el contexto original
+   * precargado desde LMP.
+   */
+  fillContext(
+    "ctx",
+    LMP_CONTEXT
+  );
+
+
+  /*
+   * Limpia vistas JSON anteriores.
+   */
+  document
+    .querySelectorAll(
+      ".pre"
+    )
+
+    .forEach(
+      function(el){
+
+        el.textContent =
+          "";
+      }
+    );
+
+
+  lmpSetLocalStatus(
+    "Nueva respuesta lista",
+    "ok"
+  );
+
+
+  return true;
+}
+
+
+/* =========================
+   INICIALIZAR PERSISTENCIA
+========================= */
+
+function lmpInitInstrumentPersistence(){
+
+  lmpEnsureLocalStatus();
+
+
+  /*
+   * Se ejecuta después del init propio
+   * del cuestionario/entrevista.
+   *
+   * Primero se carga el contexto LMP,
+   * después se restaura el borrador.
+   */
+  lmpRestoreInstrumentDraft();
+
+
+  document.addEventListener(
+
+    "input",
+
+    function(event){
+
+      const target =
+        event.target;
+
+
+      if(
+        target &&
+        target.matches &&
+        target.matches(
+          "input[id], textarea[id], select[id]"
+        )
+      ){
+
+        lmpScheduleInstrumentDraftSave();
+      }
+    },
+
+    true
+  );
+
+
+  document.addEventListener(
+
+    "change",
+
+    function(event){
+
+      const target =
+        event.target;
+
+
+      if(
+        target &&
+        target.matches &&
+        target.matches(
+          "input[id], textarea[id], select[id]"
+        )
+      ){
+
+        lmpScheduleInstrumentDraftSave();
+      }
+    },
+
+    true
+  );
+
+
+  /*
+   * Último intento de persistencia
+   * al cerrar, recargar o abandonar.
+   */
+  window.addEventListener(
+
+    "pagehide",
+
+    function(){
+
+      lmpSaveInstrumentDraft(
+        true
+      );
+    }
+  );
+
+
+  window.addEventListener(
+
+    "beforeunload",
+
+    function(){
+
+      lmpSaveInstrumentDraft(
+        true
+      );
+    }
+  );
+}
+
+
+/* =========================
+   DESCARGA JSON ROBUSTA
+========================= */
+
+function downloadJson(
+  filename,
+  obj
+){
+
+  let jsonText;
+
+
+  /*
+   * Primero validamos que el objeto
+   * realmente pueda convertirse a JSON.
+   */
+  try{
+
+    jsonText =
+      JSON.stringify(
+        obj,
+        null,
+        2
+      );
+
+  }catch(error){
+
+    console.error(
+      "[LMP] No fue posible serializar el JSON.",
+      error
+    );
+
+
+    lmpSetLocalStatus(
+      "El JSON no pudo generarse",
+      "warn"
+    );
+
+
+    window.alert(
+      "No fue posible preparar el archivo JSON. " +
+      "Tus respuestas permanecen guardadas localmente."
+    );
+
+
+    throw error;
+  }
+
+
+  if(!jsonText){
+
+    const error =
+      new Error(
+        "El JSON generado está vacío."
+      );
+
+
+    lmpSetLocalStatus(
+      "El JSON está vacío",
+      "warn"
+    );
+
+
+    throw error;
+  }
+
+
+  /*
+   * Siempre guardamos el borrador
+   * inmediatamente antes de descargar.
+   */
+  lmpSaveInstrumentDraft(
+    true
+  );
+
+
+  /*
+   * Método principal:
+   * Blob + Object URL.
+   */
+  try{
+
+    const blob =
+      new Blob(
+
+        [
+          jsonText
+        ],
+
+        {
+          type:
+            "application/json;charset=utf-8"
+        }
+      );
+
+
+    /*
+     * Compatibilidad con navegadores
+     * Microsoft antiguos.
+     */
+    if(
+      window.navigator &&
+      typeof window.navigator
+        .msSaveOrOpenBlob ===
+        "function"
+    ){
+
+      window.navigator
+        .msSaveOrOpenBlob(
+          blob,
+          filename
+        );
+
+
+      lmpSetLocalStatus(
+        "Descarga iniciada · avance guardado",
+        "ok"
+      );
+
+
+      return true;
+    }
+
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+
+    const a =
+      document.createElement(
+        "a"
+      );
+
+
+    a.href =
+      url;
+
+    a.download =
+      filename;
+
+    a.style.display =
+      "none";
+
+
+    document.body
+      .appendChild(
+        a
+      );
+
+
+    a.click();
+
+    a.remove();
+
+
+    setTimeout(
+      function(){
+
+        URL.revokeObjectURL(
+          url
+        );
+
+      },
+      1500
+    );
+
+
+    lmpSetLocalStatus(
+      "Descarga iniciada · avance guardado",
+      "ok"
+    );
+
+
+    return true;
+
+  }catch(primaryError){
+
+    console.error(
+      "[LMP] Descarga Blob fallida.",
+      primaryError
+    );
+  }
+
+
+  /*
+   * Fallback:
+   * Data URI.
+   */
+  try{
+
+    const a =
+      document.createElement(
+        "a"
+      );
+
+
+    a.href =
+      "data:application/json;charset=utf-8," +
+      encodeURIComponent(
+        jsonText
+      );
+
+
+    a.download =
+      filename;
+
+    a.style.display =
+      "none";
+
+
+    document.body
+      .appendChild(
+        a
+      );
+
+
+    a.click();
+
+    a.remove();
+
+
+    lmpSetLocalStatus(
+      "Descarga iniciada por modo alternativo",
+      "ok"
+    );
+
+
+    return true;
+
+  }catch(fallbackError){
+
+    console.error(
+      "[LMP] Descarga alternativa fallida.",
+      fallbackError
+    );
+
+
+    lmpSetLocalStatus(
+      "No fue posible descargar el JSON",
+      "warn"
+    );
+
+
+    window.alert(
+      "No fue posible descargar las respuestas. " +
+      "No cierres esta página: el avance permanece guardado localmente. " +
+      "Intenta nuevamente o usa Ver JSON para copiar la información."
+    );
+
+
+    throw fallbackError;
+  }
+}
+
+
+/* =========================
+   MENSAJES
+========================= */
+
+function showMsg(
+  id,
+  type,
+  text
+){
+
+  const el =
+    document.getElementById(
+      id
+    );
+
+
+  if(!el){
+    return;
+  }
+
+
+  el.className =
+    "msg show " +
+    type;
+
+
+  el.textContent =
+    text;
+}
+
+
+/* =========================
+   CONTEXTO LMP
+========================= */
+
+function fillContext(
+  prefix,
+  data
+){
+
+  const set =
+    function(
+      id,
+      value
+    ){
+
+      const el =
+        document.getElementById(
+          prefix +
+          "_" +
+          id
+        );
+
+
+      if(el){
+
+        el.value =
+          value ?? "";
+      }
+    };
+
+
+  set(
+    "company",
+    data.company ||
+    ""
+  );
+
+  set(
+    "process",
+    data.processName ||
+    ""
+  );
+
+  set(
+    "code",
+    data.processCode ||
+    ""
+  );
+
+  set(
+    "owner",
+    data.owner ||
+    ""
+  );
+
+  set(
+    "analyst",
+    data.analyst ||
+    ""
+  );
+
+  set(
+    "industry",
+    data.industry ||
+    ""
+  );
+
+  set(
+    "type",
+    data.processType ||
+    ""
+  );
+
+  set(
+    "activity",
+    data.activity ||
+    ""
+  );
+
+  set(
+    "purpose",
+    data.purpose ||
+    ""
+  );
+}
+
+
+function gatherContext(
+  prefix
+){
+
+  const get =
+    function(id){
+
+      return (
+        document.getElementById(
+          prefix +
+          "_" +
+          id
+        )
+          ?.value
+          ?.trim() ||
+        ""
+      );
+    };
+
+
   return {
-    company: get("company"),
-    processName: get("process"),
-    processCode: get("code"),
-    owner: get("owner"),
-    analyst: get("analyst"),
-    industry: get("industry"),
-    processType: get("type"),
-    activity: get("activity"),
-    purpose: get("purpose")
+
+    company:
+      get(
+        "company"
+      ),
+
+    processName:
+      get(
+        "process"
+      ),
+
+    processCode:
+      get(
+        "code"
+      ),
+
+    owner:
+      get(
+        "owner"
+      ),
+
+    analyst:
+      get(
+        "analyst"
+      ),
+
+    industry:
+      get(
+        "industry"
+      ),
+
+    processType:
+      get(
+        "type"
+      ),
+
+    activity:
+      get(
+        "activity"
+      ),
+
+    purpose:
+      get(
+        "purpose"
+      )
   };
 }
 
+
+/*
+ * Script específico:
+ *
+ * - Cuestionario actores internos
+ * - Entrevista guía
+ * - Entrevista de status
+ *
+ * Se conserva exactamente como lo genera
+ * cada builder actual.
+ */
 ${script}
+
+
+/*
+ * El init propio del instrumento anterior
+ * ya se ejecutó.
+ *
+ * Ahora activamos persistencia y recuperación.
+ */
+lmpInitInstrumentPersistence();
+
 <\/script>
 
 </body>
