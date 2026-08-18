@@ -15399,36 +15399,82 @@ function deleteAsIsGlobalOutputRow(button){
 }
   
 function renderAsIsActivities(){
-  const container = qs('asisActivities');
+  const container =
+    qs('asisActivities');
+
   if(!container) return;
+
+  state.asis =
+    state.asis || {};
+
+  state.asis.activities =
+    safeArray(
+      state.asis.activities
+    );
 
   renderAsIsGlobalCatalogs();
 
   container.innerHTML = '';
-  const activities = state.asis.activities || [];
+
+  const activities =
+    state.asis.activities;
 
   if(!activities.length){
-    container.innerHTML = '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
+    container.innerHTML =
+      '<div class="note">No hay actividades cargadas. Procesa Prompt A para cargar as_is_process o usa “Agregar actividad”.</div>';
 
-    if(typeof renderAdditionalInformation === 'function'){
-  renderAdditionalInformation();
-}
+    if(
+      typeof renderAdditionalInformation ===
+      'function'
+    ){
+      renderAdditionalInformation();
+    }
 
-    updateAsIsPreview();
+    /*
+     * CRÍTICO:
+     * No ejecutar updateAsIsPreview() aquí.
+     * Un render vacío nunca debe sobrescribir
+     * el último AS-IS válido.
+     */
+    if(
+      typeof renderAsIsQuickDashboard ===
+      'function'
+    ){
+      renderAsIsQuickDashboard();
+    }
+
     return;
   }
 
-  activities.forEach((a, index) => {
-    container.insertAdjacentHTML('beforeend', asisActivityTemplate(a, index));
-  });
+  activities.forEach(
+    (activity, index) => {
+      container.insertAdjacentHTML(
+        'beforeend',
+        asisActivityTemplate(
+          activity,
+          index
+        )
+      );
+    }
+  );
 
-  qsa('#asisActivities .activity-item').forEach((item, index) => {
-    refreshAsIsActivitySummary(item, index);
-  });
+  qsa(
+    '#asisActivities .activity-item'
+  ).forEach(
+    (item, index) => {
+      refreshAsIsActivitySummary(
+        item,
+        index
+      );
+    }
+  );
 
-  if(typeof renderAdditionalInformation === 'function'){
-  renderAdditionalInformation();
-}
+  if(
+    typeof renderAdditionalInformation ===
+    'function'
+  ){
+    renderAdditionalInformation();
+  }
 
   updateAsIsPreview();
 }
@@ -22991,100 +23037,157 @@ function processPromptAResponse(){
       qs('promptAResponsePreview')?.textContent?.trim() ||
       '';
 
-    if(!rawText || rawText === 'Sin JSON generado.' || rawText === 'No se generó JSON. Revisa el mensaje de error.'){
-      showMsg('cargaMsg', 'warn', 'Primero genera o pega un JSON AS-IS para validarlo.');
+    if(
+      !rawText ||
+      rawText === 'Sin JSON generado.' ||
+      rawText === 'No se generó JSON. Revisa el mensaje de error.'
+    ){
+      showMsg(
+        'cargaMsg',
+        'warn',
+        'Primero genera o pega un JSON AS-IS para validarlo.'
+      );
       return;
     }
 
-    const parsed = extractJsonFromText(rawText);
-    const adapted = coerceAnyPayloadToAsIsProcess(parsed);
+    const parsed =
+      extractJsonFromText(rawText);
 
-    const coverage = validatePromptACoverageAgainstExtractor(adapted);
+    const adapted =
+      coerceAnyPayloadToAsIsProcess(parsed);
 
-    if(!coverage.ok){
-      state.asIsProcess = null;
-      state.asIsProcessApproved = false;
+    const normalized =
+      normalizePromptAAsIsProcess(adapted);
 
-      if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
-      if(qs('structuredAsIsGapsKpi')) qs('structuredAsIsGapsKpi').textContent = '0';
-      if(qs('structuredAsIsValidationBox')){
-        qs('structuredAsIsValidationBox').innerHTML =
-          '<div class="brief-empty-state">JSON no aplicable al LMP por cobertura incompleta.</div>';
-      }
+    const asis =
+      normalized?.as_is_process || {};
 
-      showMsg('cargaMsg', 'err', coverage.message);
-      refreshCargaFlowState();
-      return;
-    }
-
-    const normalized = normalizePromptAAsIsProcess(adapted);
-    const asis = normalized?.as_is_process || {};
+    const activityCount =
+      safeArray(asis.activities)
+        .filter(activity =>
+          normalizeContractString(
+            activity?.name ||
+            activity?.activity ||
+            activity?.activity_name ||
+            ''
+          )
+        )
+        .length;
 
     const structureOk = !!(
       Array.isArray(asis.suppliers_inputs) &&
       Array.isArray(asis.outputs_customers) &&
       Array.isArray(asis.activities) &&
-      Array.isArray(asis.additional_information)
+      Array.isArray(asis.additional_information) &&
+      activityCount > 0
     );
 
     if(!structureOk){
-      state.asIsProcess = null;
+      state.promptAOutput = null;
       state.asIsProcessApproved = false;
 
-      if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
-      if(qs('structuredAsIsGapsKpi')) qs('structuredAsIsGapsKpi').textContent = '0';
-      if(qs('structuredAsIsValidationBox')){
-        qs('structuredAsIsValidationBox').innerHTML =
-          '<div class="brief-empty-state">JSON no aplicable: falta estructura base as_is_process.</div>';
+      if(qs('structuredAsIsApprovedKpi')){
+        qs('structuredAsIsApprovedKpi').textContent = 'No';
       }
 
-      showMsg('cargaMsg', 'err', 'JSON no válido para aplicar al LMP.');
+      if(qs('structuredAsIsGapsKpi')){
+        qs('structuredAsIsGapsKpi').textContent = '0';
+      }
+
+      if(qs('structuredAsIsValidationBox')){
+        qs('structuredAsIsValidationBox').innerHTML =
+          '<div class="brief-empty-state">JSON no aplicable: Prompt A no contiene actividades AS-IS válidas.</div>';
+      }
+
+      showMsg(
+        'cargaMsg',
+        'err',
+        'Prompt A devolvió una estructura sin actividades. No se aplicará al LMP.'
+      );
+
       refreshCargaFlowState();
       return;
     }
 
-const validator = typeof lmpStructuralValidator === 'function'
-  ? lmpStructuralValidator(normalized)
-  : null;
+    const coverage =
+      validatePromptACoverageAgainstExtractor(normalized);
 
-const issues = safeArray(
-  validator?.issues ||
-  validator?.blocking_issues ||
-  validator?.validation?.gaps ||
-  validatePromptAAsIsProcess(normalized)
-);
+    if(!coverage.ok){
+      state.promptAOutput = null;
+      state.asIsProcessApproved = false;
 
-/*
- * Conserva una copia independiente del resultado original
- * validado de Prompt A.
- *
- * state.asIsProcess podrá cambiar posteriormente cuando el
- * usuario edite y guarde el AS-IS.
- */
-state.promptAOutput =
-  JSON.parse(
-    JSON.stringify(normalized)
-  );
+      if(qs('structuredAsIsApprovedKpi')){
+        qs('structuredAsIsApprovedKpi').textContent = 'No';
+      }
 
-state.asIsProcess = normalized;
-state.brief = normalized;
+      if(qs('structuredAsIsValidationBox')){
+        qs('structuredAsIsValidationBox').innerHTML =
+          '<div class="brief-empty-state">JSON no aplicable al LMP por cobertura incompleta.</div>';
+      }
 
-state.briefReview = {
-      raw: normalized,
+      showMsg(
+        'cargaMsg',
+        'err',
+        coverage.message
+      );
+
+      refreshCargaFlowState();
+      return;
+    }
+
+    const validator =
+      typeof lmpStructuralValidator === 'function'
+        ? lmpStructuralValidator(normalized)
+        : null;
+
+    const issues = safeArray(
+      validator?.issues ||
+      validator?.blocking_issues ||
+      validator?.validation?.gaps ||
+      validatePromptAAsIsProcess(normalized)
+    );
+
+    /*
+     * Resultado validado de Prompt A.
+     * Se mantiene separado del AS-IS editable.
+     */
+    state.promptAOutput =
+      JSON.parse(
+        JSON.stringify(normalized)
+      );
+
+    state.brief =
+      JSON.parse(
+        JSON.stringify(normalized)
+      );
+
+    state.briefReview = {
+      raw:
+        JSON.parse(
+          JSON.stringify(normalized)
+        ),
       approved: true,
       type: 'as_is_process',
       issues
     };
+
     state.asIsProcessApproved = true;
 
-    const formatted = JSON.stringify(normalized, null, 2);
+    const formatted =
+      JSON.stringify(
+        normalized,
+        null,
+        2
+      );
 
     if(qs('promptAResponseEditor')){
-      qs('promptAResponseEditor').value = formatted;
+      qs('promptAResponseEditor').value =
+        formatted;
     }
 
     if(qs('promptAResponsePreview')){
-      qs('promptAResponsePreview').textContent = formatted;
+      qs('promptAResponsePreview').textContent =
+        formatted;
     }
 
     renderStructuredAsIsValidation();
@@ -23093,147 +23196,202 @@ state.briefReview = {
       refreshCargaFlowState();
     }
 
-    showMsg('cargaMsg', 'ok', 'JSON validado correctamente. Ya puede aplicarse al LMP.');
+    showMsg(
+      'cargaMsg',
+      'ok',
+      `JSON validado correctamente. ${activityCount} elementos AS-IS detectados. Ya puede aplicarse al LMP.`
+    );
 
   }catch(error){
+    state.promptAOutput = null;
     state.asIsProcessApproved = false;
 
-    if(qs('structuredAsIsApprovedKpi')) qs('structuredAsIsApprovedKpi').textContent = 'No';
+    if(qs('structuredAsIsApprovedKpi')){
+      qs('structuredAsIsApprovedKpi').textContent = 'No';
+    }
 
-    showMsg('cargaMsg', 'err', 'No fue posible validar el JSON. Detalle: ' + error.message);
+    showMsg(
+      'cargaMsg',
+      'err',
+      'No fue posible validar el JSON. Detalle: ' +
+      error.message
+    );
   }
 }
 
   
 function applyStructuredAsIsToLmp(){
   try{
-    let payload = state.asIsProcess;
+    /*
+     * Fuente prioritaria:
+     * resultado original VALIDADO de Prompt A.
+     */
+    let payload =
+      state.promptAOutput &&
+      state.promptAOutput.as_is_process
+        ? JSON.parse(
+            JSON.stringify(
+              state.promptAOutput
+            )
+          )
+        : null;
 
-    if(!(payload && payload.as_is_process)){
-      const rawText =   qs('promptAResponseEditor')?.value?.trim() ||   qs('promptAResponsePreview')?.textContent?.trim() ||   '';
+    /*
+     * Si todavía no existe resultado validado,
+     * valida primero el contenido actual del editor.
+     */
+    if(!payload){
+      const rawText =
+        qs('promptAResponseEditor')?.value?.trim() ||
+        qs('promptAResponsePreview')?.textContent?.trim() ||
+        '';
 
       if(!rawText){
         showMsg(
           'cargaMsg',
           'warn',
-          'Primero genera o valida el JSON estructurado de Prompt A.'
+          'Primero genera y valida el JSON estructurado de Prompt A.'
         );
         return;
       }
 
       processPromptAResponse();
-      payload = state.asIsProcess;
+
+      payload =
+        state.promptAOutput &&
+        state.promptAOutput.as_is_process
+          ? JSON.parse(
+              JSON.stringify(
+                state.promptAOutput
+              )
+            )
+          : null;
     }
 
     if(!(payload && payload.as_is_process)){
       showMsg(
         'cargaMsg',
         'err',
-        'No fue posible aplicar al LMP porque no existe un as_is_process válido.'
+        'No fue posible aplicar al LMP porque Prompt A no tiene un resultado validado.'
       );
       return;
     }
 
-const normalized = normalizePromptAAsIsProcess(payload);
+    const normalized =
+      normalizePromptAAsIsProcess(
+        payload
+      );
 
-const validator = typeof lmpStructuralValidator === 'function'
-  ? lmpStructuralValidator(normalized)
-  : null;
+    const activityCount =
+      safeArray(
+        normalized?.as_is_process?.activities
+      ).length;
 
-const issues = safeArray(
-  validator?.issues ||
-  validator?.blocking_issues ||
-  validator?.validation?.gaps ||
-  validatePromptAAsIsProcess(normalized)
-);
-    
-/*
- * Solo registra el resultado original cuando todavía no existe.
- * Las posteriores ediciones del AS-IS no deben sobrescribirlo.
- */
-if(
-  !state.promptAOutput ||
-  !state.promptAOutput.as_is_process
-){
-  state.promptAOutput =
-    JSON.parse(
-      JSON.stringify(normalized)
+    if(activityCount <= 0){
+      showMsg(
+        'cargaMsg',
+        'err',
+        'No se puede aplicar el AS-IS: el resultado validado contiene 0 actividades.'
+      );
+      return;
+    }
+
+    const validator =
+      typeof lmpStructuralValidator === 'function'
+        ? lmpStructuralValidator(normalized)
+        : null;
+
+    const issues = safeArray(
+      validator?.issues ||
+      validator?.blocking_issues ||
+      validator?.validation?.gaps ||
+      validatePromptAAsIsProcess(normalized)
     );
-}
 
-state.asIsProcess = normalized;
-state.brief = normalized;
-state.asIsProcessApproved = true;
+    /*
+     * IMPORTANTE:
+     * Primero hidratamos el estado AS-IS.
+     * Después abrimos la sección.
+     */
+    applyPromptAAsIsProcess(
+      JSON.parse(
+        JSON.stringify(normalized)
+      )
+    );
+
+    const appliedCount =
+      safeArray(
+        state.asis?.activities
+      ).length;
+
+    if(appliedCount <= 0){
+      throw new Error(
+        'La transferencia Prompt A → AS-IS no cargó ninguna actividad.'
+      );
+    }
+
+    state.asIsProcess =
+      buildAsIsProcessContract();
+
+    state.asIsProcessApproved = true;
+
     state.briefReview = {
-      raw: normalized,
+      raw:
+        JSON.parse(
+          JSON.stringify(
+            state.asIsProcess
+          )
+        ),
       approved: true,
       type: 'as_is_process',
       issues
     };
 
-    renderStructuredAsIsValidation();
-
+    /*
+     * Solo ahora se abre AS-IS.
+     */
     showSection('asis');
 
-    const asisSection = qs('asis');
-    const progress = qs('asisApplyProgress');
+    if(typeof renderAsIsActivities === 'function'){
+      renderAsIsActivities();
 
-if(asisSection){
-  asisSection.classList.remove('asis-loading');
-  void asisSection.offsetWidth;
-  asisSection.classList.add('asis-loading');
-}
+      if(typeof closeAllAsIsAccordions === 'function'){
+        closeAllAsIsAccordions();
+      }
 
-if(progress) progress.classList.remove('hidden');
-
-    if(qs('asisBuilderMsg')){
-      qs('asisBuilderMsg').className = 'msg';
-      qs('asisBuilderMsg').textContent = '';
-    }
-
-    setTimeout(function(){
-      applyPromptAAsIsProcess(normalized);
-
-      if(typeof renderAsIsActivities === 'function'){
-        renderAsIsActivities();
-
-        if(typeof closeAllAsIsAccordions === 'function'){
-          closeAllAsIsAccordions();
-        }
-
-        document.querySelectorAll('#asis details.activity-item').forEach(detail => {
+      document
+        .querySelectorAll(
+          '#asis details.activity-item'
+        )
+        .forEach(detail => {
           detail.removeAttribute('open');
         });
-      }
+    }
 
-      if(typeof updateAsIsPreview === 'function'){
-        updateAsIsPreview();
-      }
+    if(typeof updateAsIsPreview === 'function'){
+      updateAsIsPreview();
+    }
 
-      if(typeof refreshCargaFlowState === 'function'){
-        refreshCargaFlowState();
-      }
+    if(typeof refreshCargaFlowState === 'function'){
+      refreshCargaFlowState();
+    }
 
-      if(typeof updateTopStatus === 'function'){
-        updateTopStatus();
-      }
+    if(typeof updateTopStatus === 'function'){
+      updateTopStatus();
+    }
 
-      if(asisSection) asisSection.classList.remove('asis-loading');
-      if(progress) progress.classList.add('hidden');
-
-      showMsg(
-        'asisBuilderMsg',
-        'ok',
-        `Proceso AS-IS aplicado correctamente al LMP. Vacíos estructurales detectados: ${issues.length}.`
-      );
-
-    }, 2000);
+    showMsg(
+      'asisBuilderMsg',
+      'ok',
+      `Proceso AS-IS aplicado correctamente: ${appliedCount} elementos cargados. Vacíos estructurales detectados: ${issues.length}.`
+    );
 
   }catch(error){
     showMsg(
       'cargaMsg',
       'err',
-      'No fue posible aplicar el JSON al LMP. Detalle: ' + error.message
+      'No fue posible aplicar el JSON al LMP. Detalle: ' +
+      error.message
     );
   }
 }
