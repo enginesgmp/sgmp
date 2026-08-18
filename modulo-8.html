@@ -2385,61 +2385,333 @@ async function api(action,payload={},options={}){
   return json.data;
 }
 
-function queueActivitySave(activityId, checked){
-  const state = getActivitySaveState();
-  const id = String(activityId || "").trim();
+function activityPendingStorageKey(){
+  const username = String(
+    SESSION?.username || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  return username
+    ? `RADAR_ACTIVITY_PENDING_V2:${username}`
+    : "";
+}
+
+function readPersistedActivityChanges(
+  storageKey
+){
+  if(!storageKey) return [];
+
+  try{
+    const raw =
+      localStorage.getItem(
+        storageKey
+      );
+
+    if(!raw) return [];
+
+    const parsed =
+      JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+
+  }catch(error){
+    console.warn(
+      "No se pudo leer la cola persistente de checks:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function persistActivitySaveQueue(
+  state
+){
+  if(!state?.storageKey) return;
+
+  try{
+    const pending =
+      Array.from(
+        state.queue.values()
+      );
+
+    if(pending.length){
+      localStorage.setItem(
+        state.storageKey,
+        JSON.stringify(pending)
+      );
+    }else{
+      localStorage.removeItem(
+        state.storageKey
+      );
+    }
+
+  }catch(error){
+    console.warn(
+      "No se pudo persistir la cola de checks:",
+      error
+    );
+  }
+}
+
+function getActivitySaveState(){
+  const storageKey =
+    activityPendingStorageKey();
+
+  let state =
+    window.__RADAR_ACTIVITY_SAVE_STATE;
+
+  if(
+    !state ||
+    state.storageKey !== storageKey
+  ){
+    state = {
+      storageKey,
+      queue:new Map(),
+      timer:null,
+      inFlight:null,
+      inFlightBatch:[],
+      hydrated:false,
+      lastVersion:0
+    };
+
+    window.__RADAR_ACTIVITY_SAVE_STATE =
+      state;
+  }
+
+  if(!state.hydrated){
+    const persisted =
+      readPersistedActivityChanges(
+        state.storageKey
+      );
+
+    persisted.forEach(change => {
+      const id = String(
+        change?.actividad_id || ""
+      ).trim();
+
+      if(!id) return;
+
+      const rawVersion = Number(
+        change?.client_version || 0
+      );
+
+      const version =
+        Number.isFinite(rawVersion) &&
+        rawVersion > 0
+          ? rawVersion
+          : Date.now();
+
+      const normalized = {
+        actividad_id:id,
+        completado:Boolean(
+          change?.completado
+        ),
+        client_version:version
+      };
+
+      const current =
+        state.queue.get(id);
+
+      if(
+        !current ||
+        version >= Number(
+          current.client_version || 0
+        )
+      ){
+        state.queue.set(
+          id,
+          normalized
+        );
+      }
+
+      state.lastVersion =
+        Math.max(
+          state.lastVersion,
+          version
+        );
+    });
+
+    state.hydrated = true;
+  }
+
+  return state;
+}
+
+function applyPendingActivityChangesToData(
+  targetData
+){
+  if(
+    !targetData ||
+    !Array.isArray(
+      targetData.actividades
+    )
+  ){
+    return targetData;
+  }
+
+  const state =
+    getActivitySaveState();
+
+  if(!state.queue.size){
+    return targetData;
+  }
+
+  const activitiesById =
+    new Map(
+      targetData.actividades.map(
+        activity => [
+          String(
+            activity?.actividad_id ||
+            ""
+          ).trim(),
+          activity
+        ]
+      )
+    );
+
+  state.queue.forEach(change => {
+    const activity =
+      activitiesById.get(
+        change.actividad_id
+      );
+
+    if(!activity) return;
+
+    activity.completado =
+      Boolean(
+        change.completado
+      );
+
+    activity.estado =
+      change.completado
+        ? "Completado"
+        : "Pendiente";
+  });
+
+  return targetData;
+}
+
+function queueActivitySave(
+  activityId,
+  checked
+){
+  const state =
+    getActivitySaveState();
+
+  const id =
+    String(
+      activityId || ""
+    ).trim();
 
   if(!id) return;
 
+  const current =
+    state.queue.get(id);
+
+  const now =
+    Date.now();
+
+  const version =
+    Math.max(
+      now,
+      Number(
+        current?.client_version || 0
+      ) + 1,
+      Number(
+        state.lastVersion || 0
+      ) + 1
+    );
+
+  state.lastVersion =
+    version;
+
   /*
-   * Si el usuario cambia varias veces el mismo check
-   * antes del guardado, solo se conserva su estado final.
+   * La intención del usuario queda
+   * persistida ANTES del backend.
    */
   state.queue.set(id, {
-    actividad_id: id,
-    completado: Boolean(checked)
+    actividad_id:id,
+    completado:Boolean(checked),
+    client_version:version
   });
 
-  /*
-   * Cada nuevo check reinicia el pequeño tiempo de espera.
-   * Así se pueden marcar muchas actividades seguidas.
-   */
+  persistActivitySaveQueue(
+    state
+  );
+
   if(state.timer){
-    clearTimeout(state.timer);
+    clearTimeout(
+      state.timer
+    );
   }
 
-  state.timer = setTimeout(() => {
-    state.timer = null;
-    void flushActivitySaveQueue();
-  }, 600);
+  /*
+   * Permite marcar muchos checks
+   * consecutivamente.
+   */
+  state.timer =
+    setTimeout(() => {
+      state.timer = null;
+
+      void flushActivitySaveQueue();
+    }, 450);
 }
 
-async function flushActivitySaveQueue(){
-  const state = getActivitySaveState();
+async function flushActivitySaveQueue(
+  options={}
+){
+  const state =
+    getActivitySaveState();
+
+  const silent =
+    Boolean(options.silent);
+
+  /*
+   * Los envíos de checks utilizan
+   * keepalive por defecto.
+   */
+  const keepalive =
+    options.keepalive !== false;
 
   if(state.timer){
-    clearTimeout(state.timer);
+    clearTimeout(
+      state.timer
+    );
+
     state.timer = null;
   }
 
-  if(!apiReady() || !SESSION){
-    state.queue.clear();
-    return true;
+  if(
+    !apiReady() ||
+    !SESSION
+  ){
+    persistActivitySaveQueue(
+      state
+    );
+
+    return false;
   }
 
   /*
-   * Si ya existe un lote guardándose, esperamos.
-   * Los nuevos checks permanecen en la cola.
+   * Solo una sincronización normal
+   * puede ejecutarse simultáneamente.
    */
   if(state.inFlight){
-    const currentOk = await state.inFlight;
+    const currentOk =
+      await state.inFlight;
 
     if(!currentOk){
       return false;
     }
 
     if(state.queue.size){
-      return flushActivitySaveQueue();
+      return flushActivitySaveQueue(
+        options
+      );
     }
 
     return true;
@@ -2449,118 +2721,215 @@ async function flushActivitySaveQueue(){
     return true;
   }
 
-  const batch = Array.from(state.queue.values());
-
   /*
-   * Vaciar únicamente lo que entra en este lote.
-   * Los checks realizados mientras viaja la petición
-   * se agregarán nuevamente a la cola.
+   * Backend actual:
+   * máximo 200 cambios por lote.
    */
-  state.queue.clear();
+  const batch =
+    Array
+      .from(
+        state.queue.values()
+      )
+      .slice(0,200)
+      .map(change => ({
+        ...change
+      }));
 
-  state.inFlight = (async () => {
-    try{
-      const result = await api("update_activity", {
-        username: SESSION.username,
-        cambios: batch
-      });
+  persistActivitySaveQueue(
+    state
+  );
 
-      /*
-       * El backend devuelve los procesos recalculados.
-       * Actualizamos también sus campos almacenados
-       * para mantener el frontend coherente.
-       */
-      const processResults = Array.isArray(result?.procesos)
-        ? result.procesos
-        : [];
+  state.inFlightBatch =
+    batch.map(change => ({
+      ...change
+    }));
 
-      processResults.forEach(item => {
-        const process = (DATA.procesos || []).find(p =>
-          String(p.proceso_id || "") ===
-          String(item.proceso_id || "")
+  state.inFlight =
+    (async () => {
+
+      try{
+        const result =
+          await api(
+            "update_activity",
+            {
+              username:
+                SESSION.username,
+
+              cambios:
+                batch.map(
+                  change => ({
+                    actividad_id:
+                      change.actividad_id,
+
+                    completado:
+                      change.completado
+                  })
+                )
+            },
+            {
+              keepalive
+            }
+          );
+
+        /*
+         * Solo eliminamos del almacenamiento
+         * lo que el backend acaba de confirmar.
+         *
+         * Si el usuario volvió a cambiar ese
+         * mismo check durante la petición,
+         * la versión nueva permanece.
+         */
+        batch.forEach(sent => {
+          const current =
+            state.queue.get(
+              sent.actividad_id
+            );
+
+          if(
+            current &&
+            Number(
+              current.client_version
+            ) ===
+            Number(
+              sent.client_version
+            )
+          ){
+            state.queue.delete(
+              sent.actividad_id
+            );
+          }
+        });
+
+        persistActivitySaveQueue(
+          state
         );
 
-        if(!process) return;
+        const processResults =
+          Array.isArray(
+            result?.procesos
+          )
+            ? result.procesos
+            : [];
 
-        if(item.avance_pct !== undefined){
-          process.avance_pct = item.avance_pct;
-        }
+        processResults.forEach(
+          item => {
 
-        if(item.estado_proceso !== undefined){
-          process.estado_proceso = item.estado_proceso;
-          process.estado_general = item.estado_proceso;
-        }
-      });
+            const process =
+              (
+                DATA.procesos || []
+              ).find(
+                p =>
+                  String(
+                    p.proceso_id || ""
+                  ) ===
+                  String(
+                    item.proceso_id || ""
+                  )
+              );
 
-      toast(
-        batch.length === 1
-          ? "1 check guardado."
-          : `${batch.length} checks guardados.`
-      );
+            if(!process) return;
 
-      return true;
+            if(
+              item.avance_pct !==
+              undefined
+            ){
+              process.avance_pct =
+                item.avance_pct;
+            }
 
-    }catch(error){
-      /*
-       * Si falla el lote, los cambios vuelven a quedar
-       * pendientes. Si durante el envío el usuario cambió
-       * nuevamente una actividad, prevalece el cambio nuevo.
-       */
-      batch.forEach(change => {
-        if(!state.queue.has(change.actividad_id)){
-          state.queue.set(
-            change.actividad_id,
-            change
+            if(
+              item.estado_proceso !==
+              undefined
+            ){
+              process.estado_proceso =
+                item.estado_proceso;
+
+              process.estado_general =
+                item.estado_proceso;
+            }
+          }
+        );
+
+        /*
+         * Un ACK antiguo nunca puede
+         * revertir un check más nuevo.
+         */
+        applyPendingActivityChangesToData(
+          DATA
+        );
+
+        if(!silent){
+          toast(
+            batch.length === 1
+              ? "1 check guardado."
+              : `${batch.length} checks guardados.`
           );
         }
-      });
 
-      console.error(
-        "Error guardando checks en lote:",
-        error
-      );
+        return true;
 
-      toast(
-        `No se pudieron guardar ${batch.length} check(s). ` +
-        "Los cambios permanecen pendientes."
-      );
+      }catch(error){
 
-      return false;
+        /*
+         * NO revertimos la pantalla.
+         * NO borramos el pendiente.
+         */
+        persistActivitySaveQueue(
+          state
+        );
 
-    }finally{
-      state.inFlight = null;
-    }
-  })();
+        console.error(
+          "Error guardando checks en lote:",
+          error
+        );
 
-  const ok = await state.inFlight;
+        if(!silent){
+          toast(
+            `No se pudieron sincronizar ${batch.length} check(s). ` +
+            "Quedan guardados localmente y se reintentará."
+          );
+        }
+
+        return false;
+
+      }finally{
+        state.inFlight = null;
+        state.inFlightBatch = [];
+      }
+    })();
+
+  const ok =
+    await state.inFlight;
 
   /*
-   * Si mientras se guardaba este lote aparecieron
-   * nuevos checks, programamos el siguiente.
+   * Si aparecieron cambios nuevos
+   * durante la petición, continúa.
    */
   if(
     ok &&
     state.queue.size &&
     !state.timer
   ){
-    state.timer = setTimeout(() => {
-      state.timer = null;
-      void flushActivitySaveQueue();
-    }, 300);
+    state.timer =
+      setTimeout(() => {
+        state.timer = null;
+
+        void flushActivitySaveQueue();
+      },250);
   }
 
   return ok;
 }
 
 async function waitForPendingActivitySaves(){
-  const state = getActivitySaveState();
+  const state =
+    getActivitySaveState();
 
-  /*
-   * Si había un guardado esperando los 600 ms,
-   * se fuerza inmediatamente.
-   */
   if(state.timer){
-    clearTimeout(state.timer);
+    clearTimeout(
+      state.timer
+    );
+
     state.timer = null;
   }
 
@@ -2569,7 +2938,8 @@ async function waitForPendingActivitySaves(){
     state.queue.size
   ){
     if(state.inFlight){
-      const ok = await state.inFlight;
+      const ok =
+        await state.inFlight;
 
       if(!ok){
         return false;
@@ -2579,7 +2949,9 @@ async function waitForPendingActivitySaves(){
     }
 
     const ok =
-      await flushActivitySaveQueue();
+      await flushActivitySaveQueue({
+        silent:true
+      });
 
     if(!ok){
       return false;
@@ -2588,6 +2960,172 @@ async function waitForPendingActivitySaves(){
 
   return true;
 }
+
+function scheduleActivityUiRender(){
+  clearTimeout(
+    window
+      .__RADAR_ACTIVITY_RENDER_TIMER
+  );
+
+  window
+    .__RADAR_ACTIVITY_RENDER_TIMER =
+      setTimeout(() => {
+
+        applyPendingActivityChangesToData(
+          DATA
+        );
+
+        render();
+
+      },140);
+}
+
+function flushActivitySaveQueueOnExit(){
+  if(
+    !SESSION ||
+    !apiReady()
+  ){
+    return;
+  }
+
+  const state =
+    getActivitySaveState();
+
+  if(!state.queue.size){
+    return;
+  }
+
+  /*
+   * Primero garantizar copia local.
+   */
+  persistActivitySaveQueue(
+    state
+  );
+
+  const inFlightVersions =
+    new Map(
+      (
+        state.inFlightBatch || []
+      ).map(change => [
+        change.actividad_id,
+        Number(
+          change.client_version || 0
+        )
+      ])
+    );
+
+  /*
+   * Si ya existe una versión viajando,
+   * solo enviamos al salir una versión
+   * posterior del mismo check.
+   */
+  const batch =
+    Array
+      .from(
+        state.queue.values()
+      )
+      .filter(change =>
+        !inFlightVersions.has(
+          change.actividad_id
+        ) ||
+        Number(
+          change.client_version || 0
+        ) >
+        Number(
+          inFlightVersions.get(
+            change.actividad_id
+          ) || 0
+        )
+      )
+      .slice(0,200)
+      .map(change => ({
+        actividad_id:
+          change.actividad_id,
+
+        completado:
+          change.completado
+      }));
+
+  if(!batch.length){
+    return;
+  }
+
+  /*
+   * Intento final de transmisión
+   * aunque la página esté cerrándose.
+   *
+   * La copia local NO se elimina aquí.
+   * Si no llega confirmación, RADAR
+   * la reintentará al volver a abrir.
+   */
+  void api(
+    "update_activity",
+    {
+      username:
+        SESSION.username,
+
+      cambios:
+        batch
+    },
+    {
+      keepalive:true
+    }
+  ).catch(() => {});
+}
+
+function installActivitySaveGuards(){
+  if(
+    window
+      .__RADAR_ACTIVITY_GUARDS_INSTALLED
+  ){
+    return;
+  }
+
+  window
+    .__RADAR_ACTIVITY_GUARDS_INSTALLED =
+      true;
+
+  /*
+   * Cierre/navegación.
+   */
+  window.addEventListener(
+    "pagehide",
+    flushActivitySaveQueueOnExit
+  );
+
+  /*
+   * Cambio de pestaña,
+   * minimización o cierre móvil.
+   */
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if(
+        document.visibilityState ===
+        "hidden"
+      ){
+        flushActivitySaveQueueOnExit();
+      }
+    }
+  );
+
+  /*
+   * Si Internet vuelve,
+   * reintentar automáticamente.
+   */
+  window.addEventListener(
+    "online",
+    () => {
+      if(SESSION){
+        void flushActivitySaveQueue({
+          silent:true
+        });
+      }
+    }
+  );
+}
+
+installActivitySaveGuards();
 
 function toast(msg){
   const el=$("toast"); el.textContent=msg; el.classList.remove("hidden");
@@ -2704,57 +3242,82 @@ await syncData();
 window.login = login;
   
 async function syncData(){
-  const savedState = isAdmin()
-    ? getAdminControlState()
-    : null;
+  const savedState =
+    isAdmin()
+      ? getAdminControlState()
+      : null;
 
   try{
-    if(apiReady() && SESSION){
-
-      /*
-       * Antes de consultar nuevamente Sheets,
-       * asegurar que todos los checks pendientes
-       * hayan sido persistidos.
-       */
+    if(
+      apiReady() &&
+      SESSION
+    ){
       const checksSaved =
         await waitForPendingActivitySaves();
 
       if(!checksSaved){
         throw new Error(
-          "Existen checks pendientes de guardar. " +
-          "RADAR no actualizará los datos para evitar perderlos."
+          "Existen checks pendientes de sincronizar."
         );
       }
 
       const rawBootstrap =
-        await api("bootstrap", {
-          username: SESSION.username
-        });
+        await api(
+          "bootstrap",
+          {
+            username:
+              SESSION.username
+          }
+        );
 
-      applyBootstrapData(rawBootstrap);
+      applyBootstrapData(
+        rawBootstrap
+      );
+
+    }else{
+      applyPendingActivityChangesToData(
+        DATA
+      );
     }
 
     render();
 
     if(savedState){
-      restoreAdminControlState(savedState);
+      restoreAdminControlState(
+        savedState
+      );
     }
 
-    toast("Información actualizada.");
+    toast(
+      "Información actualizada."
+    );
 
   }catch(error){
+
     console.error(
       "Error actualizando RADAR:",
       error
     );
 
+    /*
+     * Si falla Internet/API, la intención
+     * local del usuario sigue mandando.
+     */
+    applyPendingActivityChangesToData(
+      DATA
+    );
+
+    render();
+
     if(savedState){
-      restoreAdminControlState(savedState);
+      restoreAdminControlState(
+        savedState
+      );
     }
 
     toast(
-      "No se pudo actualizar: " +
-      error.message
+      "No se pudo sincronizar completamente. " +
+      "Los checks pendientes permanecen guardados."
     );
   }
 }
@@ -6774,39 +7337,41 @@ function renderAnalystHome(){
     </section>`;
 }
 
-async function toggleActivity(id,checked){
-  const a = activeActivities().find(
-    x => x.actividad_id === id
-  );
+function toggleActivity(id,checked){
+  const a =
+    activeActivities().find(
+      x =>
+        x.actividad_id === id
+    );
 
   if(!a) return;
 
   /*
-   * Actualización inmediata local.
-   * El usuario no espera al backend para
-   * continuar marcando actividades.
+   * Estado inmediato.
    */
-  a.completado = checked;
-  a.estado = checked
-    ? "Completado"
-    : "Pendiente";
+  a.completado =
+    Boolean(checked);
+
+  a.estado =
+    checked
+      ? "Completado"
+      : "Pendiente";
 
   /*
-   * Los porcentajes visibles se actualizan
-   * inmediatamente desde las actividades.
+   * Persistir la intención
+   * inmediatamente.
    */
-  render();
-
-  /*
-   * El guardado real queda en cola.
-   * No se genera una petición por cada click.
-   */
-  if(apiReady() && SESSION){
+  if(SESSION){
     queueActivitySave(
       id,
       checked
     );
   }
+
+  /*
+   * No reconstruir RADAR por cada click.
+   */
+  scheduleActivityUiRender();
 }
   
 async function updateProcess(pid,field,value){
