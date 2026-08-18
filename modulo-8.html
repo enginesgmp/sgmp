@@ -2602,36 +2602,33 @@ function queueActivitySave(
   const state =
     getActivitySaveState();
 
-  const id =
-    String(
-      activityId || ""
-    ).trim();
+  const id = String(
+    activityId || ""
+  ).trim();
 
   if(!id) return;
 
   const current =
     state.queue.get(id);
 
-  const now =
-    Date.now();
+  const now = Date.now();
 
-  const version =
-    Math.max(
-      now,
-      Number(
-        current?.client_version || 0
-      ) + 1,
-      Number(
-        state.lastVersion || 0
-      ) + 1
-    );
+  const version = Math.max(
+    now,
+    Number(
+      current?.client_version || 0
+    ) + 1,
+    Number(
+      state.lastVersion || 0
+    ) + 1
+  );
 
-  state.lastVersion =
-    version;
+  state.lastVersion = version;
 
   /*
-   * La intención del usuario queda
-   * persistida ANTES del backend.
+   * La intención queda almacenada
+   * localmente antes de cualquier
+   * comunicación con el backend.
    */
   state.queue.set(id, {
     actividad_id:id,
@@ -2639,26 +2636,34 @@ function queueActivitySave(
     client_version:version
   });
 
-  persistActivitySaveQueue(
-    state
-  );
-
-  if(state.timer){
-    clearTimeout(
-      state.timer
-    );
-  }
+  persistActivitySaveQueue(state);
 
   /*
-   * Permite marcar muchos checks
-   * consecutivamente.
+   * MICRO-BATCH.
+   *
+   * No reiniciar el temporizador con
+   * cada click.
+   *
+   * El primer check abre una ventana
+   * de 120 ms y todo lo marcado durante
+   * esa ventana viaja junto.
    */
-  state.timer =
-    setTimeout(() => {
-      state.timer = null;
+  if(
+    state.timer ||
+    state.inFlight
+  ){
+    return;
+  }
 
-      void flushActivitySaveQueue();
-    }, 450);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+
+    void flushActivitySaveQueue({
+      silent:true,
+      keepalive:false
+    });
+
+  },120);
 }
 
 async function flushActivitySaveQueue(
@@ -2996,81 +3001,102 @@ function flushActivitySaveQueueOnExit(){
   }
 
   /*
-   * Primero garantizar copia local.
+   * pagehide y visibilitychange pueden
+   * ejecutarse prácticamente juntos.
    */
-  persistActivitySaveQueue(
-    state
-  );
+  const now = Date.now();
 
-  const inFlightVersions =
-    new Map(
-      (
-        state.inFlightBatch || []
-      ).map(change => [
-        change.actividad_id,
-        Number(
-          change.client_version || 0
-        )
-      ])
-    );
+  if(
+    state.lastExitFlushAt &&
+    now - state.lastExitFlushAt < 400
+  ){
+    return;
+  }
+
+  state.lastExitFlushAt = now;
 
   /*
-   * Si ya existe una versión viajando,
-   * solo enviamos al salir una versión
-   * posterior del mismo check.
+   * Nunca eliminar el respaldo local
+   * durante el cierre.
    */
-  const batch =
-    Array
-      .from(
-        state.queue.values()
-      )
-      .filter(change =>
-        !inFlightVersions.has(
-          change.actividad_id
-        ) ||
-        Number(
-          change.client_version || 0
-        ) >
-        Number(
-          inFlightVersions.get(
-            change.actividad_id
-          ) || 0
-        )
-      )
-      .slice(0,200)
-      .map(change => ({
-        actividad_id:
-          change.actividad_id,
+  persistActivitySaveQueue(state);
 
-        completado:
-          change.completado
-      }));
+  /*
+   * Transmitir el estado actualmente
+   * pendiente.
+   *
+   * Máximo admitido por el backend: 200.
+   */
+  const batch = Array
+    .from(state.queue.values())
+    .slice(0,200)
+    .map(change => ({
+      actividad_id:
+        change.actividad_id,
+
+      completado:
+        Boolean(change.completado)
+    }));
 
   if(!batch.length){
     return;
   }
 
-  /*
-   * Intento final de transmisión
-   * aunque la página esté cerrándose.
-   *
-   * La copia local NO se elimina aquí.
-   * Si no llega confirmación, RADAR
-   * la reintentará al volver a abrir.
-   */
-  void api(
-    "update_activity",
-    {
-      username:
-        SESSION.username,
-
-      cambios:
-        batch
-    },
-    {
-      keepalive:true
+  const body = JSON.stringify({
+    action:"update_activity",
+    payload:{
+      username:SESSION.username,
+      cambios:batch
     }
-  ).catch(() => {});
+  });
+
+  let beaconQueued = false;
+
+  /*
+   * Transporte específico para cuando
+   * la página está cerrándose.
+   */
+  try{
+    if(navigator.sendBeacon){
+
+      const blob = new Blob(
+        [body],
+        {
+          type:
+            "text/plain;charset=UTF-8"
+        }
+      );
+
+      beaconQueued =
+        navigator.sendBeacon(
+          API_URL,
+          blob
+        );
+    }
+
+  }catch(error){
+    beaconQueued = false;
+  }
+
+  /*
+   * Fallback.
+   */
+  if(!beaconQueued){
+
+    void fetch(API_URL, {
+      method:"POST",
+
+      headers:{
+        "Content-Type":
+          "text/plain;charset=utf-8"
+      },
+
+      body,
+
+      keepalive:true
+
+    }).catch(() => {});
+  }
 }
 
 function installActivitySaveGuards(){
@@ -3086,7 +3112,7 @@ function installActivitySaveGuards(){
       true;
 
   /*
-   * Cierre/navegación.
+   * Navegación o actualización.
    */
   window.addEventListener(
     "pagehide",
@@ -3094,31 +3120,76 @@ function installActivitySaveGuards(){
   );
 
   /*
-   * Cambio de pestaña,
-   * minimización o cierre móvil.
+   * Cambio de pestaña / minimización.
    */
   document.addEventListener(
     "visibilitychange",
     () => {
+
       if(
         document.visibilityState ===
         "hidden"
       ){
         flushActivitySaveQueueOnExit();
+        return;
+      }
+
+      /*
+       * Al volver, reintentar cualquier
+       * pendiente inmediatamente.
+       */
+      if(SESSION){
+        void flushActivitySaveQueue({
+          silent:true,
+          keepalive:false
+        });
       }
     }
   );
 
   /*
-   * Si Internet vuelve,
-   * reintentar automáticamente.
+   * Regreso de conexión.
    */
   window.addEventListener(
     "online",
     () => {
+
       if(SESSION){
         void flushActivitySaveQueue({
-          silent:true
+          silent:true,
+          keepalive:false
+        });
+      }
+    }
+  );
+
+  /*
+   * Recuperación desde caché del navegador.
+   */
+  window.addEventListener(
+    "pageshow",
+    () => {
+
+      if(SESSION){
+        void flushActivitySaveQueue({
+          silent:true,
+          keepalive:false
+        });
+      }
+    }
+  );
+
+  /*
+   * Recuperación de foco.
+   */
+  window.addEventListener(
+    "focus",
+    () => {
+
+      if(SESSION){
+        void flushActivitySaveQueue({
+          silent:true,
+          keepalive:false
         });
       }
     }
