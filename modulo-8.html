@@ -2475,7 +2475,10 @@ function getActivitySaveState(){
       inFlight:null,
       inFlightBatch:[],
       hydrated:false,
-      lastVersion:0
+      lastVersion:0,
+      retryTimer:null,
+      retryAttempt:0,
+      lastExitFlushAt:0
     };
 
     window.__RADAR_ACTIVITY_SAVE_STATE =
@@ -2539,6 +2542,93 @@ function getActivitySaveState(){
   }
 
   return state;
+}
+
+function clearActivitySaveRetry(){
+  const state =
+    getActivitySaveState();
+
+  if(state.retryTimer){
+    clearTimeout(
+      state.retryTimer
+    );
+
+    state.retryTimer = null;
+  }
+
+  state.retryAttempt = 0;
+}
+
+function scheduleActivitySaveRetry(){
+  const state =
+    getActivitySaveState();
+
+  if(
+    !SESSION ||
+    !apiReady() ||
+    !state.queue.size ||
+    state.retryTimer ||
+    state.inFlight
+  ){
+    return;
+  }
+
+  if(
+    typeof navigator !== "undefined" &&
+    navigator.onLine === false
+  ){
+    return;
+  }
+
+  const baseDelays = [
+    1000,
+    2000,
+    4000,
+    8000,
+    15000,
+    30000
+  ];
+
+  const attempt =
+    Number(
+      state.retryAttempt || 0
+    );
+
+  if(
+    attempt >=
+    baseDelays.length
+  ){
+    return;
+  }
+
+  const baseDelay =
+    baseDelays[attempt];
+
+  const jitter =
+    Math.floor(
+      Math.random() *
+      Math.max(
+        250,
+        baseDelay * 0.25
+      )
+    );
+
+  const delay =
+    baseDelay + jitter;
+
+  state.retryAttempt =
+    attempt + 1;
+
+  state.retryTimer =
+    setTimeout(() => {
+      state.retryTimer = null;
+
+      void flushActivitySaveQueue({
+        silent:true,
+        keepalive:true
+      });
+
+    },delay);
 }
 
 function applyPendingActivityChangesToData(
@@ -2611,43 +2701,52 @@ function queueActivitySave(
   const current =
     state.queue.get(id);
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
-  const version = Math.max(
-    now,
-    Number(
-      current?.client_version || 0
-    ) + 1,
-    Number(
-      state.lastVersion || 0
-    ) + 1
-  );
+  const version =
+    Math.max(
+      now,
+      Number(
+        current?.client_version || 0
+      ) + 1,
+      Number(
+        state.lastVersion || 0
+      ) + 1
+    );
 
-  state.lastVersion = version;
+  state.lastVersion =
+    version;
 
   /*
-   * La intención queda almacenada
-   * localmente antes de cualquier
-   * comunicación con el backend.
+   * Primero disco local.
    */
   state.queue.set(id, {
     actividad_id:id,
-    completado:Boolean(checked),
-    client_version:version
+    completado:
+      Boolean(checked),
+    client_version:
+      version
   });
 
-  persistActivitySaveQueue(state);
+  persistActivitySaveQueue(
+    state
+  );
 
   /*
-   * MICRO-BATCH.
-   *
-   * No reiniciar el temporizador con
-   * cada click.
-   *
-   * El primer check abre una ventana
-   * de 120 ms y todo lo marcado durante
-   * esa ventana viaja junto.
+   * Nueva acción del usuario:
+   * iniciar un nuevo ciclo inmediato.
    */
+  if(state.retryTimer){
+    clearTimeout(
+      state.retryTimer
+    );
+
+    state.retryTimer = null;
+  }
+
+  state.retryAttempt = 0;
+
   if(
     state.timer ||
     state.inFlight
@@ -2655,15 +2754,16 @@ function queueActivitySave(
     return;
   }
 
-  state.timer = setTimeout(() => {
-    state.timer = null;
+  state.timer =
+    setTimeout(() => {
+      state.timer = null;
 
-    void flushActivitySaveQueue({
-      silent:true,
-      keepalive:false
-    });
+      void flushActivitySaveQueue({
+        silent:true,
+        keepalive:true
+      });
 
-  },120);
+    },120);
 }
 
 async function flushActivitySaveQueue(
@@ -2673,12 +2773,10 @@ async function flushActivitySaveQueue(
     getActivitySaveState();
 
   const silent =
-    Boolean(options.silent);
+    Boolean(
+      options.silent
+    );
 
-  /*
-   * Los envíos de checks utilizan
-   * keepalive por defecto.
-   */
   const keepalive =
     options.keepalive !== false;
 
@@ -2702,8 +2800,8 @@ async function flushActivitySaveQueue(
   }
 
   /*
-   * Solo una sincronización normal
-   * puede ejecutarse simultáneamente.
+   * Un único canal normal
+   * de escritura.
    */
   if(state.inFlight){
     const currentOk =
@@ -2723,13 +2821,10 @@ async function flushActivitySaveQueue(
   }
 
   if(!state.queue.size){
+    clearActivitySaveRetry();
     return true;
   }
 
-  /*
-   * Backend actual:
-   * máximo 200 cambios por lote.
-   */
   const batch =
     Array
       .from(
@@ -2777,12 +2872,8 @@ async function flushActivitySaveQueue(
           );
 
         /*
-         * Solo eliminamos del almacenamiento
-         * lo que el backend acaba de confirmar.
-         *
-         * Si el usuario volvió a cambiar ese
-         * mismo check durante la petición,
-         * la versión nueva permanece.
+         * Solo borrar versiones
+         * realmente confirmadas.
          */
         batch.forEach(sent => {
           const current =
@@ -2808,6 +2899,16 @@ async function flushActivitySaveQueue(
         persistActivitySaveQueue(
           state
         );
+
+        if(state.retryTimer){
+          clearTimeout(
+            state.retryTimer
+          );
+
+          state.retryTimer = null;
+        }
+
+        state.retryAttempt = 0;
 
         const processResults =
           Array.isArray(
@@ -2856,8 +2957,8 @@ async function flushActivitySaveQueue(
         );
 
         /*
-         * Un ACK antiguo nunca puede
-         * revertir un check más nuevo.
+         * Una respuesta antigua
+         * nunca pisa una intención nueva.
          */
         applyPendingActivityChangesToData(
           DATA
@@ -2875,10 +2976,6 @@ async function flushActivitySaveQueue(
 
       }catch(error){
 
-        /*
-         * NO revertimos la pantalla.
-         * NO borramos el pendiente.
-         */
         persistActivitySaveQueue(
           state
         );
@@ -2891,7 +2988,7 @@ async function flushActivitySaveQueue(
         if(!silent){
           toast(
             `No se pudieron sincronizar ${batch.length} check(s). ` +
-            "Quedan guardados localmente y se reintentará."
+            "Quedan guardados localmente y se reintentará automáticamente."
           );
         }
 
@@ -2906,12 +3003,17 @@ async function flushActivitySaveQueue(
   const ok =
     await state.inFlight;
 
+  if(!ok){
+    scheduleActivitySaveRetry();
+    return false;
+  }
+
   /*
-   * Si aparecieron cambios nuevos
-   * durante la petición, continúa.
+   * Si aparecieron cambios mientras
+   * el lote estaba viajando,
+   * enviar inmediatamente el siguiente.
    */
   if(
-    ok &&
     state.queue.size &&
     !state.timer
   ){
@@ -2919,11 +3021,15 @@ async function flushActivitySaveQueue(
       setTimeout(() => {
         state.timer = null;
 
-        void flushActivitySaveQueue();
+        void flushActivitySaveQueue({
+          silent:true,
+          keepalive:true
+        });
+
       },250);
   }
 
-  return ok;
+  return true;
 }
 
 async function waitForPendingActivitySaves(){
@@ -3213,10 +3319,68 @@ function showLoginLoading(message) {
 }
 
 function hideLoginLoading() {
-  const overlay = document.getElementById("loginLoadingOverlay");
+  const overlay =
+    document.getElementById(
+      "loginLoadingOverlay"
+    );
+
   if (!overlay) return;
 
-  overlay.classList.add("hidden");
+  overlay.classList.add(
+    "hidden"
+  );
+}
+
+function showSyncLoading(message) {
+  const overlay =
+    document.getElementById(
+      "syncLoadingOverlay"
+    );
+
+  if (!overlay) return;
+
+  /*
+   * Durante login ya existe
+   * un overlay propio.
+   */
+  const loginOverlay =
+    document.getElementById(
+      "loginLoadingOverlay"
+    );
+
+  if(
+    loginOverlay &&
+    !loginOverlay
+      .classList
+      .contains("hidden")
+  ){
+    return;
+  }
+
+  const text =
+    overlay.querySelector("p");
+
+  if(text && message){
+    text.textContent =
+      message;
+  }
+
+  overlay.classList.remove(
+    "hidden"
+  );
+}
+
+function hideSyncLoading() {
+  const overlay =
+    document.getElementById(
+      "syncLoadingOverlay"
+    );
+
+  if (!overlay) return;
+
+  overlay.classList.add(
+    "hidden"
+  );
 }
 async function login() {
   const user = $("loginUser").value.trim();
@@ -3313,16 +3477,41 @@ await syncData();
 window.login = login;
   
 async function syncData(){
+  /*
+   * Evitar dos Actualizar
+   * simultáneos.
+   */
+  if(
+    window
+      .__RADAR_SYNC_IN_PROGRESS
+  ){
+    return;
+  }
+
+  window
+    .__RADAR_SYNC_IN_PROGRESS =
+      true;
+
   const savedState =
     isAdmin()
       ? getAdminControlState()
       : null;
+
+  showSyncLoading(
+    "Sincronizando cambios pendientes y cargando la información más reciente..."
+  );
 
   try{
     if(
       apiReady() &&
       SESSION
     ){
+      /*
+       * Actualizar manualmente inicia
+       * un nuevo ciclo de reintentos.
+       */
+      clearActivitySaveRetry();
+
       const checksSaved =
         await waitForPendingActivitySaves();
 
@@ -3370,10 +3559,6 @@ async function syncData(){
       error
     );
 
-    /*
-     * Si falla Internet/API, la intención
-     * local del usuario sigue mandando.
-     */
     applyPendingActivityChangesToData(
       DATA
     );
@@ -3390,9 +3575,15 @@ async function syncData(){
       "No se pudo sincronizar completamente. " +
       "Los checks pendientes permanecen guardados."
     );
+
+  }finally{
+    window
+      .__RADAR_SYNC_IN_PROGRESS =
+        false;
+
+    hideSyncLoading();
   }
 }
-
 async function logout(){
   if(apiReady() && SESSION){
     const checksSaved =
@@ -7582,11 +7773,11 @@ function iconSvg(name){
   return map[name] || `<svg ${common}><circle cx="12" cy="12" r="10"/></svg>`;
 }
 </script>
-  <div id="loginLoadingOverlay" class="login-loading-overlay hidden">
+<div id="syncLoadingOverlay" class="login-loading-overlay hidden">
   <div class="login-loading-card">
     <div class="login-spinner"></div>
-    <h3>Validando acceso</h3>
-    <p>Espere un momento, estamos verificando sus credenciales...</p>
+    <h3>Actualizando RADAR</h3>
+    <p>Sincronizando cambios pendientes y cargando la información más reciente...</p>
   </div>
 </div>
 </body>
