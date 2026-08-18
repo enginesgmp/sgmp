@@ -4503,6 +4503,55 @@ function macroDisplayNameByProcess(p = {}){
   return p.macroproceso || "";
 }
   
+function adminFilterProcessList(value){
+  const query = norm(value);
+
+  const rows = Array.from(
+    document.querySelectorAll(".admin-process-item")
+  );
+
+  let visible = 0;
+
+  rows.forEach(row => {
+    const searchText = norm(
+      row.dataset.search || ""
+    );
+
+    const matches =
+      !query ||
+      searchText.includes(query);
+
+    row.classList.toggle(
+      "hidden",
+      !matches
+    );
+
+    if(matches){
+      visible++;
+    }
+  });
+
+  const counter =
+    $("adminProcessSearchCount");
+
+  if(counter){
+    counter.textContent =
+      query
+        ? `${visible} resultado${visible === 1 ? "" : "s"}`
+        : `${rows.length} procesos`;
+  }
+
+  const empty =
+    $("adminProcessSearchEmpty");
+
+  if(empty){
+    empty.classList.toggle(
+      "hidden",
+      visible > 0
+    );
+  }
+}
+
 function renderAdminProcesses(){
   const procesos = DATA.procesos || [];
 
@@ -4510,7 +4559,9 @@ function renderAdminProcesses(){
     <div class="section-title">
       <div>
         <h2>Administración de procesos</h2>
-        <span class="meta">Gestión de procesos. Use Editar para abrir el detalle completo.</span>
+        <span class="meta">
+          Gestión de procesos. Use Editar para abrir el detalle completo.
+        </span>
       </div>
 
       <button
@@ -4520,6 +4571,28 @@ function renderAdminProcesses(){
       >
         Agregar proceso
       </button>
+    </div>
+
+    <div
+      class="field"
+      style="margin-bottom:14px"
+    >
+      <label>Buscar proceso</label>
+
+      <input
+        id="adminProcessSearch"
+        type="search"
+        autocomplete="off"
+        placeholder="Buscar por ID, proceso, macroproceso, analista o líder..."
+        oninput="adminFilterProcessList(this.value)"
+      >
+
+      <span
+        id="adminProcessSearchCount"
+        class="meta"
+      >
+        ${procesos.length} procesos
+      </span>
     </div>
 
     <section class="admin-master-table admin-full-table">
@@ -4546,17 +4619,27 @@ function renderAdminProcesses(){
               ? "ACTIVO"
               : "INACTIVO";
 
-          /*
-           * Fuente única de avance:
-           * actividades activas del proceso.
-           */
           const advance =
             processAdvance(
               p.proceso_id
             );
 
+          const searchText = [
+            p.proceso_id,
+            p.proceso,
+            macroDisplayNameByProcess(p),
+            p.analista,
+            p.lider,
+            status
+          ]
+            .filter(Boolean)
+            .join(" ");
+
           return `
-            <div class="admin-process-row">
+            <div
+              class="admin-process-row admin-process-item"
+              data-search="${esc(searchText)}"
+            >
 
               <b class="admin-code">
                 ${esc(p.proceso_id || "")}
@@ -4585,9 +4668,7 @@ function renderAdminProcesses(){
               <span>
                 <span
                   class="admin-status-pill ${
-                    active
-                      ? ""
-                      : "off"
+                    active ? "" : "off"
                   }"
                 >
                   ${status}
@@ -4616,6 +4697,15 @@ function renderAdminProcesses(){
           </div>
         `
       }
+
+      <div
+        id="adminProcessSearchEmpty"
+        class="admin-process-row hidden"
+      >
+        <span>
+          No se encontraron procesos con ese criterio.
+        </span>
+      </div>
 
     </section>
   `;
