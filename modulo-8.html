@@ -4041,60 +4041,172 @@ if(
 function getVisibleProcesses(){
   if(!SESSION) return [];
 
-  if(isAnalyst()){
-    const user = String(SESSION.username || "").trim().toLowerCase();
-    const ana = norm(SESSION.analista_nombre || SESSION.nombre);
+  /*
+   * V3:
+   * el backend ya devuelve únicamente
+   * los procesos visibles para el rol.
+   */
+  return (DATA.procesos || []).slice();
+}
 
-    return DATA.procesos.filter(p =>
-      String(p.analista_user || "").trim().toLowerCase() === user ||
-      norm(p.analista) === ana
-    );
+function processById(pid){
+  return (DATA.procesos || []).find(
+    p =>
+      String(p.proceso_id || "") ===
+      String(pid || "")
+  ) || null;
+}
+
+function macroById(mid){
+  return (DATA.macroprocesos || []).find(
+    m =>
+      String(m.macro_id || "") ===
+      String(mid || "")
+  ) || null;
+}
+
+function analystNameByUsername(username){
+  const key =
+    String(username || "")
+      .trim()
+      .toLowerCase();
+
+  if(!key){
+    return "Pendiente";
   }
 
-  return DATA.procesos.slice();
-}
-function actsForProcess(pid){
-  return activeActivities().filter(a => a.proceso_id === pid);
-}
-function hitosForProcess(pid){ return DATA.hitos.filter(h=>h.proceso_id===pid).sort((a,b)=>Number(a.orden)-Number(b.orden)); }
-function processAdvance(pid){
-  const acts = actsForProcess(pid);
-  if (!acts.length) return 0;
+  const user =
+    (DATA.usuarios || []).find(
+      u =>
+        String(u.username || "")
+          .trim()
+          .toLowerCase() === key
+    );
 
-  const done = acts.filter(a => isTrue(a.completado)).length;
-  return Math.round((done / acts.length) * 100);
+  return String(
+    user?.nombre ||
+    username ||
+    "Pendiente"
+  ).trim();
+}
+
+function processDisplayName(p){
+  return String(
+    p?.nombre_proceso ||
+    "Proceso sin nombre"
+  ).trim();
+}
+
+function processMacroName(p){
+  return String(
+    p?.nombre_macro ||
+    "Macroproceso sin nombre"
+  ).trim();
+}
+
+function actsForProcess(pid){
+  return activeActivities().filter(
+    a =>
+      String(a.proceso_id || "") ===
+      String(pid || "")
+  );
+}
+
+function hitosForProcess(pid){
+  return (DATA.hitos || [])
+    .filter(
+      h =>
+        String(h.proceso_id || "") ===
+        String(pid || "")
+    )
+    .sort(
+      (a,b) =>
+        Number(a.orden || 0) -
+        Number(b.orden || 0)
+    );
+}
+
+function processAdvance(pid){
+  const p = processById(pid);
+
+  const value =
+    Number(p?.avance_pct || 0);
+
+  return Math.max(
+    0,
+    Math.min(100, value)
+  );
 }
 
 function isActiveRow(row){
-  const value = String(row?.activo || '').trim().toUpperCase();
+  const runtime =
+    String(
+      row?.situacion_administrativa || ""
+    )
+      .trim()
+      .toUpperCase();
 
-  if(!value){
-    return true;
+  if(runtime){
+    return runtime === "ACTIVO";
   }
 
-  return value === 'SI';
+  return String(
+    row?.activo || "SI"
+  )
+    .trim()
+    .toUpperCase() === "SI";
 }
 
 function isActiveActivityRow(row){
-  return String(row?.activo || '').trim().toUpperCase() === 'SI';
+  return String(
+    row?.activo || "SI"
+  )
+    .trim()
+    .toUpperCase() === "SI";
 }
 
 function activeActivities(){
-  return (DATA.actividades || []).filter(isActiveActivityRow);
+  return (DATA.actividades || [])
+    .filter(isActiveActivityRow);
 }
 
 function hitoAdvance(hpid){
-  const arr = activeActivities().filter(a => a.hito_proceso_id === hpid);
-  if(!arr.length) return 0;
-  return Math.round(arr.filter(a=>isTrue(a.completado)).length/arr.length*100);
+  const hito =
+    (DATA.hitos || []).find(
+      h =>
+        String(h.hito_proceso_id || "") ===
+        String(hpid || "")
+    );
+
+  const value =
+    Number(hito?.avance_pct || 0);
+
+  return Math.max(
+    0,
+    Math.min(100, value)
+  );
 }
+
 function isTrue(v){
-  const value = String(v ?? '').trim().toUpperCase();
-  return v === true || value === 'TRUE' || value === 'SI' || value === 'VERDADERO';
+  const value =
+    String(v ?? "")
+      .trim()
+      .toUpperCase();
+
+  return (
+    v === true ||
+    value === "TRUE" ||
+    value === "SI" ||
+    value === "VERDADERO"
+  );
 }
 
 function sessionRole(){
-  return String(SESSION?.rol || "").trim().toLowerCase();
+  return String(
+    SESSION?.rol || ""
+  )
+    .trim()
+    .toLowerCase();
 }
 
 function isAdmin(){
@@ -4109,29 +4221,83 @@ function isManagement(){
   return sessionRole() === "gerencia";
 }
 
-function isLockedForAnalyst(activity){
-  return String(activity?.bloqueado_analista || '').trim().toUpperCase() === 'SI';
+/*
+ * Compatibilidad temporal durante F3.
+ * V3 ya no utiliza bloqueado_analista.
+ * Se eliminará completamente en F4.
+ */
+function isLockedForAnalyst(){
+  return false;
 }
-  
+
 function globalAdvance(){
-  const ps = (DATA.procesos || []).filter(isActiveRow);
-  if(!ps.length) return 0;
+  /*
+   * Admin recibe el KPI oficial
+   * directamente del backend.
+   */
+  if(
+    isAdmin() &&
+    DATA.kpis_admin
+  ){
+    return Math.max(
+      0,
+      Math.min(
+        100,
+        Number(
+          DATA.kpis_admin.avance_global || 0
+        )
+      )
+    );
+  }
 
-  return Math.round(
-    ps.reduce((s,p)=>s + processAdvance(p.proceso_id), 0) / ps.length
-  );
+  /*
+   * Para universos filtrados por rol,
+   * se agregan únicamente los contadores
+   * runtime entregados por backend.
+   */
+  const ps =
+    (DATA.procesos || [])
+      .filter(isActiveRow);
+
+  const total =
+    ps.reduce(
+      (sum,p) =>
+        sum +
+        Number(
+          p.total_actividades_activas || 0
+        ),
+      0
+    );
+
+  const done =
+    ps.reduce(
+      (sum,p) =>
+        sum +
+        Number(
+          p.actividades_completadas || 0
+        ),
+      0
+    );
+
+  return total
+    ? Math.round(
+        done / total * 100
+      )
+    : 0;
 }
-  
+
 function macroAdvance(mid){
-  const ps = (DATA.procesos || []).filter(p =>
-    p.macro_id === mid &&
-    isActiveRow(p)
-  );
+  const macro =
+    macroById(mid);
 
-  if(!ps.length) return 0;
+  const value =
+    Number(
+      macro?.avance_pct || 0
+    );
 
-  return Math.round(
-    ps.reduce((s,p)=>s + processAdvance(p.proceso_id), 0) / ps.length
+  return Math.max(
+    0,
+    Math.min(100, value)
   );
 }
   
@@ -4384,20 +4550,22 @@ function renderAdminControlTab(mode = "dashboard"){
 }
 
 function inferProcessOrigin(p = {}){
-  const explicit = String(p.origen_proceso || "").trim().toUpperCase();
+  const value =
+    String(
+      p.origen_proceso || ""
+    )
+      .trim()
+      .toUpperCase();
 
-  if(explicit === "NUEVO" || explicit === "AS-IS PREVIO"){
-    return explicit;
-  }
-
-  const estadoAsIs = String(p.estado_as_is || "").trim().toUpperCase();
-
-  if(isTrue(p.as_is) || estadoAsIs.includes("LEVANTADO")){
-    return "AS-IS PREVIO";
+  if(
+    value === "NUEVO" ||
+    value === "AS-IS PREVIO"
+  ){
+    return value;
   }
 
   return "NUEVO";
-}  
+}
 
 function adminProcessForm(p = {}){
   const macros = (DATA.macroprocesos || []).filter(m =>
@@ -7912,37 +8080,13 @@ function weekOptions(current){
 }
 
 function processStatus(pid){
-  const p = DATA.procesos.find(x => x.proceso_id === pid);
-  const acts = actsForProcess(pid);
+  const p = processById(pid);
 
-  if (!acts.length) {
-    return String(p?.estado_proceso || p?.estado_general || 'PLANIFICADO').trim();
-  }
-
-  const total = acts.length;
-  const done = acts.filter(a => isTrue(a.completado)).length;
-
-  const origen = String(
-    p?.origen_proceso || (isTrue(p?.as_is) ? 'AS-IS PREVIO' : 'NUEVO')
-  ).trim().toUpperCase();
-
-  if (total > 0 && done === total) {
-    return 'COMPLETADO TO-BE';
-  }
-
-  if (origen === 'AS-IS PREVIO' && done <= 9) {
-    return 'LEVANTADO AS-IS';
-  }
-
-  if (origen === 'AS-IS PREVIO' && done > 9) {
-    return 'AS-IS EN CURSO TO-BE';
-  }
-
-  if (origen === 'NUEVO' && done > 0) {
-    return 'NUEVO EN CURSO TO-BE';
-  }
-
-  return 'PLANIFICADO';
+  return String(
+    p?.estado_proceso || ""
+  )
+    .trim()
+    .toUpperCase();
 }
   
 function adminEditor(p){
