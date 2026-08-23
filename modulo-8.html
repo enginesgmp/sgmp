@@ -5851,43 +5851,80 @@ function renderAdminDashboard(){
     </section>
   `;
 }
-
 function renderAdminMatrix(){
-  const macros = unique((DATA.procesos || []).map(p => p.macroproceso));
+  const processes =
+    (DATA.procesos || []).slice();
 
-  const analysts = unique([
-    "Pendiente",
-    ...(DATA.procesos || []).map(p => p.analista || "Pendiente")
-  ]);
+  const macros =
+    unique(
+      processes
+        .map(processMacroName)
+        .filter(Boolean)
+    );
 
-  const leaders = unique([
-    "Pendiente",
-    ...(DATA.procesos || []).map(p => p.lider || "Pendiente")
-  ]);
+  const analysts =
+    unique([
+      "Pendiente",
+      ...processes.map(processAnalystName)
+    ]);
 
-  const criticities = unique(
-    (DATA.procesos || []).map(p => p.criticidad)
-  );
+  const leaders =
+    unique([
+      "Pendiente",
+      ...processes.map(
+        p =>
+          String(
+            p.lider || "Pendiente"
+          ).trim() || "Pendiente"
+      )
+    ]);
 
-  const weeks = Array.from({length:53}, (_,i) => ({
-    value:String(i + 1),
-    label:`Semana ${i + 1}`
-  }));
+  const criticities =
+    unique(
+      processes
+        .map(p => p.criticidad)
+        .filter(Boolean)
+    );
+
+  const weeks =
+    Array.from(
+      {length:53},
+      (_,i) => ({
+        value:String(i + 1),
+        label:`Semana ${i + 1}`
+      })
+    );
 
   const statuses = [
     "PLANIFICADO",
-    "LEVANTADO AS-IS",
-    "NUEVO EN CURSO TO-BE",
-    "AS-IS EN CURSO TO-BE",
-    "COMPLETADO TO-BE"
+    "EN CURSO",
+    "ATRASADO",
+    "CERRADO"
   ];
 
-  const alerts = [
-    {value:"sin_analista", label:"Sin analista"},
-    {value:"sin_lider", label:"Sin líder"},
-    {value:"sin_inicio", label:"Sin semana inicio"},
-    {value:"sin_entrega", label:"Sin semana entrega"}
-  ];
+  const alertMap =
+    new Map();
+
+  processes.forEach(p => {
+    processAlerts(p).forEach(a => {
+      if(a?.key){
+        alertMap.set(
+          String(a.key),
+          String(a.text || a.key)
+        );
+      }
+    });
+  });
+
+  const alerts =
+    Array.from(
+      alertMap.entries()
+    ).map(
+      ([value,label]) => ({
+        value,
+        label
+      })
+    );
 
   return `
     <div class="admin-matrix-filter-row">
@@ -5921,9 +5958,9 @@ function renderAdminMatrix(){
       <table class="admin-matrix-table">
 
         <colgroup>
-          <col style="width:3%">
+          <col style="width:5%">
           <col style="width:9%">
-          <col style="width:19%">
+          <col style="width:18%">
           <col style="width:7%">
           <col style="width:9%">
           <col style="width:9%">
@@ -5932,12 +5969,12 @@ function renderAdminMatrix(){
           <col style="width:8%">
           <col style="width:10%">
           <col style="width:4%">
-          <col style="width:10%">
+          <col style="width:9%">
         </colgroup>
 
         <thead>
           <tr>
-            <th>N°</th>
+            <th>Código</th>
             <th>Macroproceso</th>
             <th>Proceso</th>
             <th>Criticidad</th>
@@ -5959,6 +5996,7 @@ function renderAdminMatrix(){
     </div>
   `;
 }
+  
   function renderMultiFilter(id, label, items){
   const normalizedItems = (items || []).map(item => {
     if(typeof item === "object"){
@@ -6073,30 +6111,46 @@ function multiFilterMatches(selectedValues, currentValue){
     normalizeMultiFilterValue(value) === current
   );
 }
-  
 function adminMatrixRows(){
-  const rows = getAdminMatrixFilteredRows();
+  const rows =
+    getAdminMatrixFilteredRows();
 
   return rows.map(p => {
-    const alerts = processAssignmentAlerts(p);
-    const status = processStatus(p.proceso_id);
-    const advance = processAdvance(p.proceso_id);
+    const alerts =
+      processAlerts(p);
+
+    const status =
+      processState(p);
+
+    const advance =
+      processAdvance(
+        p.proceso_id
+      );
 
     const origin =
-      p.origen_proceso ||
-      (isTrue(p.as_is) ? "AS-IS PREVIO" : "NUEVO");
+      String(
+        p.origen_proceso || ""
+      )
+        .trim()
+        .toUpperCase();
 
     return `
       <tr
         class="admin-matrix-clickable-row"
         onclick="adminMatrixRowClick(event, '${p.proceso_id}')"
       >
-        <td>${esc(p.numero || "")}</td>
-
-        <td>${esc(p.macroproceso || "")}</td>
+        <td>
+          <b class="admin-code">
+            ${esc(p.codigo_proceso || p.proceso_id || "")}
+          </b>
+        </td>
 
         <td>
-          <b>${esc(p.proceso || "")}</b>
+          ${esc(processMacroName(p))}
+        </td>
+
+        <td>
+          <b>${esc(processDisplayName(p))}</b>
         </td>
 
         <td>
@@ -6105,7 +6159,7 @@ function adminMatrixRows(){
             onchange="adminUpdateProcessField('${p.proceso_id}','criticidad',this.value)"
           >
             ${selectOptions(
-              catalogValues("criticidad"),
+              catalogValues("CRITICIDAD"),
               p.criticidad
             )}
           </select>
@@ -6134,7 +6188,7 @@ function adminMatrixRows(){
             onclick="event.stopPropagation()"
             onchange="adminUpdateProcessField('${p.proceso_id}','semana_inicio',this.value)"
           >
-            ${weekOptions(p.semana_inicio || p.semana)}
+            ${weekOptions(p.semana_inicio)}
           </select>
         </td>
 
@@ -6152,15 +6206,27 @@ function adminMatrixRows(){
             onclick="event.stopPropagation()"
             onchange="adminUpdateOriginField('${p.proceso_id}',this.value)"
           >
+            <option value="">
+              Pendiente
+            </option>
+
             ${selectObjectOptions([
-              {value:"NUEVO", label:"NUEVO"},
-              {value:"AS-IS PREVIO", label:"AS-IS PREVIO"}
+              {
+                value:"NUEVO",
+                label:"NUEVO"
+              },
+              {
+                value:"AS-IS PREVIO",
+                label:"AS-IS PREVIO"
+              }
             ], origin)}
           </select>
         </td>
 
         <td>
-          <span class="status">${esc(status)}</span>
+          <span class="status">
+            ${esc(status)}
+          </span>
         </td>
 
         <td>
@@ -6170,12 +6236,16 @@ function adminMatrixRows(){
         <td>
           ${
             alerts.length
-              ? alerts.map(a =>
-                  `<span class="admin-chip ${a.type}">
+              ? alerts.map(a => `
+                  <span class="admin-chip ${a.type}">
                     ${esc(a.text)}
-                  </span>`
-                ).join(" ")
-              : `<span class="admin-chip ok">OK</span>`
+                  </span>
+                `).join(" ")
+              : `
+                  <span class="admin-chip ok">
+                    OK
+                  </span>
+                `
           }
         </td>
       </tr>
@@ -6188,7 +6258,6 @@ function adminMatrixRows(){
     </tr>
   `;
 }
-
 function adminMatrixRowClick(event, pid){
   if(
     event.target.closest(
@@ -6207,58 +6276,99 @@ function renderAdminMatrixRows(){
 }
 
 function getAdminMatrixFilteredRows(){
-  const q = String($("mSearch")?.value || "")
-    .trim()
-    .toLowerCase();
+  const q =
+    String(
+      $("mSearch")?.value || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  const macros = getMultiFilterValues("mMacro");
-  const analysts = getMultiFilterValues("mAnalyst");
-  const leaders = getMultiFilterValues("mLeader");
-  const startWeeks = getMultiFilterValues("mStartWeek");
-  const deliveryWeeks = getMultiFilterValues("mDeliveryWeek");
-  const criticities = getMultiFilterValues("mCrit");
-  const statuses = getMultiFilterValues("mStatus");
-  const selectedAlerts = getMultiFilterValues("mAlert");
+  const macros =
+    getMultiFilterValues("mMacro");
+
+  const analysts =
+    getMultiFilterValues("mAnalyst");
+
+  const leaders =
+    getMultiFilterValues("mLeader");
+
+  const startWeeks =
+    getMultiFilterValues("mStartWeek");
+
+  const deliveryWeeks =
+    getMultiFilterValues("mDeliveryWeek");
+
+  const criticities =
+    getMultiFilterValues("mCrit");
+
+  const statuses =
+    getMultiFilterValues("mStatus");
+
+  const selectedAlerts =
+    getMultiFilterValues("mAlert");
 
   return (DATA.procesos || [])
     .filter(p => {
-      const processState = processStatus(p.proceso_id);
+      const state =
+        processState(p);
 
-      const processAlertKeys = processAssignmentAlerts(p)
-        .map(alert => String(alert.key));
+      const macroName =
+        processMacroName(p);
 
-const origin =
-  p.origen_proceso ||
-  (isTrue(p.as_is) ? "AS-IS PREVIO" : "NUEVO");
+      const analystName =
+        processAnalystName(p);
 
-const text = [
-  p.numero,
-  p.proceso_id,
-  p.macro_id,
-  p.macroproceso,
-  p.proceso,
-  p.analista,
-  p.analista_user,
-  p.lider,
-  p.criticidad,
-  processState,
-  getProcessStartWeek(p),
-  getProcessDeliveryWeek(p),
-  origin,
-  p.observacion,
-  processAlertKeys.join(" ")
-].join(" ").toLowerCase();
+      const alertKeys =
+        processAlerts(p)
+          .map(
+            a =>
+              String(a.key || "")
+          );
+
+      const origin =
+        String(
+          p.origen_proceso || ""
+        )
+          .trim()
+          .toUpperCase();
+
+      const text = [
+        p.codigo_proceso,
+        p.proceso_id,
+        p.macro_id,
+        macroName,
+        processDisplayName(p),
+        analystName,
+        p.analista_user,
+        p.lider,
+        p.criticidad,
+        state,
+        getProcessStartWeek(p),
+        getProcessDeliveryWeek(p),
+        origin,
+        p.observacion,
+        p.finalidad,
+        p.tipo_cierre,
+        alertKeys.join(" ")
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
       const matchesSearch =
-        !q || text.includes(q);
+        !q ||
+        text.includes(q);
 
       const matchesMacro =
-        multiFilterMatches(macros, p.macroproceso);
+        multiFilterMatches(
+          macros,
+          macroName
+        );
 
       const matchesAnalyst =
         multiFilterMatches(
           analysts,
-          p.analista || "Pendiente"
+          analystName
         );
 
       const matchesLeader =
@@ -6270,13 +6380,17 @@ const text = [
       const matchesStartWeek =
         multiFilterMatches(
           startWeeks,
-          String(getProcessStartWeek(p) || "")
+          String(
+            getProcessStartWeek(p) || ""
+          )
         );
 
       const matchesDeliveryWeek =
         multiFilterMatches(
           deliveryWeeks,
-          String(getProcessDeliveryWeek(p) || "")
+          String(
+            getProcessDeliveryWeek(p) || ""
+          )
         );
 
       const matchesCriticity =
@@ -6288,18 +6402,14 @@ const text = [
       const matchesStatus =
         multiFilterMatches(
           statuses,
-          processState
+          state
         );
 
-      /*
-        Dentro de Alertas funciona como O:
-        si marca "Sin analista" y "Sin líder",
-        muestra procesos que tengan cualquiera de las dos.
-      */
       const matchesAlerts =
         !selectedAlerts.length ||
-        selectedAlerts.some(alert =>
-          processAlertKeys.includes(alert)
+        selectedAlerts.some(
+          alert =>
+            alertKeys.includes(alert)
         );
 
       return (
@@ -6314,9 +6424,27 @@ const text = [
         matchesAlerts
       );
     })
-    .sort((a,b) =>
-      Number(a.numero || 0) - Number(b.numero || 0)
-    );
+    .sort((a,b) => {
+      const codeA =
+        String(
+          a.codigo_proceso ||
+          a.proceso_id ||
+          ""
+        );
+
+      const codeB =
+        String(
+          b.codigo_proceso ||
+          b.proceso_id ||
+          ""
+        );
+
+      return codeA.localeCompare(
+        codeB,
+        "es",
+        {numeric:true}
+      );
+    });
 }
 
 function clearAdminMatrixFilters(){
@@ -6360,70 +6488,87 @@ function adminWeekFilterOptions(){
   return html;
 }
 
-async function adminUpdateProcessField(pid, field, value){
-  const p = DATA.procesos.find(x=>x.proceso_id === pid);
-  const previous = p ? p[field] : "";
-
-  if(p) p[field] = value || "";
-
+async function adminUpdateProcessField(
+  pid,
+  field,
+  value
+){
   try{
-    if(apiReady()){
-      await api("update_process", {
+    await api(
+      "update_process",
+      {
         proceso_id: pid,
         field,
-        value,
-        username: SESSION.username
-      });
+        value
+      }
+    );
 
-      DATA = await api("bootstrap", { username: SESSION.username });
-    }
+    applyBootstrapData(
+      await api("bootstrap")
+    );
 
     renderAdminMatrixRows();
-    toast("Cambio guardado.");
-  }catch(e){
-    if(p) p[field] = previous || "";
+
+    toast(
+      "Cambio guardado."
+    );
+
+  }catch(error){
     renderAdminMatrixRows();
-    toast("No se pudo guardar: " + e.message);
+
+    toast(
+      "No se pudo guardar: " +
+      error.message
+    );
   }
 }
 
-async function adminUpdateOriginField(pid, value){
-  const ok = confirm("Este cambio puede marcar, limpiar o bloquear actividades base AS-IS. ¿Deseas continuar?");
-  if(!ok){
-    renderAdminMatrixRows();
-    return;
-  }
-
-  await adminUpdateProcessField(pid, "origen_proceso", value);
-}
-
-async function adminUpdateAnalystField(pid, selectEl){
-  const username = String(selectEl.value || "").trim();
-  const user = DATA.usuarios.find(u =>
-    String(u.username || "").toLowerCase() === username.toLowerCase()
+async function adminUpdateOriginField(
+  pid,
+  value
+){
+  await adminUpdateProcessField(
+    pid,
+    "origen_proceso",
+    value
   );
+}
 
-  const p = DATA.procesos.find(x=>x.proceso_id === pid);
-  if(p){
-    p.analista_user = username;
-    p.analista = user ? (user.analista_nombre || user.nombre || username) : "Pendiente";
-  }
+async function adminUpdateAnalystField(
+  pid,
+  selectEl
+){
+  const username =
+    String(
+      selectEl?.value || ""
+    ).trim();
 
   try{
-    if(apiReady()){
-      await api("update_process_analyst", {
+    await api(
+      "update_process_analyst",
+      {
         proceso_id: pid,
-        analista_user: username,
-        username: SESSION.username
-      });
+        analista_user: username
+      }
+    );
 
-      DATA = await api("bootstrap", { username: SESSION.username });
-    }
+    applyBootstrapData(
+      await api("bootstrap")
+    );
 
     renderAdminMatrixRows();
-    toast("Analista actualizado.");
-  }catch(e){
-    toast("No se pudo actualizar analista: " + e.message);
+
+    toast(
+      "Analista actualizado."
+    );
+
+  }catch(error){
+    renderAdminMatrixRows();
+
+    toast(
+      "No se pudo actualizar analista: " +
+      error.message
+    );
   }
 }
 
@@ -6971,905 +7116,1033 @@ function adminLoadTable(field, weeks){
 }
 
 function renderAdminAlertsPanel(){
-  const ps = (DATA.procesos || []).filter(p => processAssignmentAlerts(p).length > 0);
+  const processes =
+    (DATA.procesos || [])
+      .filter(isActiveRow)
+      .filter(
+        p =>
+          processAlerts(p).length > 0
+      );
 
   return `
     <div class="card">
-      <b>Alertas de asignación</b>
-      <p class="meta">Solo procesos con analista, líder o semanas pendientes.</p>
+      <b>Alertas del plan</b>
+      <p class="meta">
+        Alertas de planificación, asignación
+        y ejecución recibidas o derivadas
+        del contrato V3.
+      </p>
     </div>
 
-    <div class="admin-matrix-wrap" style="margin-top:14px">
+    <div
+      class="admin-matrix-wrap"
+      style="margin-top:14px"
+    >
       <table class="admin-matrix-table">
         <thead>
           <tr>
-            <th>N°</th>
+            <th>Código</th>
             <th>Macroproceso</th>
             <th>Proceso</th>
             <th>Analista</th>
             <th>Líder</th>
-            <th>Semana inicio</th>
-            <th>Semana entrega</th>
+            <th>Inicio</th>
+            <th>Entrega</th>
+            <th>Estado</th>
             <th>Alertas</th>
             <th>Acción</th>
           </tr>
         </thead>
+
         <tbody>
-          ${ps.map(p => `
-            <tr>
-              <td>${esc(p.numero || "")}</td>
-              <td>${esc(p.macroproceso || "")}</td>
-              <td><b>${esc(p.proceso || "")}</b></td>
-              <td>${pending(p.analista)}</td>
-              <td>${pending(p.lider)}</td>
-              <td>${getProcessStartWeek(p) || `<span class="pending">Pendiente</span>`}</td>
-              <td>${getProcessDeliveryWeek(p) || `<span class="pending">Pendiente</span>`}</td>
-              <td>${processAssignmentAlerts(p).map(a=>`<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")}</td>
-              <td><button class="btn soft" type="button" onclick="openProcess('${p.proceso_id}', 'adminControl')">Ver</button></td>
-            </tr>
-          `).join("") || `<tr><td colspan="9"><b>No hay alertas de asignación.</b></td></tr>`}
+          ${
+            processes.map(p => `
+              <tr>
+                <td>
+                  ${esc(
+                    p.codigo_proceso ||
+                    p.proceso_id ||
+                    ""
+                  )}
+                </td>
+
+                <td>
+                  ${esc(processMacroName(p))}
+                </td>
+
+                <td>
+                  <b>
+                    ${esc(processDisplayName(p))}
+                  </b>
+                </td>
+
+                <td>
+                  ${pending(
+                    processAnalystName(p)
+                  )}
+                </td>
+
+                <td>
+                  ${pending(p.lider)}
+                </td>
+
+                <td>
+                  ${
+                    getProcessStartWeek(p)
+                      ? `Semana ${esc(getProcessStartWeek(p))}`
+                      : `<span class="pending">Pendiente</span>`
+                  }
+                </td>
+
+                <td>
+                  ${
+                    getProcessDeliveryWeek(p)
+                      ? `Semana ${esc(getProcessDeliveryWeek(p))}`
+                      : `<span class="pending">Pendiente</span>`
+                  }
+                </td>
+
+                <td>
+                  <span class="status">
+                    ${esc(processState(p))}
+                  </span>
+                </td>
+
+                <td>
+                  ${
+                    processAlerts(p)
+                      .map(
+                        a => `
+                          <span class="admin-chip ${a.type}">
+                            ${esc(a.text)}
+                          </span>
+                        `
+                      )
+                      .join(" ")
+                  }
+                </td>
+
+                <td>
+                  <button
+                    class="btn soft"
+                    type="button"
+                    onclick="openProcess('${p.proceso_id}', 'adminControl')"
+                  >
+                    Ver
+                  </button>
+                </td>
+              </tr>
+            `).join("") ||
+            `
+              <tr>
+                <td colspan="10">
+                  <b>No hay alertas.</b>
+                </td>
+              </tr>
+            `
+          }
         </tbody>
       </table>
     </div>
   `;
 }
-
-function processAssignmentAlerts(p){
-  const alerts = [];
-
-  const analyst = String(p.analista || "").trim();
-  const leader = String(p.lider || "").trim();
-  const startWeek = getProcessStartWeek(p);
-  const deliveryWeek = getProcessDeliveryWeek(p);
-
-  if(!analyst || analyst.toLowerCase() === "pendiente"){
-    alerts.push({key:"sin_analista", type:"danger", text:"Sin analista"});
-  }
-
-  if(!leader || leader.toLowerCase() === "pendiente"){
-    alerts.push({key:"sin_lider", type:"danger", text:"Sin líder"});
-  }
-
-  if(!startWeek){
-    alerts.push({key:"sin_inicio", type:"warn", text:"Sin semana inicio"});
-  }
-
-  if(!deliveryWeek){
-    alerts.push({key:"sin_entrega", type:"warn", text:"Sin semana entrega"});
-  }
-
-  return alerts;
-}
   
-function renderAdminReport(){
-  const defaultFilters = {
-    reportType: "ejecutivo",
-    mode: "pendientes",
-    dateField: "semana_entrega",
-    from: "",
-    to: "",
-    macro: "",
-    analyst: "",
-    leader: ""
-  };
-
-  const rows = getAdminReportRows(defaultFilters);
-
-  setTimeout(fitAdminReportPreview, 0);
-
-  return `
-    <div class="admin-report-tools">
-      <select id="rReportType" onchange="generateAdminReport()">
-        <option value="ejecutivo">Onepage ejecutivo</option>
-        <option value="procesos">Onepage procesos</option>
-        <option value="cargas">Onepage cargas</option>
-        <option value="semanal">Onepage semanal</option>
-        <option value="alertas">Onepage alertas</option>
-      </select>
-
-      <select id="rMode" onchange="generateAdminReport()">
-        <option value="pendientes">Pendientes</option>
-        <option value="completos">Completos</option>
-        <option value="todos">Todos</option>
-      </select>
-
-      <select id="rDateField" onchange="generateAdminReport()">
-        <option value="semana_entrega">Semana entrega</option>
-        <option value="semana_inicio">Semana inicio</option>
-      </select>
-
-      <select id="rFrom" onchange="generateAdminReport()">
-        <option value="">Desde cualquier semana</option>
-        ${reportWeekOptions()}
-      </select>
-
-      <select id="rTo" onchange="generateAdminReport()">
-        <option value="">Hasta cualquier semana</option>
-        ${reportWeekOptions()}
-      </select>
-
-      <select id="rMacro" onchange="generateAdminReport()">
-        <option value="">Todos los macroprocesos</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.macroproceso)))}
-      </select>
-
-      <select id="rAnalyst" onchange="generateAdminReport()">
-        <option value="">Todos los analistas</option>
-        <option value="Pendiente">Pendiente</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.analista)))}
-      </select>
-
-      <select id="rLeader" onchange="generateAdminReport()">
-        <option value="">Todos los líderes</option>
-        <option value="Pendiente">Pendiente</option>
-        ${adminFilterOptions(unique((DATA.procesos||[]).map(p=>p.lider)))}
-      </select>
-
-      <button class="btn primary" type="button" onclick="generateAdminReport()">Generar</button>
-      <button class="btn ghost" type="button" onclick="downloadAdminReportPng()">Descargar PNG</button>
-    </div>
-
-    <div id="adminReportPreview" class="admin-report-preview">
-      <div class="admin-report-stage">
-        ${renderAdminReportByType(rows, defaultFilters)}
-      </div>
-    </div>
-  `;
-}
-
 function reportWeekOptions(){
   let html = "";
-  for(let i=1; i<=53; i++){
-    html += `<option value="${i}">Semana ${i}</option>`;
+
+  for(let i = 1; i <= 53; i++){
+    html += `
+      <option value="${i}">
+        Semana ${i}
+      </option>
+    `;
   }
+
   return html;
+}
+
+function isProcessClosedForReport(p){
+  return processState(p) === "CERRADO";
 }
 
 function getAdminReportFilters(){
   return {
-    reportType: $("rReportType")?.value || "ejecutivo",
-    mode: $("rMode")?.value || "pendientes",
-    dateField: $("rDateField")?.value || "semana_entrega",
-    from: $("rFrom")?.value || "",
-    to: $("rTo")?.value || "",
-    macro: $("rMacro")?.value || "",
-    analyst: $("rAnalyst")?.value || "",
-    leader: $("rLeader")?.value || ""
+    reportType:
+      $("rReportType")?.value ||
+      "ejecutivo",
+
+    mode:
+      $("rMode")?.value ||
+      "todos",
+
+    dateField:
+      $("rDateField")?.value ||
+      "semana_entrega",
+
+    from:
+      $("rFrom")?.value || "",
+
+    to:
+      $("rTo")?.value || "",
+
+    macro:
+      $("rMacro")?.value || "",
+
+    analyst:
+      $("rAnalyst")?.value || "",
+
+    leader:
+      $("rLeader")?.value || ""
   };
 }
 
-function isProcessClosedForReport(process){
-  const status = String(
-    processStatus(process.proceso_id) || ""
-  ).trim().toUpperCase();
-
-  return status === "COMPLETADO TO-BE";
-}
-  
 function getAdminReportRows(filters){
-  return (DATA.procesos || []).filter(p => {
-    const advance = processAdvance(p.proceso_id);
-    const week = filters.dateField === "semana_inicio"
-      ? getProcessStartWeek(p)
-      : getProcessDeliveryWeek(p);
+  return (DATA.procesos || [])
+    .filter(isActiveRow)
+    .filter(p => {
+      const week =
+        filters.dateField ===
+          "semana_inicio"
+          ? getProcessStartWeek(p)
+          : getProcessDeliveryWeek(p);
 
-    if(filters.from && Number(week) < Number(filters.from)) return false;
-    if(filters.to && Number(week) > Number(filters.to)) return false;
+      if(
+        filters.from &&
+        Number(week) <
+          Number(filters.from)
+      ){
+        return false;
+      }
 
-    if(filters.macro && String(p.macroproceso || "") !== String(filters.macro)) return false;
-    if(filters.analyst && String(p.analista || "Pendiente") !== String(filters.analyst)) return false;
-    if(filters.leader && String(p.lider || "Pendiente") !== String(filters.leader)) return false;
+      if(
+        filters.to &&
+        Number(week) >
+          Number(filters.to)
+      ){
+        return false;
+      }
 
-const closed = isProcessClosedForReport(p);
+      if(
+        filters.macro &&
+        processMacroName(p) !==
+          filters.macro
+      ){
+        return false;
+      }
 
-if(filters.mode === "completos" && !closed){
-  return false;
-}
+      if(
+        filters.analyst &&
+        processAnalystName(p) !==
+          filters.analyst
+      ){
+        return false;
+      }
 
-if(filters.mode === "pendientes" && closed){
-  return false;
-}
+      if(
+        filters.leader &&
+        String(
+          p.lider || "Pendiente"
+        ) !==
+          String(filters.leader)
+      ){
+        return false;
+      }
 
-if(filters.mode === "todos"){
-  // No filtra por cierre.
-}
-    
-    return true;
-  }).sort((a,b)=>Number(a.numero||0)-Number(b.numero||0));
-}
+      const closed =
+        isProcessClosedForReport(p);
 
-function fitAdminReportPreview(){
-  const preview = $("adminReportPreview");
-  const stage = preview?.querySelector(".admin-report-stage");
-  const report = $("adminOnePageReport");
+      if(
+        filters.mode === "abiertos" &&
+        closed
+      ){
+        return false;
+      }
 
-  if(!preview || !stage || !report) return;
+      if(
+        filters.mode === "cerrados" &&
+        !closed
+      ){
+        return false;
+      }
 
-  const availableWidth = Math.max(320, preview.clientWidth - 8);
-  const availableHeight = Math.max(320, window.innerHeight - preview.getBoundingClientRect().top - 24);
-
-  const scale = Math.min(
-    availableWidth / 1600,
-    availableHeight / 900,
-    1
-  );
-
-  stage.style.height = `${Math.round(900 * scale)}px`;
-  report.style.transform = `scale(${scale})`;
-}
-
-window.addEventListener("resize", fitAdminReportPreview);
-  
-function generateAdminReport(){
-  const filters = getAdminReportFilters();
-  const rows = getAdminReportRows(filters);
-  const target = $("adminReportPreview");
-
-  if(target){
-    target.innerHTML = `
-      <div class="admin-report-stage">
-        ${renderAdminReportByType(rows, filters)}
-      </div>
-    `;
-
-    fitAdminReportPreview();
-  }
-}
-
-function fitAdminReportPreview(){
-  const preview = $("adminReportPreview");
-  const stage = preview?.querySelector(".admin-report-stage");
-  const report = $("adminOnePageReport");
-
-  if(!preview || !stage || !report) return;
-
-  const availableWidth = Math.max(320, preview.clientWidth - 8);
-  const availableHeight = Math.max(
-    320,
-    window.innerHeight - preview.getBoundingClientRect().top - 24
-  );
-
-  const scale = Math.min(
-    availableWidth / 1600,
-    availableHeight / 900,
-    1
-  );
-
-  stage.style.height = `${Math.round(900 * scale)}px`;
-  report.style.transform = `scale(${scale})`;
-}
-
-window.addEventListener("resize", fitAdminReportPreview);
-
-function adminReportStats(rows){
-  const global = rows.length
-    ? Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / rows.length)
-    : 0;
-
-  const weeks = unique(rows.map(p=>String(getProcessDeliveryWeek(p))).filter(Boolean));
-  const analysts = unique(rows.map(p=>p.analista || "Pendiente"));
-  const leaders = unique(rows.map(p=>p.lider || "Pendiente"));
-  const closed = rows.filter(p=>isProcessClosedForReport(p)).length;
-
-  return {
-    total: rows.length,
-    global,
-    closed,
-    pending: rows.length - closed,
-    weeks: weeks.length,
-    analysts: analysts.length,
-    leaders: leaders.length,
-    pendingAnalyst: rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length,
-    pendingLeader: rows.filter(p=>isMissingValue(p.lider)).length,
-    byStartWeek: countBy(rows, p => "Semana " + (getProcessStartWeek(p) || "Pendiente")),
-    byDeliveryWeek: countBy(rows, p => "Semana " + (getProcessDeliveryWeek(p) || "Pendiente")),
-    byAnalyst: countBy(rows, p => p.analista || "Pendiente"),
-    byLeader: countBy(rows, p => p.lider || "Pendiente"),
-    byMacro: countBy(rows, p => p.macroproceso || "Sin macroproceso"),
-    byCrit: countBy(rows, p => p.criticidad || "Sin criticidad"),
-    byStatus: countBy(rows, p => processStatus(p.proceso_id) || "Sin estado")
-  };
+      return true;
+    })
+    .sort((a,b) =>
+      String(
+        a.codigo_proceso ||
+        a.proceso_id ||
+        ""
+      ).localeCompare(
+        String(
+          b.codigo_proceso ||
+          b.proceso_id ||
+          ""
+        ),
+        "es",
+        {numeric:true}
+      )
+    );
 }
 
 function countBy(rows, getter){
-  return rows.reduce((acc,row)=>{
-    const key = getter(row);
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+  return rows.reduce(
+    (acc,row) => {
+      const key =
+        String(
+          getter(row) ||
+          "Sin dato"
+        );
+
+      acc[key] =
+        (acc[key] || 0) + 1;
+
+      return acc;
+    },
+    {}
+  );
 }
 
-function renderAdminReportByType(rows, filters){
-  const type = String(filters.reportType || "ejecutivo").toLowerCase();
+function runtimeAdvanceForRows(rows){
+  const total =
+    rows.reduce(
+      (sum,p) =>
+        sum +
+        Number(
+          p.total_actividades_activas ||
+          0
+        ),
+      0
+    );
 
-  if(type === "procesos") return renderAdminProcessesReport(rows, filters);
-  if(type === "cargas") return renderAdminLoadsReport(rows, filters);
-  if(type === "semanal") return renderAdminWeeklyReport(rows, filters);
-  if(type === "alertas") return renderAdminAlertsReport(rows, filters);
+  const completed =
+    rows.reduce(
+      (sum,p) =>
+        sum +
+        Number(
+          p.actividades_completadas ||
+          0
+        ),
+      0
+    );
 
-  return renderAdminOnePageReport(rows, filters);
-}  
-
-function renderAdminReportByType(rows, filters){
-  const type = String(filters.reportType || "ejecutivo").toLowerCase();
-
-  if(type === "procesos") return renderAdminProcessesOnePage(rows, filters);
-  if(type === "cargas") return renderAdminLoadsOnePage(rows, filters);
-  if(type === "semanal") return renderAdminWeeklyOnePage(rows, filters);
-  if(type === "alertas") return renderAdminAlertsOnePage(rows, filters);
-
-  return renderAdminExecutiveOnePage(rows, filters);
+  return total
+    ? Math.round(
+        completed / total * 100
+      )
+    : 0;
 }
 
-function reportHeader(title, badge, filters){
-  const today = new Date().toLocaleDateString("es-EC");
+function adminReportStats(rows){
+  const closed =
+    rows.filter(
+      isProcessClosedForReport
+    ).length;
+
+  return {
+    total:
+      rows.length,
+
+    global:
+      runtimeAdvanceForRows(rows),
+
+    closed,
+
+    open:
+      rows.length - closed,
+
+    pendingAnalyst:
+      rows.filter(
+        p =>
+          isMissingValue(
+            p.analista_user
+          )
+      ).length,
+
+    pendingLeader:
+      rows.filter(
+        p =>
+          isMissingValue(
+            p.lider
+          )
+      ).length,
+
+    byStatus:
+      countBy(
+        rows,
+        p =>
+          processState(p) ||
+          "SIN ESTADO"
+      ),
+
+    byMacro:
+      countBy(
+        rows,
+        p =>
+          processMacroName(p)
+      ),
+
+    byCrit:
+      countBy(
+        rows,
+        p =>
+          p.criticidad ||
+          "Sin criticidad"
+      ),
+
+    byStartWeek:
+      countBy(
+        rows,
+        p =>
+          "Semana " +
+          (
+            getProcessStartWeek(p) ||
+            "Pendiente"
+          )
+      ),
+
+    byDeliveryWeek:
+      countBy(
+        rows,
+        p =>
+          "Semana " +
+          (
+            getProcessDeliveryWeek(p) ||
+            "Pendiente"
+          )
+      )
+  };
+}
+
+function reportHeader(
+  title,
+  badge,
+  filters
+){
+  const today =
+    new Date()
+      .toLocaleDateString(
+        "es-EC"
+      );
 
   const filterText = [
-    filters.mode || "pendientes",
-    filters.dateField === "semana_inicio" ? "semana inicio" : "semana entrega",
-    filters.from ? "desde semana " + filters.from : "",
-    filters.to ? "hasta semana " + filters.to : "",
+    filters.mode === "abiertos"
+      ? "Procesos abiertos"
+      : filters.mode === "cerrados"
+        ? "Procesos cerrados"
+        : "Todos los procesos",
+
+    filters.dateField ===
+      "semana_inicio"
+      ? "Semana inicio"
+      : "Semana entrega",
+
+    filters.from
+      ? "Desde semana " +
+        filters.from
+      : "",
+
+    filters.to
+      ? "Hasta semana " +
+        filters.to
+      : "",
+
     filters.macro || "",
     filters.analyst || "",
     filters.leader || ""
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return `
     <div class="report-head">
       <div>
         <h1>${esc(title)}</h1>
-        <p>RADAR SGMP · Centro de Control del Plan · ${esc(today)}</p>
-        <p>${esc(filterText || "Todos los procesos")}</p>
+
+        <p>
+          RADAR SGMP · ${esc(today)}
+        </p>
+
+        <p>
+          ${esc(filterText)}
+        </p>
       </div>
-      <div class="report-badge">${esc(badge)}</div>
+
+      <div class="report-badge">
+        ${esc(badge)}
+      </div>
     </div>
   `;
 }
 
-function reportKpis(s){
+function reportKpis(stats){
   return `
     <div class="report-kpis">
-      <div><b>${s.total}</b><span>Procesos</span></div>
-      <div><b>${s.global}%</b><span>Avance global</span></div>
-      <div><b>${s.closed}</b><span>TO-BE cerrados</span></div>
-      <div><b>${s.pending}</b><span>Pendientes</span></div>
-      <div><b>${s.pendingAnalyst}</b><span>Sin analista</span></div>
-      <div><b>${s.pendingLeader}</b><span>Sin líder</span></div>
-    </div>
-  `;
-}
-
-function reportDonut(title, value, subtitle){
-  const pct = Math.max(0, Math.min(100, Number(value || 0)));
-
-  return `
-    <div class="report-donut-wrap">
-      <div
-        class="report-donut"
-        style="background:conic-gradient(#189B5B 0 ${pct}%, #E3F1E9 ${pct}% 100%)"
-      >
-        <div class="report-donut-value">${pct}%</div>
-      </div>
-      <div class="report-donut-text">
-        <b>${esc(title)}</b>
-        <span>${esc(subtitle || "")}</span>
-      </div>
-    </div>
-  `;
-}
-
-function reportVisualBars(obj, limit = 8){
-  const entries = Object.entries(obj || {})
-    .filter(([k]) => String(k || "").trim())
-    .sort((a,b)=>b[1]-a[1])
-    .slice(0,limit);
-
-  const max = entries.length ? Math.max(...entries.map(x=>x[1])) : 1;
-
-  return entries.map(([name,total])=>`
-    <div class="report-bar-row">
-      <span title="${esc(name)}">${esc(name)}</span>
-      <div class="report-bar-bg">
-        <div class="report-bar-fill" style="width:${Math.max(5, Math.round(total/max*100))}%"></div>
-      </div>
-      <b>${total}</b>
-    </div>
-  `).join("") || `<p class="report-note">Sin datos para mostrar.</p>`;
-}
-
-function reportProcessProgressList(rows, limit = 12){
-  const visible = rows
-    .slice()
-    .sort((a,b)=>Number(a.numero || 0) - Number(b.numero || 0))
-    .slice(0,limit);
-
-  return `
-    <div class="report-process-list">
-      ${visible.map(p => {
-        const adv = processAdvance(p.proceso_id);
-
-        return `
-          <div class="report-process-mini">
-            <strong>${esc(p.proceso_id || "")}</strong>
-            <div>
-              <div class="report-process-name">${esc(p.proceso || "")}</div>
-              <div class="report-bar-bg">
-                <div class="report-bar-fill" style="width:${Math.max(4, adv)}%"></div>
-              </div>
-            </div>
-            <b>${adv}%</b>
-          </div>
-        `;
-      }).join("") || `<p class="report-note">Sin procesos para mostrar.</p>`}
-    </div>
-
-    ${rows.length > visible.length ? `<p class="report-note">Vista compacta: ${visible.length} de ${rows.length} procesos filtrados.</p>` : ""}
-  `;
-}
-
-function reportAlertsSummary(rows){
-  const alerts = [];
-
-  rows.forEach(p => {
-    processAlerts(p).forEach(a => alerts.push(a.text));
-  });
-
-  return countBy(alerts.map(text => ({text})), x => x.text);
-}
-
-function reportAlertProcesses(rows, limit = 10){
-  const visible = rows
-    .filter(p => processAlerts(p).length)
-    .slice(0,limit);
-
-  return `
-    <div class="report-process-list">
-      ${visible.map(p => {
-        const alerts = processAlerts(p).map(a => a.text).join(" · ");
-        const adv = processAdvance(p.proceso_id);
-
-        return `
-          <div class="report-process-mini">
-            <strong>${esc(p.proceso_id || "")}</strong>
-            <div>
-              <div class="report-process-name">${esc(p.proceso || "")}</div>
-              <div class="report-note">${esc(alerts)}</div>
-            </div>
-            <b>${adv}%</b>
-          </div>
-        `;
-      }).join("") || `<p class="report-note">Sin alertas para los filtros seleccionados.</p>`}
-    </div>
-  `;
-}
-
-function renderAdminExecutiveOnePage(rows, filters){
-  const s = adminReportStats(rows);
-
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("ONEPAGE EJECUTIVO DEL PLAN", "EJECUTIVO", filters)}
-      ${reportKpis(s)}
-
-      <div class="report-visual-grid">
-        <div class="report-card tall">
-          <h3>Avance global</h3>
-          ${reportDonut("Avance global del corte", s.global, "Calculado sobre los procesos filtrados del plan.")}
-        </div>
-
-        <div class="report-card">
-          <h3>Estado del plan</h3>
-          ${reportVisualBars(s.byStatus, 7)}
-        </div>
-
-        <div class="report-card">
-          <h3>Macroprocesos</h3>
-          ${reportVisualBars(s.byMacro, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Criticidad</h3>
-          ${reportVisualBars(s.byCrit, 6)}
-        </div>
-
-        <div class="report-card">
-          <h3>Semana entrega</h3>
-          ${reportVisualBars(s.byDeliveryWeek, 8)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAdminProcessesOnePage(rows, filters){
-  const s = adminReportStats(rows);
-
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("ONEPAGE GRÁFICO POR PROCESOS", "PROCESOS", filters)}
-      ${reportKpis(s)}
-
-      <div class="report-visual-grid">
-        <div class="report-card tall">
-          <h3>Avance por proceso</h3>
-          ${reportProcessProgressList(rows, 14)}
-        </div>
-
-        <div class="report-card">
-          <h3>Estado</h3>
-          ${reportVisualBars(s.byStatus, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Macroprocesos</h3>
-          ${reportVisualBars(s.byMacro, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Criticidad</h3>
-          ${reportVisualBars(s.byCrit, 6)}
-        </div>
-
-        <div class="report-card">
-          <h3>Semana entrega</h3>
-          ${reportVisualBars(s.byDeliveryWeek, 8)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAdminLoadsOnePage(rows, filters){
-  const s = adminReportStats(rows);
-
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("ONEPAGE DE CARGAS", "CARGAS", filters)}
-      ${reportKpis(s)}
-
-      <div class="report-visual-grid">
-        <div class="report-card tall">
-          <h3>Carga por analista</h3>
-          ${reportVisualBars(s.byAnalyst, 14)}
-        </div>
-
-        <div class="report-card tall">
-          <h3>Carga por líder</h3>
-          ${reportVisualBars(s.byLeader, 14)}
-        </div>
-
-        <div class="report-card">
-          <h3>Macroprocesos</h3>
-          ${reportVisualBars(s.byMacro, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Procesos sin asignación</h3>
-          ${reportVisualBars({
-            "Sin analista": s.pendingAnalyst,
-            "Sin líder": s.pendingLeader,
-            "Asignados": Math.max(0, s.total - s.pendingAnalyst)
-          }, 6)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAdminWeeklyOnePage(rows, filters){
-  const s = adminReportStats(rows);
-
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("ONEPAGE SEMANAL", "SEMANAL", filters)}
-      ${reportKpis(s)}
-
-      <div class="report-visual-grid">
-        <div class="report-card tall">
-          <h3>Procesos por semana de entrega</h3>
-          ${reportVisualBars(s.byDeliveryWeek, 14)}
-        </div>
-
-        <div class="report-card tall">
-          <h3>Procesos por semana de inicio</h3>
-          ${reportVisualBars(s.byStartWeek, 14)}
-        </div>
-
-        <div class="report-card">
-          <h3>Estado</h3>
-          ${reportVisualBars(s.byStatus, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Macroprocesos</h3>
-          ${reportVisualBars(s.byMacro, 8)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAdminAlertsOnePage(rows, filters){
-  const s = adminReportStats(rows);
-  const byAlerts = reportAlertsSummary(rows);
-  const alertCount = rows.filter(p => processAlerts(p).length).length;
-
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("ONEPAGE DE ALERTAS", "ALERTAS", filters)}
-
-      <div class="report-kpis">
-        <div><b>${s.total}</b><span>Procesos filtro</span></div>
-        <div><b>${alertCount}</b><span>Con alertas</span></div>
-        <div><b>${s.pendingAnalyst}</b><span>Sin analista</span></div>
-        <div><b>${s.pendingLeader}</b><span>Sin líder</span></div>
-        <div><b>${s.global}%</b><span>Avance global</span></div>
-        <div><b>${s.closed}</b><span>TO-BE cerrados</span></div>
-      </div>
-
-      <div class="report-visual-grid">
-        <div class="report-card tall">
-          <h3>Procesos con alertas</h3>
-          ${reportAlertProcesses(rows, 12)}
-        </div>
-
-        <div class="report-card">
-          <h3>Tipo de alerta</h3>
-          ${reportVisualBars(byAlerts, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Criticidad</h3>
-          ${reportVisualBars(s.byCrit, 6)}
-        </div>
-
-        <div class="report-card">
-          <h3>Macroprocesos</h3>
-          ${reportVisualBars(s.byMacro, 8)}
-        </div>
-
-        <div class="report-card">
-          <h3>Estado</h3>
-          ${reportVisualBars(s.byStatus, 8)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAdminOnePageReport(rows, filters){
-  return renderAdminExecutiveOnePage(rows, filters || {});
-}
-
-function reportHeader(title, badge, filters){
-  const today = new Date().toLocaleDateString("es-EC");
-
-  const filterText = [
-    filters.mode !== "todos" ? filters.mode : "todos",
-    filters.dateField === "semana_inicio" ? "semana inicio" : "semana entrega",
-    filters.from ? "desde semana " + filters.from : "",
-    filters.to ? "hasta semana " + filters.to : "",
-    filters.macro || "",
-    filters.analyst || "",
-    filters.leader || ""
-  ].filter(Boolean).join(" · ");
-
-  return `
-    <div class="report-head">
       <div>
-        <h1>${esc(title)}</h1>
-        <p>RADAR SGMP · Centro de Control del Plan · ${esc(today)}</p>
-        <p>${esc(filterText || "Todos los procesos")}</p>
+        <b>${stats.total}</b>
+        <span>Procesos</span>
       </div>
-      <div class="report-badge">${esc(badge)}</div>
+
+      <div>
+        <b>${stats.global}%</b>
+        <span>Avance global</span>
+      </div>
+
+      <div>
+        <b>${stats.closed}</b>
+        <span>Cerrados</span>
+      </div>
+
+      <div>
+        <b>${stats.open}</b>
+        <span>Abiertos</span>
+      </div>
+
+      <div>
+        <b>${stats.pendingAnalyst}</b>
+        <span>Sin analista</span>
+      </div>
+
+      <div>
+        <b>${stats.pendingLeader}</b>
+        <span>Sin líder</span>
+      </div>
     </div>
   `;
 }
 
-function renderAdminProcessesReport(rows, filters){
-  const visibleRows = rows.slice(0, 24);
+function reportVisualBars(
+  object,
+  limit = 10
+){
+  const entries =
+    Object.entries(
+      object || {}
+    )
+      .sort(
+        (a,b) =>
+          Number(b[1]) -
+          Number(a[1])
+      )
+      .slice(0,limit);
 
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("INFORME POR PROCESOS", "DETALLE OPERATIVO", filters)}
+  const max =
+    Math.max(
+      1,
+      ...entries.map(
+        item =>
+          Number(item[1] || 0)
+      )
+    );
 
-      <div class="report-kpis">
-        <div><b>${rows.length}</b><span>Procesos</span></div>
-        <div><b>${Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / (rows.length || 1))}%</b><span>Avance prom.</span></div>
-        <div><b>${rows.filter(p=>isProcessClosedForReport(p)).length}</b><span>Completados</span></div>
-        <div><b>${rows.filter(p=>!isProcessClosedForReport(p)).length}</b><span>Pendientes</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
-      </div>
+  return entries.map(
+    ([label,value]) => {
+      const pct =
+        Math.round(
+          Number(value || 0) /
+          max *
+          100
+        );
 
-      <div class="report-panel" style="height:650px;overflow:hidden">
-        <h3>Detalle de procesos</h3>
-        <table class="report-process-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Proceso</th>
-              <th>Macroproceso</th>
-              <th>Analista</th>
-              <th>Líder</th>
-              <th>Semana</th>
-              <th>Avance</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${visibleRows.map(p=>`
-              <tr>
-                <td>${esc(p.proceso_id || "")}</td>
-                <td>${esc(p.proceso || "")}</td>
-                <td>${esc(p.macroproceso || "")}</td>
-                <td>${esc(p.analista || "Pendiente")}</td>
-                <td>${esc(p.lider || "Pendiente")}</td>
-                <td>${esc(getProcessDeliveryWeek(p) || "")}</td>
-                <td>${processAdvance(p.proceso_id)}%</td>
-                <td>${esc(processStatus(p.proceso_id))}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-        ${rows.length > visibleRows.length ? `<p class="meta">Se muestran ${visibleRows.length} de ${rows.length} procesos filtrados.</p>` : ""}
-      </div>
-    </section>
+      return `
+        <div class="report-bar-row">
+          <span>
+            ${esc(label)}
+          </span>
+
+          <div class="report-bar-bg">
+            <div
+              class="report-bar-fill"
+              style="width:${pct}%"
+            ></div>
+          </div>
+
+          <b>${value}</b>
+        </div>
+      `;
+    }
+  ).join("") ||
+  `
+    <p class="meta">
+      Sin datos para el filtro seleccionado.
+    </p>
   `;
 }
 
-function renderAdminLoadsReport(rows, filters){
-  const byAnalyst = countBy(rows, p => p.analista || "Pendiente");
-  const byLeader = countBy(rows, p => p.lider || "Pendiente");
-  const byMacro = countBy(rows, p => p.macroproceso || "Sin macroproceso");
+function reportProcessProgressList(
+  rows,
+  limit = 12
+){
+  const visible =
+    rows
+      .slice()
+      .sort(
+        (a,b) =>
+          processAdvance(a.proceso_id) -
+          processAdvance(b.proceso_id)
+      )
+      .slice(0,limit);
 
-  return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("INFORME DE CARGAS", "CARGA OPERATIVA", filters)}
+  return visible.map(p => `
+    <div class="report-bar-row">
+      <span>
+        ${esc(
+          p.codigo_proceso ||
+          p.proceso_id ||
+          ""
+        )}
+      </span>
 
-      <div class="report-kpis">
-        <div><b>${rows.length}</b><span>Procesos</span></div>
-        <div><b>${Object.keys(byAnalyst).length}</b><span>Analistas</span></div>
-        <div><b>${Object.keys(byLeader).length}</b><span>Líderes</span></div>
-        <div><b>${Object.keys(byMacro).length}</b><span>Macroprocesos</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
+      <div class="report-bar-bg">
+        <div
+          class="report-bar-fill"
+          style="width:${processAdvance(p.proceso_id)}%"
+        ></div>
       </div>
 
-      <div class="report-layout">
-        <div class="report-panel">
-          <h3>Carga por analista</h3>
-          ${reportBars(byAnalyst, 12)}
-        </div>
-
-        <div class="report-panel">
-          <h3>Carga por líder</h3>
-          ${reportBars(byLeader, 12)}
-        </div>
-
-        <div class="report-panel">
-          <h3>Carga por macroproceso</h3>
-          ${reportBars(byMacro, 12)}
-        </div>
-      </div>
-    </section>
+      <b>
+        ${processAdvance(p.proceso_id)}%
+      </b>
+    </div>
+  `).join("") ||
+  `
+    <p class="meta">
+      Sin procesos para mostrar.
+    </p>
   `;
 }
 
-function renderAdminWeeklyReport(rows, filters){
-  const byStart = countBy(rows, p => "Semana " + getProcessStartWeek(p));
-  const byDelivery = countBy(rows, p => "Semana " + getProcessDeliveryWeek(p));
-  const byStatus = countBy(rows, p => processStatus(p.proceso_id));
+function renderAdminExecutiveOnePage(
+  rows,
+  filters
+){
+  const stats =
+    adminReportStats(rows);
 
   return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("INFORME SEMANAL", "PLAN POR SEMANAS", filters)}
+    <section
+      id="adminOnePageReport"
+      class="admin-onepage-report"
+    >
+      ${reportHeader(
+        "ONEPAGE EJECUTIVO DEL PLAN",
+        "EJECUTIVO",
+        filters
+      )}
 
-      <div class="report-kpis">
-        <div><b>${rows.length}</b><span>Procesos</span></div>
-        <div><b>${Object.keys(byStart).length}</b><span>Sem. inicio</span></div>
-        <div><b>${Object.keys(byDelivery).length}</b><span>Sem. entrega</span></div>
-        <div><b>${rows.filter(p=>isProcessClosedForReport(p)).length}</b><span>Cerrados</span></div>
-        <div><b>${rows.filter(p=>!isProcessClosedForReport(p)).length}</b><span>Pendientes</span></div>
-        <div><b>${Math.round(rows.reduce((s,p)=>s + processAdvance(p.proceso_id),0) / (rows.length || 1))}%</b><span>Avance prom.</span></div>
-      </div>
+      ${reportKpis(stats)}
 
       <div class="report-layout">
-        <div class="report-panel">
-          <h3>Procesos por inicio</h3>
-          ${reportBars(byStart, 12)}
-        </div>
-
-        <div class="report-panel">
-          <h3>Procesos por entrega</h3>
-          ${reportBars(byDelivery, 12)}
-        </div>
-
         <div class="report-panel">
           <h3>Estado del plan</h3>
-          ${reportBars(byStatus, 12)}
+          ${reportVisualBars(
+            stats.byStatus,
+            4
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>Macroprocesos</h3>
+          ${reportVisualBars(
+            stats.byMacro,
+            10
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>Criticidad</h3>
+          ${reportVisualBars(
+            stats.byCrit,
+            6
+          )}
+        </div>
+
+        <div class="report-panel report-wide">
+          <h3>
+            Distribución por semana de entrega
+          </h3>
+
+          ${reportVisualBars(
+            stats.byDeliveryWeek,
+            14
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>
+            Procesos con menor avance
+          </h3>
+
+          ${reportProcessProgressList(
+            rows,
+            10
+          )}
         </div>
       </div>
     </section>
   `;
 }
 
-function renderAdminAlertsReport(rows, filters){
-  const alertRows = rows
-    .map(p => ({
-      process: p,
-      alerts: processAlerts(p)
-    }))
-    .filter(x => x.alerts.length);
+function renderAdminWeeklyOnePage(
+  rows,
+  filters
+){
+  const stats =
+    adminReportStats(rows);
 
   return `
-    <section id="adminOnePageReport" class="admin-onepage-report">
-      ${reportHeader("INFORME DE ALERTAS", "CONTROL DE RIESGOS", filters)}
+    <section
+      id="adminOnePageReport"
+      class="admin-onepage-report"
+    >
+      ${reportHeader(
+        "SEGUIMIENTO SEMANAL",
+        "SEMANAL",
+        filters
+      )}
 
-      <div class="report-kpis">
-        <div><b>${rows.length}</b><span>Procesos filtro</span></div>
-        <div><b>${alertRows.length}</b><span>Con alertas</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.analista) || isMissingValue(p.analista_user)).length}</b><span>Sin analista</span></div>
-        <div><b>${rows.filter(p=>isMissingValue(p.lider)).length}</b><span>Sin líder</span></div>
-        <div><b>${rows.filter(p=>!getProcessDeliveryWeek(p)).length}</b><span>Sin entrega</span></div>
-        <div><b>${rows.filter(p=>String(p.criticidad || "").toUpperCase() === "ALTA").length}</b><span>Alta criticidad</span></div>
-      </div>
+      ${reportKpis(stats)}
 
-      <div class="report-panel" style="height:650px;overflow:hidden">
-        <h3>Procesos con alertas</h3>
-        <table class="report-process-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Proceso</th>
-              <th>Macroproceso</th>
-              <th>Analista</th>
-              <th>Líder</th>
-              <th>Avance</th>
-              <th>Alertas</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${alertRows.slice(0, 22).map(x=>`
-              <tr>
-                <td>${esc(x.process.proceso_id || "")}</td>
-                <td>${esc(x.process.proceso || "")}</td>
-                <td>${esc(x.process.macroproceso || "")}</td>
-                <td>${esc(x.process.analista || "Pendiente")}</td>
-                <td>${esc(x.process.lider || "Pendiente")}</td>
-                <td>${processAdvance(x.process.proceso_id)}%</td>
-                <td>${esc(x.alerts.map(a=>a.text).join(" · "))}</td>
-              </tr>
-            `).join("") || `
-              <tr>
-                <td colspan="7">No hay alertas para los filtros seleccionados.</td>
-              </tr>
-            `}
-          </tbody>
-        </table>
+      <div class="report-layout">
+        <div class="report-panel">
+          <h3>Estado</h3>
+          ${reportVisualBars(
+            stats.byStatus,
+            4
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>Semanas de inicio</h3>
+          ${reportVisualBars(
+            stats.byStartWeek,
+            12
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>Semanas de entrega</h3>
+          ${reportVisualBars(
+            stats.byDeliveryWeek,
+            12
+          )}
+        </div>
+
+        <div class="report-panel report-wide">
+          <h3>
+            Procesos con menor avance
+          </h3>
+
+          ${reportProcessProgressList(
+            rows,
+            14
+          )}
+        </div>
+
+        <div class="report-panel">
+          <h3>Macroprocesos</h3>
+          ${reportVisualBars(
+            stats.byMacro,
+            10
+          )}
+        </div>
       </div>
     </section>
   `;
 }
-  
-function reportBars(obj, limit = 8){
-  const entries = Object.entries(obj || {})
-    .sort((a,b)=>b[1]-a[1])
-    .slice(0,limit);
 
-  const max = entries.length ? Math.max(...entries.map(x=>x[1])) : 1;
-
-  return entries.map(([name,total])=>`
-    <div class="report-bar-row">
-      <span>${esc(name)}</span>
-      <div class="report-bar-bg">
-        <div class="report-bar-fill" style="width:${Math.max(6, Math.round(total/max*100))}%"></div>
-      </div>
-      <b>${total}</b>
-    </div>
-  `).join("") || `<p class="meta">Sin datos para mostrar.</p>`;
+function renderAdminReportByType(
+  rows,
+  filters
+){
+  return filters.reportType ===
+    "semanal"
+      ? renderAdminWeeklyOnePage(
+          rows,
+          filters
+        )
+      : renderAdminExecutiveOnePage(
+          rows,
+          filters
+        );
 }
 
+function renderAdminReport(){
+  const processes =
+    (DATA.procesos || [])
+      .filter(isActiveRow);
+
+  const defaultFilters = {
+    reportType:
+      "ejecutivo",
+
+    mode:
+      "todos",
+
+    dateField:
+      "semana_entrega",
+
+    from:
+      "",
+
+    to:
+      "",
+
+    macro:
+      "",
+
+    analyst:
+      "",
+
+    leader:
+      ""
+  };
+
+  const rows =
+    getAdminReportRows(
+      defaultFilters
+    );
+
+  setTimeout(
+    fitAdminReportPreview,
+    0
+  );
+
+  return `
+    <div class="admin-report-tools">
+      <select
+        id="rReportType"
+        onchange="generateAdminReport()"
+      >
+        <option value="ejecutivo">
+          Onepage Ejecutivo del Plan
+        </option>
+
+        <option value="semanal">
+          Seguimiento Semanal
+        </option>
+      </select>
+
+      <select
+        id="rMode"
+        onchange="generateAdminReport()"
+      >
+        <option value="todos">
+          Todos
+        </option>
+
+        <option value="abiertos">
+          Abiertos
+        </option>
+
+        <option value="cerrados">
+          Cerrados
+        </option>
+      </select>
+
+      <select
+        id="rDateField"
+        onchange="generateAdminReport()"
+      >
+        <option value="semana_entrega">
+          Semana entrega
+        </option>
+
+        <option value="semana_inicio">
+          Semana inicio
+        </option>
+      </select>
+
+      <select
+        id="rFrom"
+        onchange="generateAdminReport()"
+      >
+        <option value="">
+          Desde cualquier semana
+        </option>
+
+        ${reportWeekOptions()}
+      </select>
+
+      <select
+        id="rTo"
+        onchange="generateAdminReport()"
+      >
+        <option value="">
+          Hasta cualquier semana
+        </option>
+
+        ${reportWeekOptions()}
+      </select>
+
+      <select
+        id="rMacro"
+        onchange="generateAdminReport()"
+      >
+        <option value="">
+          Todos los macroprocesos
+        </option>
+
+        ${adminFilterOptions(
+          unique(
+            processes.map(
+              processMacroName
+            )
+          )
+        )}
+      </select>
+
+      <select
+        id="rAnalyst"
+        onchange="generateAdminReport()"
+      >
+        <option value="">
+          Todos los analistas
+        </option>
+
+        ${adminFilterOptions(
+          unique(
+            processes.map(
+              processAnalystName
+            )
+          )
+        )}
+      </select>
+
+      <select
+        id="rLeader"
+        onchange="generateAdminReport()"
+      >
+        <option value="">
+          Todos los líderes
+        </option>
+
+        ${adminFilterOptions(
+          unique(
+            processes.map(
+              p =>
+                p.lider ||
+                "Pendiente"
+            )
+          )
+        )}
+      </select>
+
+      <button
+        class="btn primary"
+        type="button"
+        onclick="generateAdminReport()"
+      >
+        Generar
+      </button>
+
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="downloadAdminReportPng()"
+      >
+        Descargar PNG
+      </button>
+    </div>
+
+    <div
+      id="adminReportPreview"
+      class="admin-report-preview"
+    >
+      <div class="admin-report-stage">
+        ${renderAdminReportByType(
+          rows,
+          defaultFilters
+        )}
+      </div>
+    </div>
+  `;
+}
+
+function generateAdminReport(){
+  const filters =
+    getAdminReportFilters();
+
+  const rows =
+    getAdminReportRows(
+      filters
+    );
+
+  const target =
+    $("adminReportPreview");
+
+  if(!target){
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="admin-report-stage">
+      ${renderAdminReportByType(
+        rows,
+        filters
+      )}
+    </div>
+  `;
+
+  fitAdminReportPreview();
+}
+
+function fitAdminReportPreview(){
+  const preview =
+    $("adminReportPreview");
+
+  const stage =
+    preview?.querySelector(
+      ".admin-report-stage"
+    );
+
+  const report =
+    $("adminOnePageReport");
+
+  if(
+    !preview ||
+    !stage ||
+    !report
+  ){
+    return;
+  }
+
+  const availableWidth =
+    Math.max(
+      320,
+      preview.clientWidth - 8
+    );
+
+  const availableHeight =
+    Math.max(
+      320,
+      window.innerHeight -
+      preview
+        .getBoundingClientRect()
+        .top -
+      24
+    );
+
+  const scale =
+    Math.min(
+      availableWidth / 1600,
+      availableHeight / 900,
+      1
+    );
+
+  stage.style.height =
+    `${Math.round(
+      900 * scale
+    )}px`;
+
+  report.style.transform =
+    `scale(${scale})`;
+}
+
+window.addEventListener(
+  "resize",
+  fitAdminReportPreview
+);
+  
 async function downloadAdminReportPng(){
   const node = $("adminOnePageReport");
 
@@ -7932,46 +8205,132 @@ function renderAdminControlRows(mode = "matrix", customRows = null){
 }
 
 function adminControlRow(p){
-  const startWeek = getProcessStartWeek(p) || "Pendiente";
-  const deliveryWeek = getProcessDeliveryWeek(p) || "Pendiente";
-  const alerts = processAlerts(p);
-  const alertText = alerts.map(a => a.text).join(" ");
-  const status = processStatus(p.proceso_id);
-  const advance = processAdvance(p.proceso_id);
+  const startWeek =
+    getProcessStartWeek(p) ||
+    "Pendiente";
 
-  const alertHtml = alerts.length
-    ? alerts.map(a => `<span class="admin-chip ${a.type}">${esc(a.text)}</span>`).join(" ")
-    : `<span class="admin-chip ok">Completo</span>`;
+  const deliveryWeek =
+    getProcessDeliveryWeek(p) ||
+    "Pendiente";
+
+  const alerts =
+    processAlerts(p);
+
+  const alertText =
+    alerts
+      .map(a => a.text)
+      .join(" ");
+
+  const status =
+    processState(p);
+
+  const advance =
+    processAdvance(
+      p.proceso_id
+    );
+
+  const analyst =
+    processAnalystName(p);
+
+  const processName =
+    processDisplayName(p);
+
+  const macroName =
+    processMacroName(p);
+
+  const alertHtml =
+    alerts.length
+      ? alerts.map(
+          a => `
+            <span class="admin-chip ${a.type}">
+              ${esc(a.text)}
+            </span>
+          `
+        ).join(" ")
+      : `
+          <span class="admin-chip ok">
+            Sin alertas
+          </span>
+        `;
 
   return `
-    <article 
+    <article
       class="admin-control-row admin-control-item"
       onclick="openProcess('${p.proceso_id}', 'adminControl')"
-      data-search="${esc((p.proceso + ' ' + p.macroproceso + ' ' + p.analista + ' ' + p.lider + ' ' + status + ' ' + alertText).toLowerCase())}"
+      data-search="${esc(
+        (
+          processName + " " +
+          macroName + " " +
+          analyst + " " +
+          (p.lider || "") + " " +
+          status + " " +
+          alertText
+        ).toLowerCase()
+      )}"
       data-start-week="${esc(startWeek)}"
       data-delivery-week="${esc(deliveryWeek)}"
-      data-analyst="${esc(p.analista || 'Pendiente')}"
+      data-analyst="${esc(analyst)}"
       data-alerts="${esc(alertText.toLowerCase())}"
     >
       <div>
-        <b>Inicio:</b> ${startWeek === "Pendiente" ? pending(startWeek) : "Semana " + esc(startWeek)}<br>
-        <span class="meta"><b>Entrega:</b> ${deliveryWeek === "Pendiente" ? pending(deliveryWeek) : "Semana " + esc(deliveryWeek)}</span>
+        <b>Inicio:</b>
+        ${
+          startWeek === "Pendiente"
+            ? pending(startWeek)
+            : "Semana " + esc(startWeek)
+        }
+
+        <br>
+
+        <span class="meta">
+          <b>Entrega:</b>
+          ${
+            deliveryWeek === "Pendiente"
+              ? pending(deliveryWeek)
+              : "Semana " +
+                esc(deliveryWeek)
+          }
+        </span>
       </div>
 
       <div>
-        <strong>${esc(p.proceso)}</strong>
-        <div class="meta">${esc(p.macroproceso)} · ${esc(p.criticidad || "Sin criticidad")}</div>
-      </div>
+        <strong>
+          ${esc(processName)}
+        </strong>
 
-      <div>${pending(p.analista)}</div>
-      <div>${pending(p.lider)}</div>
+        <div class="meta">
+          ${esc(macroName)}
+          ·
+          ${esc(
+            p.criticidad ||
+            "Sin criticidad"
+          )}
+        </div>
+      </div>
 
       <div>
-        <span class="status">${esc(status)}</span>
-        <div class="meta">${advance}% avance</div>
+        ${pending(analyst)}
       </div>
 
-      <div style="display:flex;flex-wrap:wrap;gap:5px">${alertHtml}</div>
+      <div>
+        ${pending(p.lider)}
+      </div>
+
+      <div>
+        <span class="status">
+          ${esc(status)}
+        </span>
+
+        <div class="meta">
+          ${advance}% avance
+        </div>
+      </div>
+
+      <div
+        style="display:flex;flex-wrap:wrap;gap:5px"
+      >
+        ${alertHtml}
+      </div>
     </article>
   `;
 }
@@ -8195,282 +8554,937 @@ function backFromProcess(){
 }
   
 function backHome(){ VIEW={type:"home"}; render(); }
+  
 function renderMacro(mid){
-  const m=DATA.macroprocesos.find(x=>x.macro_id===mid);
-  let ps=DATA.procesos.filter(p=>p.macro_id===mid).sort((a,b)=>String(a.proceso).localeCompare(String(b.proceso)));
+  const macro =
+    macroById(mid);
+
+  const processes =
+    getVisibleProcesses()
+      .filter(isActiveRow)
+      .filter(
+        p =>
+          String(p.macro_id || "") ===
+          String(mid || "")
+      )
+      .sort(
+        (a,b) =>
+          processDisplayName(a)
+            .localeCompare(
+              processDisplayName(b),
+              "es"
+            )
+      );
+
   $("main").innerHTML = `
-    <button class="btn ghost" onclick="backHome()">← Volver al resumen</button>
+    <button
+      class="btn ghost"
+      onclick="backHome()"
+    >
+      ← Volver al resumen
+    </button>
+
     <section class="hero">
-      <h1>${esc(m?.macroproceso||"Macroproceso")}</h1>
-      <p class="sub">Procesos del macroproceso y avance calculado desde hitos y actividades.</p>
+      <h1>
+        ${esc(
+          macroDisplayName(
+            macro || {}
+          )
+        )}
+      </h1>
+
+      <p class="sub">
+        Seguimiento del macroproceso según
+        el motor runtime V3.
+      </p>
+
       <div class="kpis">
-        <div class="kpi"><div class="v">${ps.length}</div><div class="l">Procesos</div></div>
-        <div class="kpi"><div class="v">${macroAdvance(mid)}%</div><div class="l">Avance macroproceso</div></div>
-        <div class="kpi"><div class="v">${ps.filter(p=>isTrue(p.as_is)).length}</div><div class="l">AS-IS levantados</div></div>
-        <div class="kpi"><div class="v">${ps.filter(p=>processAdvance(p.proceso_id)>0).length}</div><div class="l">Con avance</div></div>
-${isManagement() ? "" : `
-  <div class="kpi">
-    <div class="v">${ps.filter(p=>!p.analista || p.analista==="Pendiente").length}</div>
-    <div class="l">Sin analista</div>
-  </div>
-`}
+        <div class="kpi">
+          <div class="v">
+            ${Number(
+              macro?.total_procesos ||
+              processes.length
+            )}
+          </div>
+          <div class="l">
+            Procesos
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${macroAdvance(mid)}%
+          </div>
+          <div class="l">
+            Avance macroproceso
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${Number(
+              macro?.procesos_planificados ||
+              0
+            )}
+          </div>
+          <div class="l">
+            Planificados
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${Number(
+              macro?.procesos_atrasados ||
+              0
+            )}
+          </div>
+          <div class="l">
+            Atrasados
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${Number(
+              macro?.procesos_cerrados ||
+              0
+            )}
+          </div>
+          <div class="l">
+            Cerrados
+          </div>
+        </div>
       </div>
     </section>
-    <div class="filters">
-      <input id="q" placeholder="Buscar proceso, líder o analista" oninput="filterRows()">
-      <select id="crit" onchange="filterRows()"><option value="">Toda criticidad</option>${options(unique(DATA.procesos.map(p=>p.criticidad)))}</select>
-      <select id="st" onchange="filterRows()"><option value="">Todo estado</option>${options(unique(DATA.procesos.map(p=>processStatus(p.proceso_id))))}</select>
-      <button class="btn soft" onclick="filterRows()">Filtrar</button>
-    </div>
-    <section class="list" id="processList">${ps.map(processRow).join("")}</section>`;
-}
-function processRow(p){
-  const av = processAdvance(p.proceso_id);
-  const st = processStatus(p.proceso_id);
 
-  return `<article class="row proc-row" data-search="${esc((p.proceso+' '+p.lider+' '+p.analista).toLowerCase())}" data-crit="${esc(p.criticidad)}" data-st="${esc(st)}" onclick="openProcess('${p.proceso_id}')">
-    <div>
-      <strong>${esc(p.proceso)}</strong>
-      <div class="meta">
-        ${esc(p.macroproceso)} · Inicio: Semana ${p.semana_inicio || p.semana || "Pendiente"} · Entrega: Semana ${p.semana_entrega || "Pendiente"} · Analista: ${pending(p.analista)} · Líder: ${pending(p.lider)}
-      </div>
+    <div class="filters">
+      <input
+        id="q"
+        placeholder="Buscar proceso, líder o analista"
+        oninput="filterRows()"
+      >
+
+      <select
+        id="crit"
+        onchange="filterRows()"
+      >
+        <option value="">
+          Toda criticidad
+        </option>
+
+        ${options(
+          unique(
+            processes.map(
+              p => p.criticidad
+            )
+          )
+        )}
+      </select>
+
+      <select
+        id="st"
+        onchange="filterRows()"
+      >
+        <option value="">
+          Todo estado
+        </option>
+
+        ${options([
+          "PLANIFICADO",
+          "EN CURSO",
+          "ATRASADO",
+          "CERRADO"
+        ])}
+      </select>
+
+      <button
+        class="btn soft"
+        onclick="filterRows()"
+      >
+        Filtrar
+      </button>
     </div>
-    <span class="status">${esc(p.criticidad)}</span>
-    <span class="status">${esc(st)}</span>
-    <div><b>${av}%</b><div class="bar" style="margin-top:6px"><div class="fill" style="width:${av}%"></div></div></div>
-  </article>`;
+
+    <section
+      class="list"
+      id="processList"
+    >
+      ${
+        processes
+          .map(processRow)
+          .join("") ||
+        `
+          <div class="card">
+            <b>
+              No hay procesos activos
+              en este macroproceso.
+            </b>
+          </div>
+        `
+      }
+    </section>
+  `;
 }
-  
+
+function processRow(p){
+  const advance =
+    processAdvance(
+      p.proceso_id
+    );
+
+  const state =
+    processState(p);
+
+  const analyst =
+    processAnalystName(p);
+
+  const searchText = [
+    p.codigo_proceso,
+    processDisplayName(p),
+    processMacroName(p),
+    analyst,
+    p.lider
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return `
+    <article
+      class="row proc-row"
+      data-search="${esc(searchText)}"
+      data-crit="${esc(p.criticidad || "")}"
+      data-st="${esc(state)}"
+      onclick="openProcess('${p.proceso_id}')"
+    >
+      <div>
+        <strong>
+          ${esc(processDisplayName(p))}
+        </strong>
+
+        <div class="meta">
+          ${esc(processMacroName(p))}
+          · Inicio:
+          ${
+            getProcessStartWeek(p)
+              ? "Semana " +
+                esc(getProcessStartWeek(p))
+              : "Pendiente"
+          }
+          · Entrega:
+          ${
+            getProcessDeliveryWeek(p)
+              ? "Semana " +
+                esc(getProcessDeliveryWeek(p))
+              : "Pendiente"
+          }
+          · Analista:
+          ${pending(analyst)}
+          · Líder:
+          ${pending(p.lider)}
+        </div>
+      </div>
+
+      <span class="status">
+        ${esc(
+          p.criticidad ||
+          "Sin criticidad"
+        )}
+      </span>
+
+      <span class="status">
+        ${esc(state)}
+      </span>
+
+      <div>
+        <b>${advance}%</b>
+
+        <div
+          class="bar"
+          style="margin-top:6px"
+        >
+          <div
+            class="fill"
+            style="width:${advance}%"
+          ></div>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function filterRows(){
-  const q=($("q")?.value||"").toLowerCase(), c=$("crit")?.value||"", s=$("st")?.value||"";
-  document.querySelectorAll(".proc-row").forEach(el=>{
-    const ok=(!q || el.dataset.search.includes(q)) && (!c || el.dataset.crit===c) && (!s || el.dataset.st===s);
-    el.classList.toggle("hidden",!ok);
-  });
+  const q =
+    ($("q")?.value || "")
+      .toLowerCase();
+
+  const criticity =
+    $("crit")?.value || "";
+
+  const state =
+    $("st")?.value || "";
+
+  document
+    .querySelectorAll(
+      ".proc-row"
+    )
+    .forEach(el => {
+      const valid =
+        (
+          !q ||
+          el.dataset.search
+            .includes(q)
+        ) &&
+        (
+          !criticity ||
+          el.dataset.crit ===
+            criticity
+        ) &&
+        (
+          !state ||
+          el.dataset.st ===
+            state
+        );
+
+      el.classList.toggle(
+        "hidden",
+        !valid
+      );
+    });
 }
-  
+
 function renderProcess(pid){
-  const p=DATA.procesos.find(x=>x.proceso_id===pid);
-  const hs=hitosForProcess(pid);
-  const role=SESSION.rol;
+  const p =
+    processById(pid);
+
+  if(!p){
+    $("main").innerHTML = `
+      <div class="card">
+        <b>
+          Proceso no encontrado.
+        </b>
+      </div>
+    `;
+    return;
+  }
+
+  const hitos =
+    hitosForProcess(pid);
+
+  const advance =
+    processAdvance(pid);
+
+  const state =
+    processState(p);
+
+  const analyst =
+    processAnalystName(p);
+
+  const alerts =
+    processAlerts(p);
+
   $("main").innerHTML = `
-    <button class="btn ghost" onclick="backFromProcess()">← Volver</button>
+    <button
+      class="btn ghost"
+      onclick="backFromProcess()"
+    >
+      ← Volver
+    </button>
+
     <section class="detail-layout">
       <aside class="card side-panel">
-        <h3>${esc(p.proceso)}</h3>
-        <p class="meta">   ${esc(p.macroproceso)} · Inicio: Semana ${p.semana_inicio || p.semana || "Pendiente"} · Entrega: Semana ${p.semana_entrega || "Pendiente"} </p>
-        <div style="font-size:44px;font-weight:950;margin-top:12px">${processAdvance(pid)}%</div>
-        <div class="bar"><div class="fill" style="width:${processAdvance(pid)}%"></div></div>
-        <div style="margin-top:12px" class="meta">
-          <b>Criticidad:</b> ${esc(p.criticidad)}<br>
-          <b>Estado:</b> ${esc(processStatus(pid))}<br>
-          <b>Analista:</b> ${pending(p.analista)}<br>
-          <b>Líder:</b> ${pending(p.lider)}
+
+        <div class="meta">
+          ${esc(
+            p.codigo_proceso ||
+            p.proceso_id ||
+            ""
+          )}
         </div>
-        ${role==='admin' ? adminEditor(p) : ""}
+
+        <h3>
+          ${esc(processDisplayName(p))}
+        </h3>
+
+        <p class="meta">
+          ${esc(processMacroName(p))}
+        </p>
+
+        <div
+          style="font-size:44px;font-weight:950;margin-top:12px"
+        >
+          ${advance}%
+        </div>
+
+        <div class="bar">
+          <div
+            class="fill"
+            style="width:${advance}%"
+          ></div>
+        </div>
+
+        <div
+          class="meta"
+          style="margin-top:12px"
+        >
+          <b>Estado:</b>
+          ${esc(state)}
+          <br>
+
+          <b>Criticidad:</b>
+          ${esc(
+            p.criticidad ||
+            "Sin criticidad"
+          )}
+          <br>
+
+          <b>Analista:</b>
+          ${pending(analyst)}
+          <br>
+
+          <b>Líder:</b>
+          ${pending(p.lider)}
+          <br>
+
+          <b>Origen:</b>
+          ${esc(
+            p.origen_proceso ||
+            "Pendiente"
+          )}
+          <br>
+
+          <b>Tipo de cierre:</b>
+          ${esc(
+            p.tipo_cierre ||
+            "Pendiente"
+          )}
+          <br>
+
+          <b>Semana inicio:</b>
+          ${esc(
+            getProcessStartWeek(p) ||
+            "Pendiente"
+          )}
+          <br>
+
+          <b>Semana entrega:</b>
+          ${esc(
+            getProcessDeliveryWeek(p) ||
+            "Pendiente"
+          )}
+          <br>
+
+          <b>Fecha inicio plan:</b>
+          ${esc(
+            p.fecha_inicio_plan ||
+            "Pendiente"
+          )}
+          <br>
+
+          <b>Fecha fin plan:</b>
+          ${esc(
+            p.fecha_fin_plan ||
+            "Pendiente"
+          )}
+        </div>
+
+        <div
+          class="card"
+          style="margin-top:14px"
+        >
+          <b>Finalidad</b>
+
+          <p class="meta">
+            ${esc(
+              p.finalidad ||
+              "Sin finalidad registrada."
+            )}
+          </p>
+        </div>
+
+        ${
+          alerts.length
+            ? `
+              <div
+                style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px"
+              >
+                ${alerts.map(
+                  a => `
+                    <span class="admin-chip ${a.type}">
+                      ${esc(a.text)}
+                    </span>
+                  `
+                ).join("")}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          isAdmin()
+            ? adminEditor(p)
+            : ""
+        }
       </aside>
+
       <section>
-        <div class="section-title"><h2>Hitos del proceso</h2><span class="meta">${role==='gerencia'?'Vista de avance':'Detalle operativo editable'}</span></div>
-        <div class="hito-grid">${hs.map(h=>hitoCard(h,p)).join("")}</div>
+        <div class="section-title">
+          <h2>
+            Hitos del proceso
+          </h2>
+
+          <span class="meta">
+            ${
+              isManagement()
+                ? "Vista de avance"
+                : "Detalle operativo"
+            }
+          </span>
+        </div>
+
+        <div class="hito-grid">
+          ${
+            hitos
+              .map(
+                h =>
+                  hitoCard(h,p)
+              )
+              .join("")
+          }
+        </div>
       </section>
-    </section>`;
+    </section>
+  `;
 }
-function catalogValues(tipo){
-  const fallback = {
-    criticidad: ["ALTA", "MEDIO ALTO", "MEDIO", "BAJO"],
-    estado_as_is: ["PLANIFICADO", "LEVANTADO"],
-    semana: ["Pendiente", "Semana 21", "Semana 22", "Semana 23", "Semana 24", "Semana 25", "Semana 26", "Semana 27", "Semana 28", "Semana 29", "Semana 30", "Semana 31", "Semana 32", "Semana 33"],
-  };
+  
+function catalogValues(catalogName){
+  const target =
+    String(
+      catalogName || ""
+    )
+      .trim()
+      .toUpperCase();
 
-  const values = Array.isArray(DATA.catalogos)
-    ? DATA.catalogos
-        .filter(c => String(c.tipo || "").trim().toLowerCase() === String(tipo || "").trim().toLowerCase())
-        .map(c => c.valor || c.value || c.nombre)
-        .filter(Boolean)
-    : [];
+  const values =
+    (DATA.catalogos || [])
+      .filter(c =>
+        String(
+          c.activo || "SI"
+        )
+          .trim()
+          .toUpperCase() !==
+          "NO"
+      )
+      .filter(c =>
+        String(
+          c.catalogo || ""
+        )
+          .trim()
+          .toUpperCase() ===
+        target
+      )
+      .map(
+        c =>
+          String(
+            c.valor || ""
+          ).trim()
+      )
+      .filter(Boolean);
 
-  return values.length ? values : (fallback[tipo] || []);
+  if(values.length){
+    return values;
+  }
+
+  if(
+    target === "CRITICIDAD"
+  ){
+    return [
+      "ALTA",
+      "MEDIO ALTO",
+      "MEDIO",
+      "MEDIO BAJO",
+      "BAJO"
+    ];
+  }
+
+  return [];
 }
 
 function analystUsers(){
-  return DATA.usuarios
-    .filter(u => String(u.rol || '').toLowerCase() === 'analista')
-    .map(u => ({
-      username: u.username || '',
-      nombre: u.analista_nombre || u.nombre || u.username
-    }));
+  return (DATA.usuarios || [])
+    .filter(
+      u =>
+        String(
+          u.rol || ""
+        )
+          .trim()
+          .toLowerCase() ===
+        "analista"
+    )
+    .filter(
+      u =>
+        String(
+          u.estado || "ACTIVO"
+        )
+          .trim()
+          .toUpperCase() ===
+        "ACTIVO"
+    )
+    .map(
+      u => ({
+        username:
+          String(
+            u.username || ""
+          ).trim(),
+
+        nombre:
+          String(
+            u.nombre ||
+            u.username ||
+            ""
+          ).trim()
+      })
+    );
 }
 
-function selectOptions(values, current){
-  return values.map(v => {
-    const selected = String(v) === String(current) ? 'selected' : '';
-    return `<option value="${esc(v)}" ${selected}>${esc(v)}</option>`;
-  }).join('');
-}
-  function selectObjectOptions(values, current){
-  return values.map(item => {
-    const selected = String(item.value) === String(current) ? 'selected' : '';
-    return `<option value="${esc(item.value)}" ${selected}>${esc(item.label)}</option>`;
-  }).join('');
+function selectOptions(
+  values,
+  current
+){
+  return values
+    .map(v => {
+      const selected =
+        String(v) ===
+        String(current)
+          ? "selected"
+          : "";
+
+      return `
+        <option
+          value="${esc(v)}"
+          ${selected}
+        >
+          ${esc(v)}
+        </option>
+      `;
+    })
+    .join("");
 }
 
-function analystOptions(currentUser){
-  return analystUsers().map(u => {
-    const selected = String(u.username || '').toLowerCase() === String(currentUser || '').toLowerCase() ? 'selected' : '';
-    return `<option value="${esc(u.username)}" ${selected}>${esc(u.nombre)}</option>`;
-  }).join('');
+function selectObjectOptions(
+  values,
+  current
+){
+  return values
+    .map(item => {
+      const selected =
+        String(item.value) ===
+        String(current)
+          ? "selected"
+          : "";
+
+      return `
+        <option
+          value="${esc(item.value)}"
+          ${selected}
+        >
+          ${esc(item.label)}
+        </option>
+      `;
+    })
+    .join("");
+}
+
+function analystOptions(
+  currentUser
+){
+  return analystUsers()
+    .map(u => {
+      const selected =
+        String(u.username)
+          .toLowerCase() ===
+        String(
+          currentUser || ""
+        )
+          .toLowerCase()
+          ? "selected"
+          : "";
+
+      return `
+        <option
+          value="${esc(u.username)}"
+          ${selected}
+        >
+          ${esc(u.nombre)}
+        </option>
+      `;
+    })
+    .join("");
 }
 
 function weekOptions(current){
-  let html = '<option value="">Pendiente</option>';
-  for(let i = 1; i <= 53; i++){
-    const selected = String(i) === String(current || '') ? 'selected' : '';
-    html += `<option value="${i}" ${selected}>Semana ${i}</option>`;
+  let html = `
+    <option value="">
+      Pendiente
+    </option>
+  `;
+
+  for(
+    let i = 1;
+    i <= 53;
+    i++
+  ){
+    const selected =
+      String(i) ===
+      String(current || "")
+        ? "selected"
+        : "";
+
+    html += `
+      <option
+        value="${i}"
+        ${selected}
+      >
+        Semana ${i}
+      </option>
+    `;
   }
+
   return html;
 }
-  function isBaseAsIsActivity(a){
-  const hito = String(a.hito_id || '').trim().toUpperCase();
-  const orden = Number(a.orden_actividad || 0);
 
-  return (
-    (hito === 'H01' && orden >= 1 && orden <= 4) ||
-    (hito === 'H02' && orden >= 1 && orden <= 5)
-  );
-}
-
-function processStatus(pid){
-  const p = processById(pid);
-
-  return String(
-    p?.estado_proceso || ""
-  )
-    .trim()
-    .toUpperCase();
-}
-  
 function adminEditor(p){
-  const criticidades = catalogValues('criticidad');
-  const origenes = [
-  { value:'NUEVO', label:'PLANIFICADO' },
-  { value:'AS-IS PREVIO', label:'LEVANTADO AS-IS' }
-];
+  const criticities =
+    catalogValues(
+      "CRITICIDAD"
+    );
 
-  return `<div class="admin-editor">
-    <b>Edición admin</b>
-    <div class="admin-grid" style="margin-top:10px">
+  return `
+    <div class="admin-editor">
+      <b>Edición Admin</b>
 
-      <div class="field">
-        <label>Estado inicial</label>
-<select onchange="updateProcessAndReload('${p.proceso_id}','origen_proceso',this.value)">
-  ${selectObjectOptions(origenes, p.origen_proceso || 'NUEVO')}
-</select>
+      <div
+        class="admin-grid"
+        style="margin-top:10px"
+      >
+
+        <div class="field">
+          <label>Origen</label>
+
+          <select
+            onchange="updateProcess('${p.proceso_id}','origen_proceso',this.value)"
+          >
+            ${selectObjectOptions([
+              {
+                value:"NUEVO",
+                label:"NUEVO"
+              },
+              {
+                value:"AS-IS PREVIO",
+                label:"AS-IS PREVIO"
+              }
+            ], p.origen_proceso)}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>
+            Estado V3
+          </label>
+
+          <input
+            value="${esc(processState(p))}"
+            disabled
+          >
+        </div>
+
+        <div class="field">
+          <label>Analista</label>
+
+          <select
+            onchange="updateAnalyst('${p.proceso_id}',this)"
+          >
+            <option value="">
+              Pendiente
+            </option>
+
+            ${analystOptions(
+              p.analista_user
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Líder</label>
+
+          <input
+            value="${esc(p.lider || "")}"
+            onchange="updateProcess('${p.proceso_id}','lider',this.value)"
+          >
+        </div>
+
+        <div class="field">
+          <label>Criticidad</label>
+
+          <select
+            onchange="updateProcess('${p.proceso_id}','criticidad',this.value)"
+          >
+            ${selectOptions(
+              criticities,
+              p.criticidad
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>
+            Semana inicio
+          </label>
+
+          <select
+            onchange="updateProcess('${p.proceso_id}','semana_inicio',this.value)"
+          >
+            ${weekOptions(
+              p.semana_inicio
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>
+            Semana entrega
+          </label>
+
+          <select
+            onchange="updateProcess('${p.proceso_id}','semana_entrega',this.value)"
+          >
+            ${weekOptions(
+              p.semana_entrega
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>
+            Tipo de cierre
+          </label>
+
+          <select
+            onchange="updateProcess('${p.proceso_id}','tipo_cierre',this.value)"
+          >
+            <option
+              value=""
+              ${
+                !p.tipo_cierre
+                  ? "selected"
+                  : ""
+              }
+            >
+              Pendiente
+            </option>
+
+            <option
+              value="AS-IS"
+              ${
+                String(
+                  p.tipo_cierre || ""
+                ).toUpperCase() ===
+                "AS-IS"
+                  ? "selected"
+                  : ""
+              }
+            >
+              AS-IS
+            </option>
+
+            <option
+              value="TO-BE"
+              ${
+                String(
+                  p.tipo_cierre || ""
+                ).toUpperCase() ===
+                "TO-BE"
+                  ? "selected"
+                  : ""
+              }
+            >
+              TO-BE
+            </option>
+          </select>
+        </div>
+
+        <div class="field admin-grid-full">
+          <label>Finalidad</label>
+
+          <textarea
+            rows="4"
+            placeholder="Finalidad del proceso"
+            onchange="updateProcess('${p.proceso_id}','finalidad',this.value)"
+          >${esc(p.finalidad || "")}</textarea>
+        </div>
+
+        <div class="field admin-grid-full">
+          <label>Observación</label>
+
+          <textarea
+            rows="4"
+            placeholder="Observación general del proceso"
+            onchange="updateProcess('${p.proceso_id}','observacion',this.value)"
+          >${esc(p.observacion || "")}</textarea>
+        </div>
+
       </div>
-
-      <div class="field">
-        <label>Estado automático</label>
-        <input value="${esc(processStatus(p.proceso_id))}" disabled>
-      </div>
-
-      <div class="field">
-        <label>Analista</label>
-        <select onchange="updateAnalyst('${p.proceso_id}', this)">
-          <option value="">Pendiente</option>
-          ${analystOptions(p.analista_user)}
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Líder</label>
-        <input value="${esc(p.lider)}" onchange="updateProcess('${p.proceso_id}','lider',this.value)">
-      </div>
-
-      <div class="field">
-        <label>Criticidad</label>
-        <select onchange="updateProcess('${p.proceso_id}','criticidad',this.value)">
-          ${selectOptions(criticidades, p.criticidad)}
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Semana inicio</label>
-        <select onchange="updateProcess('${p.proceso_id}','semana_inicio',this.value)">
-          ${weekOptions(p.semana_inicio || p.semana)}
-        </select>
-      </div>
-
-      <div class="field">
-        <label>Semana entrega</label>
-        <select onchange="updateProcess('${p.proceso_id}','semana_entrega',this.value)">
-          ${weekOptions(p.semana_entrega)}
-        </select>
-      </div>
-
-      <div class="field admin-grid-full">
-  <label>Observación</label>
-
-  <textarea
-    rows="4"
-    placeholder="Observación general del proceso"
-    onchange="adminUpdateProcessField('${p.proceso_id}','observacion',this.value)"
-  >${esc(p.observacion || "")}</textarea>
-</div>
-
     </div>
-  </div>`;
+  `;
 }
   
-async function updateAnalyst(procesoId, selectEl){
-  const username = String(selectEl.value || "").trim();
+async function updateAnalyst(
+  procesoId,
+  selectEl
+){
+  const username =
+    String(
+      selectEl?.value || ""
+    ).trim();
 
-  const user = DATA.usuarios.find(u =>
-    String(u.username || "").trim().toLowerCase() === username.toLowerCase()
-  );
+  try{
+    await api(
+      "update_process_analyst",
+      {
+        proceso_id:
+          procesoId,
 
-  const name = user
-    ? (user.analista_nombre || user.nombre || username)
-    : "Pendiente";
+        analista_user:
+          username
+      }
+    );
 
-  const p = DATA.procesos.find(x => x.proceso_id === procesoId);
+    applyBootstrapData(
+      await api("bootstrap")
+    );
 
-  if (p) {
-    p.analista_user = username;
-    p.analista = name;
-  }
+    render();
 
-  DATA.actividades
-    .filter(a => String(a.proceso_id || "") === String(procesoId || ""))
-    .forEach(a => {
-      a.responsable = name;
-    });
+    toast(
+      "Analista reasignado correctamente."
+    );
 
-  try {
-    if (apiReady()) {
-      await api("update_process_analyst", {
-        proceso_id: procesoId,
-        analista_user: username,
-        username: SESSION.username
-      });
-
-      DATA = await api("bootstrap", {
-        username: SESSION.username
-      });
+  }catch(error){
+    try{
+      applyBootstrapData(
+        await api("bootstrap")
+      );
+    }catch(_){
+      // api() ya gestiona la sesión.
     }
 
     render();
-    toast("Analista reasignado correctamente.");
 
-  } catch (e) {
-    console.error("Error reasignando analista:", e);
-
-    if (apiReady()) {
-      DATA = await api("bootstrap", {
-        username: SESSION.username
-      });
-    }
-
-    render();
-    toast("No se pudo reasignar el analista: " + e.message);
+    toast(
+      "No se pudo reasignar el analista: " +
+      error.message
+    );
   }
 }
   
@@ -8566,26 +9580,53 @@ function toggleActivity(id,checked){
   scheduleActivityUiRender();
 }
   
-async function updateProcess(pid,field,value){
-  const p=DATA.procesos.find(x=>x.proceso_id===pid);
-  if(!p) return;
-  p[field]=value || "Pendiente";
-  try{ if(apiReady()) await api("update_process",{proceso_id:pid,field,value,username:SESSION.username}); }
-  catch(e){ toast("Cambio local. API: "+e.message); }
-  render();
-}
-  async function updateProcessAndReload(id, field, value){
-  await updateProcess(id, field, value);
+async function updateProcess(
+  pid,
+  field,
+  value
+){
+  try{
+    await api(
+      "update_process",
+      {
+        proceso_id: pid,
+        field,
+        value
+      }
+    );
 
-  if(apiReady()){
-    const fresh = await api("bootstrap", { username: SESSION.username });
-    if(fresh){
-      DATA = fresh;
+    applyBootstrapData(
+      await api("bootstrap")
+    );
+
+    render();
+
+    toast(
+      "Cambio guardado."
+    );
+
+    return true;
+
+  }catch(error){
+    try{
+      applyBootstrapData(
+        await api("bootstrap")
+      );
+    }catch(_){
+      // api() gestiona sesión/error.
     }
-  }
 
-  render();
+    render();
+
+    toast(
+      "No se pudo guardar: " +
+      error.message
+    );
+
+    return false;
+  }
 }
+
 function downloadPdf(){
   const area=document.querySelector("#main");
   const opt={margin:0.35,filename:"RADAR_SGMP_Resumen_Ejecutivo.pdf",image:{type:"jpeg",quality:0.98},html2canvas:{scale:2},jsPDF:{unit:"in",format:"a4",orientation:"landscape"}};
