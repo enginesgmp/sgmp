@@ -4040,54 +4040,50 @@ if(
 
 function getVisibleProcesses(){
   if(!SESSION) return [];
-
-  /*
-   * V3:
-   * el backend ya devuelve únicamente
-   * los procesos visibles para el rol.
-   */
   return (DATA.procesos || []).slice();
 }
 
 function processById(pid){
   return (DATA.procesos || []).find(
-    p =>
-      String(p.proceso_id || "") ===
-      String(pid || "")
+    p => String(p.proceso_id || "") === String(pid || "")
   ) || null;
 }
 
 function macroById(mid){
   return (DATA.macroprocesos || []).find(
-    m =>
-      String(m.macro_id || "") ===
-      String(mid || "")
+    m => String(m.macro_id || "") === String(mid || "")
+  ) || null;
+}
+
+function analystByUsername(username){
+  const key = String(username || "")
+    .trim()
+    .toLowerCase();
+
+  if(!key) return null;
+
+  return (DATA.usuarios || []).find(
+    u =>
+      String(u.username || "")
+        .trim()
+        .toLowerCase() === key
   ) || null;
 }
 
 function analystNameByUsername(username){
-  const key =
-    String(username || "")
-      .trim()
-      .toLowerCase();
-
-  if(!key){
-    return "Pendiente";
-  }
-
-  const user =
-    (DATA.usuarios || []).find(
-      u =>
-        String(u.username || "")
-          .trim()
-          .toLowerCase() === key
-    );
+  const user = analystByUsername(username);
 
   return String(
     user?.nombre ||
     username ||
     "Pendiente"
   ).trim();
+}
+
+function processAnalystName(p){
+  return analystNameByUsername(
+    p?.analista_user || ""
+  );
 }
 
 function processDisplayName(p){
@@ -4102,6 +4098,29 @@ function processMacroName(p){
     p?.nombre_macro ||
     "Macroproceso sin nombre"
   ).trim();
+}
+
+function macroDisplayName(m){
+  return String(
+    m?.nombre_macro ||
+    "Macroproceso sin nombre"
+  ).trim();
+}
+
+function processState(p){
+  return String(
+    p?.estado_proceso || ""
+  )
+    .trim()
+    .toUpperCase();
+}
+
+function processRuntimeAlerts(p){
+  return Array.isArray(p?.alertas)
+    ? p.alertas
+        .map(a => String(a || "").trim())
+        .filter(Boolean)
+    : [];
 }
 
 function actsForProcess(pid){
@@ -4129,32 +4148,28 @@ function hitosForProcess(pid){
 function processAdvance(pid){
   const p = processById(pid);
 
-  const value =
-    Number(p?.avance_pct || 0);
-
   return Math.max(
     0,
-    Math.min(100, value)
+    Math.min(
+      100,
+      Number(p?.avance_pct || 0)
+    )
   );
 }
 
 function isActiveRow(row){
-  const runtime =
-    String(
-      row?.situacion_administrativa || ""
-    )
-      .trim()
-      .toUpperCase();
-
-  if(runtime){
-    return runtime === "ACTIVO";
-  }
-
   return String(
-    row?.activo || "SI"
+    row?.situacion_administrativa ||
+    (
+      String(row?.activo || "SI")
+        .trim()
+        .toUpperCase() === "SI"
+        ? "ACTIVO"
+        : "INACTIVO"
+    )
   )
     .trim()
-    .toUpperCase() === "SI";
+    .toUpperCase() === "ACTIVO";
 }
 
 function isActiveActivityRow(row){
@@ -4178,20 +4193,19 @@ function hitoAdvance(hpid){
         String(hpid || "")
     );
 
-  const value =
-    Number(hito?.avance_pct || 0);
-
   return Math.max(
     0,
-    Math.min(100, value)
+    Math.min(
+      100,
+      Number(hito?.avance_pct || 0)
+    )
   );
 }
 
 function isTrue(v){
-  const value =
-    String(v ?? "")
-      .trim()
-      .toUpperCase();
+  const value = String(v ?? "")
+    .trim()
+    .toUpperCase();
 
   return (
     v === true ||
@@ -4221,20 +4235,7 @@ function isManagement(){
   return sessionRole() === "gerencia";
 }
 
-/*
- * Compatibilidad temporal durante F3.
- * V3 ya no utiliza bloqueado_analista.
- * Se eliminará completamente en F4.
- */
-function isLockedForAnalyst(){
-  return false;
-}
-
 function globalAdvance(){
-  /*
-   * Admin recibe el KPI oficial
-   * directamente del backend.
-   */
   if(
     isAdmin() &&
     DATA.kpis_admin
@@ -4250,17 +4251,12 @@ function globalAdvance(){
     );
   }
 
-  /*
-   * Para universos filtrados por rol,
-   * se agregan únicamente los contadores
-   * runtime entregados por backend.
-   */
-  const ps =
+  const processes =
     (DATA.procesos || [])
       .filter(isActiveRow);
 
   const total =
-    ps.reduce(
+    processes.reduce(
       (sum,p) =>
         sum +
         Number(
@@ -4269,8 +4265,8 @@ function globalAdvance(){
       0
     );
 
-  const done =
-    ps.reduce(
+  const completed =
+    processes.reduce(
       (sum,p) =>
         sum +
         Number(
@@ -4281,46 +4277,62 @@ function globalAdvance(){
 
   return total
     ? Math.round(
-        done / total * 100
+        completed / total * 100
       )
     : 0;
 }
 
 function macroAdvance(mid){
-  const macro =
-    macroById(mid);
-
-  const value =
-    Number(
-      macro?.avance_pct || 0
-    );
+  const macro = macroById(mid);
 
   return Math.max(
     0,
-    Math.min(100, value)
+    Math.min(
+      100,
+      Number(macro?.avance_pct || 0)
+    )
   );
 }
-  
+
 function setGlobal(){
-  const v = globalAdvance();
+  const value = globalAdvance();
+
   const pct = $("globalPct");
   const fill = $("globalFill");
 
-  if (pct) pct.textContent = v + "%";
-  if (fill) fill.style.width = v + "%";
+  if(pct){
+    pct.textContent = value + "%";
+  }
+
+  if(fill){
+    fill.style.width = value + "%";
+  }
 }
 
 function renderGlobalProgressBlock(){
-  const v = globalAdvance();
+  const value = globalAdvance();
 
   return `
     <div class="global-progress global-progress-main">
       <div class="top">
-        <span class="progress-label">Avance global del plan</span>
-        <span class="progress-value" id="globalPct">${v}%</span>
+        <span class="progress-label">
+          Avance global del plan
+        </span>
+
+        <span
+          class="progress-value"
+          id="globalPct"
+        >
+          ${value}%
+        </span>
       </div>
+
       <div class="bar">
-        <div class="fill" id="globalFill" style="width:${v}%"></div>
+        <div
+          class="fill"
+          id="globalFill"
+          style="width:${value}%"
+        ></div>
       </div>
     </div>
   `;
@@ -4329,148 +4341,396 @@ function renderGlobalProgressBlock(){
 function render(){
   setGlobal();
 
-  if(VIEW.type==="process"){
+  if(VIEW.type === "process"){
     renderProcess(VIEW.id);
     return;
   }
 
-  if(VIEW.type==="macro"){
+  if(VIEW.type === "macro"){
     renderMacro(VIEW.id);
     return;
   }
 
-if(isAnalyst()){
-  renderAnalystHome();
-  return;
-}
+  if(isAnalyst()){
+    renderAnalystHome();
+    return;
+  }
 
   renderHome();
 }
 
 function getProcessStartWeek(p){
-  return Number(p.semana_inicio || p.semana || 0);
+  const value =
+    Number(p?.semana_inicio || 0);
+
+  return Number.isInteger(value)
+    ? value
+    : 0;
 }
 
 function getProcessDeliveryWeek(p){
-  return Number(p.semana_entrega || p.semana || p.semana_inicio || 0);
+  const value =
+    Number(p?.semana_entrega || 0);
+
+  return Number.isInteger(value)
+    ? value
+    : 0;
 }
 
 function isMissingValue(v){
-  const value = String(v ?? "").trim().toLowerCase();
-  return !value || value === "pendiente" || value === "undefined" || value === "null" || value === "-";
+  const value =
+    String(v ?? "")
+      .trim()
+      .toLowerCase();
+
+  return (
+    !value ||
+    value === "pendiente" ||
+    value === "undefined" ||
+    value === "null" ||
+    value === "-"
+  );
 }
 
 function processAlerts(p){
   const alerts = [];
 
-  if(isMissingValue(p.analista) || isMissingValue(p.analista_user)){
-    alerts.push({type:"danger", text:"Sin analista"});
+  if(
+    isMissingValue(
+      p?.analista_user
+    )
+  ){
+    alerts.push({
+      key: "sin_analista",
+      type: "danger",
+      text: "Sin analista"
+    });
   }
 
   if(!getProcessStartWeek(p)){
-    alerts.push({type:"danger", text:"Sin semana inicio"});
+    alerts.push({
+      key: "sin_inicio",
+      type: "danger",
+      text: "Sin semana inicio"
+    });
   }
 
   if(!getProcessDeliveryWeek(p)){
-    alerts.push({type:"danger", text:"Sin semana entrega"});
+    alerts.push({
+      key: "sin_entrega",
+      type: "danger",
+      text: "Sin semana entrega"
+    });
   }
 
-  if(isMissingValue(p.lider)){
-    alerts.push({type:"warn", text:"Sin líder"});
+  if(isMissingValue(p?.lider)){
+    alerts.push({
+      key: "sin_lider",
+      type: "warn",
+      text: "Sin líder"
+    });
   }
 
-  if(isMissingValue(p.criticidad)){
-    alerts.push({type:"warn", text:"Sin criticidad"});
+  if(isMissingValue(p?.criticidad)){
+    alerts.push({
+      key: "sin_criticidad",
+      type: "warn",
+      text: "Sin criticidad"
+    });
   }
 
-  if(isMissingValue(processStatus(p.proceso_id))){
-    alerts.push({type:"warn", text:"Sin estado"});
+  if(isMissingValue(p?.estado_proceso)){
+    alerts.push({
+      key: "sin_estado",
+      type: "warn",
+      text: "Sin estado"
+    });
   }
+
+  processRuntimeAlerts(p)
+    .forEach(alert => {
+      alerts.push({
+        key:
+          alert
+            .toLowerCase()
+            .replace(/\s+/g, "_"),
+        type:
+          (
+            alert === "ATRASADO · NO INICIADO" ||
+            alert === "CERRADO FUERA DE PLAZO"
+          )
+            ? "danger"
+            : "warn",
+        text: alert
+      });
+    });
 
   return alerts;
 }
 
 function adminPlanStats(){
-  const ps = DATA.procesos || [];
-  const withAlerts = ps.filter(p => processAlerts(p).length > 0);
+  const processes =
+    (DATA.procesos || [])
+      .filter(isActiveRow);
 
   return {
-    total: ps.length,
-    sinAnalista: ps.filter(p => isMissingValue(p.analista) || isMissingValue(p.analista_user)).length,
-    sinSemanaInicio: ps.filter(p => !getProcessStartWeek(p)).length,
-    sinSemanaEntrega: ps.filter(p => !getProcessDeliveryWeek(p)).length,
-    sinLider: ps.filter(p => isMissingValue(p.lider)).length,
-    conAlertas: withAlerts.length
+    total:
+      processes.length,
+
+    sinAnalista:
+      processes.filter(
+        p =>
+          isMissingValue(
+            p.analista_user
+          )
+      ).length,
+
+    sinSemanaInicio:
+      processes.filter(
+        p =>
+          !getProcessStartWeek(p)
+      ).length,
+
+    sinSemanaEntrega:
+      processes.filter(
+        p =>
+          !getProcessDeliveryWeek(p)
+      ).length,
+
+    sinLider:
+      processes.filter(
+        p =>
+          isMissingValue(p.lider)
+      ).length,
+
+    conAlertas:
+      processes.filter(
+        p =>
+          processAlerts(p).length > 0
+      ).length
   };
 }
 
 function currentPlanWeek(){
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), 0, 1);
-  const pastDays = Math.floor((now - firstDay) / 86400000);
-  return Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+
+  const firstDay =
+    new Date(
+      now.getFullYear(),
+      0,
+      1
+    );
+
+  const pastDays =
+    Math.floor(
+      (now - firstDay) /
+      86400000
+    );
+
+  return Math.ceil(
+    (
+      pastDays +
+      firstDay.getDay() +
+      1
+    ) / 7
+  );
 }
 
 function planWeeks(){
-  const weeks = (DATA.procesos || [])
-    .flatMap(p => [getProcessStartWeek(p), getProcessDeliveryWeek(p)])
-    .filter(Boolean)
-    .map(Number);
+  const weeks =
+    (DATA.procesos || [])
+      .flatMap(
+        p => [
+          getProcessStartWeek(p),
+          getProcessDeliveryWeek(p)
+        ]
+      )
+      .filter(Boolean)
+      .map(Number);
 
-  if(!weeks.length) return [];
+  if(!weeks.length){
+    return [];
+  }
 
-  const min = Math.max(1, Math.min(...weeks));
-  const max = Math.min(53, Math.max(...weeks, min + 9) + 2);
+  const min =
+    Math.max(
+      1,
+      Math.min(...weeks)
+    );
 
-  return Array.from({length: max - min + 1}, (_, i) => min + i);
+  const max =
+    Math.min(
+      53,
+      Math.max(
+        ...weeks,
+        min + 9
+      ) + 2
+    );
+
+  return Array.from(
+    {
+      length:
+        max - min + 1
+    },
+    (_,i) => min + i
+  );
 }
 
 function adminWeekOptions(){
-  return planWeeks().map(w => `<option value="${w}">Semana ${w}</option>`).join("");
+  return planWeeks()
+    .map(
+      week =>
+        `<option value="${week}">
+          Semana ${week}
+        </option>`
+    )
+    .join("");
 }
 
 function adminAnalystOptions(){
-  const analysts = DATA.usuarios
-    .filter(u => String(u.rol || "").toLowerCase() === "analista")
-    .map(u => u.analista_nombre || u.nombre || u.username)
-    .filter(Boolean);
-
-  return unique(analysts).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+  return (DATA.usuarios || [])
+    .filter(
+      u =>
+        String(u.rol || "")
+          .trim()
+          .toLowerCase() ===
+        "analista"
+    )
+    .sort(
+      (a,b) =>
+        String(a.nombre || "")
+          .localeCompare(
+            String(b.nombre || ""),
+            "es"
+          )
+    )
+    .map(
+      u =>
+        `<option value="${esc(u.username || "")}">
+          ${esc(u.nombre || u.username || "")}
+        </option>`
+    )
+    .join("");
 }
-  
+
 function renderHome(){
-  const ps=getVisibleProcesses();
-  const macros=DATA.macroprocesos.slice().sort((a,b)=>String(a.macroproceso).localeCompare(String(b.macroproceso)));
-  const completed=ps.filter(p=>processAdvance(p.proceso_id)>=100).length;
-  const levantados=ps.filter(p=>isTrue(p.as_is)).length;
-$("main").innerHTML = `
+  const processes =
+    getVisibleProcesses()
+      .filter(isActiveRow);
+
+  const macros =
+    (DATA.macroprocesos || [])
+      .filter(isActiveRow)
+      .slice()
+      .sort(
+        (a,b) =>
+          macroDisplayName(a)
+            .localeCompare(
+              macroDisplayName(b),
+              "es"
+            )
+      );
+
+  const states = {
+    PLANIFICADO: 0,
+    "EN CURSO": 0,
+    ATRASADO: 0,
+    CERRADO: 0
+  };
+
+  processes.forEach(p => {
+    const state =
+      processState(p);
+
+    if(
+      Object.prototype
+        .hasOwnProperty
+        .call(states, state)
+    ){
+      states[state]++;
+    }
+  });
+
+  $("main").innerHTML = `
     <section class="hero" id="pdfArea">
-      <h1>Plan de levantamiento de procesos y avances</h1>
-      <p class="sub">Vista por macroproceso, proceso e hitos. Información alimentada por el plan de levantamiento.</p>
+      <h1>
+        Plan de levantamiento de procesos y avances
+      </h1>
+
+      <p class="sub">
+        Vista consolidada del RADAR SGMP utilizando
+        exclusivamente el motor runtime V3.
+      </p>
+
       <div class="kpis">
-        <div class="kpi"><div class="v">${DATA.macroprocesos.length}</div><div class="l">Macroprocesos</div></div>
-        <div class="kpi"><div class="v">${DATA.procesos.length}</div><div class="l">Procesos</div></div>
-        <div class="kpi"><div class="v">${levantados}</div><div class="l">AS-IS levantados</div></div>
-        <div class="kpi"><div class="v">${completed}</div><div class="l">TO-BE CERRADOS</div></div>
-        <div class="kpi"><div class="v">${globalAdvance()}%</div><div class="l">Avance global</div></div>
+        <div class="kpi">
+          <div class="v">
+            ${macros.length}
+          </div>
+          <div class="l">
+            Macroprocesos
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${processes.length}
+          </div>
+          <div class="l">
+            Procesos activos
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${states["EN CURSO"]}
+          </div>
+          <div class="l">
+            En curso
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${states.ATRASADO}
+          </div>
+          <div class="l">
+            Atrasados
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="v">
+            ${states.CERRADO}
+          </div>
+          <div class="l">
+            Cerrados
+          </div>
+        </div>
       </div>
     </section>
-        <div class="global-progress global-progress-main">
-      <div class="top">
-        <span class="progress-label">Avance global del plan</span>
-        <span class="progress-value" id="globalPct">${globalAdvance()}%</span>
-      </div>
-      <div class="bar">
-        <div class="fill" id="globalFill" style="width:${globalAdvance()}%"></div>
-      </div>
-    </div>
-${isAdmin() ? renderAdminControlCenter() : `
-    <div class="section-title"><h2>Macroprocesos</h2><span class="meta">Click para ver procesos</span></div>
-    <section class="grid">
-      ${macros.map(m=>macroCard(m)).join("")}
-    </section>
-`}
-`;
+
+    ${renderGlobalProgressBlock()}
+
+    ${
+      isAdmin()
+        ? renderAdminControlCenter()
+        : `
+          <div class="section-title">
+            <h2>Macroprocesos</h2>
+            <span class="meta">
+              Click para ver procesos
+            </span>
+          </div>
+
+          <section class="grid">
+            ${macros
+              .map(macroCard)
+              .join("")}
+          </section>
+        `
+    }
+  `;
 }
 
 function renderAdminControlCenter(){
