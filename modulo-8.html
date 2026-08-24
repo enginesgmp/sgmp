@@ -5389,12 +5389,169 @@ async function adminDeactivateMacroprocess(macroId){
 }
 
 function renderAdminMacroprocesses(){
-  const macros = (DATA.macroprocesos || []).slice().sort((a,b) => Number(a.orden||0)-Number(b.orden||0));
+  const macros =
+    (DATA.macroprocesos || [])
+      .slice()
+      .sort(
+        (a,b) =>
+          Number(a.orden || 0) -
+          Number(b.orden || 0)
+      );
+
   return `
-    <div class="admin-section-intro admin-section-actions"><div><h3>Macroprocesos</h3><p class="meta">Código, clasificación, responsable y orden.</p></div><button class="btn primary" type="button" onclick="adminNewMacroprocess()">+ Agregar macroproceso</button></div>
-    <div class="admin-matrix-wrap"><table class="admin-matrix-table"><thead><tr><th>Orden</th><th>Código</th><th>Macroproceso</th><th>Tipo</th><th>Responsable</th><th>Procesos</th><th>Avance</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-      ${macros.map(m => `<tr><td>${esc(m.orden || "")}</td><td class="admin-code">${esc(m.codigo_macro || m.macro_id)}</td><td>${esc(macroDisplayName(m))}</td><td>${esc(m.tipo_macroproceso || "Sin clasificar")}</td><td>${esc(m.responsable_macro || "Pendiente")}</td><td>${Number(m.total_procesos || 0)}</td><td><b>${Number(m.avance_pct || 0)}%</b></td><td>${esc(m.estado || "")}</td><td class="admin-action-cell"><button class="btn soft" type="button" onclick="adminEditMacroprocess('${esc(m.macro_id)}')">Editar</button>${String(m.estado||"").toUpperCase()==="ACTIVO"?`<button class="btn danger" type="button" onclick="adminDeactivateMacroprocess('${esc(m.macro_id)}')">Inactivar</button>`:""}</td></tr>`).join("")}
-    </tbody></table></div>
+    <div
+      class="admin-section-intro admin-section-actions"
+    >
+      <div>
+        <h3>Macroprocesos</h3>
+
+        <p class="meta">
+          Código, clasificación, responsable y orden.
+        </p>
+      </div>
+
+      <button
+        class="btn primary"
+        type="button"
+        onclick="adminNewMacroprocess()"
+      >
+        + Agregar macroproceso
+      </button>
+    </div>
+
+    <div class="admin-matrix-wrap">
+      <table class="admin-matrix-table">
+
+        <thead>
+          <tr>
+            <th>Orden</th>
+            <th>Código</th>
+            <th>Macroproceso</th>
+            <th>Tipo</th>
+            <th>Responsable</th>
+            <th>Procesos</th>
+            <th>Avance</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+
+        <tbody>
+
+          ${
+            macros.map(m => {
+              const processes =
+                activeProcesses()
+                  .filter(
+                    p =>
+                      String(
+                        p.macro_id || ""
+                      ) ===
+                      String(
+                        m.macro_id || ""
+                      )
+                  );
+
+              const advance =
+                globalAdvance(
+                  processes
+                );
+
+              return `
+                <tr>
+
+                  <td>
+                    ${esc(
+                      m.orden || ""
+                    )}
+                  </td>
+
+                  <td class="admin-code">
+                    ${esc(
+                      m.codigo_macro ||
+                      m.macro_id
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(
+                      macroDisplayName(m)
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(
+                      m.tipo_macroproceso ||
+                      "Sin clasificar"
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(
+                      m.responsable_macro ||
+                      "Pendiente"
+                    )}
+                  </td>
+
+                  <td>
+                    ${processes.length}
+                  </td>
+
+                  <td>
+                    <b>
+                      ${advance}%
+                    </b>
+                  </td>
+
+                  <td>
+                    ${esc(
+                      m.estado || ""
+                    )}
+                  </td>
+
+                  <td class="admin-action-cell">
+
+                    <button
+                      class="btn soft"
+                      type="button"
+                      onclick="adminEditMacroprocess('${esc(
+                        m.macro_id
+                      )}')"
+                    >
+                      Editar
+                    </button>
+
+                    ${
+                      String(
+                        m.estado || ""
+                      )
+                        .toUpperCase() ===
+                      "ACTIVO"
+                        ? `
+                          <button
+                            class="btn danger"
+                            type="button"
+                            onclick="adminDeactivateMacroprocess('${esc(
+                              m.macro_id
+                            )}')"
+                          >
+                            Inactivar
+                          </button>
+                        `
+                        : ""
+                    }
+
+                  </td>
+
+                </tr>
+              `;
+            }).join("")
+          }
+
+        </tbody>
+
+      </table>
+    </div>
   `;
 }
 
