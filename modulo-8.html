@@ -558,23 +558,46 @@ function applyBootstrapData(raw){
     !Array.isArray(candidate.usuarios) ||
     !Array.isArray(candidate.catalogos)
   ){
-    throw new Error("RADAR recibió un Bootstrap incompatible con V3.");
+    throw new Error(
+      "RADAR recibió un Bootstrap incompatible con V3."
+    );
   }
 
   DATA = {
     runtime: candidate.runtime,
-    configuracion: candidate.configuracion || {},
-    usuarios: candidate.usuarios,
-    macroprocesos: candidate.macroprocesos,
-    procesos: candidate.procesos,
-    hitos: candidate.hitos,
-    actividades: candidate.actividades,
-    catalogos: candidate.catalogos,
-    kpis_admin: candidate.kpis_admin || null,
-    historial_procesos: Array.isArray(candidate.historial_procesos)
-      ? candidate.historial_procesos
-      : []
+    configuracion:
+      candidate.configuracion || {},
+    usuarios:
+      candidate.usuarios,
+    macroprocesos:
+      candidate.macroprocesos,
+    procesos:
+      candidate.procesos,
+    hitos:
+      candidate.hitos,
+    actividades:
+      candidate.actividades,
+    catalogos:
+      candidate.catalogos,
+    kpis_admin:
+      candidate.kpis_admin || null,
+    historial_procesos:
+      Array.isArray(
+        candidate.historial_procesos
+      )
+        ? candidate.historial_procesos
+        : []
   };
+
+  /*
+   * CRÍTICO:
+   * un Bootstrap nunca debe pisar
+   * intenciones locales todavía
+   * pendientes de confirmación.
+   */
+  applyPendingActivityChangesToData(
+    DATA
+  );
 
   return DATA;
 }
@@ -587,7 +610,1061 @@ const norm = value => String(value || "")
   .toUpperCase();
 
 function apiReady(){
-  return Boolean(API_URL && !API_URL.includes("PEGA_AQUI"));
+  return Boolean(
+    API_URL &&
+    !API_URL.includes(
+      "PEGA_AQUI"
+    )
+  );
+}
+
+/*
+ * ============================================================
+ * RADAR V3 · COLA PERSISTENTE DE CHECKS
+ * ============================================================
+ *
+ * Objetivos:
+ *
+ * - respuesta visual inmediata;
+ * - persistencia local antes de transmitir;
+ * - última intención del usuario prevalece;
+ * - micro-lotes de hasta 200 cambios;
+ * - una sola escritura en vuelo;
+ * - reintentos automáticos;
+ * - recuperación después de pérdida de conexión;
+ * - envío de emergencia al cerrar pestaña;
+ * - Bootstrap nunca pisa pendientes locales.
+ */
+
+function activityPendingStorageKey(){
+  const username =
+    String(
+      SESSION?.username || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return username
+    ? `RADAR_ACTIVITY_PENDING_V3:${username}`
+    : "";
+}
+
+function readPersistedActivityChanges(
+  storageKey
+){
+  if(!storageKey){
+    return [];
+  }
+
+  try{
+    const raw =
+      localStorage.getItem(
+        storageKey
+      );
+
+    if(!raw){
+      return [];
+    }
+
+    const parsed =
+      JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+
+  }catch(error){
+    console.warn(
+      "No se pudo leer la cola persistente de checks:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function persistActivitySaveQueue(
+  state
+){
+  if(
+    !state ||
+    !state.storageKey
+  ){
+    return;
+  }
+
+  try{
+    const pending =
+      Array.from(
+        state.queue.values()
+      );
+
+    if(pending.length){
+      localStorage.setItem(
+        state.storageKey,
+        JSON.stringify(
+          pending
+        )
+      );
+
+    }else{
+      localStorage.removeItem(
+        state.storageKey
+      );
+    }
+
+  }catch(error){
+    console.warn(
+      "No se pudo persistir la cola de checks:",
+      error
+    );
+  }
+}
+
+function getActivitySaveState(){
+  const storageKey =
+    activityPendingStorageKey();
+
+  let state =
+    window
+      .__RADAR_ACTIVITY_SAVE_STATE;
+
+  if(
+    !state ||
+    state.storageKey !==
+      storageKey
+  ){
+    state = {
+      storageKey:
+        storageKey,
+
+      queue:
+        new Map(),
+
+      timer:
+        null,
+
+      inFlight:
+        null,
+
+      inFlightBatch:
+        [],
+
+      hydrated:
+        false,
+
+      lastVersion:
+        0,
+
+      retryTimer:
+        null,
+
+      retryAttempt:
+        0,
+
+      lastExitFlushAt:
+        0
+    };
+
+    window
+      .__RADAR_ACTIVITY_SAVE_STATE =
+        state;
+  }
+
+  if(
+    !state.hydrated &&
+    state.storageKey
+  ){
+    const persisted =
+      readPersistedActivityChanges(
+        state.storageKey
+      );
+
+    persisted.forEach(
+      change => {
+        const actividadId =
+          String(
+            change?.actividad_id ||
+            ""
+          ).trim();
+
+        if(!actividadId){
+          return;
+        }
+
+        const rawVersion =
+          Number(
+            change?.client_version ||
+            0
+          );
+
+        const version =
+          Number.isFinite(
+            rawVersion
+          ) &&
+          rawVersion > 0
+            ? rawVersion
+            : Date.now();
+
+        const normalized = {
+          actividad_id:
+            actividadId,
+
+          completado:
+            Boolean(
+              change?.completado
+            ),
+
+          client_version:
+            version
+        };
+
+        const current =
+          state.queue.get(
+            actividadId
+          );
+
+        if(
+          !current ||
+          version >=
+            Number(
+              current.client_version ||
+              0
+            )
+        ){
+          state.queue.set(
+            actividadId,
+            normalized
+          );
+        }
+
+        state.lastVersion =
+          Math.max(
+            state.lastVersion,
+            version
+          );
+      }
+    );
+
+    state.hydrated =
+      true;
+  }
+
+  return state;
+}
+
+function applyPendingActivityChangesToData(
+  targetData
+){
+  if(
+    !targetData ||
+    !Array.isArray(
+      targetData.actividades
+    )
+  ){
+    return targetData;
+  }
+
+  const state =
+    getActivitySaveState();
+
+  if(
+    !state.queue.size
+  ){
+    return targetData;
+  }
+
+  const activitiesById =
+    new Map(
+      targetData
+        .actividades
+        .map(
+          activity => [
+            String(
+              activity?.actividad_id ||
+              ""
+            ).trim(),
+
+            activity
+          ]
+        )
+    );
+
+  state.queue.forEach(
+    change => {
+      const activity =
+        activitiesById.get(
+          change.actividad_id
+        );
+
+      if(!activity){
+        return;
+      }
+
+      activity.completado =
+        Boolean(
+          change.completado
+        );
+    }
+  );
+
+  return targetData;
+}
+
+function clearActivitySaveRetry(){
+  const state =
+    getActivitySaveState();
+
+  if(
+    state.retryTimer
+  ){
+    clearTimeout(
+      state.retryTimer
+    );
+
+    state.retryTimer =
+      null;
+  }
+
+  state.retryAttempt =
+    0;
+}
+
+function scheduleActivitySaveRetry(){
+  const state =
+    getActivitySaveState();
+
+  if(
+    !SESSION?.session_token ||
+    !apiReady() ||
+    !state.queue.size ||
+    state.retryTimer ||
+    state.inFlight
+  ){
+    return;
+  }
+
+  if(
+    typeof navigator !==
+      "undefined" &&
+    navigator.onLine === false
+  ){
+    return;
+  }
+
+  const delays = [
+    1000,
+    2000,
+    4000,
+    8000,
+    15000,
+    30000
+  ];
+
+  const attempt =
+    Number(
+      state.retryAttempt ||
+      0
+    );
+
+  const baseDelay =
+    delays[
+      Math.min(
+        attempt,
+        delays.length - 1
+      )
+    ];
+
+  const jitter =
+    Math.floor(
+      Math.random() *
+      Math.max(
+        250,
+        baseDelay * 0.20
+      )
+    );
+
+  state.retryAttempt =
+    attempt + 1;
+
+  state.retryTimer =
+    setTimeout(
+      () => {
+        state.retryTimer =
+          null;
+
+        void flushActivitySaveQueue({
+          silent:
+            true
+        });
+      },
+
+      baseDelay +
+      jitter
+    );
+}
+
+function queueActivitySave(
+  activityId,
+  checked
+){
+  const state =
+    getActivitySaveState();
+
+  const id =
+    String(
+      activityId || ""
+    ).trim();
+
+  if(!id){
+    return;
+  }
+
+  const current =
+    state.queue.get(id);
+
+  const now =
+    Date.now();
+
+  /*
+   * client_version no es autoridad
+   * del servidor.
+   *
+   * Se utiliza únicamente para que
+   * una respuesta antigua del navegador
+   * jamás elimine una intención posterior
+   * del mismo usuario.
+   */
+  const version =
+    Math.max(
+      now,
+
+      Number(
+        current?.client_version ||
+        0
+      ) + 1,
+
+      Number(
+        state.lastVersion ||
+        0
+      ) + 1
+    );
+
+  state.lastVersion =
+    version;
+
+  /*
+   * Primero disco.
+   *
+   * Solo después intentamos
+   * transmitir.
+   */
+  state.queue.set(
+    id,
+    {
+      actividad_id:
+        id,
+
+      completado:
+        Boolean(
+          checked
+        ),
+
+      client_version:
+        version
+    }
+  );
+
+  persistActivitySaveQueue(
+    state
+  );
+
+  setBackgroundSaveState(
+    "saving",
+    state.queue.size === 1
+      ? "Guardando check…"
+      : `Guardando ${state.queue.size} checks…`
+  );
+
+  /*
+   * Una nueva acción reinicia
+   * el ciclo de reintentos.
+   */
+  if(
+    state.retryTimer
+  ){
+    clearTimeout(
+      state.retryTimer
+    );
+
+    state.retryTimer =
+      null;
+  }
+
+  state.retryAttempt =
+    0;
+
+  /*
+   * Si ya existe timer o petición,
+   * no crear otra.
+   */
+  if(
+    state.timer ||
+    state.inFlight
+  ){
+    return;
+  }
+
+  /*
+   * Micro-lote.
+   *
+   * Permite hacer:
+   *
+   * click
+   * click
+   * click
+   * click
+   *
+   * sin cuatro viajes independientes.
+   */
+  state.timer =
+    setTimeout(
+      () => {
+        state.timer =
+          null;
+
+        void flushActivitySaveQueue({
+          silent:
+            true
+        });
+      },
+
+      120
+    );
+}
+
+async function flushActivitySaveQueue(
+  options = {}
+){
+  const state =
+    getActivitySaveState();
+
+  const silent =
+    Boolean(
+      options.silent
+    );
+
+  if(
+    state.timer
+  ){
+    clearTimeout(
+      state.timer
+    );
+
+    state.timer =
+      null;
+  }
+
+  if(
+    !apiReady() ||
+    !SESSION?.session_token
+  ){
+    persistActivitySaveQueue(
+      state
+    );
+
+    return false;
+  }
+
+  /*
+   * Solo una escritura normal
+   * en vuelo.
+   */
+  if(
+    state.inFlight
+  ){
+    const currentResult =
+      await state.inFlight;
+
+    if(
+      !currentResult
+    ){
+      return false;
+    }
+
+    /*
+     * Si mientras se enviaba el lote
+     * aparecieron nuevas intenciones,
+     * enviarlas inmediatamente después.
+     */
+    if(
+      state.queue.size
+    ){
+      return flushActivitySaveQueue(
+        options
+      );
+    }
+
+    return true;
+  }
+
+  if(
+    !state.queue.size
+  ){
+    clearActivitySaveRetry();
+
+    setBackgroundSaveState(
+      "saved",
+      "Checks guardados"
+    );
+
+    return true;
+  }
+
+  const batch =
+    Array
+      .from(
+        state.queue.values()
+      )
+      .slice(
+        0,
+        200
+      )
+      .map(
+        change => ({
+          ...change
+        })
+      );
+
+  state.inFlightBatch =
+    batch.map(
+      change => ({
+        ...change
+      })
+    );
+
+  /*
+   * Seguir persistiendo la cola
+   * mientras esperamos ACK.
+   */
+  persistActivitySaveQueue(
+    state
+  );
+
+  state.inFlight =
+    (async () => {
+      try{
+        await api(
+          "update_activity",
+          {
+            cambios:
+              batch.map(
+                change => ({
+                  actividad_id:
+                    change
+                      .actividad_id,
+
+                  completado:
+                    Boolean(
+                      change
+                        .completado
+                    )
+                })
+              )
+          }
+        );
+
+        /*
+         * Quitar únicamente la versión
+         * que realmente recibió ACK.
+         *
+         * Si el usuario volvió a tocar
+         * el mismo check mientras estaba
+         * la petición en vuelo,
+         * esa intención nueva permanece.
+         */
+        batch.forEach(
+          sentChange => {
+            const current =
+              state.queue.get(
+                sentChange
+                  .actividad_id
+              );
+
+            if(
+              current &&
+              Number(
+                current
+                  .client_version ||
+                0
+              ) ===
+              Number(
+                sentChange
+                  .client_version ||
+                0
+              )
+            ){
+              state.queue.delete(
+                sentChange
+                  .actividad_id
+              );
+            }
+          }
+        );
+
+        persistActivitySaveQueue(
+          state
+        );
+
+        clearActivitySaveRetry();
+
+        if(
+          state.queue.size
+        ){
+          setBackgroundSaveState(
+            "saving",
+            `Guardando ${state.queue.size} checks…`
+          );
+
+        }else{
+          setBackgroundSaveState(
+            "saved",
+            "Checks guardados"
+          );
+        }
+
+        return true;
+
+      }catch(error){
+        console.warn(
+          "RADAR no pudo guardar todavía el lote de checks:",
+          error
+        );
+
+        /*
+         * Nada se elimina.
+         * El respaldo local permanece.
+         */
+        persistActivitySaveQueue(
+          state
+        );
+
+        if(!silent){
+          toast(
+            "Los checks quedan pendientes y RADAR reintentará automáticamente."
+          );
+        }
+
+        setBackgroundSaveState(
+          "error",
+          "Pendiente de sincronizar"
+        );
+
+        return false;
+      }
+    })();
+
+  let ok;
+
+  try{
+    ok =
+      await state.inFlight;
+
+  }finally{
+    state.inFlight =
+      null;
+
+    state.inFlightBatch =
+      [];
+  }
+
+  if(
+    !ok
+  ){
+    scheduleActivitySaveRetry();
+
+    return false;
+  }
+
+  if(
+    state.queue.size
+  ){
+    return flushActivitySaveQueue(
+      options
+    );
+  }
+
+  return true;
+}
+
+async function waitForActivitySaveQueue(){
+  const state =
+    getActivitySaveState();
+
+  while(
+    state.inFlight ||
+    state.queue.size
+  ){
+    if(
+      state.inFlight
+    ){
+      const ok =
+        await state.inFlight;
+
+      if(!ok){
+        return false;
+      }
+
+      continue;
+    }
+
+    const ok =
+      await flushActivitySaveQueue({
+        silent:
+          true
+      });
+
+    if(!ok){
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function scheduleActivityUiRender(){
+  clearTimeout(
+    window
+      .__RADAR_ACTIVITY_RENDER_TIMER
+  );
+
+  window
+    .__RADAR_ACTIVITY_RENDER_TIMER =
+      setTimeout(
+        () => {
+          applyPendingActivityChangesToData(
+            DATA
+          );
+
+          render();
+        },
+
+        160
+      );
+}
+
+function flushActivitySaveQueueOnExit(){
+  if(
+    !SESSION?.session_token ||
+    !apiReady()
+  ){
+    return;
+  }
+
+  const state =
+    getActivitySaveState();
+
+  if(
+    !state.queue.size
+  ){
+    return;
+  }
+
+  const now =
+    Date.now();
+
+  /*
+   * pagehide y visibilitychange
+   * pueden ocurrir casi juntos.
+   */
+  if(
+    state.lastExitFlushAt &&
+    now -
+      state.lastExitFlushAt <
+      400
+  ){
+    return;
+  }
+
+  state.lastExitFlushAt =
+    now;
+
+  /*
+   * El respaldo local NO se elimina
+   * aquí.
+   *
+   * Solo un ACK normal posterior
+   * puede eliminarlo.
+   */
+  persistActivitySaveQueue(
+    state
+  );
+
+  const batch =
+    Array
+      .from(
+        state.queue.values()
+      )
+      .slice(
+        0,
+        200
+      )
+      .map(
+        change => ({
+          actividad_id:
+            change
+              .actividad_id,
+
+          completado:
+            Boolean(
+              change
+                .completado
+            )
+        })
+      );
+
+  if(
+    !batch.length
+  ){
+    return;
+  }
+
+  const body =
+    JSON.stringify({
+      action:
+        "update_activity",
+
+      session_token:
+        SESSION
+          .session_token,
+
+      payload: {
+        cambios:
+          batch
+      }
+    });
+
+  let beaconQueued =
+    false;
+
+  try{
+    if(
+      navigator.sendBeacon
+    ){
+      const blob =
+        new Blob(
+          [body],
+          {
+            type:
+              "text/plain;charset=UTF-8"
+          }
+        );
+
+      beaconQueued =
+        navigator.sendBeacon(
+          API_URL,
+          blob
+        );
+    }
+
+  }catch(error){
+    beaconQueued =
+      false;
+  }
+
+  if(
+    !beaconQueued
+  ){
+    void fetch(
+      API_URL,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "text/plain;charset=utf-8"
+        },
+
+        body:
+          body,
+
+        keepalive:
+          true
+      }
+    ).catch(
+      () => {}
+    );
+  }
+}
+
+function installActivitySaveGuards(){
+  if(
+    window
+      .__RADAR_ACTIVITY_GUARDS_INSTALLED
+  ){
+    return;
+  }
+
+  window
+    .__RADAR_ACTIVITY_GUARDS_INSTALLED =
+      true;
+
+  window.addEventListener(
+    "pagehide",
+    flushActivitySaveQueueOnExit
+  );
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if(
+        document.visibilityState ===
+        "hidden"
+      ){
+        flushActivitySaveQueueOnExit();
+
+        return;
+      }
+
+      if(
+        SESSION?.session_token
+      ){
+        void flushActivitySaveQueue({
+          silent:
+            true
+        });
+      }
+    }
+  );
+
+  window.addEventListener(
+    "online",
+    () => {
+      if(
+        SESSION?.session_token
+      ){
+        void flushActivitySaveQueue({
+          silent:
+            true
+        });
+      }
+    }
+  );
+
+  window.addEventListener(
+    "focus",
+    () => {
+      if(
+        SESSION?.session_token
+      ){
+        void flushActivitySaveQueue({
+          silent:
+            true
+        });
+      }
+    }
+  );
 }
 
 async function api(action, payload = {}){
@@ -988,8 +2065,23 @@ async function logout(){
   location.reload();
 }
 
-if(document.readyState === "loading"){
-  document.addEventListener("DOMContentLoaded", () => void restoreRadarSession(), {once:true});
+installActivitySaveGuards();
+
+if(
+  document.readyState ===
+  "loading"
+){
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      void restoreRadarSession();
+    },
+    {
+      once:
+        true
+    }
+  );
+
 }else{
   void restoreRadarSession();
 }
