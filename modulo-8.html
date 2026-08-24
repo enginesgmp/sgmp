@@ -236,7 +236,7 @@ h1{margin:0;font-size:38px;letter-spacing:-.045em;line-height:1.05}
 /* TOOLBARS / TABLES */
 .admin-filter-bar,.compact-filter{display:grid;grid-template-columns:minmax(240px,1fr) 190px 190px 190px;gap:8px;margin:12px 0}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}.toolbar-field{min-width:170px;flex:0 1 220px}.toolbar-field.search{flex:1 1 280px}
 .admin-matrix-wrap{width:100%;overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow-xs)}
-.admin-matrix-table,.admin-load-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1120px}.admin-matrix-table th,.admin-load-table th{position:sticky;top:0;z-index:2;background:#f3f8f5;color:var(--ink-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.055em;text-align:left;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-matrix-table td,.admin-load-table td{padding:9px 10px;border-bottom:1px solid #e9f0ec;vertical-align:middle;font-size:11.5px}.admin-matrix-table tbody tr:hover,.admin-load-table tbody tr:hover{background:#fbfefc}.admin-matrix-table input,.admin-matrix-table select{width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:#fff;font-size:11px}.admin-code{font-weight:850;color:var(--brand-3);white-space:nowrap}.admin-action-cell{display:flex;gap:5px;flex-wrap:wrap}.admin-process-master-table{min-width:1300px}.admin-load-table th,.admin-load-table td{text-align:center}.admin-load-table th:first-child,.admin-load-table td:first-child{text-align:left}
+.admin-matrix-table,.admin-load-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1120px}.admin-matrix-table th,.admin-load-table th{position:sticky;top:0;z-index:2;background:#f3f8f5;color:var(--ink-2);font-size:9.5px;text-transform:uppercase;letter-spacing:.055em;text-align:left;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap}.admin-matrix-table td,.admin-load-table td{padding:9px 10px;border-bottom:1px solid #e9f0ec;vertical-align:middle;font-size:11.5px}.admin-matrix-table tbody tr:hover,.admin-load-table tbody tr:hover{background:#fbfefc}.admin-matrix-table input,.admin-matrix-table select{width:100%;border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:#fff;font-size:11px}.admin-code{font-weight:850;color:var(--brand-3);white-space:nowrap}.admin-action-cell{display:flex;gap:5px;flex-wrap:wrap}.admin-process-master-table{min-width:1700px}.admin-load-table th,.admin-load-table td{text-align:center}.admin-load-table th:first-child,.admin-load-table td:first-child{text-align:left}
 .load-badge{display:inline-flex;justify-content:center;align-items:center;min-width:28px;height:24px;border-radius:8px;background:var(--brand-soft);color:var(--brand-3);font-weight:850}.load-badge.hot{background:var(--warning-soft);color:#8b570e}
 .load-switch{display:inline-flex;padding:3px;border:1px solid var(--line);border-radius:11px;background:#f4f8f5}.load-switch button{border:0;background:transparent;border-radius:8px;padding:7px 11px;font-size:11px;font-weight:780;color:var(--muted)}.load-switch button.active{background:#fff;color:var(--brand-3);box-shadow:var(--shadow-xs)}
 
@@ -4471,47 +4471,554 @@ async function adminDeactivateProcess(procesoId){
 }
 
 function renderAdminProcesses(){
-  const rows = (DATA.procesos || []).slice().sort((a,b) => processDisplayName(a).localeCompare(processDisplayName(b),"es"));
+  const rows =
+    (DATA.procesos || [])
+      .slice()
+      .sort(
+        (a,b) =>
+          processDisplayName(a)
+            .localeCompare(
+              processDisplayName(b),
+              "es"
+            )
+      );
+
+  /*
+   * Filtro de macroprocesos:
+   * se construye desde los procesos
+   * existentes para incluir también
+   * información histórica/inactiva.
+   */
+  const macroMap =
+    new Map();
+
+  rows.forEach(p => {
+    const macroId =
+      String(
+        p.macro_id || ""
+      );
+
+    if(
+      macroId &&
+      !macroMap.has(macroId)
+    ){
+      macroMap.set(
+        macroId,
+        processMacroName(p)
+      );
+    }
+  });
+
+  const macros =
+    [...macroMap.entries()]
+      .map(
+        ([value,label]) => ({
+          value,
+          label
+        })
+      );
+
+  /*
+   * Lo mismo para Analistas.
+   * Incluye "Pendiente".
+   */
+  const analystMap =
+    new Map();
+
+  rows.forEach(p => {
+    const username =
+      String(
+        p.analista_user || ""
+      );
+
+    if(
+      !analystMap.has(username)
+    ){
+      analystMap.set(
+        username,
+        username
+          ? processAnalystName(p)
+          : "Pendiente"
+      );
+    }
+  });
+
+  const analysts =
+    [...analystMap.entries()]
+      .map(
+        ([value,label]) => ({
+          value,
+          label
+        })
+      );
 
   return `
-    <div class="admin-section-intro admin-section-actions">
-      <div><h3>Maestro de procesos</h3><p class="meta">Alta, edición e inactivación de procesos bajo contrato V3.</p></div>
-      <button class="btn primary" type="button" onclick="adminNewProcess()">+ Agregar proceso</button>
+    <div
+      class="admin-section-intro admin-section-actions"
+    >
+      <div>
+        <h3>Procesos</h3>
+
+        <p class="meta">
+          Gestión, planificación y edición del maestro de procesos.
+          Los cambios en las filas se guardan en segundo plano.
+        </p>
+      </div>
+
+      <button
+        class="btn primary"
+        type="button"
+        onclick="adminNewProcess()"
+      >
+        + Agregar proceso
+      </button>
     </div>
-    <div class="admin-filter-bar compact-filter">
-      <input id="adminProcessSearch" placeholder="Buscar código, proceso, macro o analista" oninput="filterAdminProcessMaster()">
-      <select id="adminProcessActiveFilter" onchange="filterAdminProcessMaster()"><option value="">Todos</option><option value="SI">Activos</option><option value="NO">Inactivos</option></select>
+
+    <div class="multi-filter-bar">
+
+      <div class="search-box">
+        <input
+          id="adminProcessSearch"
+          placeholder="Buscar código, proceso, macro, analista, líder o criticidad"
+          oninput="filterAdminProcessMaster()"
+        >
+      </div>
+
+      ${multiFilter(
+        "adminProcessStateFilter",
+        "Estado",
+        [
+          "PLANIFICADO",
+          "EN CURSO",
+          "ATRASADO",
+          "CERRADO"
+        ],
+        "filterAdminProcessMaster"
+      )}
+
+      ${multiFilter(
+        "adminProcessMacroFilter",
+        "Macroproceso",
+        macros,
+        "filterAdminProcessMaster"
+      )}
+
+      ${multiFilter(
+        "adminProcessTypeFilter",
+        "Tipo",
+        [
+          "PRIMARIO",
+          "SOPORTE",
+          "ESTRATÉGICO",
+          "SIN CLASIFICAR"
+        ],
+        "filterAdminProcessMaster"
+      )}
+
+      ${multiFilter(
+        "adminProcessAnalystFilter",
+        "Analista",
+        analysts,
+        "filterAdminProcessMaster"
+      )}
+
+      ${multiFilter(
+        "adminProcessActiveFilter",
+        "Administrativo",
+        [
+          {
+            value:"SI",
+            label:"Activo"
+          },
+          {
+            value:"NO",
+            label:"Inactivo"
+          }
+        ],
+        "filterAdminProcessMaster"
+      )}
+
     </div>
+
     <div class="admin-matrix-wrap">
-      <table class="admin-matrix-table admin-process-master-table">
-        <thead><tr><th>Código</th><th>Proceso</th><th>Macroproceso</th><th>Analista</th><th>Líder</th><th>Estado V3</th><th>Avance</th><th>Administrativo</th><th>Acciones</th></tr></thead>
+
+      <table
+        class="admin-matrix-table admin-process-master-table"
+      >
+
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Proceso</th>
+            <th>Macroproceso</th>
+            <th>Analista</th>
+            <th>Líder</th>
+            <th>Criticidad</th>
+            <th>Sem. inicio</th>
+            <th>Sem. entrega</th>
+            <th>Estado</th>
+            <th>Avance</th>
+            <th>Administrativo</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+
         <tbody>
-          ${rows.map(p => `
-            <tr class="admin-process-master-row" data-active="${isActiveRow(p)?"SI":"NO"}" data-search="${esc(`${p.codigo_proceso||""} ${processDisplayName(p)} ${processMacroName(p)} ${processAnalystName(p)} ${p.lider||""}`.toLowerCase())}">
-              <td class="admin-code">${esc(p.codigo_proceso || p.proceso_id)}</td>
-              <td>${esc(processDisplayName(p))}</td>
-              <td>${esc(processMacroName(p))}</td>
-              <td>${esc(processAnalystName(p))}</td>
-              <td>${esc(p.lider || "Pendiente")}</td>
-              <td>${renderStateBadge(processState(p))}</td>
-              <td><b>${processAdvance(p.proceso_id)}%</b></td>
-              <td>${isActiveRow(p)?"ACTIVO":"INACTIVO"}</td>
-              <td class="admin-action-cell"><button class="btn soft" type="button" onclick="adminEditProcess('${esc(p.proceso_id)}')">Editar</button>${isActiveRow(p)?`<button class="btn danger" type="button" onclick="adminDeactivateProcess('${esc(p.proceso_id)}')">Inactivar</button>`:""}</td>
-            </tr>
-          `).join("")}
+
+          ${
+            rows.map(p => {
+              const active =
+                isActiveRow(p);
+
+              const type =
+                processMacroType(p);
+
+              const state =
+                processState(p);
+
+              const advance =
+                processAdvance(
+                  p.proceso_id
+                );
+
+              const searchText =
+                [
+                  p.codigo_proceso,
+                  p.proceso_id,
+                  processDisplayName(p),
+                  processMacroName(p),
+                  processAnalystName(p),
+                  p.lider,
+                  p.criticidad,
+                  state,
+                  type,
+                  p.semana_inicio,
+                  p.semana_entrega,
+                  active
+                    ? "ACTIVO"
+                    : "INACTIVO"
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+                  .toLowerCase();
+
+              return `
+                <tr
+                  class="admin-process-master-row"
+                  data-process="${esc(
+                    p.proceso_id
+                  )}"
+                  data-active="${
+                    active
+                      ? "SI"
+                      : "NO"
+                  }"
+                  data-search="${esc(
+                    searchText
+                  )}"
+                  data-state="${esc(
+                    state
+                  )}"
+                  data-macro="${esc(
+                    p.macro_id || ""
+                  )}"
+                  data-type="${esc(
+                    type
+                  )}"
+                  data-analyst="${esc(
+                    p.analista_user || ""
+                  )}"
+                >
+
+                  <td class="admin-code">
+                    ${esc(
+                      p.codigo_proceso ||
+                      p.proceso_id
+                    )}
+                  </td>
+
+                  <td>
+                    <b>
+                      ${esc(
+                        processDisplayName(p)
+                      )}
+                    </b>
+                  </td>
+
+                  <td>
+                    ${esc(
+                      processMacroName(p)
+                    )}
+                  </td>
+
+                  <td>
+                    ${
+                      active
+                        ? `
+                          <select
+                            onchange="adminQuickAnalyst('${esc(
+                              p.proceso_id
+                            )}',this.value)"
+                          >
+                            <option value="">
+                              Pendiente
+                            </option>
+
+                            ${analystOptions(
+                              p.analista_user
+                            )}
+                          </select>
+                        `
+                        : esc(
+                            processAnalystName(p)
+                          )
+                    }
+                  </td>
+
+                  <td>
+                    ${
+                      active
+                        ? `
+                          <input
+                            list="processLeaderOptions"
+                            value="${esc(
+                              p.lider || ""
+                            )}"
+                            onchange="adminQuickUpdate('${esc(
+                              p.proceso_id
+                            )}','lider',this.value)"
+                          >
+                        `
+                        : esc(
+                            p.lider ||
+                            "Pendiente"
+                          )
+                    }
+                  </td>
+
+                  <td>
+                    ${
+                      active
+                        ? `
+                          <select
+                            onchange="adminQuickUpdate('${esc(
+                              p.proceso_id
+                            )}','criticidad',this.value)"
+                          >
+                            ${criticityOptions(
+                              p.criticidad
+                            )}
+                          </select>
+                        `
+                        : esc(
+                            p.criticidad ||
+                            "Pendiente"
+                          )
+                    }
+                  </td>
+
+                  <td>
+                    ${
+                      active
+                        ? `
+                          <select
+                            class="week-select"
+                            onchange="adminQuickUpdate('${esc(
+                              p.proceso_id
+                            )}','semana_inicio',this.value)"
+                          >
+                            ${weekSelectOptions(
+                              p.semana_inicio
+                            )}
+                          </select>
+                        `
+                        : esc(
+                            formatWeek(
+                              getProcessStartWeek(p)
+                            )
+                          )
+                    }
+                  </td>
+
+                  <td>
+                    ${
+                      active
+                        ? `
+                          <select
+                            class="week-select"
+                            onchange="adminQuickUpdate('${esc(
+                              p.proceso_id
+                            )}','semana_entrega',this.value)"
+                          >
+                            ${weekSelectOptions(
+                              p.semana_entrega
+                            )}
+                          </select>
+                        `
+                        : esc(
+                            formatWeek(
+                              getProcessDeliveryWeek(p)
+                            )
+                          )
+                    }
+                  </td>
+
+                  <td>
+                    ${renderStateBadge(
+                      state
+                    )}
+                  </td>
+
+                  <td>
+                    <b>
+                      ${advance}%
+                    </b>
+                  </td>
+
+                  <td>
+                    <span
+                      class="admin-status-pill ${
+                        active
+                          ? ""
+                          : "off"
+                      }"
+                    >
+                      ${
+                        active
+                          ? "ACTIVO"
+                          : "INACTIVO"
+                      }
+                    </span>
+                  </td>
+
+                  <td class="admin-action-cell">
+
+                    <button
+                      class="btn soft"
+                      type="button"
+                      onclick="adminEditProcess('${esc(
+                        p.proceso_id
+                      )}')"
+                    >
+                      Editar
+                    </button>
+
+                    ${
+                      active
+                        ? `
+                          <button
+                            class="btn danger"
+                            type="button"
+                            onclick="adminDeactivateProcess('${esc(
+                              p.proceso_id
+                            )}')"
+                          >
+                            Inactivar
+                          </button>
+                        `
+                        : ""
+                    }
+
+                  </td>
+
+                </tr>
+              `;
+            }).join("")
+          }
+
         </tbody>
       </table>
+
     </div>
+
+    ${leaderDatalist(
+      "processLeaderOptions"
+    )}
   `;
 }
 
 function filterAdminProcessMaster(){
-  const q = String($("adminProcessSearch")?.value || "").trim().toLowerCase();
-  const active = String($("adminProcessActiveFilter")?.value || "");
-  document.querySelectorAll(".admin-process-master-row").forEach(row => {
-    const visible = (!q || row.dataset.search.includes(q)) && (!active || row.dataset.active === active);
-    row.classList.toggle("hidden", !visible);
-  });
+  const q =
+    String(
+      $("adminProcessSearch")
+        ?.value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const states =
+    getMultiFilterValues(
+      "adminProcessStateFilter"
+    );
+
+  const macros =
+    getMultiFilterValues(
+      "adminProcessMacroFilter"
+    );
+
+  const types =
+    getMultiFilterValues(
+      "adminProcessTypeFilter"
+    );
+
+  const analysts =
+    getMultiFilterValues(
+      "adminProcessAnalystFilter"
+    );
+
+  const administrative =
+    getMultiFilterValues(
+      "adminProcessActiveFilter"
+    );
+
+  document
+    .querySelectorAll(
+      ".admin-process-master-row"
+    )
+    .forEach(row => {
+
+      const visible =
+        (
+          !q ||
+          row.dataset.search
+            .includes(q)
+        ) &&
+        (
+          !states.length ||
+          states.includes(
+            row.dataset.state
+          )
+        ) &&
+        (
+          !macros.length ||
+          macros.includes(
+            row.dataset.macro
+          )
+        ) &&
+        (
+          !types.length ||
+          types.includes(
+            row.dataset.type
+          )
+        ) &&
+        (
+          !analysts.length ||
+          analysts.includes(
+            row.dataset.analyst
+          )
+        ) &&
+        (
+          !administrative.length ||
+          administrative.includes(
+            row.dataset.active
+          )
+        );
+
+      row.classList.toggle(
+        "hidden",
+        !visible
+      );
+    });
 }
 
 function adminUserForm(user = {}){
@@ -4775,11 +5282,8 @@ async function adminQuickUpdate(
     );
 
     /*
-     * Sincronización visual inmediata
-     * del par semana / fecha.
-     *
-     * No requiere Bootstrap ni
-     * reconstruir la pantalla.
+     * Sigue soportando el editor
+     * individual del proceso.
      */
     if(p){
       const startWeek =
@@ -4849,10 +5353,14 @@ async function adminQuickUpdate(
       }
     }
 
+    /*
+     * Actualizar metadatos de la
+     * fila unificada de Procesos.
+     */
     const row =
       [
         ...document.querySelectorAll(
-          ".admin-matrix-row"
+          ".admin-process-master-row"
         )
       ].find(
         item =>
@@ -4867,11 +5375,43 @@ async function adminQuickUpdate(
       row.dataset.state =
         processState(p);
 
+      row.dataset.macro =
+        String(
+          p.macro_id ||
+          ""
+        );
+
+      row.dataset.type =
+        processMacroType(p);
+
       row.dataset.analyst =
         String(
           p.analista_user ||
           ""
         );
+
+      row.dataset.active =
+        isActiveRow(p)
+          ? "SI"
+          : "NO";
+
+      row.dataset.search =
+        [
+          p.codigo_proceso,
+          p.proceso_id,
+          processDisplayName(p),
+          processMacroName(p),
+          processAnalystName(p),
+          p.lider,
+          p.criticidad,
+          processState(p),
+          processMacroType(p),
+          p.semana_inicio,
+          p.semana_entrega
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
     }
 
     scheduleQuietBootstrap();
@@ -4882,9 +5422,9 @@ async function adminQuickUpdate(
 
     if(
       VIEW.type === "admin" &&
-      adminTab() === "matrix"
+      adminTab() === "processes"
     ){
-      filterAdminMatrix();
+      filterAdminProcessMaster();
     }
 
     return true;
@@ -4901,63 +5441,6 @@ async function adminQuickUpdate(
       );
     }
 
-    /*
-     * Si falló realmente el backend,
-     * devolver también los controles
-     * visuales a su valor anterior.
-     */
-    if(previous){
-      const startWeek =
-        $("quickProcessStartWeek");
-
-      const startDate =
-        $("quickProcessStartDate");
-
-      const endWeek =
-        $("quickProcessEndWeek");
-
-      const endDate =
-        $("quickProcessEndDate");
-
-      if(startWeek){
-        startWeek.value =
-          String(
-            previous.semana_inicio ||
-            ""
-          );
-      }
-
-      if(startDate){
-        startDate.value =
-          String(
-            previous.fecha_inicio_plan ||
-            ""
-          ).slice(
-            0,
-            10
-          );
-      }
-
-      if(endWeek){
-        endWeek.value =
-          String(
-            previous.semana_entrega ||
-            ""
-          );
-      }
-
-      if(endDate){
-        endDate.value =
-          String(
-            previous.fecha_fin_plan ||
-            ""
-          ).slice(
-            0,
-            10
-          );
-      }
-    }
-
     finishBackgroundSave(
       false
     );
@@ -4971,24 +5454,116 @@ async function adminQuickUpdate(
   }
 }
 
-async function adminQuickAnalyst(procesoId, username){
-  const p = processById(procesoId);
-  const previous = p ? p.analista_user : "";
-  if(p) p.analista_user = username;
-  beginBackgroundSave("Reasignando…");
+async function adminQuickAnalyst(
+  procesoId,
+  username
+){
+  const p =
+    processById(
+      procesoId
+    );
+
+  const previous =
+    p
+      ? p.analista_user
+      : "";
+
+  if(p){
+    p.analista_user =
+      username;
+  }
+
+  beginBackgroundSave(
+    "Reasignando…"
+  );
+
   try{
-    const result = await api("update_process_analyst", {proceso_id:procesoId, analista_user:username});
-    if(p) p.analista_user = result?.analista_user ?? username;
-    const row = [...document.querySelectorAll('.admin-matrix-row')].find(item => item.dataset.process === String(procesoId));
-    if(row) row.dataset.analyst = String(result?.analista_user ?? username);
+    const result =
+      await api(
+        "update_process_analyst",
+        {
+          proceso_id:
+            procesoId,
+
+          analista_user:
+            username
+        }
+      );
+
+    if(p){
+      p.analista_user =
+        result?.analista_user ??
+        username;
+    }
+
+    const row =
+      [
+        ...document.querySelectorAll(
+          ".admin-process-master-row"
+        )
+      ].find(
+        item =>
+          item.dataset.process ===
+          String(procesoId)
+      );
+
+    if(row){
+      row.dataset.analyst =
+        String(
+          result?.analista_user ??
+          username
+        );
+
+      if(p){
+        row.dataset.search =
+          [
+            p.codigo_proceso,
+            p.proceso_id,
+            processDisplayName(p),
+            processMacroName(p),
+            processAnalystName(p),
+            p.lider,
+            p.criticidad,
+            processState(p),
+            processMacroType(p)
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+      }
+    }
+
     scheduleQuietBootstrap();
-    finishBackgroundSave(true);
-    if(VIEW.type === "admin" && adminTab() === "matrix") filterAdminMatrix();
+
+    finishBackgroundSave(
+      true
+    );
+
+    if(
+      VIEW.type === "admin" &&
+      adminTab() === "processes"
+    ){
+      filterAdminProcessMaster();
+    }
+
     return true;
+
   }catch(error){
-    if(p) p.analista_user = previous;
-    finishBackgroundSave(false);
-    toast("No se pudo reasignar: " + error.message);
+
+    if(p){
+      p.analista_user =
+        previous;
+    }
+
+    finishBackgroundSave(
+      false
+    );
+
+    toast(
+      "No se pudo reasignar: " +
+      error.message
+    );
+
     return false;
   }
 }
