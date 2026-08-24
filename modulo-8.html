@@ -1926,77 +1926,206 @@ function applySessionToUi(){
 }
 
 async function login(){
-  const username = String($("loginUser")?.value || "")
-    .trim()
-    .toLowerCase();
-  const password = String($("loginPass")?.value || "");
-  const err = $("loginError");
+  const username =
+    String(
+      $("loginUser")?.value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const password =
+    String(
+      $("loginPass")?.value || ""
+    );
+
+  const err =
+    $("loginError");
 
   if(err){
-    err.classList.remove("show");
-    err.textContent = "";
+    err.classList.remove(
+      "show"
+    );
+
+    err.textContent =
+      "";
   }
 
-  if(!username || !password){
+  if(
+    !username ||
+    !password
+  ){
     if(err){
-      err.textContent = "Ingrese usuario y contraseña.";
-      err.classList.add("show");
+      err.textContent =
+        "Ingrese usuario y contraseña.";
+
+      err.classList.add(
+        "show"
+      );
     }
+
     return;
   }
 
   if(!apiReady()){
     if(err){
-      err.textContent = "RADAR no tiene una API configurada.";
-      err.classList.add("show");
+      err.textContent =
+        "RADAR no tiene una API configurada.";
+
+      err.classList.add(
+        "show"
+      );
     }
+
     return;
   }
 
-  showLoginLoading("RADAR está validando sus credenciales...");
+  showLoginLoading(
+    "RADAR está validando sus credenciales..."
+  );
 
   try{
-    const result = await api("login", {username, password});
-    const rawUser = result?.user;
+    const result =
+      await api(
+        "login",
+        {
+          username,
+          password
+        }
+      );
 
-    if(!rawUser || !result?.session_token){
-      throw new Error("Respuesta de login V3 incompleta.");
+    const rawUser =
+      result?.user;
+
+    if(
+      !rawUser ||
+      !result?.session_token
+    ){
+      throw new Error(
+        "Respuesta de login V3 incompleta."
+      );
     }
 
-    const normalizedUsername = String(rawUser.username || "")
-      .trim()
-      .toLowerCase();
-    const role = String(rawUser.rol || "")
-      .trim()
-      .toLowerCase();
+    const normalizedUsername =
+      String(
+        rawUser.username || ""
+      )
+        .trim()
+        .toLowerCase();
 
-    if(!normalizedUsername || !["admin","analista","gerencia"].includes(role)){
-      throw new Error("Usuario V3 no válido.");
+    const role =
+      String(
+        rawUser.rol || ""
+      )
+        .trim()
+        .toLowerCase();
+
+    if(
+      !normalizedUsername ||
+      ![
+        "admin",
+        "analista",
+        "gerencia"
+      ].includes(role)
+    ){
+      throw new Error(
+        "Usuario V3 no válido."
+      );
     }
 
     SESSION = {
       ...rawUser,
-      username: normalizedUsername,
-      nombre: String(rawUser.nombre || normalizedUsername).trim(),
-      rol: role,
-      session_token: result.session_token,
-      session_expires_at: result.session_expires_at || "",
-      session_ttl_seconds: Number(result.session_ttl_seconds || 0)
+
+      username:
+        normalizedUsername,
+
+      nombre:
+        String(
+          rawUser.nombre ||
+          normalizedUsername
+        ).trim(),
+
+      rol:
+        role,
+
+      session_token:
+        result.session_token,
+
+      session_expires_at:
+        result.session_expires_at ||
+        "",
+
+      session_ttl_seconds:
+        Number(
+          result.session_ttl_seconds ||
+          0
+        )
     };
 
-    saveRadarSession(SESSION);
-    VIEW = {type:"home"};
-    ADMIN_CONTROL_STATE = {tab:"dashboard"};
+    saveRadarSession(
+      SESSION
+    );
+
+    /*
+     * CRÍTICO:
+     * no mostrar la aplicación
+     * hasta confirmar Bootstrap.
+     */
+    const bootstrap =
+      await api(
+        "bootstrap"
+      );
+
+    applyBootstrapData(
+      bootstrap
+    );
+
+    VIEW = {
+      type:
+        "home"
+    };
+
+    ADMIN_CONTROL_STATE = {
+      tab:
+        "dashboard"
+    };
+
     applySessionToUi();
-    await syncData({quiet:true});
+
+    render();
 
   }catch(error){
-    console.error("Error en login RADAR:", error);
+    console.error(
+      "Error cargando RADAR:",
+      error
+    );
 
-    if(!SESSION && err){
-      err.textContent = error.message || "RADAR no pudo validar el acceso.";
-      err.classList.add("show");
+    clearRadarSession();
+
+    DATA =
+      emptyRadarData();
+
+    $("app")
+      ?.classList
+      .add(
+        "hidden"
+      );
+
+    $("login")
+      ?.classList
+      .remove(
+        "hidden"
+      );
+
+    if(err){
+      err.textContent =
+        error.message ||
+        "RADAR no pudo cargar la información.";
+
+      err.classList.add(
+        "show"
+      );
     }
+
   }finally{
     hideLoginLoading();
   }
@@ -2005,16 +2134,48 @@ async function login(){
 window.login = login;
 
 async function restoreRadarSession(){
-  const stored = loadRadarSession();
-  if(!stored) return;
+  const stored =
+    loadRadarSession();
 
-  SESSION = stored;
-  applySessionToUi();
+  if(!stored){
+    return;
+  }
+
+  SESSION =
+    stored;
 
   try{
-    await syncData({quiet:true});
+    const bootstrap =
+      await api(
+        "bootstrap"
+      );
+
+    applyBootstrapData(
+      bootstrap
+    );
+
+    applySessionToUi();
+
+    render();
+
   }catch(error){
-    console.error("No se pudo restaurar la sesión RADAR:", error);
+    console.error(
+      "No se pudo restaurar la sesión RADAR:",
+      error
+    );
+
+    clearRadarSession();
+
+    DATA =
+      emptyRadarData();
+
+    forceRadarRelogin(
+      "RADAR no pudo cargar la información: " +
+      (
+        error.message ||
+        "error desconocido"
+      )
+    );
   }
 }
 
