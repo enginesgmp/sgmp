@@ -5101,27 +5101,269 @@ function adminEditMacroprocess(macroId){
 }
 
 async function adminSaveMacroprocess(){
-  const macroId = String($("adminMacroId")?.value || "").trim();
-  const codigo = String($("adminMacroCode")?.value || "").trim().toUpperCase();
-  const nombre = String($("adminMacroName")?.value || "").trim();
-  const tipo = String($("adminMacroType")?.value || "").trim().toUpperCase();
-  const responsable = String($("adminMacroOwner")?.value || "").trim();
-  const icono = String($("adminMacroIcon")?.value || "folder").trim();
-  const color = String($("adminMacroColor")?.value || "#189B5B").trim();
-  const orden = String($("adminMacroOrder")?.value || "").trim();
-  const estado = String($("adminMacroStatus")?.value || "ACTIVO").trim().toUpperCase();
+  const macroId =
+    String(
+      $("adminMacroId")?.value || ""
+    ).trim();
 
-  if(!codigo || !nombre) return toast("Código y nombre son requeridos.");
+  const values = {
+    codigo_macro:
+      String(
+        $("adminMacroCode")?.value || ""
+      )
+        .trim()
+        .toUpperCase(),
 
-  showSyncLoading("Guardando macroproceso...");
+    nombre_macro:
+      String(
+        $("adminMacroName")?.value || ""
+      ).trim(),
+
+    tipo_macroproceso:
+      String(
+        $("adminMacroType")?.value || ""
+      )
+        .trim()
+        .toUpperCase(),
+
+    responsable_macro:
+      String(
+        $("adminMacroOwner")?.value || ""
+      ).trim(),
+
+    icono:
+      String(
+        $("adminMacroIcon")?.value ||
+        "folder"
+      ).trim(),
+
+    color:
+      String(
+        $("adminMacroColor")?.value ||
+        "#189B5B"
+      ).trim(),
+
+    orden:
+      String(
+        $("adminMacroOrder")?.value || ""
+      ).trim(),
+
+    estado:
+      String(
+        $("adminMacroStatus")?.value ||
+        "ACTIVO"
+      )
+        .trim()
+        .toUpperCase()
+  };
+
+  if(
+    !values.codigo_macro ||
+    !values.nombre_macro
+  ){
+    toast(
+      "Código y nombre son requeridos."
+    );
+    return;
+  }
+
+  const payload = {
+    macro_id:
+      macroId
+  };
+
+  /*
+   * NUEVO:
+   * enviar todos los campos.
+   *
+   * EXISTENTE:
+   * enviar solamente los campos
+   * realmente modificados.
+   */
+  if(!macroId){
+    Object.assign(
+      payload,
+      values
+    );
+
+  }else{
+    const current =
+      macroById(
+        macroId
+      );
+
+    if(!current){
+      toast(
+        "Macroproceso no encontrado."
+      );
+      return;
+    }
+
+    const currentValues = {
+      codigo_macro:
+        String(
+          current.codigo_macro || ""
+        )
+          .trim()
+          .toUpperCase(),
+
+      nombre_macro:
+        String(
+          current.nombre_macro || ""
+        ).trim(),
+
+      tipo_macroproceso:
+        String(
+          current.tipo_macroproceso || ""
+        )
+          .trim()
+          .toUpperCase(),
+
+      responsable_macro:
+        String(
+          current.responsable_macro || ""
+        ).trim(),
+
+      icono:
+        String(
+          current.icono || "folder"
+        ).trim(),
+
+      color:
+        String(
+          current.color || "#189B5B"
+        ).trim(),
+
+      orden:
+        String(
+          current.orden || ""
+        ).trim(),
+
+      estado:
+        String(
+          current.estado || "ACTIVO"
+        )
+          .trim()
+          .toUpperCase()
+    };
+
+    Object.keys(
+      values
+    ).forEach(field => {
+      if(
+        values[field] !==
+        currentValues[field]
+      ){
+        payload[field] =
+          values[field];
+      }
+    });
+
+    if(
+      Object.keys(payload).length ===
+      1
+    ){
+      closeAdminModal();
+      toast(
+        "No existen cambios para guardar."
+      );
+      return;
+    }
+  }
+
+  showSyncLoading(
+    "Guardando macroproceso..."
+  );
+
   try{
-    await api("upsert_macroprocess", {macro_id:macroId, codigo_macro:codigo, nombre_macro:nombre, tipo_macroproceso:tipo, responsable_macro:responsable, icono, color, orden, estado});
+    const result =
+      await api(
+        "upsert_macroprocess",
+        payload
+      );
+
+    /*
+     * Validación inmediata del tipo.
+     */
+    if(
+      Object.prototype
+        .hasOwnProperty
+        .call(
+          payload,
+          "tipo_macroproceso"
+        ) &&
+      String(
+        result?.tipo_macroproceso || ""
+      )
+        .trim()
+        .toUpperCase() !==
+      values.tipo_macroproceso
+    ){
+      throw new Error(
+        "El backend no confirmó el nuevo tipo de macroproceso."
+      );
+    }
+
+    const fresh =
+      await api(
+        "bootstrap"
+      );
+
+    applyBootstrapData(
+      fresh
+    );
+
+    /*
+     * Segunda validación:
+     * comprobar lo que realmente
+     * volvió desde Sheets.
+     */
+    if(
+      macroId &&
+      Object.prototype
+        .hasOwnProperty
+        .call(
+          payload,
+          "tipo_macroproceso"
+        )
+    ){
+      const refreshed =
+        macroById(
+          macroId
+        );
+
+      const persistedType =
+        String(
+          refreshed?.tipo_macroproceso ||
+          ""
+        )
+          .trim()
+          .toUpperCase();
+
+      if(
+        persistedType !==
+        values.tipo_macroproceso
+      ){
+        throw new Error(
+          "El tipo no quedó persistido después de actualizar RADAR."
+        );
+      }
+    }
+
     closeAdminModal();
-    applyBootstrapData(await api("bootstrap"));
+
     renderAdminWorkspace();
-    toast("Macroproceso guardado.");
+
+    toast(
+      "Macroproceso guardado."
+    );
+
   }catch(error){
-    toast("No se pudo guardar: " + error.message);
+    toast(
+      "No se pudo guardar: " +
+      error.message
+    );
+
   }finally{
     hideSyncLoading();
   }
