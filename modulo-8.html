@@ -1741,27 +1741,49 @@ async function api(
       SESSION.session_token;
   }
 
+  /*
+   * Apps Script ContentService
+   * responde mediante una URL
+   * temporal de un solo uso.
+   *
+   * Generamos una solicitud única
+   * para evitar reutilización de
+   * redirecciones/caché anteriores.
+   */
+  const separator =
+    API_URL.includes("?")
+      ? "&"
+      : "?";
+
+  const requestUrl =
+    API_URL +
+    separator +
+    "radar_request=" +
+    Date.now() +
+    "_" +
+    Math.random()
+      .toString(36)
+      .slice(2);
+
   let response;
 
   try{
-    /*
-     * No forzar redirect.
-     *
-     * fetch ya sigue las
-     * redirecciones por defecto
-     * y este era el comportamiento
-     * estable del RADAR.
-     */
     response =
       await fetch(
-        API_URL,
+        requestUrl,
         {
           method:
             "POST",
 
+          cache:
+            "no-store",
+
           headers: {
             "Content-Type":
-              "text/plain;charset=utf-8"
+              "text/plain;charset=utf-8",
+
+            "Accept":
+              "application/json"
           },
 
           body:
@@ -1793,32 +1815,85 @@ async function api(
     );
   }
 
-  /*
-   * IMPORTANTE:
-   *
-   * Primero intentamos interpretar
-   * la respuesta real del Web App.
-   *
-   * No descartamos inmediatamente
-   * la respuesta únicamente por
-   * response.ok.
-   */
+  const status =
+    Number(
+      response.status || 0
+    );
+
+  let responseText =
+    "";
+
+  try{
+    responseText =
+      await response.text();
+
+  }catch(error){
+    throw new Error(
+      "RADAR no pudo leer la respuesta de " +
+      action +
+      "."
+    );
+  }
+
+  if(!response.ok){
+    let finalHost =
+      "";
+
+    try{
+      finalHost =
+        new URL(
+          response.url
+        ).hostname;
+
+    }catch(_){}
+
+    console.error(
+      "RADAR · respuesta HTTP no válida",
+      {
+        action:
+          action,
+
+        status:
+          status,
+
+        finalHost:
+          finalHost
+      }
+    );
+
+    throw new Error(
+      "RADAR respondió HTTP " +
+      status +
+      " al ejecutar " +
+      action +
+      "."
+    );
+  }
+
   let json;
 
   try{
     json =
-      await response.json();
+      JSON.parse(
+        responseText
+      );
 
   }catch(error){
+    console.error(
+      "RADAR · respuesta no JSON",
+      {
+        action:
+          action,
 
-    if(!response.ok){
-      throw new Error(
-        `RADAR respondió HTTP ${response.status}.`
-      );
-    }
+        status:
+          status
+      }
+    );
 
     throw new Error(
-      "RADAR devolvió una respuesta no válida."
+      "RADAR devolvió una respuesta no válida al ejecutar " +
+      action +
+      "."
     );
   }
 
