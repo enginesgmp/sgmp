@@ -4667,27 +4667,244 @@ function filterAdminMatrix(){
   });
 }
 
-async function adminQuickUpdate(procesoId, field, value){
-  const p = processById(procesoId);
-  const previous = p ? {...p} : null;
-  if(p) p[field] = value;
+async function adminQuickUpdate(
+  procesoId,
+  field,
+  value
+){
+  const p =
+    processById(
+      procesoId
+    );
+
+  const previous =
+    p
+      ? {...p}
+      : null;
+
+  if(p){
+    p[field] =
+      value;
+  }
+
   beginBackgroundSave();
+
   try{
-    const result = await api("update_process", {proceso_id:procesoId, field, value});
-    mergeProcessUpdateResult(procesoId, result, field, value);
-    const row = [...document.querySelectorAll('.admin-matrix-row')].find(item => item.dataset.process === String(procesoId));
-    if(row && p){
-      row.dataset.state = processState(p);
-      row.dataset.analyst = String(p.analista_user || "");
+    const result =
+      await api(
+        "update_process",
+        {
+          proceso_id:
+            procesoId,
+
+          field:
+            field,
+
+          value:
+            value
+        }
+      );
+
+    mergeProcessUpdateResult(
+      procesoId,
+      result,
+      field,
+      value
+    );
+
+    /*
+     * Sincronización visual inmediata
+     * del par semana / fecha.
+     *
+     * No requiere Bootstrap ni
+     * reconstruir la pantalla.
+     */
+    if(p){
+      const startWeek =
+        $("quickProcessStartWeek");
+
+      const startDate =
+        $("quickProcessStartDate");
+
+      const endWeek =
+        $("quickProcessEndWeek");
+
+      const endDate =
+        $("quickProcessEndDate");
+
+      if(
+        startWeek &&
+        result?.semana_inicio !==
+          undefined
+      ){
+        startWeek.value =
+          String(
+            result.semana_inicio ||
+            ""
+          );
+      }
+
+      if(
+        startDate &&
+        result?.fecha_inicio_plan !==
+          undefined
+      ){
+        startDate.value =
+          String(
+            result.fecha_inicio_plan ||
+            ""
+          ).slice(
+            0,
+            10
+          );
+      }
+
+      if(
+        endWeek &&
+        result?.semana_entrega !==
+          undefined
+      ){
+        endWeek.value =
+          String(
+            result.semana_entrega ||
+            ""
+          );
+      }
+
+      if(
+        endDate &&
+        result?.fecha_fin_plan !==
+          undefined
+      ){
+        endDate.value =
+          String(
+            result.fecha_fin_plan ||
+            ""
+          ).slice(
+            0,
+            10
+          );
+      }
     }
+
+    const row =
+      [
+        ...document.querySelectorAll(
+          ".admin-matrix-row"
+        )
+      ].find(
+        item =>
+          item.dataset.process ===
+          String(procesoId)
+      );
+
+    if(
+      row &&
+      p
+    ){
+      row.dataset.state =
+        processState(p);
+
+      row.dataset.analyst =
+        String(
+          p.analista_user ||
+          ""
+        );
+    }
+
     scheduleQuietBootstrap();
-    finishBackgroundSave(true);
-    if(VIEW.type === "admin" && adminTab() === "matrix") filterAdminMatrix();
+
+    finishBackgroundSave(
+      true
+    );
+
+    if(
+      VIEW.type === "admin" &&
+      adminTab() === "matrix"
+    ){
+      filterAdminMatrix();
+    }
+
     return true;
+
   }catch(error){
-    if(p && previous) Object.assign(p, previous);
-    finishBackgroundSave(false);
-    toast("No se pudo guardar: " + error.message);
+
+    if(
+      p &&
+      previous
+    ){
+      Object.assign(
+        p,
+        previous
+      );
+    }
+
+    /*
+     * Si falló realmente el backend,
+     * devolver también los controles
+     * visuales a su valor anterior.
+     */
+    if(previous){
+      const startWeek =
+        $("quickProcessStartWeek");
+
+      const startDate =
+        $("quickProcessStartDate");
+
+      const endWeek =
+        $("quickProcessEndWeek");
+
+      const endDate =
+        $("quickProcessEndDate");
+
+      if(startWeek){
+        startWeek.value =
+          String(
+            previous.semana_inicio ||
+            ""
+          );
+      }
+
+      if(startDate){
+        startDate.value =
+          String(
+            previous.fecha_inicio_plan ||
+            ""
+          ).slice(
+            0,
+            10
+          );
+      }
+
+      if(endWeek){
+        endWeek.value =
+          String(
+            previous.semana_entrega ||
+            ""
+          );
+      }
+
+      if(endDate){
+        endDate.value =
+          String(
+            previous.fecha_fin_plan ||
+            ""
+          ).slice(
+            0,
+            10
+          );
+      }
+    }
+
+    finishBackgroundSave(
+      false
+    );
+
+    toast(
+      "No se pudo guardar: " +
+      error.message
+    );
+
     return false;
   }
 }
@@ -5183,20 +5400,161 @@ function renderAdminConfig(){
 function adminEditor(p){
   if(!isAdmin()) return "";
 
+  const isoDate = value => {
+    const text =
+      String(value || "")
+        .trim();
+
+    const match =
+      text.match(
+        /^(\d{4})-(\d{2})-(\d{2})/
+      );
+
+    return match
+      ? `${match[1]}-${match[2]}-${match[3]}`
+      : "";
+  };
+
   return `
     <div class="admin-editor">
-      <div class="admin-section-intro"><h3>Edición rápida del proceso</h3><p class="meta">Los cambios se guardan en segundo plano. Estado y avance no se editan manualmente.</p></div>
-      <div class="admin-grid">
-        <div class="field"><label>Analista</label><select onchange="adminQuickAnalyst('${esc(p.proceso_id)}',this.value)"><option value="">Pendiente</option>${analystOptions(p.analista_user)}</select></div>
-        <div class="field"><label>Líder</label><input list="quickLeaderOptions" value="${esc(p.lider || "")}" onchange="adminQuickUpdate('${esc(p.proceso_id)}','lider',this.value)"></div>
-        <div class="field"><label>Criticidad</label><select onchange="adminQuickUpdate('${esc(p.proceso_id)}','criticidad',this.value)">${criticityOptions(p.criticidad)}</select></div>
-        <div class="field"><label>Estado V3</label><input value="${esc(processState(p))}" disabled></div>
-        <div class="field"><label>Semana inicio</label><select class="week-select" onchange="adminQuickUpdate('${esc(p.proceso_id)}','semana_inicio',this.value)">${weekSelectOptions(p.semana_inicio)}</select></div>
-        <div class="field"><label>Semana entrega</label><select class="week-select" onchange="adminQuickUpdate('${esc(p.proceso_id)}','semana_entrega',this.value)">${weekSelectOptions(p.semana_entrega)}</select></div>
-        <div class="field admin-grid-full"><label>Finalidad</label><textarea rows="3" onchange="adminQuickUpdate('${esc(p.proceso_id)}','finalidad',this.value)">${esc(p.finalidad || "")}</textarea></div>
-        <div class="field admin-grid-full"><label>Observación</label><textarea rows="3" onchange="adminQuickUpdate('${esc(p.proceso_id)}','observacion',this.value)">${esc(p.observacion || "")}</textarea></div>
+
+      <div class="admin-section-intro">
+        <h3>Gestión del proceso</h3>
+
+        <p class="meta">
+          Los cambios se guardan en segundo plano.
+          Estado y avance se calculan automáticamente.
+        </p>
       </div>
-      ${leaderDatalist("quickLeaderOptions")}
+
+      <div class="admin-grid">
+
+        <div class="field">
+          <label>Analista</label>
+
+          <select
+            onchange="adminQuickAnalyst('${esc(p.proceso_id)}',this.value)"
+          >
+            <option value="">Pendiente</option>
+
+            ${analystOptions(
+              p.analista_user
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Líder</label>
+
+          <input
+            list="quickLeaderOptions"
+            value="${esc(p.lider || "")}"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','lider',this.value)"
+          >
+        </div>
+
+        <div class="field">
+          <label>Criticidad</label>
+
+          <select
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','criticidad',this.value)"
+          >
+            ${criticityOptions(
+              p.criticidad
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Estado V3</label>
+
+          <input
+            value="${esc(processState(p))}"
+            disabled
+          >
+        </div>
+
+        <div class="field">
+          <label>Semana inicio</label>
+
+          <select
+            id="quickProcessStartWeek"
+            class="week-select"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','semana_inicio',this.value)"
+          >
+            ${weekSelectOptions(
+              p.semana_inicio
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Fecha inicio</label>
+
+          <input
+            id="quickProcessStartDate"
+            type="date"
+            value="${esc(
+              isoDate(
+                p.fecha_inicio_plan
+              )
+            )}"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','fecha_inicio_plan',this.value)"
+          >
+        </div>
+
+        <div class="field">
+          <label>Semana entrega</label>
+
+          <select
+            id="quickProcessEndWeek"
+            class="week-select"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','semana_entrega',this.value)"
+          >
+            ${weekSelectOptions(
+              p.semana_entrega
+            )}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Fecha fin</label>
+
+          <input
+            id="quickProcessEndDate"
+            type="date"
+            value="${esc(
+              isoDate(
+                p.fecha_fin_plan
+              )
+            )}"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','fecha_fin_plan',this.value)"
+          >
+        </div>
+
+        <div class="field admin-grid-full">
+          <label>Finalidad</label>
+
+          <textarea
+            rows="3"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','finalidad',this.value)"
+          >${esc(p.finalidad || "")}</textarea>
+        </div>
+
+        <div class="field admin-grid-full">
+          <label>Observación</label>
+
+          <textarea
+            rows="3"
+            onchange="adminQuickUpdate('${esc(p.proceso_id)}','observacion',this.value)"
+          >${esc(p.observacion || "")}</textarea>
+        </div>
+
+      </div>
+
+      ${leaderDatalist(
+        "quickLeaderOptions"
+      )}
     </div>
   `;
 }
