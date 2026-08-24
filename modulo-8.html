@@ -2746,7 +2746,7 @@ function renderProcess(procesoId){
       ${isAdmin()?adminEditor(p):""}
     </section>
     ${renderProcessHistory(procesoId)}
-    <div class="section-title"><div><h2>Hitos</h2><p class="meta">Seguimiento de actividades consecutivas.</p></div></div>
+    <div class="section-title"><div><h2>Hitos</h2><p class="meta">Seguimiento de actividades del proceso.</p></div></div>
     <section class="hito-grid">${hitos.map(h=>hitoCard(h,p)).join("")}</section>
   `;
 
@@ -2774,62 +2774,455 @@ function processActivitySequence(procesoId){
 }
 
 function processSequenceState(procesoId){
-  const sequence = processActivitySequence(procesoId);
-  const completed = sequence.map(a => isTrue(a.completado));
-  const firstIncomplete = completed.findIndex(value => !value);
-  let lastCompleted = -1;
-  completed.forEach((value,index) => { if(value) lastCompleted = index; });
+  const sequence =
+    processActivitySequence(
+      procesoId
+    );
 
-  const hasGap = completed.some((value,index) =>
-    value && completed.slice(0,index).some(previous => !previous)
+  const completed =
+    sequence.map(
+      activity =>
+        isTrue(
+          activity.completado
+        )
+    );
+
+  const total =
+    completed.length;
+
+  const firstIndex =
+    total
+      ? 0
+      : -1;
+
+  const lastIndex =
+    total
+      ? total - 1
+      : -1;
+
+  const started =
+    firstIndex >= 0
+      ? Boolean(
+          completed[
+            firstIndex
+          ]
+        )
+      : false;
+
+  const lastCompleted =
+    lastIndex >= 0
+      ? Boolean(
+          completed[
+            lastIndex
+          ]
+        )
+      : false;
+
+  const intermediateCompleted =
+    total > 2
+      ? completed
+          .slice(
+            1,
+            lastIndex
+          )
+          .filter(Boolean)
+          .length
+      : 0;
+
+  const intermediateTotal =
+    Math.max(
+      0,
+      total - 2
+    );
+
+  const pendingIntermediate =
+    Math.max(
+      0,
+      intermediateTotal -
+        intermediateCompleted
+    );
+
+  /*
+   * Para habilitar CIERRE:
+   *
+   * todos los checks anteriores
+   * al último deben estar completos.
+   */
+  const allBeforeLastComplete =
+    total > 1 &&
+    completed
+      .slice(
+        0,
+        lastIndex
+      )
+      .every(Boolean);
+
+  const allComplete =
+    total > 0 &&
+    completed.every(Boolean);
+
+  const done =
+    completed
+      .filter(Boolean)
+      .length;
+
+  /*
+   * Estas dos propiedades se
+   * mantienen por compatibilidad
+   * con otros consumidores visuales.
+   *
+   * Ya NO representan una regla
+   * obligatoria de secuencia.
+   */
+  const firstIncomplete =
+    completed.findIndex(
+      value =>
+        !value
+    );
+
+  let lastCompletedIndex =
+    -1;
+
+  completed.forEach(
+    (value,index) => {
+      if(value){
+        lastCompletedIndex =
+          index;
+      }
+    }
   );
 
   return {
     sequence,
     completed,
+
+    total,
+    done,
+
+    firstIndex,
+    lastIndex,
+
+    started,
+
+    closed:
+      lastCompleted,
+
+    allComplete,
+
+    intermediateTotal,
+    intermediateCompleted,
+    pendingIntermediate,
+
+    allBeforeLastComplete,
+
+    readyToClose:
+      started &&
+      !lastCompleted &&
+      allBeforeLastComplete,
+
+    /*
+     * Compatibilidad.
+     */
     firstIncomplete,
-    lastCompleted,
-    done: completed.filter(Boolean).length,
-    total: completed.length,
-    allComplete: completed.length > 0 && completed.every(Boolean),
-    hasGap
+
+    lastCompleted:
+      lastCompletedIndex,
+
+    /*
+     * Un hueco ya NO constituye
+     * error en la nueva regla.
+     */
+    hasGap:
+      false
   };
 }
 
 function nextPendingActivityName(procesoId){
-  const state = processSequenceState(procesoId);
-  const next = state.firstIncomplete >= 0 ? state.sequence[state.firstIncomplete] : null;
-  return next?.actividad || (state.allComplete ? "Proceso cerrado" : "Sin actividad pendiente");
+  const state =
+    processSequenceState(
+      procesoId
+    );
+
+  if(!state.total){
+    return "Sin actividades";
+  }
+
+  if(!state.started){
+    return "Iniciar proceso";
+  }
+
+  if(state.allComplete){
+    return "Proceso cerrado";
+  }
+
+  if(state.readyToClose){
+    return "Listo para cerrar";
+  }
+
+  if(
+    state.pendingIntermediate ===
+    1
+  ){
+    return "1 actividad pendiente";
+  }
+
+  if(
+    state.pendingIntermediate >
+    1
+  ){
+    return (
+      state.pendingIntermediate +
+      " actividades pendientes"
+    );
+  }
+
+  return "Proceso en curso";
 }
 
-function activityTogglePermission(a, p){
-  if(isManagement()) return {enabled:false, reason:"Gerencia es solo lectura."};
-  if(isAnalyst() && String(p?.analista_user || "").trim().toLowerCase() !== String(SESSION?.username || "").trim().toLowerCase()){
-    return {enabled:false, reason:"Proceso no asignado a este usuario."};
-  }
-  if(!isAdmin() && !isAnalyst()) return {enabled:false, reason:"Sin permiso de edición."};
+function activityTogglePermission(a,p){
+  if(isManagement()){
+    return {
+      enabled:
+        false,
 
-  const state = processSequenceState(p.proceso_id);
-  if(state.hasGap) return {enabled:false, reason:"Secuencia inconsistente; requiere revisión administrativa."};
-
-  const index = state.sequence.findIndex(item => String(item.actividad_id) === String(a.actividad_id));
-  if(index < 0) return {enabled:false, reason:"Actividad fuera de secuencia."};
-
-  const checked = isTrue(a.completado);
-
-  if(!checked){
-    return index === state.firstIncomplete
-      ? {enabled:true, action:"check", index, state}
-      : {enabled:false, reason:"Primero complete la actividad anterior."};
+      reason:
+        "Gerencia es solo lectura."
+    };
   }
 
-  if(index === 0){
-    return {enabled:false, reason:"El primer check representa el inicio y no puede desmarcarse."};
+  if(
+    isAnalyst() &&
+    String(
+      p?.analista_user || ""
+    )
+      .trim()
+      .toLowerCase() !==
+    String(
+      SESSION?.username || ""
+    )
+      .trim()
+      .toLowerCase()
+  ){
+    return {
+      enabled:
+        false,
+
+      reason:
+        "Proceso no asignado a este usuario."
+    };
   }
 
-  return index === state.lastCompleted
-    ? {enabled:true, action:"uncheck", index, state}
-    : {enabled:false, reason:"Solo puede desmarcar la última actividad completada."};
+  if(
+    !isAdmin() &&
+    !isAnalyst()
+  ){
+    return {
+      enabled:
+        false,
+
+      reason:
+        "Sin permiso de edición."
+    };
+  }
+
+  const state =
+    processSequenceState(
+      p.proceso_id
+    );
+
+  const index =
+    state.sequence.findIndex(
+      item =>
+        String(
+          item.actividad_id
+        ) ===
+        String(
+          a.actividad_id
+        )
+    );
+
+  if(index < 0){
+    return {
+      enabled:
+        false,
+
+      reason:
+        "Actividad fuera de la secuencia del proceso."
+    };
+  }
+
+  const checked =
+    isTrue(
+      a.completado
+    );
+
+  /*
+   * ======================================================
+   * PRIMER CHECK
+   * ======================================================
+   *
+   * Antes del inicio solamente
+   * este check está disponible.
+   */
+  if(
+    index ===
+    state.firstIndex
+  ){
+    if(checked){
+      return {
+        enabled:
+          false,
+
+        reason:
+          "El inicio del proceso ya fue registrado.",
+
+        action:
+          "started",
+
+        index,
+        state
+      };
+    }
+
+    if(state.done > 0){
+      return {
+        enabled:
+          false,
+
+        reason:
+          "El proceso contiene avance sin inicio formal y requiere revisión.",
+
+        index,
+        state
+      };
+    }
+
+    return {
+      enabled:
+        true,
+
+      action:
+        "start",
+
+      index,
+      state
+    };
+  }
+
+  /*
+   * ======================================================
+   * ÚLTIMO CHECK
+   * ======================================================
+   *
+   * - marcado = REAPERTURA posible;
+   * - pendiente = solo se habilita
+   *   cuando todos los anteriores
+   *   están completos.
+   */
+  if(
+    index ===
+    state.lastIndex
+  ){
+    if(checked){
+      return {
+        enabled:
+          true,
+
+        action:
+          "reopen",
+
+        index,
+        state
+      };
+    }
+
+    if(!state.started){
+      return {
+        enabled:
+          false,
+
+        reason:
+          "Primero debe iniciar el proceso.",
+
+        index,
+        state
+      };
+    }
+
+    if(
+      !state.allBeforeLastComplete
+    ){
+      return {
+        enabled:
+          false,
+
+        reason:
+          "Complete todas las actividades anteriores para habilitar el cierre.",
+
+        index,
+        state
+      };
+    }
+
+    return {
+      enabled:
+        true,
+
+      action:
+        "close",
+
+      index,
+      state
+    };
+  }
+
+  /*
+   * ======================================================
+   * CHECKS INTERMEDIOS
+   * ======================================================
+   *
+   * Después del INICIO pueden
+   * marcarse o desmarcarse
+   * libremente, sin orden.
+   */
+  if(!state.started){
+    return {
+      enabled:
+        false,
+
+      reason:
+        "Primero debe iniciar el proceso.",
+
+      index,
+      state
+    };
+  }
+
+  if(state.closed){
+    return {
+      enabled:
+        false,
+
+      reason:
+        "El proceso está cerrado. Primero debe reabrirlo desde el último check.",
+
+      index,
+      state
+    };
+  }
+
+  return {
+    enabled:
+      true,
+
+    action:
+      checked
+        ? "uncheck"
+        : "check",
+
+    index,
+    state
+  };
 }
 
 function hitoCard(h,p){
@@ -2937,82 +3330,469 @@ function confirmRadarDialog(requireClosureType){
   });
 }
 
-async function toggleActivity(actividadId, desiredValue, checkboxEl){
-  const activity = activeActivities().find(a => String(a.actividad_id) === String(actividadId));
-  if(!activity) return;
+async function toggleActivity(
+  actividadId,
+  desiredValue,
+  checkboxEl
+){
+  const activity =
+    activeActivities()
+      .find(
+        item =>
+          String(
+            item.actividad_id
+          ) ===
+          String(
+            actividadId
+          )
+      );
 
-  const p = processById(activity.proceso_id);
-  if(!p) return;
-
-  const currentValue = isTrue(activity.completado);
-  if(checkboxEl) checkboxEl.checked = currentValue;
-
-  const permission = activityTogglePermission(activity,p);
-  if(!permission.enabled){
-    toast(permission.reason || "Esta actividad no puede modificarse todavía.");
+  if(!activity){
     return;
   }
 
-  const desired = Boolean(desiredValue);
-  if(desired === currentValue) return;
+  const p =
+    processById(
+      activity.proceso_id
+    );
 
-  const state = permission.state;
-  const payload = {
-    actividad_id: actividadId,
-    completado: desired
-  };
-
-  if(desired && permission.index === 0 && state.done === 0){
-    const confirmation = await radarDialog({
-      title:"Iniciar proceso",
-      text:"El primer check registra el inicio real del proceso.",
-      confirmLabel:"Iniciar proceso"
-    });
-    if(!confirmation) return;
-    payload.confirmar_inicio = true;
-    payload.comentario = confirmation.comentario;
+  if(!p){
+    return;
   }
 
-  if(desired && permission.index === state.total - 1 && state.done === state.total - 1){
-    const confirmation = await radarDialog({
-      title:"Cerrar proceso",
-      text:"El último check cerrará el proceso. Seleccione el tipo de cierre.",
-      requireClosureType:true,
-      confirmLabel:"Cerrar proceso"
-    });
-    if(!confirmation) return;
-    payload.confirmar_cierre = true;
-    payload.tipo_cierre = confirmation.tipo_cierre;
-    payload.comentario = confirmation.comentario;
+  const currentValue =
+    isTrue(
+      activity.completado
+    );
+
+  const desired =
+    Boolean(
+      desiredValue
+    );
+
+  const permission =
+    activityTogglePermission(
+      activity,
+      p
+    );
+
+  /*
+   * Si no está permitido,
+   * devolver el checkbox
+   * inmediatamente a su
+   * estado real.
+   */
+  if(!permission.enabled){
+    if(checkboxEl){
+      checkboxEl.checked =
+        currentValue;
+    }
+
+    toast(
+      permission.reason ||
+      "Esta actividad no puede modificarse todavía."
+    );
+
+    return;
   }
 
-  if(!desired && state.allComplete && permission.index === state.total - 1){
-    const confirmation = await radarDialog({
-      title:"Reabrir proceso",
-      text:"Quitar el último check reabrirá el proceso y registrará el evento.",
-      confirmLabel:"Reabrir proceso"
-    });
-    if(!confirmation) return;
-    payload.confirmar_reapertura = true;
-    payload.comentario = confirmation.comentario;
+  if(
+    desired ===
+    currentValue
+  ){
+    return;
   }
 
-  if(checkboxEl) checkboxEl.disabled = true;
-  beginBackgroundSave("Guardando avance…");
+  /*
+   * ======================================================
+   * CHECK INTERMEDIO
+   * ======================================================
+   *
+   * NO espera al servidor.
+   * NO muestra overlay.
+   * NO ejecuta Bootstrap.
+   *
+   * La intención queda en la
+   * cola persistente V3.
+   */
+  if(
+    permission.action ===
+      "check" ||
+    permission.action ===
+      "uncheck"
+  ){
+    activity.completado =
+      desired;
 
-  try{
-    await api("update_activity", payload);
-    applyBootstrapData(await api("bootstrap"));
-    render();
-    finishBackgroundSave(true);
-  }catch(error){
-    console.error("Error actualizando actividad:", error);
+    if(
+      Object.prototype
+        .hasOwnProperty
+        .call(
+          activity,
+          "estado"
+        )
+    ){
+      activity.estado =
+        desired
+          ? "Completado"
+          : "Pendiente";
+    }
+
+    queueActivitySave(
+      actividadId,
+      desired
+    );
+
+    /*
+     * Recalcula visualmente avance,
+     * hitos y habilitación del último
+     * check sin esperar la API.
+     */
+    scheduleActivityUiRender();
+
+    return;
+  }
+
+  /*
+   * Las operaciones críticas
+   * NO quedan optimistas.
+   *
+   * El checkbox vuelve al estado
+   * anterior hasta que el servidor
+   * confirme.
+   */
+  if(checkboxEl){
+    checkboxEl.checked =
+      currentValue;
+  }
+
+  /*
+   * ======================================================
+   * INICIO
+   * ======================================================
+   */
+  if(
+    permission.action ===
+      "start"
+  ){
+    const confirmation =
+      await radarDialog({
+        title:
+          "Iniciar proceso",
+
+        text:
+          "El primer check registrará el inicio real del proceso.",
+
+        confirmLabel:
+          "Iniciar proceso"
+      });
+
+    if(!confirmation){
+      return;
+    }
+
+    showSyncLoading(
+      "Registrando inicio del proceso..."
+    );
+
     try{
-      if(SESSION) applyBootstrapData(await api("bootstrap"));
-    }catch(_){ }
-    if(SESSION) render();
-    finishBackgroundSave(false);
-    toast("No se pudo guardar el check: " + error.message);
+      await api(
+        "update_activity",
+        {
+          actividad_id:
+            actividadId,
+
+          completado:
+            true,
+
+          confirmar_inicio:
+            true,
+
+          comentario:
+            confirmation
+              .comentario
+        }
+      );
+
+      applyBootstrapData(
+        await api(
+          "bootstrap"
+        )
+      );
+
+      render();
+
+      toast(
+        "Proceso iniciado."
+      );
+
+    }catch(error){
+      console.error(
+        "Error iniciando proceso:",
+        error
+      );
+
+      try{
+        if(SESSION){
+          applyBootstrapData(
+            await api(
+              "bootstrap"
+            )
+          );
+        }
+      }catch(_){}
+
+      if(SESSION){
+        render();
+      }
+
+      toast(
+        "No se pudo iniciar el proceso: " +
+        error.message
+      );
+
+    }finally{
+      hideSyncLoading();
+    }
+
+    return;
+  }
+
+  /*
+   * ======================================================
+   * CIERRE
+   * ======================================================
+   */
+  if(
+    permission.action ===
+      "close"
+  ){
+    const confirmation =
+      await radarDialog({
+        title:
+          "Cerrar proceso",
+
+        text:
+          "Todas las actividades anteriores están completas. El último check cerrará el proceso.",
+
+        requireClosureType:
+          true,
+
+        confirmLabel:
+          "Cerrar proceso"
+      });
+
+    if(!confirmation){
+      return;
+    }
+
+    showSyncLoading(
+      "Confirmando cierre del proceso..."
+    );
+
+    try{
+      /*
+       * Antes del CIERRE debemos
+       * garantizar que todos los
+       * checks intermedios pendientes
+       * ya recibieron ACK.
+       */
+      const queueSaved =
+        await waitForActivitySaveQueue();
+
+      if(!queueSaved){
+        throw new Error(
+          "Hay checks pendientes de sincronización. RADAR los conservará y reintentará automáticamente."
+        );
+      }
+
+      /*
+       * Recalcular después del ACK
+       * de la cola.
+       */
+      const currentState =
+        processSequenceState(
+          p.proceso_id
+        );
+
+      if(
+        !currentState
+          .allBeforeLastComplete
+      ){
+        throw new Error(
+          "Todavía existen actividades pendientes antes del cierre."
+        );
+      }
+
+      await api(
+        "update_activity",
+        {
+          actividad_id:
+            actividadId,
+
+          completado:
+            true,
+
+          confirmar_cierre:
+            true,
+
+          tipo_cierre:
+            confirmation
+              .tipo_cierre,
+
+          comentario:
+            confirmation
+              .comentario
+        }
+      );
+
+      applyBootstrapData(
+        await api(
+          "bootstrap"
+        )
+      );
+
+      render();
+
+      toast(
+        "Proceso cerrado."
+      );
+
+    }catch(error){
+      console.error(
+        "Error cerrando proceso:",
+        error
+      );
+
+      try{
+        if(SESSION){
+          applyBootstrapData(
+            await api(
+              "bootstrap"
+            )
+          );
+        }
+      }catch(_){}
+
+      if(SESSION){
+        render();
+      }
+
+      toast(
+        "No se pudo cerrar el proceso: " +
+        error.message
+      );
+
+    }finally{
+      hideSyncLoading();
+    }
+
+    return;
+  }
+
+  /*
+   * ======================================================
+   * REAPERTURA
+   * ======================================================
+   */
+  if(
+    permission.action ===
+      "reopen"
+  ){
+    const confirmation =
+      await radarDialog({
+        title:
+          "Reabrir proceso",
+
+        text:
+          "Desmarcar el último check reabrirá el proceso y registrará el evento.",
+
+        confirmLabel:
+          "Reabrir proceso"
+      });
+
+    if(!confirmation){
+      return;
+    }
+
+    showSyncLoading(
+      "Reabriendo proceso..."
+    );
+
+    try{
+      /*
+       * No debería haber cola pendiente
+       * en un proceso cerrado, pero
+       * sincronizamos cualquier cambio
+       * pendiente antes del evento crítico.
+       */
+      const queueSaved =
+        await waitForActivitySaveQueue();
+
+      if(!queueSaved){
+        throw new Error(
+          "Existen checks pendientes de sincronización."
+        );
+      }
+
+      await api(
+        "update_activity",
+        {
+          actividad_id:
+            actividadId,
+
+          completado:
+            false,
+
+          confirmar_reapertura:
+            true,
+
+          comentario:
+            confirmation
+              .comentario
+        }
+      );
+
+      applyBootstrapData(
+        await api(
+          "bootstrap"
+        )
+      );
+
+      render();
+
+      toast(
+        "Proceso reabierto."
+      );
+
+    }catch(error){
+      console.error(
+        "Error reabriendo proceso:",
+        error
+      );
+
+      try{
+        if(SESSION){
+          applyBootstrapData(
+            await api(
+              "bootstrap"
+            )
+          );
+        }
+      }catch(_){}
+
+      if(SESSION){
+        render();
+      }
+
+      toast(
+        "No se pudo reabrir el proceso: " +
+        error.message
+      );
+
+    }finally{
+      hideSyncLoading();
+    }
   }
 }
 
