@@ -1709,7 +1709,10 @@ function installActivitySaveGuards(){
   );
 }
 
-async function api(action, payload = {}){
+async function api(
+  action,
+  payload = {}
+){
   if(!apiReady()){
     throw new Error(
       "API de RADAR no configurada."
@@ -1741,15 +1744,20 @@ async function api(action, payload = {}){
   let response;
 
   try{
+    /*
+     * No forzar redirect.
+     *
+     * fetch ya sigue las
+     * redirecciones por defecto
+     * y este era el comportamiento
+     * estable del RADAR.
+     */
     response =
       await fetch(
         API_URL,
         {
           method:
             "POST",
-
-          redirect:
-            "follow",
 
           headers: {
             "Content-Type":
@@ -1785,12 +1793,16 @@ async function api(action, payload = {}){
     );
   }
 
-  if(!response.ok){
-    throw new Error(
-      `RADAR respondió HTTP ${response.status}.`
-    );
-  }
-
+  /*
+   * IMPORTANTE:
+   *
+   * Primero intentamos interpretar
+   * la respuesta real del Web App.
+   *
+   * No descartamos inmediatamente
+   * la respuesta únicamente por
+   * response.ok.
+   */
   let json;
 
   try{
@@ -1798,6 +1810,13 @@ async function api(action, payload = {}){
       await response.json();
 
   }catch(error){
+
+    if(!response.ok){
+      throw new Error(
+        `RADAR respondió HTTP ${response.status}.`
+      );
+    }
+
     throw new Error(
       "RADAR devolvió una respuesta no válida."
     );
@@ -1831,17 +1850,7 @@ async function api(action, payload = {}){
   return json.data;
 }
 
-
-/*
- * Escritura de contingencia.
- *
- * Solo debe utilizarse cuando:
- * 1. el navegador rechaza la respuesta
- *    cross-origin del Web App;
- * 2. la operación es idempotente;
- * 3. después se verifica mediante
- *    Bootstrap autenticado.
- */
+  
 async function apiOpaqueWrite(
   action,
   payload = {}
