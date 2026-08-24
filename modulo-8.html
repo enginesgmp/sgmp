@@ -2586,24 +2586,114 @@ function openMacro(macroId){
   window.scrollTo({top:0, behavior:"smooth"});
 }
 
-function openProcess(procesoId, from = null){
+function openProcess(
+  procesoId,
+  from = null
+){
+  let origin =
+    from;
+
+  if(!origin){
+    if(
+      isAdmin() &&
+      VIEW.type === "admin"
+    ){
+      origin = {
+        type:
+          "admin",
+
+        tab:
+          adminTab()
+      };
+
+    }else if(
+      VIEW.type === "macro"
+    ){
+      origin = {
+        type:
+          "macro",
+
+        id:
+          VIEW.id
+      };
+
+    }else{
+      origin =
+        {...VIEW};
+    }
+  }
+
   VIEW = {
-    type:"process",
-    id:procesoId,
-    from: from || (VIEW.type === "macro" ? {type:"macro", id:VIEW.id} : {...VIEW})
+    type:
+      "process",
+
+    id:
+      procesoId,
+
+    from:
+      origin
   };
+
   render();
-  window.scrollTo({top:0, behavior:"smooth"});
+
+  window.scrollTo({
+    top:
+      0,
+
+    behavior:
+      "smooth"
+  });
 }
 
 function backFromProcess(){
-  const from = VIEW?.from;
+  const from =
+    VIEW?.from;
+
   if(isAdmin()){
-    VIEW = {type:"admin"};
-    ADMIN_CONTROL_STATE = {...(ADMIN_CONTROL_STATE||{}),tab:"processes"};
-  }else if(from?.type === "macro") VIEW = {type:"macro", id:from.id};
-  else if(from?.type === "analyst") VIEW = {type:"analyst"};
-  else VIEW = {type:"home"};
+    VIEW = {
+      type:
+        "admin"
+    };
+
+    ADMIN_CONTROL_STATE = {
+      ...(
+        ADMIN_CONTROL_STATE ||
+        {}
+      ),
+
+      tab:
+        from?.type === "admin" &&
+        from?.tab
+          ? from.tab
+          : "processes"
+    };
+
+  }else if(
+    from?.type === "macro"
+  ){
+    VIEW = {
+      type:
+        "macro",
+
+      id:
+        from.id
+    };
+
+  }else if(
+    from?.type === "analyst"
+  ){
+    VIEW = {
+      type:
+        "analyst"
+    };
+
+  }else{
+    VIEW = {
+      type:
+        "home"
+    };
+  }
+
   render();
 }
 
@@ -4115,12 +4205,17 @@ function adminNavIcon(id){
 
 function adminTabMeta(tab){
   const map = {
-    dashboard:[
-      "Dashboard",
-      "Visión ejecutiva, alertas y calidad del plan."
-    ],
+dashboard:[
+  "Dashboard",
+  "Visión ejecutiva, alertas y calidad del plan."
+],
 
-    processes:[
+myprocesses:[
+  "Mis procesos",
+  "Procesos asignados directamente a mi usuario."
+],
+
+processes:[
       "Procesos",
       "Gestión, planificación y edición del maestro de procesos."
     ],
@@ -4160,9 +4255,10 @@ function adminTabMeta(tab){
 }
 
 function renderAdminShell(content, activeTab = "dashboard"){
-  const tabs = [
-    ["dashboard","Dashboard","Resumen y alertas"],
-    ["processes","Procesos","Gestión y planificación"],
+const tabs = [
+  ["dashboard","Dashboard","Resumen y alertas"],
+  ["myprocesses","Mis procesos","Asignados a mí"],
+  ["processes","Procesos","Gestión y planificación"],
     ["gantt","Gantt","Cronograma"],
     ["loads","Cargas","Analistas y líderes"],
     ["reports","Reportes","Onepages"],
@@ -4223,11 +4319,15 @@ function renderAdminWorkspace(){
 }
 
 function renderAdminTab(tab){
-  if(tab === "dashboard"){
-    return renderAdminDashboard();
-  }
+if(tab === "dashboard"){
+  return renderAdminDashboard();
+}
 
-  if(tab === "processes"){
+if(tab === "myprocesses"){
+  return renderAdminMyProcesses();
+}
+
+if(tab === "processes"){
     return renderAdminProcesses();
   }
 
@@ -4364,6 +4464,129 @@ function renderAdminDashboard(){
 }
 
 
+function renderAdminMyProcesses(){
+  const username =
+    String(
+      SESSION?.username || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const processes =
+    activeProcesses()
+      .filter(
+        p =>
+          String(
+            p.analista_user || ""
+          )
+            .trim()
+            .toLowerCase() ===
+          username
+      )
+      .sort(
+        processSort
+      );
+
+  const states =
+    countStates(
+      processes
+    );
+
+  return `
+    <section class="hero">
+      <div class="page-heading">
+        <div>
+          <div class="page-kicker">
+            Mi RADAR
+          </div>
+
+          <h2 class="page-title">
+            Mis procesos
+          </h2>
+
+          <p class="sub">
+            Procesos asignados directamente a mi usuario.
+          </p>
+        </div>
+      </div>
+
+      ${renderProgress(
+        "Avance de mis procesos",
+        globalAdvance(processes)
+      )}
+
+      <div class="state-summary-grid compact">
+        ${
+          [
+            "PLANIFICADO",
+            "EN CURSO",
+            "ATRASADO",
+            "CERRADO"
+          ]
+            .map(state => {
+              const meta =
+                stateMeta(state);
+
+              return `
+                <div
+                  class="state-summary-card ${meta.cls}"
+                >
+                  <span
+                    class="state-summary-symbol"
+                  >
+                    ${stateIconSvg(
+                      state,
+                      "lg"
+                    )}
+                  </span>
+
+                  <div>
+                    <b>
+                      ${states[state]}
+                    </b>
+
+                    <span>
+                      ${esc(meta.label)}
+                    </span>
+                  </div>
+                </div>
+              `;
+            })
+            .join("")
+        }
+      </div>
+    </section>
+
+    <div class="section-title">
+      <div>
+        <h2>Procesos asignados</h2>
+
+        <p class="meta">
+          Ordenados por prioridad operativa.
+        </p>
+      </div>
+    </div>
+
+    <div class="list">
+      ${
+        processes.length
+          ? processes
+              .map(
+                processRow
+              )
+              .join("")
+          : `
+            <div class="card">
+              <b>
+                No tienes procesos asignados.
+              </b>
+            </div>
+          `
+      }
+    </div>
+  `;
+}
+
 function adminDashboardProcessRow(p){
   const macro = macroById(p.macro_id);
   const type = processMacroType(p);
@@ -4420,10 +4643,44 @@ function adminAttentionRow(p){
 }
 
 function activeAnalystUsers(){
-  return (DATA.usuarios || [])
-    .filter(u => String(u.rol || "").trim().toLowerCase() === "analista")
-    .filter(u => String(u.estado || "ACTIVO").trim().toUpperCase() === "ACTIVO")
-    .sort((a,b) => String(a.nombre || a.username).localeCompare(String(b.nombre || b.username), "es"));
+  return (
+    DATA.usuarios || []
+  )
+    .filter(u => {
+      const role =
+        String(
+          u.rol || ""
+        )
+          .trim()
+          .toLowerCase();
+
+      return (
+        role === "analista" ||
+        role === "admin"
+      );
+    })
+    .filter(
+      u =>
+        String(
+          u.estado || "ACTIVO"
+        )
+          .trim()
+          .toUpperCase() ===
+        "ACTIVO"
+    )
+    .sort(
+      (a,b) =>
+        String(
+          a.nombre ||
+          a.username
+        ).localeCompare(
+          String(
+            b.nombre ||
+            b.username
+          ),
+          "es"
+        )
+    );
 }
 
 function activeMacroprocesses(){
