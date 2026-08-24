@@ -1711,41 +1711,57 @@ function installActivitySaveGuards(){
 
 async function api(action, payload = {}){
   if(!apiReady()){
-    throw new Error("API de RADAR no configurada.");
+    throw new Error(
+      "API de RADAR no configurada."
+    );
   }
 
-  const isLogin = action === "login";
+  const isLogin =
+    action === "login";
 
-  if(!isLogin && !SESSION?.session_token){
-    throw new Error("SESION_REQUERIDA");
+  if(
+    !isLogin &&
+    !SESSION?.session_token
+  ){
+    throw new Error(
+      "SESION_REQUERIDA"
+    );
   }
 
-  const requestBody = {action, payload};
+  const requestBody = {
+    action,
+    payload
+  };
 
   if(!isLogin){
-    requestBody.session_token = SESSION.session_token;
+    requestBody.session_token =
+      SESSION.session_token;
   }
 
   let response;
 
   try{
-    response = await fetch(
-      API_URL,
-      {
-        method:
-          "POST",
+    response =
+      await fetch(
+        API_URL,
+        {
+          method:
+            "POST",
 
-        headers: {
-          "Content-Type":
-            "text/plain;charset=utf-8"
-        },
+          redirect:
+            "follow",
 
-        body:
-          JSON.stringify(
-            requestBody
-          )
-      }
-    );
+          headers: {
+            "Content-Type":
+              "text/plain;charset=utf-8"
+          },
+
+          body:
+            JSON.stringify(
+              requestBody
+            )
+        }
+      );
 
   }catch(error){
     console.error(
@@ -1770,34 +1786,138 @@ async function api(action, payload = {}){
   }
 
   if(!response.ok){
-    throw new Error(`RADAR respondió HTTP ${response.status}.`);
+    throw new Error(
+      `RADAR respondió HTTP ${response.status}.`
+    );
   }
 
   let json;
 
   try{
-    json = await response.json();
+    json =
+      await response.json();
+
   }catch(error){
-    throw new Error("RADAR devolvió una respuesta no válida.");
+    throw new Error(
+      "RADAR devolvió una respuesta no válida."
+    );
   }
 
   if(!json.ok){
-    const message = String(json.error || "Error API").trim();
+    const message =
+      String(
+        json.error ||
+        "Error API"
+      ).trim();
 
-    if(isRadarSessionError(message)){
+    if(
+      isRadarSessionError(
+        message
+      )
+    ){
       forceRadarRelogin(
-        message === "SESION_EXPIRADA"
+        message ===
+          "SESION_EXPIRADA"
           ? "La sesión expiró. Ingrese nuevamente."
           : "La sesión ya no es válida. Ingrese nuevamente."
       );
     }
 
-    throw new Error(message);
+    throw new Error(
+      message
+    );
   }
 
   return json.data;
 }
 
+
+/*
+ * Escritura de contingencia.
+ *
+ * Solo debe utilizarse cuando:
+ * 1. el navegador rechaza la respuesta
+ *    cross-origin del Web App;
+ * 2. la operación es idempotente;
+ * 3. después se verifica mediante
+ *    Bootstrap autenticado.
+ */
+async function apiOpaqueWrite(
+  action,
+  payload = {}
+){
+  if(!apiReady()){
+    throw new Error(
+      "API de RADAR no configurada."
+    );
+  }
+
+  if(
+    !SESSION?.session_token
+  ){
+    throw new Error(
+      "SESION_REQUERIDA"
+    );
+  }
+
+  const requestBody = {
+    action:
+      action,
+
+    payload:
+      payload,
+
+    session_token:
+      SESSION.session_token
+  };
+
+  try{
+    await fetch(
+      API_URL,
+      {
+        method:
+          "POST",
+
+        mode:
+          "no-cors",
+
+        redirect:
+          "follow",
+
+        headers: {
+          "Content-Type":
+            "text/plain;charset=utf-8"
+        },
+
+        body:
+          JSON.stringify(
+            requestBody
+          )
+      }
+    );
+
+    return true;
+
+  }catch(error){
+    console.error(
+      "RADAR · escritura de contingencia fallida",
+      {
+        action:
+          action,
+
+        name:
+          error?.name || "",
+
+        message:
+          error?.message || ""
+      }
+    );
+
+    throw new Error(
+      "RADAR no pudo transmitir la escritura."
+    );
+  }
+}
 function toast(message){
   const el = $("toast");
   if(!el) return;
@@ -5795,6 +5915,7 @@ async function adminSaveMacroprocess(){
     toast(
       "Código y nombre son requeridos."
     );
+
     return;
   }
 
@@ -5803,6 +5924,13 @@ async function adminSaveMacroprocess(){
       macroId
   };
 
+  /*
+   * NUEVO:
+   * enviar todos los datos.
+   *
+   * EXISTENTE:
+   * solamente los campos modificados.
+   */
   if(!macroId){
     Object.assign(
       payload,
@@ -5819,6 +5947,7 @@ async function adminSaveMacroprocess(){
       toast(
         "Macroproceso no encontrado."
       );
+
       return;
     }
 
@@ -5873,8 +6002,9 @@ async function adminSaveMacroprocess(){
     });
 
     if(
-      Object.keys(payload).length ===
-      1
+      Object.keys(
+        payload
+      ).length === 1
     ){
       closeAdminModal();
 
@@ -5902,19 +6032,218 @@ async function adminSaveMacroprocess(){
       "Guardando...";
   }
 
-  try{
-    /*
-     * UNA SOLA llamada crítica.
-     *
-     * No hacemos Bootstrap dentro
-     * del guardado.
-     */
-    const result =
-      await api(
-        "upsert_macroprocess",
-        payload
-      );
+  /*
+   * Comparar únicamente los campos
+   * realmente enviados.
+   */
+  const macroMatchesPayload =
+    macro => {
+      if(!macro){
+        return false;
+      }
 
+      return Object
+        .keys(payload)
+        .filter(
+          field =>
+            field !==
+            "macro_id"
+        )
+        .every(field => {
+          if(
+            field ===
+            "orden"
+          ){
+            return (
+              Number(
+                macro[field] || 0
+              ) ===
+              Number(
+                payload[field] || 0
+              )
+            );
+          }
+
+          const left =
+            String(
+              macro[field] ?? ""
+            ).trim();
+
+          const right =
+            String(
+              payload[field] ?? ""
+            ).trim();
+
+          if(
+            field ===
+              "codigo_macro" ||
+            field ===
+              "tipo_macroproceso" ||
+            field ===
+              "estado"
+          ){
+            return (
+              left.toUpperCase() ===
+              right.toUpperCase()
+            );
+          }
+
+          return (
+            left === right
+          );
+        });
+    };
+
+  try{
+    let result =
+      null;
+
+    try{
+      /*
+       * PRIMER INTENTO:
+       * API normal con respuesta JSON.
+       */
+      result =
+        await api(
+          "upsert_macroprocess",
+          payload
+        );
+
+    }catch(error){
+      const transportFailure =
+        String(
+          error?.message || ""
+        ).includes(
+          "No fue posible conectar con RADAR al ejecutar upsert_macroprocess"
+        );
+
+      if(
+        !transportFailure
+      ){
+        throw error;
+      }
+
+      /*
+       * IMPORTANTE:
+       *
+       * Un error CORS puede ocurrir
+       * después de que Apps Script
+       * ya ejecutó la escritura.
+       *
+       * Antes de retransmitir,
+       * comprobar Sheets mediante
+       * Bootstrap.
+       */
+      let alreadyPersisted =
+        false;
+
+      try{
+        const fresh =
+          await api(
+            "bootstrap"
+          );
+
+        applyBootstrapData(
+          fresh
+        );
+
+        const persisted =
+          macroById(
+            macroId
+          );
+
+        alreadyPersisted =
+          Boolean(
+            macroId &&
+            macroMatchesPayload(
+              persisted
+            )
+          );
+
+        if(alreadyPersisted){
+          result =
+            persisted;
+        }
+
+      }catch(verifyError){
+        console.warn(
+          "RADAR no pudo verificar inmediatamente la primera escritura:",
+          verifyError
+        );
+      }
+
+      /*
+       * Si ya quedó escrito,
+       * NO retransmitir.
+       */
+      if(!alreadyPersisted){
+
+        /*
+         * Para creación nueva no usamos
+         * escritura opaca automáticamente:
+         * podría crear un duplicado si la
+         * primera petición sí llegó.
+         */
+        if(!macroId){
+          throw new Error(
+            "RADAR no pudo confirmar la creación del macroproceso. Actualice los datos antes de volver a intentarlo."
+          );
+        }
+
+        /*
+         * Macro EXISTENTE:
+         * actualizar los mismos campos
+         * es una operación idempotente.
+         */
+        await apiOpaqueWrite(
+          "upsert_macroprocess",
+          payload
+        );
+
+        /*
+         * VERIFICACIÓN OBLIGATORIA.
+         */
+        const verifiedBootstrap =
+          await api(
+            "bootstrap"
+          );
+
+        applyBootstrapData(
+          verifiedBootstrap
+        );
+
+        const verifiedMacro =
+          macroById(
+            macroId
+          );
+
+        if(
+          !macroMatchesPayload(
+            verifiedMacro
+          )
+        ){
+          throw new Error(
+            "RADAR transmitió el cambio, pero la información no quedó persistida en el macroproceso."
+          );
+        }
+
+        result =
+          verifiedMacro;
+      }
+    }
+
+    if(
+      !result
+    ){
+      throw new Error(
+        "RADAR no confirmó el macroproceso actualizado."
+      );
+    }
+
+    /*
+     * Confirmación adicional
+     * de clasificación.
+     */
     if(
       Object.prototype
         .hasOwnProperty
@@ -5925,7 +6254,7 @@ async function adminSaveMacroprocess(){
     ){
       const confirmed =
         String(
-          result?.tipo_macroproceso || ""
+          result.tipo_macroproceso || ""
         )
           .trim()
           .toUpperCase();
@@ -5935,13 +6264,15 @@ async function adminSaveMacroprocess(){
         values.tipo_macroproceso
       ){
         throw new Error(
-          "RADAR no confirmó la clasificación seleccionada."
+          "La clasificación no quedó persistida con el valor seleccionado."
         );
       }
     }
 
     /*
-     * Actualización local inmediata.
+     * Si el primer intento normal
+     * respondió correctamente,
+     * actualizar memoria local.
      */
     const existing =
       macroById(
@@ -5968,12 +6299,8 @@ async function adminSaveMacroprocess(){
       "Macroproceso guardado."
     );
 
-    /*
-     * Bootstrap posterior,
-     * silencioso y no bloqueante.
-     */
     scheduleQuietBootstrap(
-      500
+      700
     );
 
   }catch(error){
