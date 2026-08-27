@@ -1925,83 +1925,6 @@ async function api(
   return json.data;
 }
 
-  
-async function apiOpaqueWrite(
-  action,
-  payload = {}
-){
-  if(!apiReady()){
-    throw new Error(
-      "API de RADAR no configurada."
-    );
-  }
-
-  if(
-    !SESSION?.session_token
-  ){
-    throw new Error(
-      "SESION_REQUERIDA"
-    );
-  }
-
-  const requestBody = {
-    action:
-      action,
-
-    payload:
-      payload,
-
-    session_token:
-      SESSION.session_token
-  };
-
-  try{
-    await fetch(
-      API_URL,
-      {
-        method:
-          "POST",
-
-        mode:
-          "no-cors",
-
-        redirect:
-          "follow",
-
-        headers: {
-          "Content-Type":
-            "text/plain;charset=utf-8"
-        },
-
-        body:
-          JSON.stringify(
-            requestBody
-          )
-      }
-    );
-
-    return true;
-
-  }catch(error){
-    console.error(
-      "RADAR · escritura de contingencia fallida",
-      {
-        action:
-          action,
-
-        name:
-          error?.name || "",
-
-        message:
-          error?.message || ""
-      }
-    );
-
-    throw new Error(
-      "RADAR no pudo transmitir la escritura."
-    );
-  }
-}
 function toast(message){
   const el = $("toast");
   if(!el) return;
@@ -4587,61 +4510,37 @@ function setAdminTab(tab){
 }
 
 function renderAdminWorkspace(){
-  if(!isAdmin()) return renderExecutiveHome();
-  VIEW = {type:"admin"};
-  const tab = adminTab();
-  $("subtitle").textContent = "Administración del plan de procesos";
-  $("main").innerHTML = renderAdminShell(renderAdminTab(tab), tab);
-  if(tab === "reports") requestAnimationFrame(fitAdminReportPreview);
-}
-
-function renderAdminTab(tab){
-if(tab === "dashboard"){
-  return renderAdminDashboard();
-}
-
-if(tab === "myprocesses"){
-  return renderAdminMyProcesses();
-}
-
-if(tab === "processes"){
-    return renderAdminProcesses();
+  if(!isAdmin()){
+    return renderExecutiveHome();
   }
 
-  if(tab === "gantt"){
-    return renderAdminGantt();
-  }
+  VIEW = {
+    type:"admin"
+  };
 
-  if(tab === "loads"){
-    return renderAdminLoads();
-  }
+  const tab =
+    adminTab();
+
+  $("subtitle").textContent =
+    "Administración del plan de procesos";
+
+  $("main").innerHTML =
+    renderAdminShell(
+      renderAdminTab(tab),
+      tab
+    );
 
   if(tab === "reports"){
-    return renderAdminReports();
+    requestAnimationFrame(
+      fitAdminReportPreview
+    );
   }
 
-  if(tab === "users"){
-    return renderAdminUsers();
+  if(tab === "processes"){
+    requestAnimationFrame(
+      filterAdminProcessMaster
+    );
   }
-
-  if(tab === "macros"){
-    return renderAdminMacroprocesses();
-  }
-
-  if(tab === "config"){
-    return renderAdminConfig();
-  }
-
-  /*
-   * Compatibilidad temporal:
-   * si una vista antigua intenta
-   * abrir "matrix", enviarla a Procesos.
-   */
-  if(tab === "matrix"){
-    return renderAdminProcesses();
-  }
-
-  return renderAdminDashboard();
 }
 
 function adminDashboardStats(){
@@ -5095,56 +4994,220 @@ async function adminSaveProcess(){
   if(!codigo) return toast("Ingrese el código empresarial.");
   if(!nombre) return toast("Ingrese el nombre del proceso.");
   if(!macroId) return toast("Seleccione el macroproceso.");
-  if(semanaInicio && (!Number.isInteger(Number(semanaInicio)) || Number(semanaInicio) < 1 || Number(semanaInicio) > 53)) return toast("Semana inicio debe estar entre 1 y 53.");
-  if(semanaEntrega && (!Number.isInteger(Number(semanaEntrega)) || Number(semanaEntrega) < 1 || Number(semanaEntrega) > 53)) return toast("Semana entrega debe estar entre 1 y 53.");
-  if(startSource === "date" && endSource === "date" && fechaInicioPlan && fechaFinPlan && fechaInicioPlan > fechaFinPlan) return toast("La fecha de inicio no puede ser posterior a la fecha de fin.");
 
-  beginBackgroundSave("Guardando proceso…");
+  if(
+    semanaInicio &&
+    (
+      !Number.isInteger(Number(semanaInicio)) ||
+      Number(semanaInicio) < 1 ||
+      Number(semanaInicio) > 53
+    )
+  ){
+    return toast(
+      "Semana inicio debe estar entre 1 y 53."
+    );
+  }
+
+  if(
+    semanaEntrega &&
+    (
+      !Number.isInteger(Number(semanaEntrega)) ||
+      Number(semanaEntrega) < 1 ||
+      Number(semanaEntrega) > 53
+    )
+  ){
+    return toast(
+      "Semana entrega debe estar entre 1 y 53."
+    );
+  }
+
+  if(
+    startSource === "date" &&
+    endSource === "date" &&
+    fechaInicioPlan &&
+    fechaFinPlan &&
+    fechaInicioPlan > fechaFinPlan
+  ){
+    return toast(
+      "La fecha de inicio no puede ser posterior a la fecha de fin."
+    );
+  }
+
+  beginBackgroundSave(
+    "Guardando proceso…"
+  );
+
   try{
     const payload = {
-      proceso_id:procesoId,
-      codigo_proceso:codigo,
-      nombre_proceso:nombre,
-      macro_id:macroId,
-      analista_user:analistaUser,
+      proceso_id:
+        procesoId,
+
+      codigo_proceso:
+        codigo,
+
+      nombre_proceso:
+        nombre,
+
+      macro_id:
+        macroId,
+
+      analista_user:
+        analistaUser,
+
       lider,
       criticidad,
-      origen_proceso:origen,
+
+      origen_proceso:
+        origen,
+
       finalidad,
       observacion,
       activo
     };
 
+    if(
+      startSource === "week" &&
+      semanaInicio
+    ){
+      payload.semana_inicio =
+        Number(semanaInicio);
+
+    }else if(
+      startSource === "date" &&
+      fechaInicioPlan
+    ){
+      payload.fecha_inicio_plan =
+        fechaInicioPlan;
+
+    }else if(isNew){
+      if(fechaInicioPlan){
+        payload.fecha_inicio_plan =
+          fechaInicioPlan;
+
+      }else if(semanaInicio){
+        payload.semana_inicio =
+          Number(semanaInicio);
+      }
+    }
+
+    if(
+      endSource === "week" &&
+      semanaEntrega
+    ){
+      payload.semana_entrega =
+        Number(semanaEntrega);
+
+    }else if(
+      endSource === "date" &&
+      fechaFinPlan
+    ){
+      payload.fecha_fin_plan =
+        fechaFinPlan;
+
+    }else if(isNew){
+      if(fechaFinPlan){
+        payload.fecha_fin_plan =
+          fechaFinPlan;
+
+      }else if(semanaEntrega){
+        payload.semana_entrega =
+          Number(semanaEntrega);
+      }
+    }
+
+    const result =
+      await api(
+        "upsert_process_master",
+        payload
+      );
+
+    const savedProcessId =
+      String(
+        result?.proceso_id ||
+        procesoId ||
+        ""
+      ).trim();
+
+    if(!savedProcessId){
+      throw new Error(
+        "RADAR no confirmó el proceso guardado."
+      );
+    }
+
     /*
-     * El backend V3 sincroniza semana ↔ fecha. En edición enviamos únicamente
-     * el campo que el usuario modificó para no pisar una nueva semana con la fecha anterior.
+     * Primera confirmación:
+     * respuesta directa del backend.
      */
-    if(startSource === "week" && semanaInicio) payload.semana_inicio = Number(semanaInicio);
-    else if(startSource === "date" && fechaInicioPlan) payload.fecha_inicio_plan = fechaInicioPlan;
-    else if(isNew){
-      if(fechaInicioPlan) payload.fecha_inicio_plan = fechaInicioPlan;
-      else if(semanaInicio) payload.semana_inicio = Number(semanaInicio);
+    if(
+      String(
+        result?.macro_id || ""
+      ).trim() !==
+      macroId
+    ){
+      throw new Error(
+        "RADAR no confirmó la asignación del macroproceso seleccionado."
+      );
     }
 
-    if(endSource === "week" && semanaEntrega) payload.semana_entrega = Number(semanaEntrega);
-    else if(endSource === "date" && fechaFinPlan) payload.fecha_fin_plan = fechaFinPlan;
-    else if(isNew){
-      if(fechaFinPlan) payload.fecha_fin_plan = fechaFinPlan;
-      else if(semanaEntrega) payload.semana_entrega = Number(semanaEntrega);
+    /*
+     * Segunda confirmación:
+     * releer Bootstrap y verificar
+     * lo persistido realmente.
+     */
+    const fresh =
+      await api(
+        "bootstrap"
+      );
+
+    applyBootstrapData(
+      fresh
+    );
+
+    const persisted =
+      processById(
+        savedProcessId
+      );
+
+    if(
+      !persisted ||
+      String(
+        persisted.macro_id || ""
+      ).trim() !==
+      macroId
+    ){
+      throw new Error(
+        "El proceso se guardó, pero la asignación de macroproceso no quedó persistida."
+      );
     }
 
-    await api("upsert_process_master", payload);
     closeAdminModal();
-    applyBootstrapData(await api("bootstrap"));
-    ADMIN_CONTROL_STATE = {...(ADMIN_CONTROL_STATE || {}), tab:"processes"};
+
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      tab:"processes"
+    };
+
     renderAdminWorkspace();
-    finishBackgroundSave(true);
+
+    finishBackgroundSave(
+      true
+    );
+
+    toast(
+      "Proceso guardado."
+    );
+
   }catch(error){
-    finishBackgroundSave(false);
-    toast("No se pudo guardar: " + error.message);
+    finishBackgroundSave(
+      false
+    );
+
+    toast(
+      "No se pudo guardar: " +
+      error.message
+    );
   }
 }
-
 async function adminDeactivateProcess(procesoId){
   const p = processById(procesoId);
   if(!p) return;
@@ -5674,54 +5737,105 @@ function filterAdminProcessMaster(){
       "adminProcessActiveFilter"
     );
 
-  document
-    .querySelectorAll(
-      ".admin-process-master-row"
-    )
-    .forEach(row => {
+  const rows =
+    [
+      ...document.querySelectorAll(
+        ".admin-process-master-row"
+      )
+    ];
 
-      const visible =
-        (
-          !q ||
-          row.dataset.search
-            .includes(q)
-        ) &&
-        (
-          !states.length ||
-          states.includes(
-            row.dataset.state
-          )
-        ) &&
-        (
-          !macros.length ||
-          macros.includes(
-            row.dataset.macro
-          )
-        ) &&
-        (
-          !types.length ||
-          types.includes(
-            row.dataset.type
-          )
-        ) &&
-        (
-          !analysts.length ||
-          analysts.includes(
-            row.dataset.analyst
-          )
-        ) &&
-        (
-          !administrative.length ||
-          administrative.includes(
-            row.dataset.active
-          )
+  let visibleCount =
+    0;
+
+  rows.forEach(row => {
+    const visible =
+      (
+        !q ||
+        row.dataset.search
+          .includes(q)
+      ) &&
+      (
+        !states.length ||
+        states.includes(
+          row.dataset.state
+        )
+      ) &&
+      (
+        !macros.length ||
+        macros.includes(
+          row.dataset.macro
+        )
+      ) &&
+      (
+        !types.length ||
+        types.includes(
+          row.dataset.type
+        )
+      ) &&
+      (
+        !analysts.length ||
+        analysts.includes(
+          row.dataset.analyst
+        )
+      ) &&
+      (
+        !administrative.length ||
+        administrative.includes(
+          row.dataset.active
+        )
+      );
+
+    row.classList.toggle(
+      "hidden",
+      !visible
+    );
+
+    if(visible){
+      visibleCount++;
+    }
+  });
+
+  let counter =
+    $("adminProcessVisibleCount");
+
+  if(!counter){
+    const filterBar =
+      document.querySelector(
+        ".multi-filter-bar"
+      );
+
+    if(filterBar){
+      counter =
+        document.createElement(
+          "div"
         );
 
-      row.classList.toggle(
-        "hidden",
-        !visible
+      counter.id =
+        "adminProcessVisibleCount";
+
+      counter.className =
+        "meta";
+
+      counter.style.margin =
+        "-2px 0 10px";
+
+      counter.style.fontWeight =
+        "800";
+
+      counter.style.color =
+        "var(--ink-2)";
+
+      filterBar.insertAdjacentElement(
+        "afterend",
+        counter
       );
-    });
+    }
+  }
+
+  if(counter){
+    counter.textContent =
+      `Mostrando ${visibleCount} de ${rows.length} procesos`;
+  }
 }
 
 function adminUserForm(user = {}){
@@ -6008,13 +6122,6 @@ async function adminSaveMacroprocess(){
       macroId
   };
 
-  /*
-   * NUEVO:
-   * enviar todos los datos.
-   *
-   * EXISTENTE:
-   * solamente los campos modificados.
-   */
   if(!macroId){
     Object.assign(
       payload,
@@ -6116,248 +6223,45 @@ async function adminSaveMacroprocess(){
       "Guardando...";
   }
 
-  /*
-   * Comparar únicamente los campos
-   * realmente enviados.
-   */
-  const macroMatchesPayload =
-    macro => {
-      if(!macro){
-        return false;
-      }
-
-      return Object
-        .keys(payload)
-        .filter(
-          field =>
-            field !==
-            "macro_id"
-        )
-        .every(field => {
-          if(
-            field ===
-            "orden"
-          ){
-            return (
-              Number(
-                macro[field] || 0
-              ) ===
-              Number(
-                payload[field] || 0
-              )
-            );
-          }
-
-          const left =
-            String(
-              macro[field] ?? ""
-            ).trim();
-
-          const right =
-            String(
-              payload[field] ?? ""
-            ).trim();
-
-          if(
-            field ===
-              "codigo_macro" ||
-            field ===
-              "tipo_macroproceso" ||
-            field ===
-              "estado"
-          ){
-            return (
-              left.toUpperCase() ===
-              right.toUpperCase()
-            );
-          }
-
-          return (
-            left === right
-          );
-        });
-    };
-
   try{
-    let result =
-      null;
-
-    try{
-      /*
-       * PRIMER INTENTO:
-       * API normal con respuesta JSON.
-       */
-      result =
-        await api(
-          "upsert_macroprocess",
-          payload
-        );
-
-    }catch(error){
-      const transportFailure =
-        String(
-          error?.message || ""
-        ).includes(
-          "No fue posible conectar con RADAR al ejecutar upsert_macroprocess"
-        );
-
-      if(
-        !transportFailure
-      ){
-        throw error;
-      }
-
-      /*
-       * IMPORTANTE:
-       *
-       * Un error CORS puede ocurrir
-       * después de que Apps Script
-       * ya ejecutó la escritura.
-       *
-       * Antes de retransmitir,
-       * comprobar Sheets mediante
-       * Bootstrap.
-       */
-      let alreadyPersisted =
-        false;
-
-      try{
-        const fresh =
-          await api(
-            "bootstrap"
-          );
-
-        applyBootstrapData(
-          fresh
-        );
-
-        const persisted =
-          macroById(
-            macroId
-          );
-
-        alreadyPersisted =
-          Boolean(
-            macroId &&
-            macroMatchesPayload(
-              persisted
-            )
-          );
-
-        if(alreadyPersisted){
-          result =
-            persisted;
-        }
-
-      }catch(verifyError){
-        console.warn(
-          "RADAR no pudo verificar inmediatamente la primera escritura:",
-          verifyError
-        );
-      }
-
-      /*
-       * Si ya quedó escrito,
-       * NO retransmitir.
-       */
-      if(!alreadyPersisted){
-
-        /*
-         * Para creación nueva no usamos
-         * escritura opaca automáticamente:
-         * podría crear un duplicado si la
-         * primera petición sí llegó.
-         */
-        if(!macroId){
-          throw new Error(
-            "RADAR no pudo confirmar la creación del macroproceso. Actualice los datos antes de volver a intentarlo."
-          );
-        }
-
-        /*
-         * Macro EXISTENTE:
-         * actualizar los mismos campos
-         * es una operación idempotente.
-         */
-        await apiOpaqueWrite(
-          "upsert_macroprocess",
-          payload
-        );
-
-        /*
-         * VERIFICACIÓN OBLIGATORIA.
-         */
-        const verifiedBootstrap =
-          await api(
-            "bootstrap"
-          );
-
-        applyBootstrapData(
-          verifiedBootstrap
-        );
-
-        const verifiedMacro =
-          macroById(
-            macroId
-          );
-
-        if(
-          !macroMatchesPayload(
-            verifiedMacro
-          )
-        ){
-          throw new Error(
-            "RADAR transmitió el cambio, pero la información no quedó persistida en el macroproceso."
-          );
-        }
-
-        result =
-          verifiedMacro;
-      }
-    }
+    /*
+     * ÚNICA ruta de escritura.
+     * El backend devuelve únicamente
+     * después de confirmar Sheets.
+     */
+    const result =
+      await api(
+        "upsert_macroprocess",
+        payload
+      );
 
     if(
-      !result
+      !result?.macro_id
     ){
       throw new Error(
-        "RADAR no confirmó el macroproceso actualizado."
+        "RADAR no confirmó el macroproceso guardado."
       );
     }
 
-    /*
-     * Confirmación adicional
-     * de clasificación.
-     */
     if(
       Object.prototype
         .hasOwnProperty
         .call(
           payload,
           "tipo_macroproceso"
-        )
+        ) &&
+      String(
+        result.tipo_macroproceso || ""
+      )
+        .trim()
+        .toUpperCase() !==
+      values.tipo_macroproceso
     ){
-      const confirmed =
-        String(
-          result.tipo_macroproceso || ""
-        )
-          .trim()
-          .toUpperCase();
-
-      if(
-        confirmed !==
-        values.tipo_macroproceso
-      ){
-        throw new Error(
-          "La clasificación no quedó persistida con el valor seleccionado."
-        );
-      }
+      throw new Error(
+        "La clasificación no fue confirmada por RADAR."
+      );
     }
 
-    /*
-     * Si el primer intento normal
-     * respondió correctamente,
-     * actualizar memoria local.
-     */
     const existing =
       macroById(
         result.macro_id
