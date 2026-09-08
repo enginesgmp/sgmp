@@ -3137,7 +3137,10 @@ function renderExecutiveAttention(processes){
 }
 
 function executiveState(){
-  if(!EXECUTIVE_STATE || typeof EXECUTIVE_STATE !== "object"){
+  if(
+    !EXECUTIVE_STATE ||
+    typeof EXECUTIVE_STATE !== "object"
+  ){
     EXECUTIVE_STATE = {};
   }
 
@@ -3147,9 +3150,63 @@ function executiveState(){
       : "portfolio";
 
   EXECUTIVE_STATE.zoom =
-    [3,6,12].includes(Number(EXECUTIVE_STATE.zoom))
-      ? Number(EXECUTIVE_STATE.zoom)
+    [3,6,12].includes(
+      Number(
+        EXECUTIVE_STATE.zoom
+      )
+    )
+      ? Number(
+          EXECUTIVE_STATE.zoom
+        )
       : 3;
+
+  /*
+   * Estados visibles por defecto:
+   *
+   * - Planificado
+   * - En curso
+   * - Atrasado
+   *
+   * Cerrado queda disponible
+   * para selección explícita.
+   *
+   * [] significa "Todos".
+   */
+  if(
+    !Array.isArray(
+      EXECUTIVE_STATE.states
+    )
+  ){
+    EXECUTIVE_STATE.states = [
+      "PLANIFICADO",
+      "EN CURSO",
+      "ATRASADO"
+    ];
+
+  }else{
+    const allowedStates =
+      [
+        "PLANIFICADO",
+        "EN CURSO",
+        "ATRASADO",
+        "CERRADO"
+      ];
+
+    EXECUTIVE_STATE.states =
+      EXECUTIVE_STATE.states
+        .map(
+          value =>
+            String(value || "")
+              .trim()
+              .toUpperCase()
+        )
+        .filter(
+          value =>
+            allowedStates.includes(
+              value
+            )
+        );
+  }
 
   return EXECUTIVE_STATE;
 }
@@ -3312,16 +3369,61 @@ function rememberExecutiveGanttScroll(){
   }
 }
 
+
+function filterExecutiveGanttStates(){
+  const allowedStates =
+    [
+      "PLANIFICADO",
+      "EN CURSO",
+      "ATRASADO",
+      "CERRADO"
+    ];
+
+  const selected =
+    getMultiFilterValues(
+      "executiveGanttStateFilter"
+    )
+      .map(
+        value =>
+          String(value || "")
+            .trim()
+            .toUpperCase()
+      )
+      .filter(
+        value =>
+          allowedStates.includes(value)
+      );
+
+  rememberExecutiveGanttScroll();
+
+  executiveState().states =
+    selected;
+
+  renderExecutiveHome();
+}
+
+
 function shiftExecutiveGantt(direction){
   const metrics =
     executiveGanttMetrics();
 
   if(!metrics) return;
 
+  /*
+   * Navegación y zoom son independientes.
+   *
+   * Cada clic desplaza exactamente
+   * 1/12 del eje anual = aproximadamente
+   * un mes, independientemente de
+   * estar viendo 3M, 6M o Año.
+   */
+  const oneMonth =
+    metrics.trackWidth / 12;
+
   metrics.scroll.scrollBy({
     left:
       Number(direction || 0) *
-      metrics.visibleTrack,
+      oneMonth,
 
     behavior:
       "smooth"
@@ -3585,20 +3687,22 @@ function executiveGanttRow(p, range){
 }
 
 function renderExecutiveGantt(processes){
-  const defaultStates =
-    [
-      "PLANIFICADO",
-      "EN CURSO",
-      "ATRASADO"
-    ];
+  const selectedStates =
+    executiveState().states;
 
   const rows =
     processes
-      .filter(p =>
-        defaultStates.includes(
-          processState(p)
-        )
-      )
+      .filter(p => {
+        const state =
+          processState(p);
+
+        return (
+          !selectedStates.length ||
+          selectedStates.includes(
+            state
+          )
+        );
+      })
       .slice();
 
   const range =
@@ -3649,6 +3753,19 @@ function renderExecutiveGantt(processes){
 
         <div class="executive-gantt-toolbar-actions">
 
+          ${multiFilter(
+            "executiveGanttStateFilter",
+            "Estado",
+            [
+              "PLANIFICADO",
+              "EN CURSO",
+              "ATRASADO",
+              "CERRADO"
+            ],
+            "filterExecutiveGanttStates",
+            selectedStates
+          )}
+
           <div
             class="executive-gantt-nav"
             aria-label="Navegación temporal"
@@ -3658,8 +3775,8 @@ function renderExecutiveGantt(processes){
               class="btn ghost icon-only"
               type="button"
               onclick="shiftExecutiveGantt(-1)"
-              aria-label="Periodo anterior"
-              title="Periodo anterior"
+              aria-label="Mes anterior"
+              title="Mes anterior"
             >
               ‹
             </button>
@@ -3676,8 +3793,8 @@ function renderExecutiveGantt(processes){
               class="btn ghost icon-only"
               type="button"
               onclick="shiftExecutiveGantt(1)"
-              aria-label="Periodo siguiente"
-              title="Periodo siguiente"
+              aria-label="Mes siguiente"
+              title="Mes siguiente"
             >
               ›
             </button>
@@ -3692,11 +3809,23 @@ function renderExecutiveGantt(processes){
             ${[3,6,12].map(value => `
               <button
                 type="button"
-                class="${executiveGanttZoom() === value ? "active" : ""}"
+                class="${
+                  executiveGanttZoom() === value
+                    ? "active"
+                    : ""
+                }"
                 onclick="setExecutiveGanttZoom(${value})"
-                aria-pressed="${executiveGanttZoom() === value ? "true" : "false"}"
+                aria-pressed="${
+                  executiveGanttZoom() === value
+                    ? "true"
+                    : "false"
+                }"
               >
-                ${value === 12 ? "Año" : `${value}M`}
+                ${
+                  value === 12
+                    ? "Año"
+                    : `${value}M`
+                }
               </button>
             `).join("")}
 
@@ -3714,6 +3843,7 @@ function renderExecutiveGantt(processes){
         class="gantt-legend"
         aria-label="Leyenda del cronograma"
       >
+
         <span class="gantt-legend-item">
           <span class="gantt-legend-swatch"></span>
           Planificado
@@ -3730,12 +3860,20 @@ function renderExecutiveGantt(processes){
         </span>
 
         <span class="gantt-legend-item">
+          <span class="gantt-legend-swatch closed"></span>
+          Cerrado
+        </span>
+
+        <span class="gantt-legend-item">
           <span class="gantt-legend-today"></span>
           Hoy
         </span>
+
       </div>
 
-      <div class="gantt-shell executive-gantt-shell">
+      <div
+        class="gantt-shell executive-gantt-shell"
+      >
 
         <div
           class="gantt-scroll executive-gantt-scroll"
@@ -3755,19 +3893,23 @@ function renderExecutiveGantt(processes){
             <div id="executiveGanttRows">
 
               ${
-                rows
-                  .map(
-                    p =>
-                      executiveGanttRow(
-                        p,
-                        range
+                rows.length
+                  ? rows
+                      .map(
+                        p =>
+                          executiveGanttRow(
+                            p,
+                            range
+                          )
                       )
-                  )
-                  .join("")
-                ||
-                `<div class="card">
-                  <b>No hay procesos para mostrar.</b>
-                </div>`
+                      .join("")
+                  : `
+                    <div class="card">
+                      <b>
+                        No hay procesos para los estados seleccionados.
+                      </b>
+                    </div>
+                  `
               }
 
             </div>
