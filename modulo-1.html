@@ -14772,32 +14772,119 @@ function removeAsisDynamicRow(button, index){
 function readAsisRow(item){
   if(!item) return null;
 
-  const get = (sel) => item.querySelector(sel)?.value?.trim() || '';
+  const get = (sel) =>
+    item.querySelector(sel)?.value?.trim() || '';
 
-const type = normalizePromptAType(get('.a_type') || 'actividad');
-const isDecision = type === 'decision';
+  const index =
+    Number(
+      item.dataset.index
+    );
 
-const activity = {
-  name: get('.a_name'),
-  actor: get('.a_actor'),
-  type,
-  document: isDecision ? '' : get('.a_document'),
-  estimated_time: isDecision ? '' : get('.a_estimated_time'),
+  const previousActivity =
+    Number.isInteger(index) &&
+    index >= 0
+      ? JSON.parse(
+          JSON.stringify(
+            state.asis?.activities?.[index] ||
+            {}
+          )
+        )
+      : {};
 
-  previous: readActivityConnectionsFromRow(item, 'a_previous'),
-  next: readActivityConnectionsFromRow(item, 'a_next'),
+  const type =
+    normalizePromptAType(
+      get('.a_type') ||
+      previousActivity.type ||
+      'actividad'
+    );
 
-  inputs_used: isDecision ? [] : readActivityInputsFromRow(item),
-  outputs_generated: isDecision ? [] : readActivityOutputsFromRow(item),
+  const isDecision =
+    type === 'decision';
 
-  clarifying_notes: splitItems(get('.a_clarifying_notes')),
-  observations: get('.a_observations'),
+  /*
+   * Se parte de la actividad previa para conservar
+   * identidad y campos que LMP no edita directamente
+   * pero que pueden proceder de SIPOC Builder.
+   */
+  const activity =
+    Object.assign(
+      {},
+      previousActivity,
+      {
+        id:
+          normalizeContractString(
+            previousActivity.id ||
+            (
+              Number.isInteger(index)
+                ? 'A' + (index + 1)
+                : ''
+            )
+          ),
 
-  source: get('.a_source') || sourceRouteLabel(),
-  editable: true
-};
+        name:
+          get('.a_name'),
 
-  return activity.name ? activity : null;
+        actor:
+          get('.a_actor'),
+
+        type,
+
+        document:
+          isDecision
+            ? ''
+            : get('.a_document'),
+
+        estimated_time:
+          isDecision
+            ? ''
+            : get('.a_estimated_time'),
+
+        previous:
+          readActivityConnectionsFromRow(
+            item,
+            'a_previous'
+          ),
+
+        next:
+          readActivityConnectionsFromRow(
+            item,
+            'a_next'
+          ),
+
+        inputs_used:
+          isDecision
+            ? []
+            : readActivityInputsFromRow(
+                item
+              ),
+
+        outputs_generated:
+          isDecision
+            ? []
+            : readActivityOutputsFromRow(
+                item
+              ),
+
+        clarifying_notes:
+          splitItems(
+            get('.a_clarifying_notes')
+          ),
+
+        observations:
+          get('.a_observations'),
+
+        source:
+          get('.a_source') ||
+          previousActivity.source ||
+          sourceRouteLabel(),
+
+        editable: true
+      }
+    );
+
+  return activity.name
+    ? activity
+    : null;
 }
 
 function saveAdditionalInformation(){
@@ -15047,27 +15134,95 @@ if(typeof collectAdditionalInformation === 'function'){
 }
 
 function normalizeAsIsActorsCatalog(list){
-  const map = new Map();
+  const map =
+    new Map();
 
-  safeArray(list).forEach(item => {
-    const actor = typeof item === 'string'
-      ? normalizeContractString(item)
-      : normalizeContractString(item?.name || item?.actor || item?.role || '');
+  safeArray(list)
+    .forEach(item => {
+      const isObject =
+        item &&
+        typeof item === 'object' &&
+        !Array.isArray(item);
 
-    if(!actor || actor === 'pendiente_validacion') return;
+      const actor =
+        typeof item === 'string'
+          ? normalizeContractString(
+              item
+            )
+          : normalizeContractString(
+              item?.name ||
+              item?.actor ||
+              item?.role ||
+              ''
+            );
 
-    const key = lmpLower(actor);
+      if(
+        !actor ||
+        actor ===
+          'pendiente_validacion'
+      ){
+        return;
+      }
 
-    if(!map.has(key)){
-      map.set(key, {
-        name: actor,
-        source: 'manual_lmp',
-        editable: true
-      });
-    }
-  });
+      const id =
+        isObject
+          ? normalizeContractString(
+              item?.id ||
+              item?.lane_id ||
+              item?.actor_lane_id ||
+              ''
+            )
+          : '';
 
-  return Array.from(map.values());
+      const key =
+        lmpLower(actor);
+
+      if(!map.has(key)){
+        map.set(
+          key,
+          {
+            id,
+
+            name:
+              actor,
+
+            source:
+              isObject
+                ? normalizeContractString(
+                    item?.source ||
+                    'manual_lmp'
+                  )
+                : 'manual_lmp',
+
+            editable:
+              isObject
+                ? item?.editable !== false
+                : true
+          }
+        );
+
+        return;
+      }
+
+      const current =
+        map.get(key);
+
+      /*
+       * Si una fuente posterior conoce el ID
+       * y la primera no, se conserva el ID conocido.
+       */
+      if(
+        !current.id &&
+        id
+      ){
+        current.id =
+          id;
+      }
+    });
+
+  return Array.from(
+    map.values()
+  );
 }
 
 function getAsIsActorCatalog(){
