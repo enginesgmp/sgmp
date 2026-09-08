@@ -5642,11 +5642,50 @@ function adminNewProcess(){
 
 function adminEditProcess(procesoId){
   const p = processById(procesoId);
-  if(!p) return toast("Proceso no encontrado.");
-  adminOpenModal("Editar proceso", adminProcessForm(p), `
-    <button class="btn ghost" type="button" onclick="closeAdminModal()">Cancelar</button>
-    <button class="btn primary" type="button" onclick="adminSaveProcess()">Guardar cambios</button>
-  `);
+
+  if(!p){
+    return toast("Proceso no encontrado.");
+  }
+
+  const canReopen =
+    isActiveRow(p) &&
+    processState(p) === "CERRADO";
+
+  adminOpenModal(
+    "Editar proceso",
+    adminProcessForm(p),
+    `
+      ${
+        canReopen
+          ? `
+            <button
+              class="btn soft"
+              type="button"
+              onclick="adminOpenReopenProcess('${esc(p.proceso_id)}')"
+            >
+              Reabrir por fase
+            </button>
+          `
+          : ""
+      }
+
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="closeAdminModal()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        class="btn primary"
+        type="button"
+        onclick="adminSaveProcess()"
+      >
+        Guardar cambios
+      </button>
+    `
+  );
 }
 
 async function adminSaveProcess(){
@@ -5942,20 +5981,351 @@ async function adminSaveProcess(){
   }
 }
   
+function adminOpenReopenProcess(procesoId){
+  if(!isAdmin()) return;
+
+  const p = processById(procesoId);
+
+  if(!p){
+    return toast("Proceso no encontrado.");
+  }
+
+  if(!isActiveRow(p)){
+    return toast(
+      "Solo se puede reabrir un proceso activo."
+    );
+  }
+
+  if(processState(p) !== "CERRADO"){
+    return toast(
+      "La reapertura por fase solo aplica a procesos cerrados."
+    );
+  }
+
+  const hitos =
+    hitosForProcess(procesoId);
+
+  if(!hitos.length){
+    return toast(
+      "El proceso no tiene fases disponibles."
+    );
+  }
+
+  const options =
+    hitos
+      .map(h => `
+        <option value="${esc(h.hito_id)}">
+          ${esc(h.hito_id)} · ${esc(h.hito || h.hito_id)}
+        </option>
+      `)
+      .join("");
+
+  adminOpenModal(
+    "Reabrir proceso por fase",
+    `
+      <div class="field">
+        <label>Proceso</label>
+
+        <input
+          value="${esc(
+            p.codigo_proceso ||
+            p.proceso_id
+          )} · ${esc(processDisplayName(p))}"
+          disabled
+        >
+      </div>
+
+      <div class="field">
+        <label>Fase donde retomará el trabajo</label>
+
+        <select id="adminReopenPhase">
+          <option value="">Seleccione...</option>
+          ${options}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Comentario opcional</label>
+
+        <textarea
+          id="adminReopenComment"
+          rows="3"
+          placeholder="Motivo o contexto de la reapertura"
+        ></textarea>
+      </div>
+
+      <div class="admin-editor">
+        <b>Impacto de la reapertura</b>
+
+        <p
+          class="meta"
+          style="margin:7px 0 0"
+        >
+          Las fases anteriores a la seleccionada permanecerán completas.
+          La fase seleccionada y las posteriores quedarán pendientes.
+          RADAR conservará el historial y la planificación vigente.
+        </p>
+      </div>
+    `,
+    `
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="adminEditProcess('${esc(procesoId)}')"
+      >
+        Volver
+      </button>
+
+      <button
+        class="btn primary"
+        type="button"
+        onclick="adminConfirmReopenProcess('${esc(procesoId)}')"
+      >
+        Reabrir proceso
+      </button>
+    `
+  );
+
+  setTimeout(
+    () =>
+      $("adminReopenPhase")
+        ?.focus(),
+    0
+  );
+}
+
+
+async function adminConfirmReopenProcess(procesoId){
+  if(!isAdmin()) return;
+
+  const p =
+    processById(procesoId);
+
+  if(!p){
+    return toast(
+      "Proceso no encontrado."
+    );
+  }
+
+  if(
+    !isActiveRow(p) ||
+    processState(p) !== "CERRADO"
+  ){
+    return toast(
+      "El proceso ya no cumple las condiciones para reabrirse. Actualice RADAR."
+    );
+  }
+
+  const hitoId =
+    String(
+      $("adminReopenPhase")?.value || ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const comentario =
+    String(
+      $("adminReopenComment")?.value || ""
+    ).trim();
+
+  if(!hitoId){
+    return toast(
+      "Seleccione la fase donde retomará el proceso."
+    );
+  }
+
+  const target =
+    hitosForProcess(procesoId)
+      .find(h =>
+        String(h.hito_id || "")
+          .trim()
+          .toUpperCase() ===
+        hitoId
+      );
+
+  if(!target){
+    return toast(
+      "La fase seleccionada no pertenece al proceso."
+    );
+  }
+
+  showSyncLoading(
+    "Reabriendo proceso..."
+  );
+
+  let operationApplied = false;
+
+  try{
+    const result =
+      await api(
+        "reopen_process_to_phase",
+        {
+          proceso_id:
+            procesoId,
+
+          hito_id:
+            hitoId,
+
+          comentario
+        }
+      );
+
+    operationApplied = true;
+
+    if(!result?.updated){
+      throw new Error(
+        "El backend no confirmó la reapertura."
+      );
+    }
+
+    const fresh =
+      await api("bootstrap");
+
+    applyBootstrapData(fresh);
+
+    const persisted =
+      processById(procesoId);
+
+    if(!persisted){
+      throw new Error(
+        "El proceso no pudo verificarse después de recargar RADAR."
+      );
+    }
+
+    if(
+      processState(persisted) ===
+      "CERRADO"
+    ){
+      throw new Error(
+        "El proceso continúa figurando como cerrado después de recargar RADAR."
+      );
+    }
+
+    const persistedHitos =
+      hitosForProcess(procesoId);
+
+    const persistedTarget =
+      persistedHitos.find(h =>
+        String(h.hito_id || "")
+          .trim()
+          .toUpperCase() ===
+        hitoId
+      );
+
+    if(
+      !persistedTarget ||
+      hitoAdvance(
+        persistedTarget.hito_proceso_id
+      ) !== 0
+    ){
+      throw new Error(
+        "La fase seleccionada no quedó pendiente después de la reapertura."
+      );
+    }
+
+    const targetOrder =
+      Number(
+        persistedTarget.orden || 0
+      );
+
+    const previousHitosOk =
+      persistedHitos
+        .filter(h =>
+          Number(h.orden || 0) <
+          targetOrder
+        )
+        .every(h =>
+          hitoAdvance(
+            h.hito_proceso_id
+          ) === 100
+        );
+
+    if(!previousHitosOk){
+      throw new Error(
+        "Las fases anteriores no conservaron el avance esperado."
+      );
+    }
+
+    closeAdminModal();
+
+    ADMIN_CONTROL_STATE = {
+      ...(ADMIN_CONTROL_STATE || {}),
+      tab:"processes"
+    };
+
+    renderAdminWorkspace();
+
+    toast(
+      `Proceso reabierto en ${
+        target.hito ||
+        target.hito_id
+      }.`
+    );
+
+  }catch(error){
+    if(operationApplied){
+      toast(
+        "La reapertura fue procesada, pero RADAR no pudo verificarla al recargar. Actualice antes de repetir. " +
+        error.message
+      );
+
+    }else{
+      toast(
+        "No se pudo reabrir: " +
+        error.message
+      );
+    }
+
+  }finally{
+    hideSyncLoading();
+  }
+}
+
+
 async function adminDeactivateProcess(procesoId){
   const p = processById(procesoId);
+
   if(!p) return;
-  const confirmation = await radarDialog({title:"Inactivar proceso",text:`El proceso ${processDisplayName(p)} dejará de aparecer en las vistas operativas. No se eliminará su información.`,comment:false,confirmLabel:"Inactivar proceso"});
+
+  const confirmation =
+    await radarDialog({
+      title:"Inactivar proceso",
+      text:`El proceso ${processDisplayName(p)} dejará de aparecer en las vistas operativas. No se eliminará su información.`,
+      comment:false,
+      confirmLabel:"Inactivar proceso"
+    });
+
   if(!confirmation) return;
 
-  showSyncLoading("Inactivando proceso...");
+  showSyncLoading(
+    "Inactivando proceso..."
+  );
+
   try{
-    await api("deactivate_process", {proceso_id:procesoId});
-    applyBootstrapData(await api("bootstrap"));
+    await api(
+      "deactivate_process",
+      {
+        proceso_id:
+          procesoId
+      }
+    );
+
+    applyBootstrapData(
+      await api("bootstrap")
+    );
+
     renderAdminWorkspace();
-    toast("Proceso inactivado.");
+
+    toast(
+      "Proceso inactivado."
+    );
+
   }catch(error){
-    toast("No se pudo inactivar: " + error.message);
+    toast(
+      "No se pudo inactivar: " +
+      error.message
+    );
+
   }finally{
     hideSyncLoading();
   }
