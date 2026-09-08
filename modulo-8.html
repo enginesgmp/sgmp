@@ -5831,8 +5831,8 @@ async function adminSaveProcess(){
 
     /*
      * Segunda confirmación:
-     * releer Bootstrap y verificar
-     * lo persistido realmente.
+     * releer Bootstrap y comprobar
+     * el registro realmente persistido.
      */
     const fresh =
       await api(
@@ -5848,15 +5848,68 @@ async function adminSaveProcess(){
         savedProcessId
       );
 
-    if(
-      !persisted ||
-      String(
-        persisted.macro_id || ""
-      ).trim() !==
-      macroId
-    ){
+    if(!persisted){
       throw new Error(
-        "El proceso se guardó, pero la asignación de macroproceso no quedó persistida."
+        "El proceso se guardó, pero no pudo verificarse después de recargar RADAR."
+      );
+    }
+
+    const persistedFields = [
+      [
+        "el código",
+        String(
+          persisted.codigo_proceso || ""
+        ).trim().toUpperCase(),
+        codigo
+      ],
+      [
+        "el nombre",
+        String(
+          persisted.nombre_proceso || ""
+        ).trim(),
+        nombre
+      ],
+      [
+        "el macroproceso",
+        String(
+          persisted.macro_id || ""
+        ).trim(),
+        macroId
+      ],
+      [
+        "el analista",
+        String(
+          persisted.analista_user || ""
+        ).trim().toLowerCase(),
+        analistaUser.toLowerCase()
+      ],
+      [
+        "el líder",
+        String(
+          persisted.lider || ""
+        ).trim(),
+        lider
+      ],
+      [
+        "el estado administrativo",
+        String(
+          persisted.activo || ""
+        ).trim().toUpperCase(),
+        activo
+      ]
+    ];
+
+    const failedField =
+      persistedFields.find(
+        ([,actual,expected]) =>
+          actual !== expected
+      );
+
+    if(failedField){
+      throw new Error(
+        "El proceso se guardó, pero " +
+        failedField[0] +
+        " no quedó persistido correctamente."
       );
     }
 
@@ -5888,6 +5941,7 @@ async function adminSaveProcess(){
     );
   }
 }
+  
 async function adminDeactivateProcess(procesoId){
   const p = processById(procesoId);
   if(!p) return;
@@ -6412,10 +6466,37 @@ function filterAdminProcessMaster(){
       "adminProcessAnalystFilter"
     );
 
-  const administrative =
+  let administrative =
     getMultiFilterValues(
       "adminProcessActiveFilter"
     );
+
+  /*
+   * RADAR V3:
+   * la vista administrativa de procesos
+   * parte siempre de procesos activos.
+   *
+   * Los inactivos solo aparecen cuando
+   * el usuario los selecciona
+   * explícitamente en el filtro.
+   */
+  if(!administrative.length){
+    const activeInput =
+      $("adminProcessActiveFilter")
+        ?.querySelector(
+          'input[type="checkbox"][value="SI"]'
+        );
+
+    if(activeInput){
+      activeInput.checked = true;
+
+      updateMultiFilterCount(
+        "adminProcessActiveFilter"
+      );
+
+      administrative = ["SI"];
+    }
+  }
 
   const rows =
     [
@@ -6517,7 +6598,7 @@ function filterAdminProcessMaster(){
       `Mostrando ${visibleCount} de ${rows.length} procesos`;
   }
 }
-
+  
 function adminUserForm(user = {}){
   const role = String(user.rol || "analista").trim().toLowerCase();
   const status = String(user.estado || "ACTIVO").trim().toUpperCase();
