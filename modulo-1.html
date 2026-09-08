@@ -17358,7 +17358,6 @@ function sbBuildClarifyingNotes(
   return notes;
 }
 
-
 function buildSipocContract(){
   const context =
     getResolvedContext();
@@ -17366,9 +17365,6 @@ function buildSipocContract(){
   const sourceActivities =
     buildSipocActivities();
 
-  /*
-   * Proveedores y entradas.
-   */
   const supplierInputRows = [];
 
   safeArray(
@@ -17397,10 +17393,6 @@ function buildSipocContract(){
     });
   });
 
-  /*
-   * Toda entrada utilizada por una actividad debe
-   * existir también en los carriles SIPOC.
-   */
   sourceActivities.forEach(activity => {
     safeArray(
       activity?.inputs_used
@@ -17425,16 +17417,12 @@ function buildSipocContract(){
         supplierInputRows.push({
           supplier:
             'pendiente_validacion',
-
           input
         });
       }
     });
   });
 
-  /*
-   * Salidas y clientes.
-   */
   const outputCustomerRows = [];
 
   safeArray(
@@ -17463,10 +17451,6 @@ function buildSipocContract(){
     });
   });
 
-  /*
-   * Toda salida generada por una actividad debe
-   * existir también en los carriles SIPOC.
-   */
   sourceActivities.forEach(activity => {
     safeArray(
       activity?.outputs_generated
@@ -17513,38 +17497,49 @@ function buildSipocContract(){
       'OC'
     );
 
-  /*
-   * Todos los actores declarados y utilizados
-   * se convierten en carriles internos.
-   */
-  const actorNames = [
+  const actorSourceRows = [
     ...safeArray(
       state.asis?.actors_catalog
-    ).map(actor =>
-      typeof actor === 'string'
-        ? actor
-        : actor?.name || ''
-    ),
+    ).map(actor => ({
+      id:
+        typeof actor === 'object'
+          ? normalizeContractString(
+              actor?.id ||
+              actor?.lane_id ||
+              actor?.actor_lane_id ||
+              ''
+            )
+          : '',
 
-    ...sourceActivities.map(
-      activity => activity.actor
-    )
+      name:
+        typeof actor === 'string'
+          ? normalizeContractString(actor)
+          : normalizeContractString(
+              actor?.name ||
+              actor?.actor ||
+              actor?.role ||
+              ''
+            )
+    })),
+
+    ...sourceActivities.map(activity => ({
+      id: '',
+      name:
+        normalizeContractString(
+          activity.actor || ''
+        )
+    }))
   ];
 
   const actorSeen =
     new Set();
 
   const actors =
-    actorNames
-      .map(name =>
-        normalizeContractString(
-          name || ''
-        )
-      )
-      .filter(Boolean)
-      .filter(name => {
+    actorSourceRows
+      .filter(row => row.name)
+      .filter(row => {
         const key =
-          lmpLower(name);
+          lmpLower(row.name);
 
         if(actorSeen.has(key)){
           return false;
@@ -17553,39 +17548,53 @@ function buildSipocContract(){
         actorSeen.add(key);
         return true;
       })
-      .map((name, index) => ({
+      .map((row, index) => ({
         id:
+          row.id ||
           'LANE-' +
           String(index + 1).padStart(
             3,
             '0'
           ),
 
-        name
+        name:
+          row.name
       }));
 
-  /*
-   * Los IDs del contrato se generan según el orden
-   * vigente del flujo AS-IS.
-   */
   const activityCatalog =
     sourceActivities.map(
-      (activity, index) => ({
-        id:
-          'ACT-' +
-          String(index + 1).padStart(
-            3,
-            '0'
-          ),
+      (activity, index) => {
+        const type =
+          canonicalActivityType(
+            activity.type || ''
+          );
 
-        sequence:
-          index + 1,
+        const fallbackPrefix =
+          type === 'decision'
+            ? 'DEC'
+            : 'ACT';
 
-        name:
-          normalizeContractString(
-            activity.name || ''
-          )
-      })
+        return {
+          id:
+            normalizeContractString(
+              activity.id || ''
+            ) ||
+            fallbackPrefix +
+            '-' +
+            String(index + 1).padStart(
+              3,
+              '0'
+            ),
+
+          sequence:
+            index + 1,
+
+          name:
+            normalizeContractString(
+              activity.name || ''
+            )
+        };
+      }
     );
 
   const activityIdByName =
@@ -17613,6 +17622,9 @@ function buildSipocContract(){
       sourceActivities,
       activityIdByName
     );
+
+  const globalDocumentMap =
+    new Map();
 
   const activities =
     sourceActivities.map(
@@ -17700,6 +17712,39 @@ function buildSipocContract(){
               )
           }));
 
+        const documentName =
+          normalizeContractString(
+            activity.document || ''
+          );
+
+        const documents =
+          documentName
+            ? [{
+                name:
+                  documentName,
+                code:
+                  ''
+              }]
+            : [];
+
+        documents.forEach(documentItem => {
+          const key =
+            lmpLower(
+              documentItem.name
+            ) +
+            '::' +
+            lmpLower(
+              documentItem.code
+            );
+
+          if(!globalDocumentMap.has(key)){
+            globalDocumentMap.set(
+              key,
+              documentItem
+            );
+          }
+        });
+
         return {
           id:
             ref.id,
@@ -17741,7 +17786,9 @@ function buildSipocContract(){
               )
               .map(
                 note => note.id
-              )
+              ),
+
+          documents
         };
       }
     );
@@ -17791,44 +17838,419 @@ function buildSipocContract(){
       activities,
 
       clarifying_notes:
-        clarifyingNotes
+        clarifyingNotes,
+
+      documents:
+        Array.from(
+          globalDocumentMap.values()
+        )
     }
   };
 }
-
+  
 function validateSipocContract(sp){
   const errors = [];
   const warnings = [];
+
   if(!sp || typeof sp !== 'object'){
-    errors.push('sipoc_input no existe o no es objeto.');
-    return { errors, warnings };
+    errors.push(
+      'sipoc_input no existe o no es objeto.'
+    );
+
+    return {
+      errors,
+      warnings
+    };
   }
-  if(!normalizeContractString(sp.process_name)) errors.push('sipoc_input.process_name es obligatorio.');
-  if(!normalizeContractString(sp.purpose)) errors.push('sipoc_input.purpose es obligatorio.');
-  if(!Array.isArray(sp.activities) || !sp.activities.length) errors.push('sipoc_input.activities debe tener al menos una actividad.');
-  if(!normalizeContractString(sp.process_code)) warnings.push('sipoc_input.process_code viene vacío.');
-  const notes = String(sp.notes || '').trim();
-  if((notes.startsWith('{') && notes.endsWith('}')) || /totalActivities|ava|wastesCount/i.test(notes)){
-    warnings.push('sipoc_input.notes parece contener JSON serializado o métricas; usa analysis_metrics.');
+
+  if(
+    !normalizeContractString(
+      sp.process_code || ''
+    )
+  ){
+    warnings.push(
+      'sipoc_input.process_code está pendiente.'
+    );
   }
-  ['suppliers','inputs','outputs','customers','actors','documents'].forEach(key => {
-    const arr = Array.isArray(sp[key]) ? sp[key] : [];
-    const normalized = arr.map(v => normalizeCatalogValue(v)).filter(Boolean);
-    if(normalized.length !== dedupeCatalog(arr).length) warnings.push('sipoc_input.' + key + ' contiene duplicados o variantes.');
+
+  if(
+    !normalizeContractString(
+      sp.process_name || ''
+    )
+  ){
+    warnings.push(
+      'sipoc_input.process_name está pendiente.'
+    );
+  }
+
+  if(
+    !normalizeContractString(
+      sp.purpose || ''
+    )
+  ){
+    warnings.push(
+      'sipoc_input.purpose está pendiente.'
+    );
+  }
+
+  if(
+    !sp.lanes ||
+    typeof sp.lanes !== 'object'
+  ){
+    errors.push(
+      'sipoc_input.lanes debe existir como objeto.'
+    );
+  }else{
+    [
+      'suppliers_inputs',
+      'actors',
+      'outputs_customers'
+    ].forEach(key => {
+      if(!Array.isArray(sp.lanes[key])){
+        errors.push(
+          'sipoc_input.lanes.' +
+          key +
+          ' debe ser un arreglo.'
+        );
+      }
+    });
+  }
+
+  if(!Array.isArray(sp.activities)){
+    errors.push(
+      'sipoc_input.activities debe ser un arreglo.'
+    );
+  }else if(!sp.activities.length){
+    errors.push(
+      'sipoc_input.activities debe tener al menos una actividad.'
+    );
+  }
+
+  if(
+    sp.clarifying_notes !== undefined &&
+    !Array.isArray(
+      sp.clarifying_notes
+    )
+  ){
+    errors.push(
+      'sipoc_input.clarifying_notes debe ser un arreglo.'
+    );
+  }
+
+  if(
+    sp.documents !== undefined &&
+    !Array.isArray(
+      sp.documents
+    )
+  ){
+    errors.push(
+      'sipoc_input.documents debe ser un arreglo.'
+    );
+  }
+
+  const actorIds =
+    new Set();
+
+  safeArray(
+    sp.lanes?.actors
+  ).forEach((actor, index) => {
+    const id =
+      normalizeContractString(
+        actor?.id || ''
+      );
+
+    const name =
+      normalizeContractString(
+        actor?.name || ''
+      );
+
+    if(!id){
+      warnings.push(
+        'Actor #' +
+        (index + 1) +
+        ' sin id de carril.'
+      );
+    }else if(actorIds.has(id)){
+      errors.push(
+        'ID de carril duplicado: ' +
+        id +
+        '.'
+      );
+    }else{
+      actorIds.add(id);
+    }
+
+    if(!name){
+      warnings.push(
+        'Actor #' +
+        (index + 1) +
+        ' sin nombre.'
+      );
+    }
   });
-  const activityTypes = new Set();
-  safeArray(sp.activities).forEach((act, idx) => {
-    const name = normalizeContractString(act?.name || '');
-    const actor = normalizeContractString(act?.actor || '');
-    const typ = canonicalActivityType(act?.type || '');
-    if(!name) errors.push('Actividad #' + (idx + 1) + ' sin name válido.');
-    if(!actor) warnings.push('Actividad #' + (idx + 1) + ' sin actor válido; se recomienda completar responsable antes de enviar a SIPOC Builder.');
-    if(!typ) errors.push('Actividad #' + (idx + 1) + ' sin type válido.');
-    activityTypes.add(typ);
-    if(!Array.isArray(act?.previous) || !Array.isArray(act?.next)) warnings.push('Actividad #' + (idx + 1) + ' tiene previous/next no canonizados.');
+
+  const activities =
+    safeArray(
+      sp.activities
+    );
+
+  const activityIds =
+    new Set();
+
+  const activityNames =
+    new Set();
+
+  activities.forEach((activity, index) => {
+    const id =
+      normalizeContractString(
+        activity?.id || ''
+      );
+
+    const name =
+      normalizeContractString(
+        activity?.name || ''
+      );
+
+    if(!id){
+      errors.push(
+        'Actividad #' +
+        (index + 1) +
+        ' sin id.'
+      );
+    }else if(activityIds.has(id)){
+      errors.push(
+        'ID de actividad duplicado: ' +
+        id +
+        '.'
+      );
+    }else{
+      activityIds.add(id);
+    }
+
+    if(!name){
+      errors.push(
+        'Actividad #' +
+        (index + 1) +
+        ' sin name válido.'
+      );
+    }else{
+      const nameKey =
+        lmpLower(name);
+
+      if(activityNames.has(nameKey)){
+        warnings.push(
+          'Nombre de actividad duplicado: ' +
+          name +
+          '. Las conexiones por nombre pueden ser ambiguas.'
+        );
+      }
+
+      activityNames.add(nameKey);
+    }
   });
-  if(activityTypes.size === 1 && activityTypes.has('operation')) warnings.push('Todas las actividades vienen como operation; puede empobrecer la diagramación.');
-  return { errors, warnings };
+
+  activities.forEach((activity, index) => {
+    const id =
+      normalizeContractString(
+        activity?.id || ''
+      );
+
+    const type =
+      normalizeContractString(
+        activity?.type || ''
+      ).toLowerCase();
+
+    if(
+      type !== 'actividad' &&
+      type !== 'decision'
+    ){
+      errors.push(
+        'Actividad ' +
+        (id || '#' + (index + 1)) +
+        ' tiene type no permitido: ' +
+        (type || '(vacío)') +
+        '. Solo se admite actividad o decision.'
+      );
+    }
+
+    const actorLaneId =
+      normalizeContractString(
+        activity?.actor_lane_id || ''
+      );
+
+    const actor =
+      normalizeContractString(
+        activity?.actor || ''
+      );
+
+    if(
+      !actorLaneId ||
+      !actor ||
+      sbIsPendingValue(actor)
+    ){
+      warnings.push(
+        'Actividad ' +
+        (id || '#' + (index + 1)) +
+        ' tiene actor pendiente o sin carril resuelto.'
+      );
+    }else if(
+      actorIds.size &&
+      !actorIds.has(actorLaneId)
+    ){
+      warnings.push(
+        'Actividad ' +
+        (id || '#' + (index + 1)) +
+        ' referencia un actor_lane_id no presente en lanes.actors: ' +
+        actorLaneId +
+        '.'
+      );
+    }
+
+    [
+      'previous',
+      'next'
+    ].forEach(key => {
+      if(!Array.isArray(activity?.[key])){
+        errors.push(
+          'Actividad ' +
+          (id || '#' + (index + 1)) +
+          ' tiene ' +
+          key +
+          ' no canonizado como arreglo.'
+        );
+
+        return;
+      }
+
+      activity[key].forEach((relation, relationIndex) => {
+        const relationId =
+          normalizeContractString(
+            relation?.activity_id || ''
+          );
+
+        const relationName =
+          normalizeContractString(
+            relation?.activity_name || ''
+          );
+
+        if(
+          relationName &&
+          !relationId
+        ){
+          warnings.push(
+            'Actividad ' +
+            (id || '#' + (index + 1)) +
+            ' tiene una relación ' +
+            key +
+            ' pendiente de resolver hacia "' +
+            relationName +
+            '".'
+          );
+        }
+
+        if(
+          relationId &&
+          !activityIds.has(relationId)
+        ){
+          warnings.push(
+            'Actividad ' +
+            (id || '#' + (index + 1)) +
+            ' tiene una relación ' +
+            key +
+            ' hacia un ID no encontrado: ' +
+            relationId +
+            ' (posición ' +
+            (relationIndex + 1) +
+            ').'
+          );
+        }
+      });
+    });
+
+    if(
+      activity?.documents !== undefined &&
+      !Array.isArray(
+        activity.documents
+      )
+    ){
+      errors.push(
+        'Actividad ' +
+        (id || '#' + (index + 1)) +
+        ' tiene documents no canonizado como arreglo.'
+      );
+    }
+  });
+
+  safeArray(
+    sp.lanes?.suppliers_inputs
+  ).forEach((row, index) => {
+    const supplier =
+      normalizeContractString(
+        row?.supplier || ''
+      );
+
+    const input =
+      normalizeContractString(
+        row?.input || ''
+      );
+
+    if(
+      !supplier ||
+      sbIsPendingValue(supplier)
+    ){
+      warnings.push(
+        'Supplier/Input #' +
+        (index + 1) +
+        ' tiene proveedor pendiente.'
+      );
+    }
+
+    if(!input){
+      warnings.push(
+        'Supplier/Input #' +
+        (index + 1) +
+        ' tiene entrada pendiente.'
+      );
+    }
+  });
+
+  safeArray(
+    sp.lanes?.outputs_customers
+  ).forEach((row, index) => {
+    const output =
+      normalizeContractString(
+        row?.output || ''
+      );
+
+    const customer =
+      normalizeContractString(
+        row?.customer || ''
+      );
+
+    if(!output){
+      warnings.push(
+        'Output/Customer #' +
+        (index + 1) +
+        ' tiene salida pendiente.'
+      );
+    }
+
+    if(
+      !customer ||
+      sbIsPendingValue(customer)
+    ){
+      warnings.push(
+        'Output/Customer #' +
+        (index + 1) +
+        ' tiene cliente pendiente.'
+      );
+    }
+  });
+
+  return {
+    errors,
+    warnings
+  };
 }
 
 function isValidCachedSbContract(contract){
@@ -18373,7 +18795,6 @@ function renderSBOutputState(){
   return false;
 }
 
-
 function generateSBOutput(){
   try{
     state.results =
@@ -18387,10 +18808,6 @@ function generateSBOutput(){
         state.asis.activities
       );
 
-    /*
-     * Recupera cualquier cambio visible del AS-IS
-     * antes de construir el contrato.
-     */
     if(
       typeof collectAsisActivities ===
       'function'
@@ -18410,29 +18827,6 @@ function generateSBOutput(){
       'function'
     ){
       repairLoadedLegacyStateBeforeResults();
-    }
-
-    const context =
-      getResolvedContext();
-
-    if(
-      !normalizeContractString(
-        context.processName
-      )
-    ){
-      throw new Error(
-        'El nombre del proceso es obligatorio.'
-      );
-    }
-
-    if(
-      !normalizeContractString(
-        context.purpose
-      )
-    ){
-      throw new Error(
-        'La finalidad del proceso es obligatoria.'
-      );
     }
 
     if(
@@ -18486,7 +18880,7 @@ function generateSBOutput(){
     ){
       showOutputsMsg(
         'warn',
-        'JSON SB generado con advertencias:\n- ' +
+        'JSON SB generado con vacíos o advertencias no bloqueantes:\n- ' +
         validation.warnings.join('\n- ')
       );
     }else{
