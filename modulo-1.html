@@ -16384,7 +16384,8 @@ function renderAsIsQuickDashboard(){
 }
 
 function buildAsIsProcessContract(){
-  state.asis = state.asis || {};
+  state.asis =
+    state.asis || {};
 
   const sourceRoute =
     state.asIsProcess?.as_is_process?.source_route ||
@@ -16392,50 +16393,452 @@ function buildAsIsProcessContract(){
     state.metadata?.route ||
     'pending_validation';
 
-  const normalizedSourceRoute = sourceRoute === 'new'
-    ? 'new_process'
-    : sourceRoute === 'doc'
-      ? 'existing_documented_process'
-      : sourceRoute || 'pending_validation';
+  const normalizedSourceRoute =
+    sourceRoute === 'new'
+      ? 'new_process'
+      : sourceRoute === 'doc'
+        ? 'existing_documented_process'
+        : sourceRoute || 'pending_validation';
+
+  /*
+   * Catálogo oficial de actores.
+   * Debe conservar los IDs estables de carril.
+   */
+  const actorsCatalog =
+    getAsIsActorCatalog();
+
+  const actorByName =
+    new Map(
+      actorsCatalog.map(
+        actor => [
+          lmpLower(
+            actor?.name || ''
+          ),
+          actor
+        ]
+      )
+    );
+
+  /*
+   * Conserva simultáneamente el formato LMP
+   * y la identidad contractual de SB.
+   */
+  const normalizeRelations =
+    function(value){
+
+      return safeArray(value)
+        .map(row => {
+
+          const activityName =
+            normalizeContractString(
+              row?.activity_name ||
+              row?.activity ||
+              row?.target_activity ||
+              row?.name ||
+              ''
+            );
+
+          const activityId =
+            normalizeContractString(
+              row?.activity_id ||
+              row?.id ||
+              ''
+            );
+
+          const label =
+            normalizeContractString(
+              row?.label ||
+              row?.connector ||
+              ''
+            );
+
+          if(
+            !activityName &&
+            !activityId
+          ){
+            return null;
+          }
+
+          return {
+            activity:
+              activityName,
+
+            connector:
+              label,
+
+            activity_id:
+              activityId,
+
+            activity_name:
+              activityName,
+
+            label
+          };
+        })
+        .filter(Boolean);
+    };
+
+  const normalizeDocuments =
+    function(activity, isDecision){
+
+      if(isDecision){
+        return [];
+      }
+
+      const map =
+        new Map();
+
+      safeArray(
+        activity?.documents
+      ).forEach(documentItem => {
+
+        const name =
+          typeof documentItem === 'string'
+            ? normalizeContractString(
+                documentItem
+              )
+            : normalizeContractString(
+                documentItem?.name ||
+                documentItem?.title ||
+                ''
+              );
+
+        const code =
+          typeof documentItem === 'object'
+            ? normalizeContractString(
+                documentItem?.code ||
+                ''
+              )
+            : '';
+
+        if(
+          !name &&
+          !code
+        ){
+          return;
+        }
+
+        const key =
+          lmpLower(name) +
+          '::' +
+          lmpLower(code);
+
+        if(!map.has(key)){
+          map.set(
+            key,
+            {
+              name,
+              code
+            }
+          );
+        }
+      });
+
+      /*
+       * Compatibilidad con el campo simple
+       * document ya existente en el LMP.
+       */
+      const legacyDocument =
+        normalizeContractString(
+          activity?.document ||
+          ''
+        );
+
+      if(legacyDocument){
+        const key =
+          lmpLower(
+            legacyDocument
+          ) +
+          '::';
+
+        if(!map.has(key)){
+          map.set(
+            key,
+            {
+              name:
+                legacyDocument,
+
+              code:
+                ''
+            }
+          );
+        }
+      }
+
+      return Array.from(
+        map.values()
+      );
+    };
 
   return {
     as_is_process: {
-      source_route: normalizedSourceRoute,
-      actors: getAsIsActorCatalog().map(row => row.name),
-      actors_catalog: getAsIsActorCatalog(),
-      suppliers_inputs: mergeSuppliersInputs(safeArray(state.asis.suppliers_inputs)),
-      outputs_customers: mergeOutputsCustomers(safeArray(state.asis.outputs_customers)),
-      activities: safeArray(state.asis.activities).map((activity, index) => {
-        const type = normalizePromptAType(activity?.type || 'actividad');
-        const isDecision = type === 'decision';
+      source_route:
+        normalizedSourceRoute,
 
-        return {
-          name: normalizeContractString(activity?.name || 'pendiente_validacion'),
-          actor: normalizeContractString(activity?.actor || 'pendiente_validacion'),
-          type,
-          document: isDecision ? '' : normalizeContractString(activity?.document || ''),
-          estimated_time: isDecision ? '' : normalizeContractString(activity?.estimated_time || ''),
-          inputs_used: isDecision ? [] : normalizeActivityInputList(activity?.inputs_used),
-          outputs_generated: isDecision ? [] : normalizeActivityOutputList(activity?.outputs_generated),
-          previous: normalizeActivityConnectionList(activity?.previous),
-          next: normalizeActivityConnectionList(activity?.next),
-          observations: normalizeContractString(activity?.observations || ''),
-          clarifying_notes: safeArray(activity?.clarifying_notes).map(normalizeContractString).filter(Boolean),
-          source: normalizeContractString(activity?.source || sourceRouteLabel()),
-          editable: true
-        };
-      }),
-      additional_information: safeArray(state.asis.additional_information).map(info => ({
-        title: normalizeContractString(info?.title || ''),
-        type: normalizeContractString(info?.type || 'nota_contextual'),
-        related_activity: normalizeContractString(info?.related_activity || ''),
-        content: normalizeContractString(info?.content || ''),
-        source: normalizeContractString(info?.source || 'pendiente_validacion'),
-        editable: true
-      }))
+      actors:
+        actorsCatalog.map(
+          row => row.name
+        ),
+
+      actors_catalog:
+        actorsCatalog,
+
+      suppliers_inputs:
+        mergeSuppliersInputs(
+          safeArray(
+            state.asis.suppliers_inputs
+          )
+        ),
+
+      outputs_customers:
+        mergeOutputsCustomers(
+          safeArray(
+            state.asis.outputs_customers
+          )
+        ),
+
+      activities:
+        safeArray(
+          state.asis.activities
+        ).map(
+          (activity, index) => {
+
+            const type =
+              normalizePromptAType(
+                activity?.type ||
+                'actividad'
+              ) === 'decision'
+                ? 'decision'
+                : 'actividad';
+
+            const isDecision =
+              type === 'decision';
+
+            const actor =
+              normalizeContractString(
+                activity?.actor ||
+                'pendiente_validacion'
+              );
+
+            const actorRecord =
+              actorByName.get(
+                lmpLower(actor)
+              ) || null;
+
+            const id =
+              normalizeContractString(
+                activity?.id ||
+                ''
+              ) ||
+              (
+                'A' +
+                (index + 1)
+              );
+
+            const rawSequence =
+              Number(
+                activity?.sequence
+              );
+
+            const sequence =
+              Number.isFinite(
+                rawSequence
+              ) &&
+              rawSequence > 0
+                ? rawSequence
+                : index + 1;
+
+            const documents =
+              normalizeDocuments(
+                activity,
+                isDecision
+              );
+
+            return {
+              id,
+
+              sequence,
+
+              actor_lane_id:
+                normalizeContractString(
+                  activity?.actor_lane_id ||
+                  actorRecord?.id ||
+                  ''
+                ),
+
+              name:
+                normalizeContractString(
+                  activity?.name ||
+                  'pendiente_validacion'
+                ),
+
+              actor,
+
+              type,
+
+              document:
+                isDecision
+                  ? ''
+                  : normalizeContractString(
+                      activity?.document ||
+                      ''
+                    ),
+
+              documents,
+
+              estimated_time:
+                isDecision
+                  ? ''
+                  : normalizeContractString(
+                      activity?.estimated_time ||
+                      ''
+                    ),
+
+              inputs_used:
+                isDecision
+                  ? []
+                  : normalizeActivityInputList(
+                      activity?.inputs_used
+                    ),
+
+              outputs_generated:
+                isDecision
+                  ? []
+                  : normalizeActivityOutputList(
+                      activity?.outputs_generated
+                    ),
+
+              previous:
+                normalizeRelations(
+                  activity?.previous
+                ),
+
+              next:
+                normalizeRelations(
+                  activity?.next
+                ),
+
+              note_ids:
+                safeArray(
+                  activity?.note_ids
+                )
+                  .map(
+                    normalizeContractString
+                  )
+                  .filter(Boolean),
+
+              observations:
+                normalizeContractString(
+                  activity?.observations ||
+                  ''
+                ),
+
+              clarifying_notes:
+                safeArray(
+                  activity?.clarifying_notes
+                )
+                  .map(
+                    normalizeContractString
+                  )
+                  .filter(Boolean),
+
+              execution_mode:
+                normalizeContractString(
+                  activity?.execution_mode ||
+                  ''
+                ),
+
+              system_code:
+                normalizeContractString(
+                  activity?.system_code ||
+                  ''
+                ),
+
+              system_name:
+                normalizeContractString(
+                  activity?.system_name ||
+                  ''
+                ),
+
+              support_tool_code:
+                normalizeContractString(
+                  activity?.support_tool_code ||
+                  ''
+                ),
+
+              support_tool_name:
+                normalizeContractString(
+                  activity?.support_tool_name ||
+                  ''
+                ),
+
+              source:
+                normalizeContractString(
+                  activity?.source ||
+                  sourceRouteLabel()
+                ),
+
+              editable:
+                activity?.editable !== false
+            };
+          }
+        ),
+
+      additional_information:
+        safeArray(
+          state.asis.additional_information
+        ).map(info => ({
+          id:
+            normalizeContractString(
+              info?.id ||
+              info?.note_id ||
+              ''
+            ),
+
+          title:
+            normalizeContractString(
+              info?.title ||
+              ''
+            ),
+
+          type:
+            normalizeContractString(
+              info?.type ||
+              'nota_contextual'
+            ),
+
+          related_activity:
+            normalizeContractString(
+              info?.related_activity ||
+              info?.activity_name ||
+              ''
+            ),
+
+          activity_id:
+            normalizeContractString(
+              info?.activity_id ||
+              ''
+            ),
+
+          content:
+            normalizeContractString(
+              info?.content ||
+              info?.text ||
+              ''
+            ),
+
+          source:
+            normalizeContractString(
+              info?.source ||
+              'pendiente_validacion'
+            ),
+
+          editable:
+            info?.editable !== false
+        }))
     }
   };
-}  
+}
   
 function updateAsIsPreview(){
   state.asis = state.asis || {};
