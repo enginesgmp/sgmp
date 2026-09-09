@@ -20742,38 +20742,299 @@ const SGMP_SB_URL =
   'https://enginesgmp.github.io/sgmp/modulo-2.html';
 
 
-function openSBFromLMP(){
+const SGMP_LMP_TO_SB_STORAGE_KEY =
+  'SGMP_LMP_TO_SB_CONTRACT';
+
+
+const SGMP_LMP_TO_SB_CONTEXT_KEY =
+  'SGMP_LMP_TO_SB_CONTEXT';
+
+
+function lmpShowSbSyncMessage_(type, message){
+  if(
+    qs('asisSbSyncMsg') &&
+    typeof showMsg === 'function'
+  ){
+    showMsg(
+      'asisSbSyncMsg',
+      type,
+      message
+    );
+
+    return;
+  }
+
+  if(
+    typeof showOutputsMsg ===
+    'function'
+  ){
+    showOutputsMsg(
+      type,
+      message
+    );
+
+    return;
+  }
+
+  const box =
+    qs('asisSbSyncMsg') ||
+    qs('outputsMsg');
+
+  if(!box){
+    return;
+  }
+
+  box.className =
+    'msg show ' + type;
+
+  box.textContent =
+    message;
+}
+
+
+function lmpSetSbSyncStatus_(text){
+  const status =
+    qs('asisSbSyncStatus');
+
+  if(status){
+    status.textContent =
+      text || 'Sin sincronizar';
+  }
+}
+
+
+function lmpPrepareSbHandoff_(intent){
+  state.asis =
+    state.asis || {};
+
+  state.results =
+    state.results || {};
+
   /*
-   * Elimina cualquier handoff anterior.
+   * Recoge cualquier edición todavía visible
+   * en el constructor AS-IS.
+   */
+  if(
+    typeof collectAsisActivities ===
+    'function'
+  ){
+    collectAsisActivities();
+  }
+
+  if(
+    typeof cleanEmptyAsisActivities ===
+    'function'
+  ){
+    cleanEmptyAsisActivities();
+  }
+
+  if(
+    typeof updateAsIsPreview ===
+    'function'
+  ){
+    updateAsIsPreview();
+  }
+
+  if(
+    !safeArray(
+      state.asis.activities
+    ).length
+  ){
+    throw new Error(
+      'El AS-IS no contiene actividades para enviar a SIPOC Builder.'
+    );
+  }
+
+  /*
+   * Contrato canónico vigente.
+   */
+  const contract =
+    buildSBJson();
+
+  const validation =
+    validateSipocContract(
+      contract.sipoc_input
+    );
+
+  if(
+    validation.errors.length
+  ){
+    throw new Error(
+      'El contrato LMP_TO_SB contiene errores estructurales:\n- ' +
+      validation.errors.join('\n- ')
+    );
+  }
+
+  /*
+   * La intención de uso se mantiene FUERA
+   * de sipoc_input.
+   *
+   * El mismo LMP_TO_SB 3.0 sirve tanto
+   * para revisión AS-IS como para la
+   * salida final hacia SB.
+   */
+  const context = {
+    source_module:
+      'LMP',
+
+    target_module:
+      'SIPOC_BUILDER',
+
+    intent:
+      intent === 'sgmp_output'
+        ? 'sgmp_output'
+        : 'asis_review',
+
+    return_expected:
+      intent !== 'sgmp_output',
+
+    contract_code:
+      contract.contract_code,
+
+    contract_version:
+      contract.contract_version,
+
+    created_at:
+      new Date().toISOString()
+  };
+
+  /*
+   * Elimina únicamente claves legacy.
+   * El canal oficial queda reducido
+   * a contrato + contexto.
    */
   [
     'SGMP_SB_INPUT',
-    'SGMP_LMP_TO_SB',
-    'SGMP_LMP_TO_SB_CONTRACT'
+    'SGMP_LMP_TO_SB'
   ].forEach(key => {
-    localStorage.removeItem(key);
-
     try{
-      sessionStorage.removeItem(key);
+      localStorage.removeItem(
+        key
+      );
     }catch(_){}
   });
 
-  /*
-   * Se omite noopener para que la nueva pestaña
-   * conserve la sesión SGMP.
-   */
-  const opened =
-    window.open(
-      SGMP_SB_URL,
-      '_blank'
+  try{
+    localStorage.setItem(
+      SGMP_LMP_TO_SB_STORAGE_KEY,
+      JSON.stringify(
+        contract
+      )
     );
 
-  if(!opened){
-    showOutputsMsg(
-      'warn',
-      'El navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes e inténtalo nuevamente.'
+    localStorage.setItem(
+      SGMP_LMP_TO_SB_CONTEXT_KEY,
+      JSON.stringify(
+        context
+      )
+    );
+
+  }catch(error){
+
+    throw new Error(
+      'No fue posible preparar el intercambio con SIPOC Builder en el almacenamiento del navegador. ' +
+      error.message
     );
   }
+
+  state.results.sbJson =
+    contract;
+
+  state.results.sbValidation =
+    validation;
+
+  return {
+    contract,
+    context,
+    validation
+  };
+}
+
+
+function sendAsIsToSipocBuilder(
+  intent = 'asis_review'
+){
+  try{
+    const handoff =
+      lmpPrepareSbHandoff_(
+        intent
+      );
+
+    const opened =
+      window.open(
+        SGMP_SB_URL,
+        '_blank'
+      );
+
+    if(!opened){
+
+      lmpSetSbSyncStatus_(
+        'AS-IS preparado'
+      );
+
+      lmpShowSbSyncMessage_(
+        'warn',
+        'El AS-IS quedó preparado para SIPOC Builder, pero el navegador bloqueó la nueva pestaña. Habilita las ventanas emergentes y vuelve a intentarlo.'
+      );
+
+      return false;
+    }
+
+    /*
+     * No necesitamos window.opener para
+     * transferir información: el handoff
+     * utiliza localStorage del mismo origen.
+     */
+    try{
+      opened.opener =
+        null;
+    }catch(_){}
+
+    lmpSetSbSyncStatus_(
+      intent === 'sgmp_output'
+        ? 'Enviado a SB · Salida SGMP'
+        : 'Enviado a SB · AS-IS'
+    );
+
+    const warningCount =
+      safeArray(
+        handoff.validation.warnings
+      ).length;
+
+    lmpShowSbSyncMessage_(
+      warningCount
+        ? 'warn'
+        : 'ok',
+
+      warningCount
+        ? 'AS-IS enviado a SIPOC Builder con ' +
+          warningCount +
+          ' advertencia(s) no bloqueantes. Puede completarse y corregirse en SB.'
+        : 'AS-IS enviado a SIPOC Builder correctamente.'
+    );
+
+    return true;
+
+  }catch(error){
+
+    lmpSetSbSyncStatus_(
+      'Error de sincronización'
+    );
+
+    lmpShowSbSyncMessage_(
+      'err',
+      error.message
+    );
+
+    return false;
+  }
+}
+
+
+function openSBFromLMP(){
+  return sendAsIsToSipocBuilder(
+    'sgmp_output'
+  );
 }
   
 function copyDocumentProposalJson(){
