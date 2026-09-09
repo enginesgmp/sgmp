@@ -6228,6 +6228,322 @@ const semanticEdges =
 // ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// P0.1 · JSON MAESTRO / VERSIONES · RUNTIME
+// ═══════════════════════════════════════════════════════════════
+const SB_FLOW_TYPES =
+  Object.freeze([
+    'as_is',
+    'to_be'
+  ]);
+
+const SB_FLOW_STATUSES =
+  Object.freeze([
+    'draft',
+    'validated',
+    'frozen'
+  ]);
+
+const SB_LIBRARY_STATE = {
+  schema_version:
+    '1.0',
+
+  masters:
+    [],
+
+  active_master_id:
+    null,
+
+  active_flow_id:
+    null
+};
+
+
+function sbCreateRuntimeId(prefix){
+  const uuid =
+    globalThis.crypto &&
+    typeof globalThis.crypto.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+  return `${prefix}-${uuid}`.toUpperCase();
+}
+
+
+function sbFindMasterByProcess(
+  processCode,
+  processName = ''
+){
+  const code =
+    normalizeText(processCode).toUpperCase();
+
+  const name =
+    normalizeText(processName).toLowerCase();
+
+  if(code){
+    return SB_LIBRARY_STATE.masters.find(
+      master =>
+        normalizeText(
+          master?.process_code || ''
+        ).toUpperCase() === code
+    ) || null;
+  }
+
+  if(!name){
+    return null;
+  }
+
+  const matches =
+    SB_LIBRARY_STATE.masters.filter(
+      master =>
+        normalizeText(
+          master?.process_name || ''
+        ).toLowerCase() === name
+    );
+
+  return matches.length === 1
+    ? matches[0]
+    : null;
+}
+
+
+function sbCreateMasterRecord(contract){
+  const input =
+    contract?.sipoc_input || {};
+
+  const now =
+    new Date().toISOString();
+
+  return {
+    master_id:
+      sbCreateRuntimeId('SBM'),
+
+    process_code:
+      normalizeText(
+        input?.process_code || ''
+      ).toUpperCase(),
+
+    process_name:
+      normalizeText(
+        input?.process_name || ''
+      ),
+
+    created_at:
+      now,
+
+    updated_at:
+      now,
+
+    flows:
+      [],
+
+    trash:
+      []
+  };
+}
+
+
+function sbEnsureMasterForContract(contract){
+  const input =
+    contract?.sipoc_input || {};
+
+  let master =
+    sbFindMasterByProcess(
+      input?.process_code || '',
+      input?.process_name || ''
+    );
+
+  if(master){
+    return master;
+  }
+
+  master =
+    sbCreateMasterRecord(
+      contract
+    );
+
+  SB_LIBRARY_STATE.masters.push(
+    master
+  );
+
+  return master;
+}
+
+
+function sbNextFlowVersionNumber(master){
+  const records = [
+    ...(Array.isArray(master?.flows)
+      ? master.flows
+      : []),
+
+    ...(Array.isArray(master?.trash)
+      ? master.trash
+      : [])
+  ];
+
+  const highest =
+    records.reduce(
+      (max, flow) =>
+        Math.max(
+          max,
+          Number(
+            flow?.version_number
+          ) || 0
+        ),
+      0
+    );
+
+  return highest + 1;
+}
+
+
+function sbCreateFlowRecord({
+  master,
+  contract,
+  sourceOrigin = 'import',
+  versionName = '',
+  versionType = 'as_is',
+  status = 'draft',
+  observations = '',
+  parentFlowId = null,
+  persisted = false
+}){
+  const now =
+    new Date().toISOString();
+
+  const versionNumber =
+    sbNextFlowVersionNumber(
+      master
+    );
+
+  return {
+    flow_id:
+      sbCreateRuntimeId('SBF'),
+
+    version_number:
+      versionNumber,
+
+    version_name:
+      normalizeText(
+        versionName
+      ) ||
+      `Versión ${versionNumber}`,
+
+    version_type:
+      SB_FLOW_TYPES.includes(
+        versionType
+      )
+        ? versionType
+        : 'as_is',
+
+    status:
+      SB_FLOW_STATUSES.includes(
+        status
+      )
+        ? status
+        : 'draft',
+
+    observations:
+      normalizeText(
+        observations
+      ),
+
+    parent_flow_id:
+      parentFlowId || null,
+
+    source_origin:
+      normalizeText(
+        sourceOrigin
+      ) || 'import',
+
+    revision:
+      0,
+
+    persisted:
+      Boolean(
+        persisted
+      ),
+
+    created_at:
+      now,
+
+    updated_at:
+      now,
+
+    saved_at:
+      persisted
+        ? now
+        : null,
+
+    payload: {
+      contract:
+        sbDeepClone(
+          contract
+        ),
+
+      diagram_model:
+        null,
+
+      optimized_diagram_model:
+        null
+    }
+  };
+}
+
+
+function sbRegisterWorkingFlow({
+  contract,
+  sourceOrigin = 'import',
+  versionName = '',
+  versionType = 'as_is',
+  parentFlowId = null
+}){
+  if(!contract?.sipoc_input){
+    return null;
+  }
+
+  const master =
+    sbEnsureMasterForContract(
+      contract
+    );
+
+  const flow =
+    sbCreateFlowRecord({
+      master,
+      contract,
+      sourceOrigin,
+      versionName,
+      versionType,
+
+      status:
+        'draft',
+
+      observations:
+        '',
+
+      parentFlowId,
+
+      persisted:
+        false
+    });
+
+  master.flows.push(
+    flow
+  );
+
+  master.updated_at =
+    new Date().toISOString();
+
+  SB_LIBRARY_STATE.active_master_id =
+    master.master_id;
+
+  SB_LIBRARY_STATE.active_flow_id =
+    flow.flow_id;
+
+  return flow;
+}
+
+
 const S = {
   /*
    * Fuente oficial de Datos del proceso.
@@ -28888,6 +29204,19 @@ processIncomingJson =
     sbTogglePartyEditor(
       'customer'
     );
+
+    if(source === 'lmp_json'){
+      sbRegisterWorkingFlow({
+        contract:
+          S.contract,
+
+        sourceOrigin:
+          'lmp',
+
+        versionType:
+          'as_is'
+      });
+    }
 
     return result;
   };
