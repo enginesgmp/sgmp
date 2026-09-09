@@ -17036,33 +17036,1049 @@ function updateAsIsPreview(){
   state.asis = state.asis || {};
 
   const asIsContract = buildAsIsProcessContract();
-
   state.asIsProcess = asIsContract;
 
-  const acts = safeArray(asIsContract.as_is_process.activities);
-  const additionalInfo = safeArray(asIsContract.as_is_process.additional_information);
+  const acts = safeArray(
+    asIsContract.as_is_process?.activities
+  );
 
   if(qs('asisCountKpi')){
-    qs('asisCountKpi').textContent = acts.length;
+    qs('asisCountKpi').textContent =
+      acts.length;
   }
 
   if(qs('asisValidationBox')){
-    const validator = typeof lmpStructuralValidator === 'function'
-      ? lmpStructuralValidator(asIsContract)
-      : null;
+    const validator =
+      typeof lmpStructuralValidator ===
+      'function'
+        ? lmpStructuralValidator(
+            asIsContract
+          )
+        : null;
 
-    qs('asisValidationBox').textContent = validator?.blocking_issues?.length
-      ? `${validator.blocking_issues.length} vacíos estructurales pendientes.`
-      : (acts.length ? 'AS-IS listo para análisis.' : 'Sin actividades cargadas.');
+    qs('asisValidationBox').textContent =
+      validator?.blocking_issues?.length
+        ? `${validator.blocking_issues.length} vacíos estructurales pendientes.`
+        : (
+            acts.length
+              ? 'AS-IS listo para análisis.'
+              : 'Sin actividades cargadas.'
+          );
   }
 
-  renderAsIsQuickDashboard();
+  if(
+    typeof renderAsIsQuickDashboard ===
+    'function'
+  ){
+    renderAsIsQuickDashboard();
+  }
+
+  /* ========================================
+     PREVIEW VISUAL AS-IS
+     Solo lectura.
+     ======================================== */
+
+  const preview =
+    qs('asisFlowPreview');
+
+  const previewStatus =
+    qs('asisFlowPreviewStatus');
+
+  if(preview){
+
+    const sbContract =
+      typeof buildSipocContract ===
+      'function'
+        ? buildSipocContract()
+        : null;
+
+    const input =
+      sbContract?.sipoc_input || {};
+
+    let actors =
+      safeArray(
+        input?.lanes?.actors
+      ).map(
+        (actor, index) => ({
+          id:
+            normalizeContractString(
+              actor?.id ||
+              `LANE-PREVIEW-${index + 1}`
+            ),
+
+          name:
+            normalizeContractString(
+              actor?.name ||
+              actor?.actor ||
+              actor?.role ||
+              'Sin actor'
+            ) ||
+            'Sin actor'
+        })
+      );
+
+    const activities =
+      safeArray(
+        input?.activities
+      )
+        .slice()
+        .sort(
+          (left, right) =>
+            Number(
+              left?.sequence || 0
+            ) -
+            Number(
+              right?.sequence || 0
+            )
+        );
+
+    if(!activities.length){
+
+      preview.innerHTML = `
+        <div style="
+          min-height:185px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          text-align:center;
+          color:#5B6F8A;
+          font-size:.88rem;
+          font-weight:750;
+          padding:20px;
+        ">
+          El flujo aparecerá cuando existan
+          actividades AS-IS.
+        </div>
+      `;
+
+      if(previewStatus){
+        previewStatus.textContent =
+          'Sin actividades';
+      }
+
+    }else{
+
+      const actorIdSet =
+        new Set(
+          actors
+            .map(
+              actor => actor.id
+            )
+            .filter(Boolean)
+        );
+
+      const actorNameMap =
+        new Map(
+          actors.map(
+            actor => [
+              lmpLower(
+                actor.name
+              ),
+              actor.id
+            ]
+          )
+        );
+
+      const needsUnassignedLane =
+        activities.some(
+          activity => {
+
+            const laneId =
+              normalizeContractString(
+                activity?.actor_lane_id ||
+                ''
+              );
+
+            const actorName =
+              normalizeContractString(
+                activity?.actor ||
+                ''
+              );
+
+            return !(
+              (
+                laneId &&
+                actorIdSet.has(
+                  laneId
+                )
+              ) ||
+              (
+                actorName &&
+                actorNameMap.has(
+                  lmpLower(
+                    actorName
+                  )
+                )
+              )
+            );
+          }
+        );
+
+      if(needsUnassignedLane){
+        actors.push({
+          id:
+            'LANE-PREVIEW-UNASSIGNED',
+
+          name:
+            'Sin actor'
+        });
+      }
+
+      if(!actors.length){
+        actors = [{
+          id:
+            'LANE-PREVIEW-UNASSIGNED',
+
+          name:
+            'Sin actor'
+        }];
+      }
+
+      const laneIndexById =
+        new Map(
+          actors.map(
+            (actor, index) => [
+              actor.id,
+              index
+            ]
+          )
+        );
+
+      const laneIndexByName =
+        new Map(
+          actors.map(
+            (actor, index) => [
+              lmpLower(
+                actor.name
+              ),
+              index
+            ]
+          )
+        );
+
+      /*
+       * Dimensiones compactas.
+       * Replica conceptualmente el preview SB,
+       * pero solo muestra el flujo del proceso.
+       */
+
+      const MARGIN =
+        16;
+
+      const LANE_WIDTH =
+        190;
+
+      const LANE_GAP =
+        10;
+
+      const HEADER_HEIGHT =
+        38;
+
+      const BODY_TOP =
+        54;
+
+      const ACTIVITY_STEP =
+        76;
+
+      const NODE_WIDTH =
+        150;
+
+      const NODE_HEIGHT =
+        48;
+
+      const DECISION_SIZE =
+        64;
+
+      const canvasWidth =
+        Math.max(
+          720,
+
+          (MARGIN * 2) +
+
+          (
+            actors.length *
+            LANE_WIDTH
+          ) +
+
+          (
+            Math.max(
+              0,
+              actors.length - 1
+            ) *
+            LANE_GAP
+          )
+        );
+
+      const canvasHeight =
+        Math.max(
+          220,
+
+          BODY_TOP +
+
+          (
+            activities.length *
+            ACTIVITY_STEP
+          ) +
+
+          24
+        );
+
+      const positionsById =
+        new Map();
+
+      const positionsByName =
+        new Map();
+
+      const resolveLaneIndex =
+        activity => {
+
+          const laneId =
+            normalizeContractString(
+              activity?.actor_lane_id ||
+              ''
+            );
+
+          const actorName =
+            normalizeContractString(
+              activity?.actor ||
+              ''
+            );
+
+          if(
+            laneId &&
+            laneIndexById.has(
+              laneId
+            )
+          ){
+            return laneIndexById.get(
+              laneId
+            );
+          }
+
+          if(
+            actorName &&
+            laneIndexByName.has(
+              lmpLower(
+                actorName
+              )
+            )
+          ){
+            return laneIndexByName.get(
+              lmpLower(
+                actorName
+              )
+            );
+          }
+
+          return Math.max(
+            0,
+            actors.length - 1
+          );
+        };
+
+      activities.forEach(
+        (activity, index) => {
+
+          const laneIndex =
+            resolveLaneIndex(
+              activity
+            );
+
+          const type =
+            canonicalActivityType(
+              activity?.type ||
+              'actividad'
+            );
+
+          const width =
+            type === 'decision'
+              ? DECISION_SIZE
+              : NODE_WIDTH;
+
+          const height =
+            type === 'decision'
+              ? DECISION_SIZE
+              : NODE_HEIGHT;
+
+          const laneX =
+            MARGIN +
+
+            laneIndex *
+            (
+              LANE_WIDTH +
+              LANE_GAP
+            );
+
+          const x =
+            laneX +
+
+            (
+              (
+                LANE_WIDTH -
+                width
+              ) /
+              2
+            );
+
+          const y =
+            BODY_TOP +
+
+            (
+              index *
+              ACTIVITY_STEP
+            ) +
+
+            10;
+
+          const position = {
+            x,
+            y,
+            width,
+            height,
+
+            centerX:
+              x +
+              (
+                width /
+                2
+              ),
+
+            centerY:
+              y +
+              (
+                height /
+                2
+              ),
+
+            topY:
+              y,
+
+            bottomY:
+              y +
+              height,
+
+            type
+          };
+
+          const id =
+            normalizeContractString(
+              activity?.id ||
+              ''
+            );
+
+          const name =
+            normalizeContractString(
+              activity?.name ||
+              ''
+            );
+
+          if(id){
+            positionsById.set(
+              id,
+              position
+            );
+          }
+
+          if(name){
+            positionsByName.set(
+              lmpLower(
+                name
+              ),
+              position
+            );
+          }
+        }
+      );
+
+      const svgText =
+        (
+          text,
+          x,
+          y,
+          width,
+          height,
+          options = {}
+        ) => {
+
+          const fontSize =
+            Number(
+              options.fontSize ||
+              11
+            );
+
+          const fontWeight =
+            Number(
+              options.fontWeight ||
+              800
+            );
+
+          const color =
+            options.color ||
+            '#294B66';
+
+          const align =
+            options.align ||
+            'center';
+
+          return `
+            <foreignObject
+              x="${x}"
+              y="${y}"
+              width="${width}"
+              height="${height}"
+            >
+              <div
+                xmlns="http://www.w3.org/1999/xhtml"
+                style="
+                  width:100%;
+                  height:100%;
+                  display:flex;
+                  align-items:center;
+                  justify-content:${
+                    align === 'left'
+                      ? 'flex-start'
+                      : 'center'
+                  };
+                  padding:5px;
+                  overflow:hidden;
+                  color:${color};
+                  font:${fontWeight}
+                    ${fontSize}px
+                    Segoe UI,
+                    Arial,
+                    sans-serif;
+                  line-height:1.18;
+                  text-align:${align};
+                  word-break:break-word;
+                "
+              >
+                ${
+                  escapeHtml(
+                    text ||
+                    '—'
+                  )
+                }
+              </div>
+            </foreignObject>
+          `;
+        };
+
+      let svg = `
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+
+          viewBox="
+            0 0
+            ${canvasWidth}
+            ${canvasHeight}
+          "
+
+          preserveAspectRatio="
+            xMidYMin meet
+          "
+
+          role="img"
+
+          aria-label="
+            Vista previa del flujo
+            AS-IS por actores
+          "
+
+          style="
+            display:block;
+            width:100%;
+            min-width:${canvasWidth}px;
+            height:auto;
+            background:#FFFFFF;
+          "
+        >
+
+          <defs>
+
+            <marker
+              id="lmpAsisPreviewArrow"
+              markerWidth="8"
+              markerHeight="8"
+              refX="7"
+              refY="4"
+              orient="auto"
+            >
+
+              <path
+                d="
+                  M0,0
+                  L8,4
+                  L0,8
+                  Z
+                "
+                fill="#294B66"
+              >
+              </path>
+
+            </marker>
+
+          </defs>
+
+          <rect
+            width="${canvasWidth}"
+            height="${canvasHeight}"
+            fill="#FFFFFF"
+          >
+          </rect>
+      `;
+
+      /*
+       * Carriles.
+       */
+
+      actors.forEach(
+        (actor, index) => {
+
+          const laneX =
+            MARGIN +
+
+            index *
+            (
+              LANE_WIDTH +
+              LANE_GAP
+            );
+
+          svg += `
+
+            <rect
+              x="${laneX}"
+              y="8"
+              width="${LANE_WIDTH}"
+              height="${HEADER_HEIGHT}"
+              rx="10"
+              fill="#EEF3F7"
+              stroke="#B9C7D3"
+            >
+            </rect>
+
+            ${
+              svgText(
+                actor.name ||
+                'Sin actor',
+
+                laneX,
+                8,
+                LANE_WIDTH,
+                HEADER_HEIGHT,
+
+                {
+                  fontSize:
+                    10,
+
+                  fontWeight:
+                    900
+                }
+              )
+            }
+
+            <rect
+              x="${laneX}"
+              y="${BODY_TOP}"
+              width="${LANE_WIDTH}"
+              height="${
+                canvasHeight -
+                BODY_TOP -
+                10
+              }"
+              rx="12"
+              fill="#F8FBFF"
+              stroke="#D7E2EC"
+            >
+            </rect>
+          `;
+        }
+      );
+
+      /*
+       * Conectores.
+       * Se dibujan antes de los nodos.
+       */
+
+      activities.forEach(
+        activity => {
+
+          const sourceId =
+            normalizeContractString(
+              activity?.id ||
+              ''
+            );
+
+          const sourceName =
+            normalizeContractString(
+              activity?.name ||
+              ''
+            );
+
+          const sourcePos =
+            (
+              sourceId &&
+              positionsById.get(
+                sourceId
+              )
+            ) ||
+
+            positionsByName.get(
+              lmpLower(
+                sourceName
+              )
+            );
+
+          if(!sourcePos){
+            return;
+          }
+
+          safeArray(
+            activity?.next
+          ).forEach(
+            relation => {
+
+              const targetId =
+                normalizeContractString(
+                  relation?.activity_id ||
+                  relation?.id ||
+                  ''
+                );
+
+              const targetName =
+                normalizeContractString(
+                  relation?.activity_name ||
+                  relation?.activity ||
+                  relation?.name ||
+                  relation?.target_activity ||
+                  ''
+                );
+
+              const label =
+                normalizeContractString(
+                  relation?.label ||
+                  relation?.connector ||
+                  ''
+                );
+
+              const targetPos =
+                (
+                  targetId &&
+                  positionsById.get(
+                    targetId
+                  )
+                ) ||
+
+                positionsByName.get(
+                  lmpLower(
+                    targetName
+                  )
+                );
+
+              if(!targetPos){
+                return;
+              }
+
+              const startX =
+                sourcePos.centerX;
+
+              const startY =
+                sourcePos.bottomY;
+
+              const endX =
+                targetPos.centerX;
+
+              const endY =
+                targetPos.topY;
+
+              const middleY =
+                startY +
+
+                (
+                  (
+                    endY -
+                    startY
+                  ) /
+                  2
+                );
+
+              const path =
+                Math.abs(
+                  startX -
+                  endX
+                ) < 2
+
+                  ? `
+                    M ${startX}
+                      ${startY}
+
+                    L ${endX}
+                      ${endY}
+                  `
+
+                  : `
+                    M ${startX}
+                      ${startY}
+
+                    L ${startX}
+                      ${middleY}
+
+                    L ${endX}
+                      ${middleY}
+
+                    L ${endX}
+                      ${endY}
+                  `;
+
+              svg += `
+
+                <path
+                  d="${path}"
+                  fill="none"
+                  stroke="#294B66"
+                  stroke-width="1.6"
+
+                  marker-end="
+                    url(
+                      #lmpAsisPreviewArrow
+                    )
+                  "
+                >
+                </path>
+              `;
+
+              if(label){
+
+                const labelX =
+                  (
+                    (
+                      startX +
+                      endX
+                    ) /
+                    2
+                  ) -
+                  24;
+
+                const labelY =
+                  middleY -
+                  13;
+
+                svg += `
+
+                  <rect
+                    x="${labelX}"
+                    y="${labelY}"
+                    width="48"
+                    height="20"
+                    rx="10"
+                    fill="#FFFFFF"
+                    stroke="#B9C7D3"
+                  >
+                  </rect>
+
+                  ${
+                    svgText(
+                      label,
+                      labelX,
+                      labelY,
+                      48,
+                      20,
+
+                      {
+                        fontSize:
+                          9,
+
+                        fontWeight:
+                          900
+                      }
+                    )
+                  }
+                `;
+              }
+            }
+          );
+        }
+      );
+
+      /*
+       * Actividades y decisiones.
+       */
+
+      activities.forEach(
+        (activity, index) => {
+
+          const id =
+            normalizeContractString(
+              activity?.id ||
+              ''
+            );
+
+          const name =
+            normalizeContractString(
+              activity?.name ||
+              `Actividad ${index + 1}`
+            );
+
+          const pos =
+            (
+              id &&
+              positionsById.get(
+                id
+              )
+            ) ||
+
+            positionsByName.get(
+              lmpLower(
+                name
+              )
+            );
+
+          if(!pos){
+            return;
+          }
+
+          if(
+            pos.type ===
+            'decision'
+          ){
+
+            const x1 =
+              pos.centerX;
+
+            const y1 =
+              pos.y;
+
+            const x2 =
+              pos.x +
+              pos.width;
+
+            const y2 =
+              pos.centerY;
+
+            const x3 =
+              pos.centerX;
+
+            const y3 =
+              pos.y +
+              pos.height;
+
+            const x4 =
+              pos.x;
+
+            const y4 =
+              pos.centerY;
+
+            svg += `
+
+              <polygon
+                points="
+                  ${x1},${y1}
+                  ${x2},${y2}
+                  ${x3},${y3}
+                  ${x4},${y4}
+                "
+
+                fill="#FFF8E8"
+
+                stroke="#D69E2E"
+
+                stroke-width="1.5"
+              >
+              </polygon>
+
+              ${
+                svgText(
+                  name,
+
+                  pos.x + 8,
+                  pos.y + 8,
+
+                  pos.width - 16,
+                  pos.height - 16,
+
+                  {
+                    fontSize:
+                      9,
+
+                    fontWeight:
+                      900
+                  }
+                )
+              }
+            `;
+
+          }else{
+
+            svg += `
+
+              <rect
+                x="${pos.x}"
+                y="${pos.y}"
+
+                width="${pos.width}"
+                height="${pos.height}"
+
+                rx="10"
+
+                fill="#FFFFFF"
+
+                stroke="#7EC8F5"
+
+                stroke-width="1.5"
+              >
+              </rect>
+
+              ${
+                svgText(
+                  name,
+
+                  pos.x + 6,
+                  pos.y + 4,
+
+                  pos.width - 12,
+                  pos.height - 8,
+
+                  {
+                    fontSize:
+                      10,
+
+                    fontWeight:
+                      850
+                  }
+                )
+              }
+            `;
+          }
+        }
+      );
+
+      svg +=
+        '</svg>';
+
+      preview.innerHTML =
+        svg;
+
+      if(previewStatus){
+
+        previewStatus.textContent =
+          `${activities.length} actividades · ${actors.length} actores`;
+      }
+    }
+  }
 
   if(qs('asisJsonPreview')){
-    qs('asisJsonPreview').textContent = JSON.stringify(asIsContract, null, 2);
+
+    qs('asisJsonPreview').textContent =
+      JSON.stringify(
+        asIsContract,
+        null,
+        2
+      );
   }
 
-  if(typeof renderLmpB1StructuralStatus === 'function'){
+  if(
+    typeof renderLmpB1StructuralStatus ===
+    'function'
+  ){
     renderLmpB1StructuralStatus();
   }
 
