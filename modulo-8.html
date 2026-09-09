@@ -3291,16 +3291,17 @@ function executiveState(){
       ? Number(EXECUTIVE_STATE.zoom)
       : 3;
 
+  /*
+   * Vacío = TODOS los estados.
+   * Por defecto RADAR muestra:
+   * Planificado + En curso + Atrasado + Cerrado.
+   */
   if(
     !Array.isArray(
       EXECUTIVE_STATE.states
     )
   ){
-    EXECUTIVE_STATE.states = [
-      "PLANIFICADO",
-      "EN CURSO",
-      "ATRASADO"
-    ];
+    EXECUTIVE_STATE.states = [];
 
   }else{
     const allowedStates = [
@@ -3320,7 +3321,9 @@ function executiveState(){
         )
         .filter(
           value =>
-            allowedStates.includes(value)
+            allowedStates.includes(
+              value
+            )
         );
   }
 
@@ -3374,7 +3377,33 @@ function executiveState(){
       ];
   }
 
+  /*
+   * Solo la primera vez:
+   * todos los macroprocesos aparecen abiertos.
+   *
+   * Después se respeta si el usuario
+   * contrae uno o incluso contrae todos.
+   */
   if(
+    EXECUTIVE_STATE
+      .expandedMacrosInitialized !==
+    true
+  ){
+    EXECUTIVE_STATE.expandedMacros =
+      activeMacroprocesses()
+        .map(
+          macro =>
+            String(
+              macro.macro_id || ""
+            ).trim()
+        )
+        .filter(Boolean);
+
+    EXECUTIVE_STATE
+      .expandedMacrosInitialized =
+        true;
+
+  }else if(
     !Array.isArray(
       EXECUTIVE_STATE.expandedMacros
     )
@@ -4536,14 +4565,34 @@ function resetExecutiveGanttFilters(){
 
   state.search = "";
 
-  state.states = [
-    "PLANIFICADO",
-    "EN CURSO",
-    "ATRASADO"
-  ];
+  /*
+   * Vacío = todos:
+   * Planificado
+   * En curso
+   * Atrasado
+   * Cerrado
+   */
+  state.states = [];
 
   state.macros = [];
   state.analysts = [];
+
+  /*
+   * Restablecer también devuelve
+   * todos los macroprocesos abiertos.
+   */
+  state.expandedMacros =
+    activeMacroprocesses()
+      .map(
+        macro =>
+          String(
+            macro.macro_id || ""
+          ).trim()
+      )
+      .filter(Boolean);
+
+  state.expandedMacrosInitialized =
+    true;
 
   renderSharedGanttContext();
 }
