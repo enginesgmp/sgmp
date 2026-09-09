@@ -474,6 +474,141 @@ h1{margin:0;font-size:38px;letter-spacing:-.045em;line-height:1.05}
 .executive-gantt-process-button span{width:100%;font-weight:780;margin:2px 0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .executive-gantt-process-button small{color:var(--muted);font-size:9.5px}
 
+/* GERENCIA · JERARQUÍA DEL GANTT */
+.executive-gantt-hierarchy-actions{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}
+
+.executive-gantt-hierarchy-actions .btn{
+  min-height:36px;
+  padding:7px 10px;
+  font-size:10.5px;
+}
+
+.executive-gantt-group-head{
+  display:grid;
+  grid-template-columns:
+    var(--executive-label-width)
+    var(--executive-track-width)
+    var(--executive-status-width);
+  min-height:54px;
+  border-top:1px solid var(--line-strong);
+  border-bottom:1px solid var(--line);
+  background:#eef7f1;
+}
+
+.executive-gantt-group-label{
+  position:sticky;
+  left:0;
+  z-index:22;
+  display:flex;
+  align-items:center;
+  min-width:0;
+  padding:0;
+  background:#eef7f1;
+  box-shadow:8px 0 12px -12px rgba(11,31,22,.35);
+}
+
+.executive-gantt-group-toggle{
+  width:100%;
+  min-width:0;
+  min-height:53px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  border:0;
+  padding:9px 12px;
+  background:transparent;
+  color:var(--ink);
+  text-align:left;
+}
+
+.executive-gantt-group-toggle:hover{
+  background:#e5f2e9;
+}
+
+.executive-gantt-group-chevron{
+  width:18px;
+  flex:0 0 18px;
+  color:var(--brand-3);
+  font-size:15px;
+  font-weight:900;
+  text-align:center;
+}
+
+.executive-gantt-group-copy{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+
+.executive-gantt-group-copy b{
+  color:var(--brand-3);
+  font-size:12px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.executive-gantt-group-copy small{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:9px;
+  font-weight:750;
+  text-transform:uppercase;
+}
+
+.executive-gantt-group-summary{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:10px 14px;
+  border-left:1px solid var(--line);
+  border-right:1px solid var(--line);
+  background:#f4faf6;
+  color:var(--ink-2);
+  font-size:10.5px;
+}
+
+.executive-gantt-group-summary b{
+  white-space:nowrap;
+}
+
+.executive-gantt-group-summary span{
+  color:var(--muted);
+  white-space:nowrap;
+}
+
+.executive-gantt-group-progress{
+  position:sticky;
+  right:0;
+  z-index:22;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  background:#eef7f1;
+  box-shadow:-8px 0 12px -12px rgba(11,31,22,.35);
+}
+
+.executive-gantt-group-progress b{
+  color:var(--brand-3);
+  font-size:16px;
+}
+
+.executive-gantt-group-progress small{
+  color:var(--muted);
+  font-size:8.5px;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.executive-gantt-group-body[hidden]{
+  display:none;
+}
+
 @media(max-width:900px){
   .executive-gantt-grid{
     --executive-label-width:250px;
@@ -3151,27 +3286,11 @@ function executiveState(){
 
   EXECUTIVE_STATE.zoom =
     [3,6,12].includes(
-      Number(
-        EXECUTIVE_STATE.zoom
-      )
+      Number(EXECUTIVE_STATE.zoom)
     )
-      ? Number(
-          EXECUTIVE_STATE.zoom
-        )
+      ? Number(EXECUTIVE_STATE.zoom)
       : 3;
 
-  /*
-   * Estados visibles por defecto:
-   *
-   * - Planificado
-   * - En curso
-   * - Atrasado
-   *
-   * Cerrado queda disponible
-   * para selección explícita.
-   *
-   * [] significa "Todos".
-   */
   if(
     !Array.isArray(
       EXECUTIVE_STATE.states
@@ -3184,13 +3303,12 @@ function executiveState(){
     ];
 
   }else{
-    const allowedStates =
-      [
-        "PLANIFICADO",
-        "EN CURSO",
-        "ATRASADO",
-        "CERRADO"
-      ];
+    const allowedStates = [
+      "PLANIFICADO",
+      "EN CURSO",
+      "ATRASADO",
+      "CERRADO"
+    ];
 
     EXECUTIVE_STATE.states =
       EXECUTIVE_STATE.states
@@ -3208,9 +3326,35 @@ function executiveState(){
         );
   }
 
+  /*
+   * Por defecto los macroprocesos
+   * aparecen contraídos.
+   */
+  if(
+    !Array.isArray(
+      EXECUTIVE_STATE.expandedMacros
+    )
+  ){
+    EXECUTIVE_STATE.expandedMacros = [];
+
+  }else{
+    EXECUTIVE_STATE.expandedMacros =
+      [
+        ...new Set(
+          EXECUTIVE_STATE.expandedMacros
+            .map(
+              value =>
+                String(value || "")
+                  .trim()
+            )
+            .filter(Boolean)
+        )
+      ];
+  }
+
   return EXECUTIVE_STATE;
 }
-
+  
 function executiveViewMode(){
   return executiveState().view;
 }
@@ -3511,6 +3655,358 @@ function executiveGanttAxis(range){
   `;
 }
 
+function executiveGanttMacroDomId(macroId){
+  return String(
+    macroId || "SIN_MACRO"
+  )
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      "_"
+    );
+}
+
+
+function executiveGanttMacroIsExpanded(macroId){
+  return executiveState()
+    .expandedMacros
+    .includes(
+      String(macroId || "")
+    );
+}
+
+
+function toggleExecutiveGanttMacro(macroId){
+  const id =
+    String(macroId || "");
+
+  const state =
+    executiveState();
+
+  const expanded =
+    state.expandedMacros
+      .includes(id);
+
+  state.expandedMacros =
+    expanded
+      ? state.expandedMacros
+          .filter(
+            value =>
+              value !== id
+          )
+      : [
+          ...state.expandedMacros,
+          id
+        ];
+
+  const domId =
+    executiveGanttMacroDomId(id);
+
+  const body =
+    $(
+      `executiveGanttGroupBody_${domId}`
+    );
+
+  const button =
+    $(
+      `executiveGanttGroupToggle_${domId}`
+    );
+
+  const icon =
+    $(
+      `executiveGanttGroupIcon_${domId}`
+    );
+
+  const nextExpanded =
+    !expanded;
+
+  if(body){
+    body.hidden =
+      !nextExpanded;
+  }
+
+  if(button){
+    button.setAttribute(
+      "aria-expanded",
+      nextExpanded
+        ? "true"
+        : "false"
+    );
+  }
+
+  if(icon){
+    icon.textContent =
+      nextExpanded
+        ? "▾"
+        : "▸";
+  }
+}
+
+
+function setExecutiveGanttAllGroups(expanded){
+  const state =
+    executiveState();
+
+  const groups =
+    [
+      ...document.querySelectorAll(
+        "[data-executive-macro-group]"
+      )
+    ];
+
+  const ids =
+    groups
+      .map(
+        element =>
+          String(
+            element.dataset
+              .executiveMacroGroup ||
+            ""
+          )
+      )
+      .filter(Boolean);
+
+  state.expandedMacros =
+    expanded
+      ? ids
+      : [];
+
+  groups.forEach(group => {
+    const macroId =
+      String(
+        group.dataset
+          .executiveMacroGroup ||
+        ""
+      );
+
+    const domId =
+      executiveGanttMacroDomId(
+        macroId
+      );
+
+    const body =
+      $(
+        `executiveGanttGroupBody_${domId}`
+      );
+
+    const button =
+      $(
+        `executiveGanttGroupToggle_${domId}`
+      );
+
+    const icon =
+      $(
+        `executiveGanttGroupIcon_${domId}`
+      );
+
+    if(body){
+      body.hidden =
+        !expanded;
+    }
+
+    if(button){
+      button.setAttribute(
+        "aria-expanded",
+        expanded
+          ? "true"
+          : "false"
+      );
+    }
+
+    if(icon){
+      icon.textContent =
+        expanded
+          ? "▾"
+          : "▸";
+    }
+  });
+}
+
+
+function executiveGanttGroups(processes){
+  const groups =
+    new Map();
+
+  (processes || [])
+    .forEach(p => {
+      const macroId =
+        String(
+          p.macro_id || ""
+        );
+
+      if(
+        !groups.has(
+          macroId
+        )
+      ){
+        groups.set(
+          macroId,
+          []
+        );
+      }
+
+      groups
+        .get(macroId)
+        .push(p);
+    });
+
+  const macroOrder =
+    new Map(
+      activeMacroprocesses()
+        .map(
+          (macro,index) => [
+            String(
+              macro.macro_id || ""
+            ),
+            index
+          ]
+        )
+    );
+
+  return [
+    ...groups.entries()
+  ].sort(
+    ([a],[b]) =>
+      (
+        macroOrder.get(a) ??
+        999
+      ) -
+      (
+        macroOrder.get(b) ??
+        999
+      )
+  );
+}
+
+
+function executiveGanttGroupHeader(
+  macroId,
+  processes
+){
+  const macro =
+    macroById(
+      macroId
+    );
+
+  const states =
+    countStates(
+      processes
+    );
+
+  const advance =
+    globalAdvance(
+      processes
+    );
+
+  const expanded =
+    executiveGanttMacroIsExpanded(
+      macroId
+    );
+
+  const domId =
+    executiveGanttMacroDomId(
+      macroId
+    );
+
+  const macroName =
+    macro
+      ? macroDisplayName(macro)
+      : "Sin macroproceso";
+
+  const macroCode =
+    String(
+      macro?.codigo_macro ||
+      macroId ||
+      "Sin código"
+    );
+
+  const macroType =
+    String(
+      macro?.tipo_macroproceso ||
+      ""
+    ).trim();
+
+  return `
+    <div
+      class="executive-gantt-group-head"
+      data-executive-macro-group="${esc(macroId)}"
+    >
+
+      <div class="executive-gantt-group-label">
+
+        <button
+          class="executive-gantt-group-toggle"
+          id="executiveGanttGroupToggle_${esc(domId)}"
+          type="button"
+          aria-expanded="${expanded ? "true" : "false"}"
+          aria-controls="executiveGanttGroupBody_${esc(domId)}"
+          onclick="toggleExecutiveGanttMacro('${esc(macroId)}')"
+        >
+
+          <span
+            class="executive-gantt-group-chevron"
+            id="executiveGanttGroupIcon_${esc(domId)}"
+            aria-hidden="true"
+          >
+            ${expanded ? "▾" : "▸"}
+          </span>
+
+          <span class="executive-gantt-group-copy">
+
+            <b>
+              ${esc(macroName)}
+            </b>
+
+            <small>
+              ${esc(macroCode)}
+              ${
+                macroType
+                  ? ` · ${esc(macroType)}`
+                  : ""
+              }
+            </small>
+
+          </span>
+
+        </button>
+
+      </div>
+
+      <div class="executive-gantt-group-summary">
+
+        <b>
+          ${processes.length}
+          proceso${processes.length === 1 ? "" : "s"}
+        </b>
+
+        <span>
+          ${states.ATRASADO}
+          atrasado${states.ATRASADO === 1 ? "" : "s"}
+        </span>
+
+        <span>
+          ${states.CERRADO}
+          cerrado${states.CERRADO === 1 ? "" : "s"}
+        </span>
+
+      </div>
+
+      <div class="executive-gantt-group-progress">
+
+        <b>
+          ${advance}%
+        </b>
+
+        <small>
+          avance
+        </small>
+
+      </div>
+
+    </div>
+  `;
+}
+
+
 function executiveGanttRow(p, range){
   const start =
     ganttPlanDate(
@@ -3553,7 +4049,10 @@ function executiveGanttRow(p, range){
 
   if(start && end){
     const left =
-      ganttPosition(start,range);
+      ganttPosition(
+        start,
+        range
+      );
 
     const right =
       ganttPosition(
@@ -3575,11 +4074,16 @@ function executiveGanttRow(p, range){
         onclick="executiveOpenProcess('${esc(p.proceso_id)}')"
         title="Abrir proceso · ${esc(formatDate(start.toISOString().slice(0,10)))} → ${esc(formatDate(end.toISOString().slice(0,10)))}"
       >
-        <span>${processAdvance(p.proceso_id)}%</span>
+        <span>
+          ${processAdvance(p.proceso_id)}%
+        </span>
       </button>
     `;
 
-  }else if(start || end){
+  }else if(
+    start ||
+    end
+  ){
     const date =
       start || end;
 
@@ -3615,11 +4119,23 @@ function executiveGanttRow(p, range){
 
   const realMarkers = [
     realStart
-      ? `<span class="gantt-real-marker start" style="left:${ganttPosition(realStart,range)}%" title="Inicio real: ${esc(formatDate(p.fecha_inicio_real))}"></span>`
+      ? `
+        <span
+          class="gantt-real-marker start"
+          style="left:${ganttPosition(realStart,range)}%"
+          title="Inicio real: ${esc(formatDate(p.fecha_inicio_real))}"
+        ></span>
+      `
       : "",
 
     realClose
-      ? `<span class="gantt-real-marker close" style="left:${ganttPosition(realClose,range)}%" title="Cierre real: ${esc(formatDate(p.fecha_cierre_real))}"></span>`
+      ? `
+        <span
+          class="gantt-real-marker close"
+          style="left:${ganttPosition(realClose,range)}%"
+          title="Cierre real: ${esc(formatDate(p.fecha_cierre_real))}"
+        ></span>
+      `
       : ""
   ].join("");
 
@@ -3653,11 +4169,16 @@ function executiveGanttRow(p, range){
         >
 
           <b>
-            ${esc(p.codigo_proceso || p.proceso_id)}
+            ${esc(
+              p.codigo_proceso ||
+              p.proceso_id
+            )}
           </b>
 
           <span>
-            ${esc(processDisplayName(p))}
+            ${esc(
+              processDisplayName(p)
+            )}
           </span>
 
           <small>
@@ -3665,7 +4186,9 @@ function executiveGanttRow(p, range){
             →
             ${esc(planEndLabel)}
             ·
-            ${esc(processMacroName(p))}
+            ${esc(
+              processAnalystName(p)
+            )}
           </small>
 
         </button>
@@ -3685,6 +4208,7 @@ function executiveGanttRow(p, range){
     </div>
   `;
 }
+
 
 function renderExecutiveGantt(processes){
   const selectedStates =
@@ -3706,32 +4230,44 @@ function renderExecutiveGantt(processes){
       .slice();
 
   const range =
-    ganttDateRange(processes);
-
-  rows.sort((a,b) => {
-
-    const da =
-      ganttPlanDate(
-        a,
-        "start",
-        range.year
-      );
-
-    const db =
-      ganttPlanDate(
-        b,
-        "start",
-        range.year
-      );
-
-    return (
-      da?.getTime() ??
-      Number.MAX_SAFE_INTEGER
-    ) - (
-      db?.getTime() ??
-      Number.MAX_SAFE_INTEGER
+    ganttDateRange(
+      processes
     );
-  });
+
+  const groups =
+    executiveGanttGroups(
+      rows
+    );
+
+  groups.forEach(
+    ([,groupRows]) => {
+      groupRows.sort(
+        (a,b) => {
+          const da =
+            ganttPlanDate(
+              a,
+              "start",
+              range.year
+            );
+
+          const db =
+            ganttPlanDate(
+              b,
+              "start",
+              range.year
+            );
+
+          return (
+            da?.getTime() ??
+            Number.MAX_SAFE_INTEGER
+          ) - (
+            db?.getTime() ??
+            Number.MAX_SAFE_INTEGER
+          );
+        }
+      );
+    }
+  );
 
   return `
     <section id="executiveGanttPanel">
@@ -3742,7 +4278,7 @@ function renderExecutiveGantt(processes){
           <h2>Cronograma</h2>
 
           <p class="meta">
-            Año completo desplazable ·
+            Agrupado por macroproceso ·
             ${
               executiveGanttZoom() === 12
                 ? "Año visible"
@@ -3765,6 +4301,26 @@ function renderExecutiveGantt(processes){
             "filterExecutiveGanttStates",
             selectedStates
           )}
+
+          <div class="executive-gantt-hierarchy-actions">
+
+            <button
+              class="btn ghost"
+              type="button"
+              onclick="setExecutiveGanttAllGroups(true)"
+            >
+              Expandir todo
+            </button>
+
+            <button
+              class="btn ghost"
+              type="button"
+              onclick="setExecutiveGanttAllGroups(false)"
+            >
+              Contraer todo
+            </button>
+
+          </div>
 
           <div
             class="executive-gantt-nav"
@@ -3843,7 +4399,6 @@ function renderExecutiveGantt(processes){
         class="gantt-legend"
         aria-label="Leyenda del cronograma"
       >
-
         <span class="gantt-legend-item">
           <span class="gantt-legend-swatch"></span>
           Planificado
@@ -3868,7 +4423,6 @@ function renderExecutiveGantt(processes){
           <span class="gantt-legend-today"></span>
           Hoy
         </span>
-
       </div>
 
       <div
@@ -3893,14 +4447,46 @@ function renderExecutiveGantt(processes){
             <div id="executiveGanttRows">
 
               ${
-                rows.length
-                  ? rows
+                groups.length
+                  ? groups
                       .map(
-                        p =>
-                          executiveGanttRow(
-                            p,
-                            range
-                          )
+                        ([macroId,groupRows]) => {
+
+                          const expanded =
+                            executiveGanttMacroIsExpanded(
+                              macroId
+                            );
+
+                          const domId =
+                            executiveGanttMacroDomId(
+                              macroId
+                            );
+
+                          return `
+                            ${executiveGanttGroupHeader(
+                              macroId,
+                              groupRows
+                            )}
+
+                            <div
+                              class="executive-gantt-group-body"
+                              id="executiveGanttGroupBody_${esc(domId)}"
+                              ${expanded ? "" : "hidden"}
+                            >
+                              ${
+                                groupRows
+                                  .map(
+                                    p =>
+                                      executiveGanttRow(
+                                        p,
+                                        range
+                                      )
+                                  )
+                                  .join("")
+                              }
+                            </div>
+                          `;
+                        }
                       )
                       .join("")
                   : `
