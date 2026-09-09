@@ -6406,7 +6406,8 @@ function sbCreateFlowRecord({
   status = 'draft',
   observations = '',
   parentFlowId = null,
-  persisted = false
+  persisted = false,
+  flowId = ''
 }){
   const now =
     new Date().toISOString();
@@ -6418,6 +6419,9 @@ function sbCreateFlowRecord({
 
   return {
     flow_id:
+      normalizeText(
+        flowId
+      ) ||
       sbCreateRuntimeId('SBF'),
 
     version_number:
@@ -6496,10 +6500,63 @@ function sbRegisterWorkingFlow({
   sourceOrigin = 'import',
   versionName = '',
   versionType = 'as_is',
-  parentFlowId = null
+  parentFlowId = null,
+  flowId = ''
 }){
   if(!contract?.sipoc_input){
     return null;
+  }
+
+  const requestedFlowId =
+    normalizeText(
+      flowId
+    );
+
+  /*
+   * Idempotencia:
+   * si el mismo handoff ya creó este flujo,
+   * se reutiliza su identidad.
+   */
+  if(requestedFlowId){
+    for(
+      const existingMaster
+      of SB_LIBRARY_STATE.masters
+    ){
+      const existingFlow =
+        [
+          ...(
+            Array.isArray(
+              existingMaster?.flows
+            )
+              ? existingMaster.flows
+              : []
+          ),
+
+          ...(
+            Array.isArray(
+              existingMaster?.trash
+            )
+              ? existingMaster.trash
+              : []
+          )
+        ].find(
+          flow =>
+            normalizeText(
+              flow?.flow_id || ''
+            ) ===
+            requestedFlowId
+        );
+
+      if(existingFlow){
+        SB_LIBRARY_STATE.active_master_id =
+          existingMaster.master_id;
+
+        SB_LIBRARY_STATE.active_flow_id =
+          existingFlow.flow_id;
+
+        return existingFlow;
+      }
+    }
   }
 
   const master =
@@ -6524,7 +6581,10 @@ function sbRegisterWorkingFlow({
       parentFlowId,
 
       persisted:
-        false
+        false,
+
+      flowId:
+        requestedFlowId
     });
 
   master.flows.push(
@@ -22530,8 +22590,647 @@ gMsg(
 }
   
 function loadLMP() {
-  readFile($('lmp_file'), raw => processIncomingJson(raw, 'lmp_json'));
+  readFile(
+    $('lmp_file'),
+    raw =>
+      processIncomingJson(
+        raw,
+        'lmp_json'
+      )
+  );
 }
+
+
+const SB_LMP_HANDOFF_KEYS =
+  Object.freeze({
+    contract:
+      'SGMP_LMP_TO_SB_CONTRACT',
+
+    context:
+      'SGMP_LMP_TO_SB_CONTEXT'
+  });
+
+
+const SB_LMP_HANDOFF_INTENTS =
+  new Set([
+    'asis_review',
+    'sgmp_output'
+  ]);
+
+
+function sbReadLMPHandoff(){
+  let rawContract =
+    '';
+
+  let rawContext =
+    '';
+
+  try{
+    rawContract =
+      localStorage.getItem(
+        SB_LMP_HANDOFF_KEYS.contract
+      ) || '';
+
+    rawContext =
+      localStorage.getItem(
+        SB_LMP_HANDOFF_KEYS.context
+      ) || '';
+  }catch(error){
+    return {
+      found:
+        true,
+
+      ok:
+        false,
+
+      message:
+        'No fue posible acceder al almacenamiento local del handoff LMP → SB.',
+
+      error
+    };
+  }
+
+  if(
+    !rawContract &&
+    !rawContext
+  ){
+    return {
+      found:
+        false,
+
+      ok:
+        false
+    };
+  }
+
+  if(
+    !rawContract ||
+    !rawContext
+  ){
+    return {
+      found:
+        true,
+
+      ok:
+        false,
+
+      message:
+        'El handoff LMP → SB está incompleto: deben existir CONTRACT y CONTEXT.'
+    };
+  }
+
+  let contract;
+  let context;
+
+  try{
+    contract =
+      JSON.parse(
+        rawContract
+      );
+
+    context =
+      JSON.parse(
+        rawContext
+      );
+  }catch(error){
+    return {
+      found:
+        true,
+
+      ok:
+        false,
+
+      message:
+        'El handoff LMP → SB contiene JSON no válido.',
+
+      error
+    };
+  }
+
+  const errors =
+    [];
+
+  if(
+    contract?.contract_code !==
+      'LMP_TO_SB'
+  ){
+    errors.push(
+      'contract_code debe ser LMP_TO_SB.'
+    );
+  }
+
+  if(
+    String(
+      contract?.contract_version ||
+      ''
+    ) !==
+      '3.0'
+  ){
+    errors.push(
+      'contract_version debe ser 3.0.'
+    );
+  }
+
+  if(
+    contract?.target_module !==
+      'SIPOC_BUILDER'
+  ){
+    errors.push(
+      'target_module debe ser SIPOC_BUILDER.'
+    );
+  }
+
+  if(
+    !contract?.sipoc_input ||
+    typeof contract.sipoc_input !==
+      'object'
+  ){
+    errors.push(
+      'Falta sipoc_input.'
+    );
+  }
+
+  if(
+    context?.source_module !==
+      'LMP'
+  ){
+    errors.push(
+      'CONTEXT.source_module debe ser LMP.'
+    );
+  }
+
+  if(
+    context?.target_module !==
+      'SIPOC_BUILDER'
+  ){
+    errors.push(
+      'CONTEXT.target_module debe ser SIPOC_BUILDER.'
+    );
+  }
+
+  if(
+    context?.contract_code !==
+      'LMP_TO_SB'
+  ){
+    errors.push(
+      'CONTEXT.contract_code debe ser LMP_TO_SB.'
+    );
+  }
+
+  if(
+    String(
+      context?.contract_version ||
+      ''
+    ) !==
+      '3.0'
+  ){
+    errors.push(
+      'CONTEXT.contract_version debe ser 3.0.'
+    );
+  }
+
+  if(
+    !SB_LMP_HANDOFF_INTENTS.has(
+      context?.intent
+    )
+  ){
+    errors.push(
+      'CONTEXT.intent debe ser asis_review o sgmp_output.'
+    );
+  }
+
+  if(
+    typeof context?.return_expected !==
+      'boolean'
+  ){
+    errors.push(
+      'CONTEXT.return_expected debe ser booleano.'
+    );
+  }
+
+  const createdAt =
+    normalizeText(
+      context?.created_at ||
+      ''
+    );
+
+  if(
+    !createdAt ||
+    Number.isNaN(
+      Date.parse(
+        createdAt
+      )
+    )
+  ){
+    errors.push(
+      'CONTEXT.created_at debe contener una fecha ISO válida.'
+    );
+  }
+
+  return {
+    found:
+      true,
+
+    ok:
+      errors.length === 0,
+
+    contract,
+
+    context,
+
+    errors,
+
+    message:
+      errors.join(' ')
+  };
+}
+
+
+function sbLMPHandoffIdsPreserved(
+  sourceContract
+){
+  const sourceInput =
+    sourceContract
+      ?.sipoc_input ||
+    {};
+
+  const loadedInput =
+    S.contract
+      ?.sipoc_input ||
+    {};
+
+  const readIds =
+    items =>
+      (
+        Array.isArray(items)
+          ? items
+          : []
+      ).map(item =>
+        normalizeText(
+          item?.id ||
+          ''
+        )
+      );
+
+  const sourceActivityIds =
+    readIds(
+      sourceInput.activities
+    );
+
+  const loadedActivityIds =
+    readIds(
+      loadedInput.activities
+    );
+
+  const sourceActorIds =
+    readIds(
+      sourceInput
+        ?.lanes
+        ?.actors
+    );
+
+  const loadedActorIds =
+    readIds(
+      loadedInput
+        ?.lanes
+        ?.actors
+    );
+
+  return (
+    JSON.stringify(
+      sourceActivityIds
+    ) ===
+      JSON.stringify(
+        loadedActivityIds
+      ) &&
+
+    JSON.stringify(
+      sourceActorIds
+    ) ===
+      JSON.stringify(
+        loadedActorIds
+      )
+  );
+}
+
+
+function sbMarkLMPHandoffConsumed(
+  context,
+  flow
+){
+  const consumedContext = {
+    ...context,
+
+    consumed_at:
+      normalizeText(
+        context?.consumed_at ||
+        ''
+      ) ||
+      new Date()
+        .toISOString(),
+
+    consumed_by:
+      'SIPOC_BUILDER',
+
+    consumed_flow_id:
+      normalizeText(
+        context?.consumed_flow_id ||
+        flow?.flow_id ||
+        ''
+      )
+  };
+
+  try{
+    localStorage.setItem(
+      SB_LMP_HANDOFF_KEYS.context,
+
+      JSON.stringify(
+        consumedContext
+      )
+    );
+
+    return {
+      ok:
+        true,
+
+      context:
+        consumedContext
+    };
+  }catch(error){
+    return {
+      ok:
+        false,
+
+      context:
+        consumedContext,
+
+      error
+    };
+  }
+}
+
+
+function sbConsumeLMPHandoff(){
+  const handoff =
+    sbReadLMPHandoff();
+
+  /*
+   * Apertura normal de SB:
+   * no existe handoff y se conserva Inicio.
+   */
+  if(!handoff.found){
+    return false;
+  }
+
+  if(!handoff.ok){
+    gMsg(
+      'warn',
+      (
+        handoff.message ||
+        'El handoff LMP → SB no es válido.'
+      ) +
+      ' Puedes continuar usando la importación manual.'
+    );
+
+    return false;
+  }
+
+  const {
+    contract,
+    context
+  } =
+    handoff;
+
+  const wasConsumed =
+    Boolean(
+      normalizeText(
+        context?.consumed_at ||
+        ''
+      )
+    );
+
+  /*
+   * REUTILIZA EL IMPORTADOR CANÓNICO.
+   * No existe una segunda lógica de normalización.
+   */
+  processIncomingJson(
+    contract,
+    'lmp_handoff'
+  );
+
+  const loadedCorrectly =
+    S.contract
+      ?.contract_code ===
+        'LMP_TO_SB' &&
+
+    String(
+      S.contract
+        ?.contract_version ||
+      ''
+    ) ===
+      '3.0' &&
+
+    S.contract
+      ?.target_module ===
+        'SIPOC_BUILDER' &&
+
+    S.contract
+      ?.sipoc_input &&
+    typeof S.contract
+      .sipoc_input ===
+        'object';
+
+  if(!loadedCorrectly){
+    gMsg(
+      'err',
+      'El handoff fue leído, pero SB no confirmó la carga del contrato. No se marcó como consumido.'
+    );
+
+    return false;
+  }
+
+  /*
+   * Verificación adicional:
+   * activity.id y lane.id deben sobrevivir
+   * exactamente al importador vigente.
+   */
+  if(
+    !sbLMPHandoffIdsPreserved(
+      contract
+    )
+  ){
+    gMsg(
+      'err',
+      'La carga automática fue detenida porque no se conservaron exactamente los IDs de actividades o carriles.'
+    );
+
+    return false;
+  }
+
+  /*
+   * Primera recepción:
+   * crea la primera versión del JSON maestro.
+   *
+   * Recarga:
+   * reutiliza consumed_flow_id y evita
+   * crear una identidad nueva.
+   */
+  const flow =
+    sbRegisterWorkingFlow({
+      contract:
+        S.contract,
+
+      sourceOrigin:
+        'lmp',
+
+      versionType:
+        'as_is',
+
+      flowId:
+        normalizeText(
+          context?.consumed_flow_id ||
+          ''
+        )
+    });
+
+  if(!flow){
+    gMsg(
+      'err',
+      'El AS-IS fue cargado, pero no pudo registrarse como flujo de trabajo.'
+    );
+
+    return false;
+  }
+
+  /*
+   * La intención pertenece al handoff,
+   * nunca a sipoc_input.
+   */
+  S.loadTrace = {
+    ...(
+      S.loadTrace ||
+      {}
+    ),
+
+    source:
+      'lmp_handoff',
+
+    intent:
+      context.intent,
+
+    returnExpected:
+      context.return_expected,
+
+    handoffCreatedAt:
+      context.created_at,
+
+    handoffConsumedAt:
+      context.consumed_at ||
+      ''
+  };
+
+  /*
+   * Solo después de:
+   * leer → validar → importar →
+   * aplicar → renderizar → confirmar IDs
+   * se marca como consumido.
+   */
+  const consumedResult =
+    sbMarkLMPHandoffConsumed(
+      context,
+      flow
+    );
+
+  if(consumedResult.ok){
+    S.loadTrace.handoffConsumedAt =
+      consumedResult
+        .context
+        .consumed_at;
+  }
+
+  const blockingCount =
+    Number(
+      S.loadTrace
+        ?.blockingCount
+    ) || 0;
+
+  const intentMessage =
+    context.intent ===
+      'asis_review'
+      ? 'Queda preparado para revisión AS-IS y retorno futuro al LMP.'
+      : 'Queda cargado como baseline para el trabajo posterior en SB.';
+
+  /*
+   * Los vacíos son warnings de trabajo.
+   * No impiden abrir el AS-IS.
+   */
+  if(blockingCount){
+    gMsg(
+      'warn',
+      (
+        wasConsumed
+          ? 'AS-IS restaurado desde el handoff sin crear una identidad de flujo nueva. '
+          : 'AS-IS recibido automáticamente desde LMP. '
+      ) +
+      `${blockingCount} vacío(s) estructural(es) quedan como advertencias de revisión. ` +
+      intentMessage
+    );
+
+    return true;
+  }
+
+  if(!consumedResult.ok){
+    gMsg(
+      'warn',
+      'AS-IS cargado correctamente, pero no fue posible marcar el handoff como consumido. Evita recargar hasta revisar el almacenamiento local.'
+    );
+
+    return true;
+  }
+
+  gMsg(
+    'ok',
+    (
+      wasConsumed
+        ? 'AS-IS restaurado desde el handoff sin duplicar el flujo. '
+        : 'AS-IS recibido automáticamente desde LMP. '
+    ) +
+    intentMessage
+  );
+
+  return true;
+}
+
+
+function sbInitAutomaticLMPHandoff(){
+  const run =
+    () =>
+      setTimeout(
+        sbConsumeLMPHandoff,
+        0
+      );
+
+  if(
+    document.readyState ===
+      'loading'
+  ){
+    document.addEventListener(
+      'DOMContentLoaded',
+      run,
+      {
+        once:
+          true
+      }
+    );
+
+    return;
+  }
+
+  run();
+}
+
+
+sbInitAutomaticLMPHandoff();
 
 // ═══════════════════════════════════════════════════════════════
 // TEMPLATE GENERATOR
