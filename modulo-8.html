@@ -3512,11 +3512,27 @@ function executiveGanttApplyZoom(restorePosition = true){
   });
 }
 
+function renderSharedGanttContext(){
+  if(
+    isAdmin() &&
+    VIEW.type === "admin" &&
+    adminTab() === "gantt"
+  ){
+    renderAdminWorkspace();
+    return;
+  }
+
+  renderExecutiveHome();
+}
+
+
 function setExecutiveGanttZoom(months){
   const value =
     Number(months);
 
-  if(![3,6,12].includes(value)){
+  if(
+    ![3,6,12].includes(value)
+  ){
     return;
   }
 
@@ -3526,7 +3542,10 @@ function setExecutiveGanttZoom(months){
   const metrics =
     executiveGanttMetrics();
 
-  if(metrics && metrics.trackWidth > 0){
+  if(
+    metrics &&
+    metrics.trackWidth > 0
+  ){
     state.focusRatio =
       Math.max(
         0,
@@ -3541,10 +3560,13 @@ function setExecutiveGanttZoom(months){
       );
   }
 
-  state.zoom = value;
-  state.scrollLeft = null;
+  state.zoom =
+    value;
 
-  renderExecutiveHome();
+  state.scrollLeft =
+    null;
+
+  renderSharedGanttContext();
 }
 
 function rememberExecutiveGanttScroll(){
@@ -3672,8 +3694,7 @@ function executiveOpenProcess(procesoId){
   rememberExecutiveGanttScroll();
 
   openProcess(
-    procesoId,
-    {type:"home"}
+    procesoId
   );
 }
 
@@ -4509,7 +4530,6 @@ function filterExecutiveGantt(){
   }
 }
 
-
 function resetExecutiveGanttFilters(){
   const state =
     executiveState();
@@ -4525,13 +4545,7 @@ function resetExecutiveGanttFilters(){
   state.macros = [];
   state.analysts = [];
 
-  /*
-   * No se modifica:
-   * - zoom
-   * - scroll
-   * - macroprocesos expandidos
-   */
-  renderExecutiveHome();
+  renderSharedGanttContext();
 }
 
 
@@ -6644,6 +6658,15 @@ function renderAdminWorkspace(){
   if(tab === "processes"){
     requestAnimationFrame(
       filterAdminProcessMaster
+    );
+  }
+
+  if(tab === "gantt"){
+    requestAnimationFrame(
+      () =>
+        executiveGanttApplyZoom(
+          true
+        )
     );
   }
 }
@@ -9545,45 +9568,9 @@ function renderGanttAxis(range){
 }
 
 function renderAdminGantt(){
-  const defaultStates = ["PLANIFICADO","EN CURSO","ATRASADO"];
-  const processes = (DATA.procesos || [])
-    .filter(isActiveRow)
-    .filter(p => defaultStates.includes(processState(p)))
-    .slice();
-  const range = ganttDateRange(processes);
-  processes.sort((a,b) => {
-    const da = ganttPlanDate(a,"start",range.year);
-    const db = ganttPlanDate(b,"start",range.year);
-    return (da?.getTime() ?? Number.MAX_SAFE_INTEGER) - (db?.getTime() ?? Number.MAX_SAFE_INTEGER);
-  });
-  const macros = activeMacroprocesses().map(m => ({value:String(m.macro_id||""),label:macroDisplayName(m)}));
-  const analysts = activeAnalystUsers().map(u => ({value:String(u.username||""),label:String(u.nombre||u.username||"")}));
-
-  return `
-    <div class="admin-section-actions">
-      <div class="admin-section-intro"><h3>Gantt del plan</h3><p class="meta">Cronograma anual. Las barras usan fechas planificadas y, cuando faltan, las semanas configuradas.</p></div>
-      <span class="gantt-year-caption">Año ${range.year}</span>
-    </div>
-    <div class="gantt-toolbar">
-      <input id="adminGanttSearch" placeholder="Buscar código o proceso" oninput="filterAdminGantt()">
-      ${multiFilter("adminGanttStateFilter","Estado",["PLANIFICADO","EN CURSO","ATRASADO","CERRADO"],"filterAdminGantt",defaultStates)}
-      ${multiFilter("adminGanttMacroFilter","Macroproceso",macros,"filterAdminGantt")}
-      ${multiFilter("adminGanttAnalystFilter","Analista",analysts,"filterAdminGantt")}
-      ${multiFilter("adminGanttTypeFilter","Tipo",["PRIMARIO","SOPORTE","ESTRATÉGICO","SIN CLASIFICAR"],"filterAdminGantt")}
-      <button class="btn soft" type="button" onclick="setAdminTab('matrix')">Editar en matriz</button>
-    </div>
-    <div class="gantt-legend" aria-label="Leyenda del Gantt">
-      <span class="gantt-legend-item"><span class="gantt-legend-swatch"></span>Planificado</span>
-      <span class="gantt-legend-item"><span class="gantt-legend-swatch running"></span>En curso</span>
-      <span class="gantt-legend-item"><span class="gantt-legend-swatch late"></span>Atrasado</span>
-      <span class="gantt-legend-item"><span class="gantt-legend-swatch closed"></span>Cerrado</span>
-      <span class="gantt-legend-item"><span class="gantt-legend-today"></span>Hoy</span>
-    </div>
-    <div class="gantt-shell"><div class="gantt-scroll"><div class="gantt-grid" id="adminGanttGrid">
-      ${renderGanttAxis(range)}
-      <div id="adminGanttRows">${processes.map(p => ganttRow(p,range)).join("") || `<div class="card"><b>No hay procesos para mostrar.</b></div>`}</div>
-    </div></div></div>
-  `;
+  return renderExecutiveGantt(
+    activeProcesses()
+  );
 }
 
 function ganttRow(p, range){
