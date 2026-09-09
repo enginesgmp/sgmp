@@ -3320,16 +3320,60 @@ function executiveState(){
         )
         .filter(
           value =>
-            allowedStates.includes(
-              value
-            )
+            allowedStates.includes(value)
         );
   }
 
-  /*
-   * Por defecto los macroprocesos
-   * aparecen contraídos.
-   */
+  EXECUTIVE_STATE.search =
+    String(
+      EXECUTIVE_STATE.search || ""
+    );
+
+  if(
+    !Array.isArray(
+      EXECUTIVE_STATE.macros
+    )
+  ){
+    EXECUTIVE_STATE.macros = [];
+
+  }else{
+    EXECUTIVE_STATE.macros =
+      [
+        ...new Set(
+          EXECUTIVE_STATE.macros
+            .map(
+              value =>
+                String(value || "")
+                  .trim()
+            )
+            .filter(Boolean)
+        )
+      ];
+  }
+
+  if(
+    !Array.isArray(
+      EXECUTIVE_STATE.analysts
+    )
+  ){
+    EXECUTIVE_STATE.analysts = [];
+
+  }else{
+    EXECUTIVE_STATE.analysts =
+      [
+        ...new Set(
+          EXECUTIVE_STATE.analysts
+            .map(
+              value =>
+                String(value || "")
+                  .trim()
+                  .toLowerCase()
+            )
+            .filter(Boolean)
+        )
+      ];
+  }
+
   if(
     !Array.isArray(
       EXECUTIVE_STATE.expandedMacros
@@ -4209,31 +4253,96 @@ function executiveGanttRow(p, range){
   `;
 }
 
+function executiveGanttFilteredProcesses(
+  processes
+){
+  const state =
+    executiveState();
 
-function renderExecutiveGantt(processes){
-  const selectedStates =
-    executiveState().states;
-
-  const rows =
-    processes
-      .filter(p => {
-        const state =
-          processState(p);
-
-        return (
-          !selectedStates.length ||
-          selectedStates.includes(
-            state
-          )
-        );
-      })
+  let rows =
+    (processes || [])
       .slice();
 
-  const range =
-    ganttDateRange(
-      processes
-    );
+  if(
+    state.states.length
+  ){
+    rows =
+      rows.filter(
+        p =>
+          state.states.includes(
+            processState(p)
+          )
+      );
+  }
 
+  if(
+    state.macros.length
+  ){
+    rows =
+      rows.filter(
+        p =>
+          state.macros.includes(
+            String(
+              p.macro_id || ""
+            )
+          )
+      );
+  }
+
+  if(
+    state.analysts.length
+  ){
+    rows =
+      rows.filter(
+        p =>
+          state.analysts.includes(
+            String(
+              p.analista_user || ""
+            )
+              .trim()
+              .toLowerCase()
+          )
+      );
+  }
+
+  const query =
+    state.search
+      .trim()
+      .toLowerCase();
+
+  if(query){
+    rows =
+      rows.filter(p => {
+
+        const searchable = [
+          p.codigo_proceso,
+          p.proceso_id,
+          processDisplayName(p),
+          processMacroName(p),
+          processAnalystName(p),
+          p.lider
+        ]
+          .map(
+            value =>
+              String(value || "")
+                .toLowerCase()
+          )
+          .join(" ");
+
+        return searchable.includes(
+          query
+        );
+      });
+  }
+
+  return rows;
+}
+
+
+function executiveGanttGroupsMarkup(
+  rows,
+  range
+){
   const groups =
     executiveGanttGroups(
       rows
@@ -4241,8 +4350,10 @@ function renderExecutiveGantt(processes){
 
   groups.forEach(
     ([,groupRows]) => {
+
       groupRows.sort(
         (a,b) => {
+
           const da =
             ganttPlanDate(
               a,
@@ -4269,6 +4380,209 @@ function renderExecutiveGantt(processes){
     }
   );
 
+  if(!groups.length){
+    return `
+      <div class="card">
+        <b>
+          No hay procesos para los filtros seleccionados.
+        </b>
+      </div>
+    `;
+  }
+
+  return groups
+    .map(
+      ([macroId,groupRows]) => {
+
+        const expanded =
+          executiveGanttMacroIsExpanded(
+            macroId
+          );
+
+        const domId =
+          executiveGanttMacroDomId(
+            macroId
+          );
+
+        return `
+          ${executiveGanttGroupHeader(
+            macroId,
+            groupRows
+          )}
+
+          <div
+            class="executive-gantt-group-body"
+            id="executiveGanttGroupBody_${esc(domId)}"
+            ${expanded ? "" : "hidden"}
+          >
+            ${
+              groupRows
+                .map(
+                  p =>
+                    executiveGanttRow(
+                      p,
+                      range
+                    )
+                )
+                .join("")
+            }
+          </div>
+        `;
+      }
+    )
+    .join("");
+}
+
+
+function filterExecutiveGantt(){
+  const state =
+    executiveState();
+
+  state.search =
+    String(
+      $("executiveGanttSearch")
+        ?.value || ""
+    );
+
+  state.states =
+    getMultiFilterValues(
+      "executiveGanttStateFilter"
+    )
+      .map(
+        value =>
+          String(value || "")
+            .trim()
+            .toUpperCase()
+      );
+
+  state.macros =
+    getMultiFilterValues(
+      "executiveGanttMacroFilter"
+    )
+      .map(
+        value =>
+          String(value || "")
+            .trim()
+      );
+
+  state.analysts =
+    getMultiFilterValues(
+      "executiveGanttAnalystFilter"
+    )
+      .map(
+        value =>
+          String(value || "")
+            .trim()
+            .toLowerCase()
+      );
+
+  const processes =
+    activeProcesses();
+
+  const rows =
+    executiveGanttFilteredProcesses(
+      processes
+    );
+
+  const range =
+    ganttDateRange(
+      processes
+    );
+
+  const root =
+    $("executiveGanttRows");
+
+  if(root){
+    root.innerHTML =
+      executiveGanttGroupsMarkup(
+        rows,
+        range
+      );
+  }
+
+  const counter =
+    $("executiveGanttResultCount");
+
+  if(counter){
+    counter.textContent =
+      `Mostrando ${rows.length} de ${processes.length} procesos activos`;
+  }
+}
+
+
+function resetExecutiveGanttFilters(){
+  const state =
+    executiveState();
+
+  state.search = "";
+
+  state.states = [
+    "PLANIFICADO",
+    "EN CURSO",
+    "ATRASADO"
+  ];
+
+  state.macros = [];
+  state.analysts = [];
+
+  /*
+   * No se modifica:
+   * - zoom
+   * - scroll
+   * - macroprocesos expandidos
+   */
+  renderExecutiveHome();
+}
+
+
+function renderExecutiveGantt(processes){
+  const state =
+    executiveState();
+
+  const rows =
+    executiveGanttFilteredProcesses(
+      processes
+    );
+
+  const range =
+    ganttDateRange(
+      processes
+    );
+
+  const macros =
+    activeMacroprocesses()
+      .map(
+        m => ({
+          value:
+            String(
+              m.macro_id || ""
+            ),
+
+          label:
+            macroDisplayName(m)
+        })
+      );
+
+  const analysts =
+    activeAnalystUsers()
+      .map(
+        u => ({
+          value:
+            String(
+              u.username || ""
+            )
+              .trim()
+              .toLowerCase(),
+
+          label:
+            String(
+              u.nombre ||
+              u.username ||
+              ""
+            )
+        })
+      );
+
   return `
     <section id="executiveGanttPanel">
 
@@ -4289,21 +4603,9 @@ function renderExecutiveGantt(processes){
 
         <div class="executive-gantt-toolbar-actions">
 
-          ${multiFilter(
-            "executiveGanttStateFilter",
-            "Estado",
-            [
-              "PLANIFICADO",
-              "EN CURSO",
-              "ATRASADO",
-              "CERRADO"
-            ],
-            "filterExecutiveGanttStates",
-            selectedStates
-          )}
-
-          <div class="executive-gantt-hierarchy-actions">
-
+          <div
+            class="executive-gantt-hierarchy-actions"
+          >
             <button
               class="btn ghost"
               type="button"
@@ -4319,14 +4621,12 @@ function renderExecutiveGantt(processes){
             >
               Contraer todo
             </button>
-
           </div>
 
           <div
             class="executive-gantt-nav"
             aria-label="Navegación temporal"
           >
-
             <button
               class="btn ghost icon-only"
               type="button"
@@ -4354,14 +4654,12 @@ function renderExecutiveGantt(processes){
             >
               ›
             </button>
-
           </div>
 
           <div
             class="executive-gantt-zoom"
             aria-label="Escala del cronograma"
           >
-
             ${[3,6,12].map(value => `
               <button
                 type="button"
@@ -4384,7 +4682,6 @@ function renderExecutiveGantt(processes){
                 }
               </button>
             `).join("")}
-
           </div>
 
           <span class="gantt-year-caption">
@@ -4393,6 +4690,64 @@ function renderExecutiveGantt(processes){
 
         </div>
 
+      </div>
+
+      <div class="multi-filter-bar">
+
+        <div class="search-box">
+          <input
+            id="executiveGanttSearch"
+            value="${esc(state.search)}"
+            placeholder="Buscar código, proceso, líder o analista"
+            oninput="filterExecutiveGantt()"
+          >
+        </div>
+
+        ${multiFilter(
+          "executiveGanttMacroFilter",
+          "Macroproceso",
+          macros,
+          "filterExecutiveGantt",
+          state.macros
+        )}
+
+        ${multiFilter(
+          "executiveGanttAnalystFilter",
+          "Responsable",
+          analysts,
+          "filterExecutiveGantt",
+          state.analysts
+        )}
+
+        ${multiFilter(
+          "executiveGanttStateFilter",
+          "Estado",
+          [
+            "PLANIFICADO",
+            "EN CURSO",
+            "ATRASADO",
+            "CERRADO"
+          ],
+          "filterExecutiveGantt",
+          state.states
+        )}
+
+        <button
+          class="btn ghost"
+          type="button"
+          onclick="resetExecutiveGanttFilters()"
+        >
+          Restablecer
+        </button>
+
+      </div>
+
+      <div
+        id="executiveGanttResultCount"
+        class="meta"
+        style="margin:-4px 0 10px"
+      >
+        Mostrando ${rows.length} de ${processes.length} procesos activos
       </div>
 
       <div
@@ -4428,7 +4783,6 @@ function renderExecutiveGantt(processes){
       <div
         class="gantt-shell executive-gantt-shell"
       >
-
         <div
           class="gantt-scroll executive-gantt-scroll"
           id="executiveGanttScroll"
@@ -4436,74 +4790,21 @@ function renderExecutiveGantt(processes){
           aria-label="Cronograma desplazable horizontalmente"
           onscroll="rememberExecutiveGanttScroll()"
         >
-
           <div
             class="gantt-grid executive-gantt-grid"
             id="executiveGanttGrid"
           >
-
             ${executiveGanttAxis(range)}
 
             <div id="executiveGanttRows">
-
-              ${
-                groups.length
-                  ? groups
-                      .map(
-                        ([macroId,groupRows]) => {
-
-                          const expanded =
-                            executiveGanttMacroIsExpanded(
-                              macroId
-                            );
-
-                          const domId =
-                            executiveGanttMacroDomId(
-                              macroId
-                            );
-
-                          return `
-                            ${executiveGanttGroupHeader(
-                              macroId,
-                              groupRows
-                            )}
-
-                            <div
-                              class="executive-gantt-group-body"
-                              id="executiveGanttGroupBody_${esc(domId)}"
-                              ${expanded ? "" : "hidden"}
-                            >
-                              ${
-                                groupRows
-                                  .map(
-                                    p =>
-                                      executiveGanttRow(
-                                        p,
-                                        range
-                                      )
-                                  )
-                                  .join("")
-                              }
-                            </div>
-                          `;
-                        }
-                      )
-                      .join("")
-                  : `
-                    <div class="card">
-                      <b>
-                        No hay procesos para los estados seleccionados.
-                      </b>
-                    </div>
-                  `
-              }
-
+              ${executiveGanttGroupsMarkup(
+                rows,
+                range
+              )}
             </div>
 
           </div>
-
         </div>
-
       </div>
 
     </section>
