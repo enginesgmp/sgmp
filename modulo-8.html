@@ -7652,11 +7652,27 @@ async function adminSaveProcess(){
     );
   }
 
-  beginBackgroundSave(
-    "Guardando proceso…"
+const saveBtn =
+  document.querySelector(
+    "#adminModalRoot .admin-modal-actions .btn.primary"
   );
 
-  try{
+const originalSaveText =
+  saveBtn?.textContent || "";
+
+if(saveBtn){
+  saveBtn.disabled = true;
+  saveBtn.textContent =
+    isNew
+      ? "Creando..."
+      : "Guardando...";
+}
+
+beginBackgroundSave(
+  "Guardando proceso…"
+);
+
+try{
     const payload = {
       proceso_id:
         procesoId,
@@ -7844,15 +7860,133 @@ async function adminSaveProcess(){
           actual !== expected
       );
 
-    if(failedField){
+if(failedField){
+  throw new Error(
+    "El proceso se guardó, pero " +
+    failedField[0] +
+    " no quedó persistido correctamente."
+  );
+}
+
+if(isNew){
+  const expectedStructure = [
+    {
+      id:"H01",
+      name:"PREWORK",
+      activities:3
+    },
+    {
+      id:"H02",
+      name:"CONSTRUCCIÓN",
+      activities:7
+    },
+    {
+      id:"H03",
+      name:"DOCUMENTACIÓN",
+      activities:3
+    },
+    {
+      id:"H04",
+      name:"IMPLEMENTACIÓN Y CIERRE",
+      activities:4
+    }
+  ];
+
+  const createdHitos =
+    hitosForProcess(
+      savedProcessId
+    );
+
+  const createdActivities =
+    actsForProcess(
+      savedProcessId
+    );
+
+  if(
+    result?.created !== true ||
+    createdHitos.length !== 4 ||
+    createdActivities.length !== 17
+  ){
+    throw new Error(
+      "RADAR no confirmó la estructura operativa de 4 hitos y 17 actividades."
+    );
+  }
+
+  for(
+    const expected of
+    expectedStructure
+  ){
+    const hito =
+      createdHitos.find(
+        item =>
+          String(
+            item.hito_id || ""
+          )
+            .trim()
+            .toUpperCase() ===
+              expected.id &&
+          String(
+            item.hito || ""
+          ).trim() ===
+              expected.name
+      );
+
+    if(!hito){
       throw new Error(
-        "El proceso se guardó, pero " +
-        failedField[0] +
-        " no quedó persistido correctamente."
+        `RADAR no confirmó el hito ${expected.id} · ${expected.name}.`
       );
     }
 
-    closeAdminModal();
+    const activities =
+      actsForHito(
+        hito.hito_proceso_id
+      );
+
+    const orders =
+      activities
+        .map(
+          activity =>
+            Number(
+              activity.orden_actividad ||
+              0
+            )
+        )
+        .sort(
+          (a,b) => a - b
+        );
+
+    if(
+      activities.length !==
+        expected.activities ||
+      !orders.every(
+        (order,index) =>
+          order === index + 1
+      )
+    ){
+      throw new Error(
+        `RADAR no confirmó las ${expected.activities} actividades consecutivas de ${expected.id}.`
+      );
+    }
+  }
+
+  if(
+    createdActivities.some(
+      activity =>
+        isTrue(
+          activity.completado
+        )
+    ) ||
+    Number(
+      persisted.avance_pct || 0
+    ) !== 0
+  ){
+    throw new Error(
+      "El proceso nuevo no inició correctamente en 0%."
+    );
+  }
+}
+
+closeAdminModal();
 
     ADMIN_CONTROL_STATE = {
       ...(ADMIN_CONTROL_STATE || {}),
@@ -7869,16 +8003,27 @@ async function adminSaveProcess(){
       "Proceso guardado."
     );
 
-  }catch(error){
-    finishBackgroundSave(
-      false
-    );
+}catch(error){
+  finishBackgroundSave(
+    false
+  );
 
-    toast(
-      "No se pudo guardar: " +
-      error.message
-    );
+  if(
+    saveBtn &&
+    document.body.contains(
+      saveBtn
+    )
+  ){
+    saveBtn.disabled = false;
+    saveBtn.textContent =
+      originalSaveText;
   }
+
+  toast(
+    "No se pudo guardar: " +
+    error.message
+  );
+}
 }
   
 function adminOpenReopenProcess(procesoId){
