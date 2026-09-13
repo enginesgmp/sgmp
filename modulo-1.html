@@ -14440,18 +14440,47 @@ function asisActivityTemplate(a, index){
   </small>
 </div>
 
-<div class="field w-6">
-  <label>Sistema / herramienta</label>
-
-  <input
-    class="a_system_name"
-    value="${escapeHtml(safe.system_name || '')}"
-    placeholder="Ej. SAP, SIIA, Excel"
-    oninput="syncAsisRow(${index})"
-  />
-</div>
-
 ${isDecision ? '' : `
+  <div class="field w-4">
+    <label>Modo de ejecución</label>
+
+    <select
+      class="a_execution_mode"
+      onchange="handleAsIsExecutionModeChange(${index})"
+    >
+      <option
+        value="manual"
+        ${executionMode === 'manual' ? 'selected' : ''}
+      >
+        Manual
+      </option>
+
+      <option
+        value="sistema"
+        ${executionMode === 'sistema' ? 'selected' : ''}
+      >
+        Sistema
+      </option>
+    </select>
+  </div>
+
+  ${
+    executionMode === 'sistema'
+      ? `
+        <div class="field w-4">
+          <label>Sistema / herramienta</label>
+
+          <input
+            class="a_system_name"
+            value="${escapeHtml(safe.system_name || '')}"
+            placeholder="Ej. SAP, SIIA, Excel"
+            oninput="syncAsisRow(${index})"
+          />
+        </div>
+      `
+      : ''
+  }
+
   <div class="field w-4">
     <label>Tiempo estimado</label>
 
@@ -15150,6 +15179,14 @@ function readAsisRow(item){
         )
     );
 
+  const executionMode =
+    isDecision
+      ? ''
+      : normalizeLmpExecutionMode(
+          get('.a_execution_mode'),
+          get('.a_system_name')
+        );
+
   const activity =
     Object.assign(
       {},
@@ -15182,8 +15219,13 @@ function readAsisRow(item){
         document:
           documents[0] || '',
 
+        execution_mode:
+          executionMode,
+
         system_name:
-          get('.a_system_name'),
+          executionMode === 'sistema'
+            ? get('.a_system_name')
+            : '',
 
         estimated_time:
           isDecision
@@ -16224,6 +16266,7 @@ function addAsisActivity(data = {}){
     type: 'actividad',
 documents: [],
 document: '',
+execution_mode: 'manual',
 system_name: '',
 estimated_time: '',
     previous: [],
@@ -16492,14 +16535,35 @@ function saveAsisActivity(index){
 function handleAsIsActivityTypeChange(index){
   syncAsisRow(index, true);
 
-  const activity = state.asis?.activities?.[index];
-  const type = normalizePromptAType(activity?.type || 'actividad');
+  const activity =
+    state.asis?.activities?.[index];
 
-if(type === 'decision'){
-  activity.estimated_time = '';
-  activity.inputs_used = [];
-  activity.outputs_generated = [];
-}
+  const type =
+    normalizePromptAType(
+      activity?.type ||
+      'actividad'
+    );
+
+  if(!activity){
+    return;
+  }
+
+  if(type === 'decision'){
+    activity.execution_mode = '';
+    activity.system_name = '';
+    activity.system_code = '';
+    activity.support_tool_code = '';
+    activity.support_tool_name = '';
+    activity.estimated_time = '';
+    activity.inputs_used = [];
+    activity.outputs_generated = [];
+  }else{
+    activity.execution_mode =
+      normalizeLmpExecutionMode(
+        activity.execution_mode,
+        activity.system_name
+      );
+  }
 
   if(typeof normalizeAllAsisBidirectionalConnections === 'function'){
     normalizeAllAsisBidirectionalConnections();
@@ -16511,6 +16575,45 @@ if(type === 'decision'){
 
   openAsIsActivity(index, false);
   refreshAsIsStructuralStatus();
+}
+
+function handleAsIsExecutionModeChange(index){
+  syncAsisRow(index, false);
+
+  const activity =
+    state.asis?.activities?.[index];
+
+  if(!activity){
+    return;
+  }
+
+  if(
+    normalizePromptAType(
+      activity.type
+    ) === 'decision'
+  ){
+    activity.execution_mode = '';
+    activity.system_name = '';
+  }else{
+    activity.execution_mode =
+      normalizeLmpExecutionMode(
+        activity.execution_mode,
+        activity.system_name
+      );
+
+    if(
+      activity.execution_mode === 'manual'
+    ){
+      activity.system_name = '';
+      activity.system_code = '';
+      activity.support_tool_code = '';
+      activity.support_tool_name = '';
+    }
+  }
+
+  renderAsIsActivities();
+  openAsIsActivity(index, false);
+  updateAsIsPreview();
 }
   
 function syncAsisRow(index, fullUpdate = false){
@@ -19058,10 +19161,15 @@ function buildSipocActivities(){
         })),
 
       execution_mode:
-        normalizeContractString(
-          a.execution_mode ||
-          ''
-        ),
+        normalizePromptAType(
+          a.type ||
+          'actividad'
+        ) === 'decision'
+          ? ''
+          : normalizeLmpExecutionMode(
+              a.execution_mode,
+              a.system_name
+            ),
 
       system_code:
         normalizeContractString(
@@ -20001,74 +20109,17 @@ function buildSipocContract(){
           documents,
 
           ...(
-            normalizeContractString(
-              activity.execution_mode ||
-              ''
-            )
-              ? {
+            ref.type === 'decision'
+              ? {}
+              : {
                   execution_mode:
-                    normalizeContractString(
-                      activity.execution_mode
-                    )
-                }
-              : {}
-          ),
-
-          ...(
-            normalizeContractString(
-              activity.system_code ||
-              ''
-            )
-              ? {
-                  system_code:
-                    normalizeContractString(
-                      activity.system_code
-                    )
-                }
-              : {}
-          ),
-
-          ...(
-            normalizeContractString(
-              activity.system_name ||
-              ''
-            )
-              ? {
-                  system_name:
-                    normalizeContractString(
+                    normalizeLmpExecutionMode(
+                      activity.execution_mode,
                       activity.system_name
                     )
                 }
-              : {}
-          ),
-
-          ...(
-            normalizeContractString(
-              activity.support_tool_code ||
-              ''
-            )
-              ? {
-                  support_tool_code:
-                    normalizeContractString(
-                      activity.support_tool_code
-                    )
-                }
-              : {}
-          ),
-
-          ...(
-            normalizeContractString(
-              activity.support_tool_name ||
-              ''
-            )
-              ? {
-                  support_tool_name:
-                    normalizeContractString(
-                      activity.support_tool_name
-                    )
-                }
-              : {}
           )
+          
         };
       }
     );
@@ -25593,14 +25644,16 @@ function normalizePromptAActivity(activity, index){
       documents[0] || '',
 
     system_name:
-      String(
-        a.system_name ||
-        a.system ||
-        a.sistema ||
-        a.tool ||
-        a.herramienta ||
-        ''
-      ).trim(),
+      type === 'decision'
+        ? ''
+        : String(
+            a.system_name ||
+            a.system ||
+            a.sistema ||
+            a.tool ||
+            a.herramienta ||
+            ''
+          ).trim(),
 
     system_code:
       String(
@@ -25609,10 +25662,17 @@ function normalizePromptAActivity(activity, index){
       ).trim(),
 
     execution_mode:
-      String(
-        a.execution_mode ||
-        ''
-      ).trim(),
+      type === 'decision'
+        ? ''
+        : normalizeLmpExecutionMode(
+            a.execution_mode,
+            a.system_name ||
+            a.system ||
+            a.sistema ||
+            a.tool ||
+            a.herramienta ||
+            ''
+          ),
 
     support_tool_code:
       String(
