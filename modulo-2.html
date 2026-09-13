@@ -4864,143 +4864,82 @@ function sbInternalRelations(activity){
   }));
 }
 
-
 function buildFallbackInternalEdges(){
   const idMap =
     parseIdReference();
 
-  const acts =
-    Array.isArray(
-      S.sp?.activities
-    )
-      ? S.sp.activities.slice()
-      : [];
-
-  if(!acts.length){
-    return [];
-  }
-
   const ordered =
-    acts
-      .map((activity, index) => ({
-        ...activity,
-
-        __idx:
-          index,
-
-        order:
-          Number(
-            activity.order ||
-            activity.sequence ||
-            index + 1
-          ) || index + 1
-      }))
-      .sort(
-        (a, b) =>
-          (a.order - b.order) ||
-          (a.__idx - b.__idx)
+    sbContractActivities()
+      .slice()
+      .sort((a, b) =>
+        (
+          Number(a?.sequence || 0) -
+          Number(b?.sequence || 0)
+        )
       );
 
   const edges = [];
   const seen = new Set();
 
-  const add = (
-    fromName,
-    toName,
-    label
-  ) => {
+  ordered.forEach(activity => {
     const sourceId =
+      normalizeText(
+        activity?.id || ''
+      ) ||
       activityIdByName(
         idMap,
-        fromName
+        activity?.name || ''
       );
 
-    const targetId =
-      activityIdByName(
-        idMap,
-        toName
-      );
-
-    if(
-      !sourceId ||
-      !targetId ||
-      sourceId === targetId
-    ){
-      return;
-    }
-
-    const key =
-      sourceId +
-      '->' +
-      targetId;
-
-    if(seen.has(key)){
-      return;
-    }
-
-    seen.add(key);
-
-    edges.push(
-      edgeCell(
-        'sb_internal_edge_' +
-        edges.length +
-        '_' +
-        sourceId +
-        '_' +
-        targetId,
-
-        sourceId,
-        targetId,
-        label || ''
-      )
-    );
-  };
-
-  const hasDeclaredConnections =
-    ordered.some(activity =>
-      sbInternalRelations(
-        activity
-      ).length > 0
-    );
-
-  ordered.forEach(
-    (activity, index) => {
-      const relations =
-        sbInternalRelations(
-          activity
+    (
+      Array.isArray(activity?.next)
+        ? activity.next
+        : []
+    ).forEach(relation => {
+      const targetId =
+        normalizeText(
+          relation?.activity_id || ''
+        ) ||
+        activityIdByName(
+          idMap,
+          sbRelationName(relation)
         );
 
-      if(relations.length){
-        relations.forEach(
-          relation => {
-            add(
-              activity.name,
-              relation.activity,
-              relation.label
-            );
-          }
-        );
-
+      if(
+        !sourceId ||
+        !targetId ||
+        sourceId === targetId
+      ){
         return;
       }
 
-      /*
-       * Solo se genera secuencia por orden cuando
-       * ninguna actividad declara conexiones.
-       */
-      if(
-        !hasDeclaredConnections &&
-        !activity.is_end &&
-        index < ordered.length - 1
-      ){
-        add(
-          activity.name,
-          ordered[index + 1].name,
-          ''
-        );
+      const key =
+        sourceId +
+        '->' +
+        targetId;
+
+      if(seen.has(key)){
+        return;
       }
-    }
-  );
+
+      seen.add(key);
+
+      edges.push(
+        edgeCell(
+          'sb_internal_edge_' +
+          edges.length +
+          '_' +
+          sourceId +
+          '_' +
+          targetId,
+
+          sourceId,
+          targetId,
+          sbRelationLabel(relation)
+        )
+      );
+    });
+  });
 
   return edges;
 }
@@ -5009,34 +4948,8 @@ function buildFallbackPeripheralEdges(){
   const idMap =
     parseIdReference();
 
-  const sp =
-    S.sp || {};
-
   const activities =
-    Array.isArray(sp.activities)
-      ? sp.activities.slice()
-      : [];
-
-  const ordered =
-    activities
-      .map((activity, index) => ({
-        ...activity,
-
-        __idx:
-          index,
-
-        order:
-          Number(
-            activity.order ||
-            activity.sequence ||
-            index + 1
-          ) || index + 1
-      }))
-      .sort(
-        (a, b) =>
-          (a.order - b.order) ||
-          (a.__idx - b.__idx)
-      );
+    sbContractActivities();
 
   const edges = [];
   const seen = new Set();
@@ -5045,7 +4958,7 @@ function buildFallbackPeripheralEdges(){
     prefix,
     sourceId,
     targetId,
-    label
+    label = ''
   ) => {
     if(
       !sourceId ||
@@ -5078,330 +4991,127 @@ function buildFallbackPeripheralEdges(){
 
         sourceId,
         targetId,
-        label || ''
+        label
       )
     );
   };
 
 
-  /*
-   * 1. Proveedor → Entrada
-   */
-  const supplierInputLinks =
-    Array.isArray(
-      sp.supplier_input_links
-    )
-      ? sp.supplier_input_links
-      : [];
-
-  const effectiveSupplierLinks =
-    supplierInputLinks.length
-      ? supplierInputLinks
-      : (
-          S.cats?.suppliers || []
-        )
-          .map(item => ({
-            supplier:
-              normalizeText(
-                item.name
-              ),
-
-            input:
-              normalizeText(
-                item.input
-              )
-          }))
-          .filter(link =>
-            link.supplier &&
-            link.input
-          );
-
-  effectiveSupplierLinks.forEach(
-    link => {
+  sbContractSupplierInputs()
+    .forEach(row => {
       add(
         'sb_supplier_input',
 
         firstExistingId(
           idMap.suppliers,
-          [link.supplier]
+          [row?.supplier]
         ),
 
         firstExistingId(
           idMap.inputs,
-          [link.input]
-        ),
-
-        ''
+          [row?.input]
+        )
       );
-    }
-  );
+    });
 
 
-  /*
-   * 2. Entrada → Actividad
-   */
-  let explicitInputConnections = 0;
-
-  ordered.forEach(activity => {
+  activities.forEach(activity => {
     const activityId =
+      normalizeText(
+        activity?.id || ''
+      ) ||
       activityIdByName(
         idMap,
-        activity.name
+        activity?.name || ''
       );
 
-    const relations =
-      Array.isArray(
-        activity.input_relations
-      ) &&
-      activity.input_relations.length
-        ? activity.input_relations
-        : asNameArray(
-            activity.ext_inputs ||
-            activity.inputs
-          ).map(name => ({
-            name,
-            label: ''
-          }));
-
-    relations.forEach(relation => {
-      const inputName =
+    (
+      Array.isArray(activity?.inputs)
+        ? activity.inputs
+        : []
+    ).forEach(item => {
+      const name =
         normalizeText(
-          relation?.name ||
-          relation?.input ||
-          ''
+          typeof item === 'string'
+            ? item
+            : (
+                item?.name ||
+                item?.input ||
+                ''
+              )
         );
-
-      if(!inputName){
-        return;
-      }
-
-      const inputId =
-        firstExistingId(
-          idMap.inputs,
-          [inputName]
-        );
-
-      if(inputId && activityId){
-        explicitInputConnections += 1;
-      }
 
       add(
         'sb_input_activity',
 
-        inputId,
+        firstExistingId(
+          idMap.inputs,
+          [name]
+        ),
+
         activityId,
 
-        normalizeText(
-          relation?.label || ''
-        )
+        typeof item === 'object'
+          ? normalizeText(
+              item?.label || ''
+            )
+          : ''
       );
     });
-  });
 
 
-  /*
-   * Fallback controlado:
-   * solo cuando ninguna actividad declara entradas.
-   */
-  if(
-    explicitInputConnections === 0 &&
-    ordered.length
-  ){
-    const startActivities =
-      ordered.filter(
-        activity =>
-          activity.is_start
-      );
-
-    const targets =
-      startActivities.length
-        ? startActivities
-        : [ordered[0]];
-
-    targets.forEach(activity => {
-      asNameArray(
-        sp.inputs
-      ).forEach(inputName => {
-        add(
-          'sb_input_start',
-
-          firstExistingId(
-            idMap.inputs,
-            [inputName]
-          ),
-
-          activityIdByName(
-            idMap,
-            activity.name
-          ),
-
-          ''
-        );
-      });
-    });
-  }
-
-
-  /*
-   * 3. Actividad → Salida
-   */
-  let explicitOutputConnections = 0;
-
-  ordered.forEach(activity => {
-    const activityId =
-      activityIdByName(
-        idMap,
-        activity.name
-      );
-
-    const relations =
-      Array.isArray(
-        activity.output_relations
-      ) &&
-      activity.output_relations.length
-        ? activity.output_relations
-        : asNameArray(
-            activity.ext_outputs ||
-            activity.outputs
-          ).map(name => ({
-            name,
-            label: ''
-          }));
-
-    relations.forEach(relation => {
-      const outputName =
+    (
+      Array.isArray(activity?.outputs)
+        ? activity.outputs
+        : []
+    ).forEach(item => {
+      const name =
         normalizeText(
-          relation?.name ||
-          relation?.output ||
-          ''
+          typeof item === 'string'
+            ? item
+            : (
+                item?.name ||
+                item?.output ||
+                ''
+              )
         );
-
-      if(!outputName){
-        return;
-      }
-
-      const outputId =
-        firstExistingId(
-          idMap.outputs,
-          [outputName]
-        );
-
-      if(activityId && outputId){
-        explicitOutputConnections += 1;
-      }
 
       add(
         'sb_activity_output',
 
         activityId,
-        outputId,
 
-        normalizeText(
-          relation?.label || ''
-        )
+        firstExistingId(
+          idMap.outputs,
+          [name]
+        ),
+
+        typeof item === 'object'
+          ? normalizeText(
+              item?.label || ''
+            )
+          : ''
       );
     });
   });
 
 
-  /*
-   * Fallback controlado:
-   * solo cuando ninguna actividad declara salidas.
-   */
-  if(
-    explicitOutputConnections === 0 &&
-    ordered.length
-  ){
-    const endActivities =
-      ordered.filter(
-        activity =>
-          activity.is_end
-      );
-
-    const sources =
-      endActivities.length
-        ? endActivities
-        : [
-            ordered[
-              ordered.length - 1
-            ]
-          ];
-
-    sources.forEach(activity => {
-      asNameArray(
-        sp.outputs
-      ).forEach(outputName => {
-        add(
-          'sb_end_output',
-
-          activityIdByName(
-            idMap,
-            activity.name
-          ),
-
-          firstExistingId(
-            idMap.outputs,
-            [outputName]
-          ),
-
-          ''
-        );
-      });
-    });
-  }
-
-
-  /*
-   * 4. Salida → Cliente
-   */
-  const outputCustomerLinks =
-    Array.isArray(
-      sp.output_customer_links
-    )
-      ? sp.output_customer_links
-      : [];
-
-  const effectiveCustomerLinks =
-    outputCustomerLinks.length
-      ? outputCustomerLinks
-      : (
-          S.cats?.customers || []
-        )
-          .map(item => ({
-            output:
-              normalizeText(
-                item.output
-              ),
-
-            customer:
-              normalizeText(
-                item.name
-              )
-          }))
-          .filter(link =>
-            link.output &&
-            link.customer
-          );
-
-  effectiveCustomerLinks.forEach(
-    link => {
+  sbContractOutputCustomers()
+    .forEach(row => {
       add(
         'sb_output_customer',
 
         firstExistingId(
           idMap.outputs,
-          [link.output]
+          [row?.output]
         ),
 
         firstExistingId(
           idMap.customers,
-          [link.customer]
-        ),
-
-        ''
+          [row?.customer]
+        )
       );
-    }
-  );
+    });
 
   return edges;
 }
@@ -5468,11 +5178,7 @@ function validateSBBuiltDiagram(
     );
 
   const activityCount =
-    Array.isArray(
-      S.sp?.activities
-    )
-      ? S.sp.activities.length
-      : 0;
+    sbContractActivities().length;
 
   if(
     activityCount > 1 &&
@@ -5689,9 +5395,9 @@ function finalizeSBBuiltDiagram(
   S.xmlFinal =
     injectHeader(
       xml,
-      S.sp || {}
+      sbContractInput()
     );
-
+  
   $('xml_final').value =
     S.xmlFinal;
 
@@ -6672,13 +6378,6 @@ const S = {
    * Conserva el contrato completo LMP_TO_SB 3.0.
    */
   contract:
-    null,
-
-  /*
-   * Adaptador temporal utilizado por
-   * las funciones XML heredadas.
-   */
-  sp:
     null,
 
   /*
@@ -7709,7 +7408,6 @@ function sbStudioCloseAndSave(options = {}){
     acts: sbDeepClone(S.acts || []),
     cats: sbDeepClone(S.cats || {}),
     contract: sbDeepClone(S.contract),
-    sp: sbDeepClone(S.sp),
     tplXml: S.tplXml || '',
     diagramXml: S.diagramXml || '',
     xmlFinal: S.xmlFinal || '',
@@ -7720,7 +7418,6 @@ function sbStudioCloseAndSave(options = {}){
     S.acts = semanticBackup.acts;
     S.cats = semanticBackup.cats;
     S.contract = semanticBackup.contract;
-    S.sp = semanticBackup.sp;
     S.tplXml = semanticBackup.tplXml;
     S.diagramXml = semanticBackup.diagramXml;
     S.xmlFinal = semanticBackup.xmlFinal;
@@ -20542,38 +20239,8 @@ function sbSyncEditorToContract(){
   S.contract =
     contract;
 
-  /*
-   * Adaptador temporal para el generador XML actual.
-   * La fuente oficial sigue siendo S.contract.
-   */
-  const normalizedPayload =
-    normalizeIncomingPayload(
-      contract
-    );
-
-  S.sp =
-    normalizedPayload.normalized;
-
-  S.sp.supplier_input_links =
-    supplierRows.map(row => ({
-      ...row
-    }));
-
-  S.sp.output_customer_links =
-    customerRows.map(row => ({
-      ...row
-    }));
-
   return contract;
 }
-
-
-function buildSP(){
-  sbSyncEditorToContract();
-
-  return S.sp;
-}
-
 
 function exportJSON(){
   const contract =
@@ -20669,8 +20336,7 @@ function goToTemplate(){
 
   resetSBGeneratedArtifacts();
 
-  buildSP();
-
+  sbSyncEditorToContract();
   genTemplate();
 }
 
@@ -20682,6 +20348,73 @@ function normalizeText(v) {
   return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 }
 
+function sbContractInput(){
+  const input =
+    S.contract?.sipoc_input;
+
+  return (
+    input &&
+    typeof input === 'object'
+  )
+    ? input
+    : {};
+}
+
+
+function sbContractLanes(){
+  const lanes =
+    sbContractInput().lanes;
+
+  return (
+    lanes &&
+    typeof lanes === 'object'
+  )
+    ? lanes
+    : {};
+}
+
+
+function sbContractActivities(){
+  const activities =
+    sbContractInput().activities;
+
+  return Array.isArray(activities)
+    ? activities
+    : [];
+}
+
+
+function sbContractSupplierInputs(){
+  const rows =
+    sbContractLanes()
+      .suppliers_inputs;
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+}
+
+
+function sbContractOutputCustomers(){
+  const rows =
+    sbContractLanes()
+      .outputs_customers;
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+}
+
+
+function sbContractActors(){
+  const rows =
+    sbContractLanes().actors;
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+}
+  
 function sbDiagramText(value){
   return normalizeText(
     value
@@ -22102,123 +21835,62 @@ function validateActivitiesSemantic(activities) {
 }
 
 function runSBContractPreflight(){
-  const sp =
-    S.sp;
-
-  const templateXML =
-    String(
-      S.tplXml || ''
-    ).trim();
-
-  const errors = [];
-  const warnings = [];
-
-  const contractCheck =
-    validateSipocContract(
-      sp
-    );
-
-  const semanticCheck =
-    validateActivitiesSemantic(
-      sp?.activities || []
-    );
-
-  errors.push(
-    ...(
-      contractCheck.blockingErrors ||
-      []
-    ),
-
-    ...(
-      semanticCheck.blockingErrors ||
-      []
-    )
-  );
-
-  warnings.push(
-    ...(
-      contractCheck.warnings ||
-      []
-    ),
-
-    ...(
-      semanticCheck.warnings ||
-      []
-    )
-  );
-
-  if(!templateXML){
-    errors.push(
-      'No existe XML base para validar.'
-    );
-  }else{
-    const graph =
-      readDrawioGraph(
-        templateXML
-      );
-
-    if(!graph.ok){
-      errors.push(
-        graph.error ||
-        'El XML base no es válido.',
-
-        ...(
-          graph.errors ||
-          []
-        )
-      );
-    }
-  }
-
-  const uniqueErrors =
-    [...new Set(
-      errors.filter(Boolean)
-    )];
-
-  const uniqueWarnings =
-    [...new Set(
-      warnings.filter(Boolean)
-    )];
-
-  if(uniqueErrors.length){
+  if(!S.contract){
     gMsg(
-      'err',
-      'Validación contractual bloqueada: ' +
-      uniqueErrors
-        .slice(0, 6)
-        .join(' | ')
+      'warn',
+      'No existe un flujo activo.'
     );
 
     return false;
   }
 
-  S.tplXml =
-    cleanStageXMLArtifacts(
-      templateXML
+  const issues =
+    sbCollectStructuralIssues(
+      S.contract
     );
 
-  if(!buildSBConnectedDiagram()){
-    return false;
-  }
+  S.alerts =
+    issues.map(issue => ({
+      type:
+        'structural_gap',
+
+      message:
+        issue.title
+    }));
+
+  sbRenderStructuralIssues(
+    issues
+  );
 
   switchTab(
     'tab_tpl'
   );
 
+  const rendered =
+    sbRenderDiagramStudio({
+      forceRebuild:
+        true,
+
+      resetCamera:
+        true
+    });
+
   gMsg(
-    uniqueWarnings.length
+    issues.length
       ? 'warn'
       : 'ok',
 
-    uniqueWarnings.length
-      ? 'Diagrama construido con advertencias contractuales: ' +
-        uniqueWarnings.join(' | ')
-      : 'Contrato validado y diagrama construido automáticamente.'
+    issues.length
+      ? (
+          `Diagrama disponible con ${
+            issues.length
+          } alerta(s) de información pendiente.`
+        )
+      : 'Diagrama disponible para edición.'
   );
 
-  return true;
+  return rendered;
 }
-
 
 function sbDeepClone(value){
   if(
@@ -22953,9 +22625,6 @@ const canonicalContract =
  */
 S.contract =
   canonicalContract;
-
-S.sp =
-  sp;
 
 sbLoadRuntimeFromContract(
   canonicalContract,
@@ -24145,101 +23814,55 @@ sbInitAutomaticLMPHandoff();
 // TEMPLATE GENERATOR
 // ═══════════════════════════════════════════════════════════════
 function genTemplate() {
-  const sp = S.sp;
-
-  if (!sp || typeof sp !== 'object') {
-    gMsg(
-      'err',
-      'No existe una estructura SIPOC válida para generar la plantilla.'
-    );
-
-    return false;
-  }
-
-  const toNames = value =>
-    (Array.isArray(value) ? value : [])
+  const actors =
+    sbContractActors()
       .map(item =>
-        typeof item === 'string'
-          ? normalizeText(item)
-          : normalizeText(
-              item?.name ||
-              item?.label ||
-              item?.value ||
-              item?.supplier ||
-              item?.input ||
-              item?.output ||
-              item?.customer ||
-              ''
-            )
+        normalizeText(
+          item?.name || ''
+        )
       )
       .filter(Boolean);
 
-  const readNames = (...candidates) => {
-    for (const candidate of candidates) {
-      const names =
-        toNames(candidate);
-
-      if (names.length) {
-        return names;
-      }
-    }
-
-    return [];
-  };
-
-  const actors =
-    readNames(
-      sp.actors,
-      sp.catalogs?.actors
-    );
-
   const suppliers =
-    readNames(
-      sp.suppliers,
-      sp.catalogs?.suppliers
+    sbUnique(
+      sbContractSupplierInputs()
+        .map(row =>
+          row?.supplier
+        )
     );
 
   const inputs =
-    readNames(
-      sp.inputs,
-      sp.catalogs?.inputs
+    sbUnique(
+      sbContractSupplierInputs()
+        .map(row =>
+          row?.input
+        )
     );
 
   const outputs =
-    readNames(
-      sp.outputs,
-      sp.catalogs?.outputs
+    sbUnique(
+      sbContractOutputCustomers()
+        .map(row =>
+          row?.output
+        )
     );
 
   const customers =
-    readNames(
-      sp.customers,
-      sp.catalogs?.customers
+    sbUnique(
+      sbContractOutputCustomers()
+        .map(row =>
+          row?.customer
+        )
     );
 
   const orderedActivities =
-    (
-      Array.isArray(sp.activities)
-        ? sp.activities
-        : []
-    )
-      .map((activity, index) => ({
-        ...activity,
-
-        __index:
-          index,
-
-        order:
-          Number(
-            activity.order ||
-            activity.sequence ||
-            index + 1
-          ) || index + 1
-      }))
-      .sort(
-        (a, b) =>
-          (a.order - b.order) ||
-          (a.__index - b.__index)
+    sbContractActivities()
+      .slice()
+      .sort((a, b) =>
+        (
+          Number(a?.sequence || 0) -
+          Number(b?.sequence || 0)
+        )
       );
 
   /*
@@ -25393,11 +25016,7 @@ function sbApplyActivityExecutionDrawioStyles(){
     parseIdReference();
 
   const activities =
-    Array.isArray(
-      S.sp?.activities
-    )
-      ? S.sp.activities
-      : [];
+    sbContractActivities();
 
   activities.forEach(activity => {
     const name =
@@ -26174,36 +25793,49 @@ function injectHeader(xmlStr, sp) {
   return xml.replace(/\s*<\/root>/, '\n    ' + nc.join('\n    ') + '\n  </root>');
 }
 
-function renderOutReport() {
-  const sp = S.sp || {};
-  const acts = sp.activities || [];
-  const actors = [...new Set(acts.map(a=>a.actor).filter(Boolean))];
+function renderOutReport(){
+  const input =
+    sbContractInput();
+
+  const acts =
+    sbContractActivities();
+
+  const actors =
+    sbUnique(
+      acts.map(activity =>
+        activity?.actor || ''
+      )
+    );
+
   $('out_report').innerHTML = `
     <div class="sum-box">
-      <div class="sum-row"><strong>Proceso</strong><span>${ex(sp.process_name||'\u2014')}</span></div>
-      <div class="sum-row"><strong>C\u00f3digo</strong><span>${ex(sp.process_code||'\u2014')}</span></div>
-      <div class="sum-row"><strong>Actividades</strong><span>${acts.length}</span></div>
-      <div class="sum-row"><strong>Actores</strong><span>${actors.join(', ')||'\u2014'}</span></div>
-      <div class="sum-row"><strong>Estado</strong><span style="color:var(--green);font-weight:700">XML con encabezado y notas incorporados</span></div>
-    </div>
-    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 13px;font-size:12px;color:#166534">
-      <strong>Importar en draw.io:</strong> Extras &rarr; Edit Diagram &rarr; pega el XML &rarr; Cerrar. Usa Ctrl+Shift+H para ajustar la vista.
+      <div class="sum-row">
+        <strong>Proceso</strong>
+        <span>${ex(input.process_name || '—')}</span>
+      </div>
+
+      <div class="sum-row">
+        <strong>Código</strong>
+        <span>${ex(input.process_code || '—')}</span>
+      </div>
+
+      <div class="sum-row">
+        <strong>Actividades</strong>
+        <span>${acts.length}</span>
+      </div>
+
+      <div class="sum-row">
+        <strong>Actores</strong>
+        <span>${ex(actors.join(', ') || '—')}</span>
+      </div>
+
+      <div class="sum-row">
+        <strong>Estado</strong>
+        <span style="color:var(--green);font-weight:700">
+          XML generado desde el contrato canónico
+        </span>
+      </div>
     </div>`;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CATÁLOGOS MAESTROS · PROCESOS Y SISTEMAS
-// Macroproceso eliminado del alcance funcional de SIPOC Builder.
-// ═══════════════════════════════════════════════════════════════
-
-if(
-  !S.masterCatalogs ||
-  typeof S.masterCatalogs !== 'object'
-){
-  S.masterCatalogs = {
-    processes: [],
-    systems: []
-  };
 }
 
 
