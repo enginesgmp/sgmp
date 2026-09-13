@@ -3139,9 +3139,8 @@ body{font-size:14px !important}
         <h2>Inicio</h2>
 
         <p>
-          Selecciona la ruta de ingreso de la información.
-          En ambos casos podrás revisar, completar y validar
-          los datos del proceso antes de construir el diagrama SIPOC.
+          Abre un flujo recibido desde LMP o crea un flujo en blanco.
+          En ambos casos el trabajo continúa directamente en Diagram Studio.
         </p>
       </div>
     </div>
@@ -3150,39 +3149,40 @@ body{font-size:14px !important}
 
       <article class="sb-route-card">
         <div>
-          <h3>Crear proceso manualmente</h3>
+          <h3>Nuevo flujo en blanco</h3>
 
           <p>
-            Inicia una estructura vacía para registrar datos generales,
-            relaciones SIPOC, actores, actividades, conexiones y notas.
+            Crea un lienzo SIPOC vacío para diagramar desde cero
+            bajo la metodología GPP.
           </p>
 
           <div class="sb-route-note">
-            Los vacíos estructurales se mostrarán en Datos del proceso.
+            Los vacíos se mostrarán como alertas y nunca
+            bloquearán la diagramación.
           </div>
         </div>
 
         <button
           class="primary"
-          id="btn_start_manual"
+          id="btn_new_blank_flow"
           type="button"
         >
-          Iniciar proceso manual
+          Crear flujo en blanco
         </button>
       </article>
 
       <article class="sb-route-card">
         <div>
-          <h3>Cargar JSON del LMP</h3>
+          <h3>Cargar LMP_TO_SB 3.0</h3>
 
           <p>
-            Importa el contrato generado por el LMP para revisar,
-            completar o corregir la información antes de construir
-            el diagrama.
+            Importa manualmente un contrato canónico del LMP
+            y ábrelo directamente en Diagram Studio.
           </p>
 
           <div class="sb-route-note">
-            La información cargada se abrirá en Datos del proceso.
+            El handoff automático LMP → SB continúa funcionando
+            por localStorage.
           </div>
 
           <div
@@ -3204,13 +3204,14 @@ body{font-size:14px !important}
           id="btn_lmp"
           type="button"
         >
-          Cargar JSON y revisar
+          Cargar y diagramar
         </button>
       </article>
 
     </div>
   </div>
 </div>
+
   
 <div id="tab_guided" class="tab-content hidden">
   <div
@@ -3294,7 +3295,7 @@ body{font-size:14px !important}
       <span>Datos generales</span>
 
       <small>
-        Identificación, macroproceso y finalidad del proceso.
+        Identificación y finalidad del proceso.
         Las notas aclaratorias se gestionan únicamente dentro de cada actividad.
       </small>
     </div>
@@ -3319,16 +3320,6 @@ body{font-size:14px !important}
           id="g_name"
           placeholder="Ej: Gestión de Donaciones"
         />
-      </div>
-
-      <div class="field full">
-        <label>Macroproceso</label>
-
-        <select id="g_macroprocess">
-          <option value="">
-            Selecciona un macroproceso
-          </option>
-        </select>
       </div>
 
       <div class="field full">
@@ -6396,11 +6387,67 @@ function sbNextFlowVersionNumber(master){
   return highest + 1;
 }
 
+function sbFindFlowById(
+  flowId
+){
+  const id =
+    normalizeText(
+      flowId || ''
+    );
+
+  if(!id){
+    return null;
+  }
+
+  for(
+    const master
+    of SB_LIBRARY_STATE.masters
+  ){
+    const active =
+      (
+        master.flows ||
+        []
+      ).find(flow =>
+        flow.flow_id === id
+      );
+
+    if(active){
+      return {
+        master,
+        flow:
+          active,
+        location:
+          'flows'
+      };
+    }
+
+    const deleted =
+      (
+        master.trash ||
+        []
+      ).find(flow =>
+        flow.flow_id === id
+      );
+
+    if(deleted){
+      return {
+        master,
+        flow:
+          deleted,
+        location:
+          'trash'
+      };
+    }
+  }
+
+  return null;
+}
+
 
 function sbCreateFlowRecord({
   master,
   contract,
-  sourceOrigin = 'import',
+  sourceOrigin = 'blank',
   versionName = '',
   versionType = 'as_is',
   status = 'draft',
@@ -6410,7 +6457,8 @@ function sbCreateFlowRecord({
   flowId = ''
 }){
   const now =
-    new Date().toISOString();
+    new Date()
+      .toISOString();
 
   const versionNumber =
     sbNextFlowVersionNumber(
@@ -6422,7 +6470,9 @@ function sbCreateFlowRecord({
       normalizeText(
         flowId
       ) ||
-      sbCreateRuntimeId('SBF'),
+      sbCreateRuntimeId(
+        'SBF'
+      ),
 
     version_number:
       versionNumber,
@@ -6453,12 +6503,14 @@ function sbCreateFlowRecord({
       ),
 
     parent_flow_id:
-      parentFlowId || null,
+      parentFlowId ||
+      null,
 
     source_origin:
       normalizeText(
         sourceOrigin
-      ) || 'import',
+      ) ||
+      'blank',
 
     revision:
       0,
@@ -6495,67 +6547,56 @@ function sbCreateFlowRecord({
 }
 
 
-function sbRegisterWorkingFlow({
+/*
+ * ÚNICO punto autorizado para insertar
+ * un flujo dentro de un master.
+ */
+function sbCreateFlow({
   contract,
-  sourceOrigin = 'import',
+  sourceOrigin = 'blank',
   versionName = '',
   versionType = 'as_is',
+  status = 'draft',
+  observations = '',
   parentFlowId = null,
-  flowId = ''
+  flowId = '',
+  persisted = false,
+  reuseExisting = false
 }){
-  if(!contract?.sipoc_input){
-    return null;
+  if(
+    !contract
+      ?.sipoc_input
+  ){
+    throw new Error(
+      'No se puede crear un flujo sin sipoc_input.'
+    );
   }
 
   const requestedFlowId =
     normalizeText(
-      flowId
+      flowId || ''
     );
 
-  /*
-   * Idempotencia:
-   * si el mismo handoff ya creó este flujo,
-   * se reutiliza su identidad.
-   */
   if(requestedFlowId){
-    for(
-      const existingMaster
-      of SB_LIBRARY_STATE.masters
-    ){
-      const existingFlow =
-        [
-          ...(
-            Array.isArray(
-              existingMaster?.flows
-            )
-              ? existingMaster.flows
-              : []
-          ),
+    const existing =
+      sbFindFlowById(
+        requestedFlowId
+      );
 
-          ...(
-            Array.isArray(
-              existingMaster?.trash
-            )
-              ? existingMaster.trash
-              : []
-          )
-        ].find(
-          flow =>
-            normalizeText(
-              flow?.flow_id || ''
-            ) ===
-            requestedFlowId
+    if(existing){
+      if(!reuseExisting){
+        throw new Error(
+          `El flow_id ${requestedFlowId} ya existe.`
         );
-
-      if(existingFlow){
-        SB_LIBRARY_STATE.active_master_id =
-          existingMaster.master_id;
-
-        SB_LIBRARY_STATE.active_flow_id =
-          existingFlow.flow_id;
-
-        return existingFlow;
       }
+
+      SB_LIBRARY_STATE.active_master_id =
+        existing.master.master_id;
+
+      SB_LIBRARY_STATE.active_flow_id =
+        existing.flow.flow_id;
+
+      return existing.flow;
     }
   }
 
@@ -6564,6 +6605,24 @@ function sbRegisterWorkingFlow({
       contract
     );
 
+  if(
+    !Array.isArray(
+      master.flows
+    )
+  ){
+    master.flows =
+      [];
+  }
+
+  if(
+    !Array.isArray(
+      master.trash
+    )
+  ){
+    master.trash =
+      [];
+  }
+
   const flow =
     sbCreateFlowRecord({
       master,
@@ -6571,28 +6630,32 @@ function sbRegisterWorkingFlow({
       sourceOrigin,
       versionName,
       versionType,
-
-      status:
-        'draft',
-
-      observations:
-        '',
-
+      status,
+      observations,
       parentFlowId,
-
-      persisted:
-        false,
+      persisted,
 
       flowId:
         requestedFlowId
     });
+
+  if(
+    sbFindFlowById(
+      flow.flow_id
+    )
+  ){
+    throw new Error(
+      `No se pudo garantizar unicidad para ${flow.flow_id}.`
+    );
+  }
 
   master.flows.push(
     flow
   );
 
   master.updated_at =
-    new Date().toISOString();
+    new Date()
+      .toISOString();
 
   SB_LIBRARY_STATE.active_master_id =
     master.master_id;
@@ -6602,7 +6665,6 @@ function sbRegisterWorkingFlow({
 
   return flow;
 }
-
 
 const S = {
   /*
@@ -6831,15 +6893,28 @@ const S = {
 };
 
 function createEmptySBDiagramModel(){
+  const canvasWidth =
+    1140;
+
+  const canvasHeight =
+    640;
+
+  const laneY =
+    60;
+
+  const laneHeight =
+    540;
+
   return {
     model_code:
       'SB_DIAGRAM_MODEL',
 
     model_version:
-      '1.0',
+      '2.0',
 
     generated_at:
-      new Date().toISOString(),
+      new Date()
+        .toISOString(),
 
     source_contract:
       null,
@@ -6851,8 +6926,72 @@ function createEmptySBDiagramModel(){
       edges:
         [],
 
-      lanes:
-        [],
+      lanes: [
+        {
+          id:
+            'LANE-SUPPLIERS',
+          kind:
+            'supplier',
+          label:
+            'SUPPLIERS',
+          x:20,
+          y:laneY,
+          width:190,
+          height:laneHeight
+        },
+
+        {
+          id:
+            'LANE-INPUTS',
+          kind:
+            'input',
+          label:
+            'INPUTS',
+          x:220,
+          y:laneY,
+          width:190,
+          height:laneHeight
+        },
+
+        {
+          id:
+            'LANE-UNASSIGNED',
+          kind:
+            'actor',
+          label:
+            'PROCESO',
+          x:420,
+          y:laneY,
+          width:300,
+          height:laneHeight
+        },
+
+        {
+          id:
+            'LANE-OUTPUTS',
+          kind:
+            'output',
+          label:
+            'OUTPUTS',
+          x:730,
+          y:laneY,
+          width:190,
+          height:laneHeight
+        },
+
+        {
+          id:
+            'LANE-CUSTOMERS',
+          kind:
+            'customer',
+          label:
+            'CUSTOMERS',
+          x:930,
+          y:laneY,
+          width:190,
+          height:laneHeight
+        }
+      ],
 
       connectors:
         [],
@@ -6860,58 +6999,25 @@ function createEmptySBDiagramModel(){
       notes:
         [],
 
-      /*
-       * Información de revisión visual.
-       * No altera relaciones ni contenido.
-       */
       visual_annotations:
         [],
 
       general_visual_comment:
         '',
 
-      layout:
-        {},
+      layout: {
+        canvas_width:
+          canvasWidth,
+
+        canvas_height:
+          canvasHeight
+      },
 
       style_profile:
-        'executive_pastel'
+        'gpp_sipoc_hybrid'
     }
   };
 }
-
-
-// ═══════════════════════════════════════════════════════════════
-// UTILS
-// ═══════════════════════════════════════════════════════════════
-
-const $ =
-  id =>
-    document.getElementById(
-      id
-    );
-
-
-const ex =
-  value =>
-    String(
-      value || ''
-    )
-      .replace(
-        /&/g,
-        '&amp;'
-      )
-      .replace(
-        /</g,
-        '&lt;'
-      )
-      .replace(
-        />/g,
-        '&gt;'
-      )
-      .replace(
-        /"/g,
-        '&quot;'
-      );
   
 function gMsg(type, text) {
   const m = $('gmsg');
@@ -15906,13 +16012,13 @@ S.optimization.annotations =
 }
 
 
-function buildEmptySBContract(){
+function buildBlankSBContract(){
   return {
     contract_code:
-      'LMP_TO_SB',
+      'SB_FLOW_INTERNAL',
 
     contract_version:
-      '3.0',
+      '1.0',
 
     source_module:
       'SIPOC_BUILDER',
@@ -15921,7 +16027,8 @@ function buildEmptySBContract(){
       'SIPOC_BUILDER',
 
     generated_at:
-      new Date().toISOString(),
+      new Date()
+        .toISOString(),
 
     sipoc_input: {
       process_code:
@@ -15948,19 +16055,117 @@ function buildEmptySBContract(){
         [],
 
       clarifying_notes:
+        [],
+
+      documents:
         []
     }
   };
 }
 
 
-function startManualProcess(){
+function startBlankFlow(){
   resetSBGeneratedArtifacts();
 
-  processIncomingJson(
-    buildEmptySBContract(),
-    'guided_capture'
+  const contract =
+    buildBlankSBContract();
+
+  const diagram =
+    createEmptySBDiagramModel();
+
+  S.contract =
+    contract;
+
+  S.diagramModel =
+    diagram;
+
+  S.optimizedDiagramModel =
+    null;
+
+  S.acts =
+    [];
+
+  S.cats = {
+    suppliers:
+      [],
+
+    inputs:
+      [],
+
+    outputs:
+      [],
+
+    customers:
+      [],
+
+    actors:
+      [],
+
+    documents:
+      []
+  };
+
+  const flow =
+    sbCreateFlow({
+      contract,
+      sourceOrigin:
+        'blank',
+      versionType:
+        'as_is'
+    });
+
+  flow.payload.diagram_model =
+    sbDeepClone(
+      diagram
+    );
+
+  S.loadTrace = {
+    source:
+      'blank',
+
+    loadedAt:
+      new Date()
+        .toISOString(),
+
+    processName:
+      '',
+
+    activityCount:
+      0,
+
+    warningsCount:
+      0,
+
+    blockingCount:
+      0
+  };
+
+  S.studio.rendered =
+    false;
+
+  S.studio.saved =
+    false;
+
+  switchTab(
+    'tab_tpl'
   );
+
+  requestAnimationFrame(() =>
+    sbRenderDiagramStudio({
+      forceRebuild:
+        true,
+
+      resetCamera:
+        true
+    })
+  );
+
+  gMsg(
+    'info',
+    'Flujo en blanco creado. Diagram Studio es ahora la superficie principal de trabajo.'
+  );
+
+  return true;
 }
 
 function sbCloseDataAccordion(
@@ -20733,57 +20938,20 @@ function sbNormalizePairLinks(
   return result;
 }
 
-
 function sbNormalizeActivityType(
-  value,
-  options = {}
+  value
 ){
   const type =
     normalizeText(
       value || ''
     ).toLowerCase();
 
-  if(
+  return (
     type === 'decision' ||
     type === 'decisión'
-  ){
-    return 'decision';
-  }
-
-  if(type === 'actividad'){
-    return 'actividad';
-  }
-
-  /*
-   * Compatibilidad exclusivamente legacy.
-   * Los tipos históricos nunca pasan al contrato
-   * canónico como semántica nueva.
-   */
-  if(
-    options.legacy === true &&
-    (
-      !type ||
-      [
-        'operation',
-        'activity',
-        'operacion',
-        'operación',
-        'control',
-        'document',
-        'end',
-        'start_event',
-        'end_event'
-      ].includes(type)
-    )
-  ){
-    return 'actividad';
-  }
-
-  /*
-   * En LMP_TO_SB 3.0 un valor desconocido se
-   * conserva para que el validador lo reporte.
-   */
-  return type;
+  )
+    ? 'decision'
+    : 'actividad';
 }
 
 function normActs(acts, options = {}){
@@ -21929,8 +22097,21 @@ function sbDeepClone(value){
     return value;
   }
 
+  if(
+    typeof globalThis
+      .structuredClone ===
+      'function'
+  ){
+    return globalThis
+      .structuredClone(
+        value
+      );
+  }
+
   return JSON.parse(
-    JSON.stringify(value)
+    JSON.stringify(
+      value
+    )
   );
 }
 
@@ -25854,8 +26035,8 @@ function renderOutReport() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CATÁLOGOS MAESTROS · MACROPROCESO
-// Capa preparada para futura conexión con Google Sheets.
+// CATÁLOGOS MAESTROS · PROCESOS Y SISTEMAS
+// Macroproceso eliminado del alcance funcional de SIPOC Builder.
 // ═══════════════════════════════════════════════════════════════
 
 if(
@@ -25863,16 +26044,11 @@ if(
   typeof S.masterCatalogs !== 'object'
 ){
   S.masterCatalogs = {
-    macroprocesses:
-      [],
-
-    processes:
-      [],
-
-    systems:
-      []
+    processes: [],
+    systems: []
   };
 }
+
 
 function sbNormalizeCatalogColor(
   value,
@@ -25903,10 +26079,6 @@ function sbNormalizeCatalogIconUrl(
     return '';
   }
 
-  /*
-   * Solo se admiten URLs web, imágenes
-   * embebidas o rutas internas del módulo.
-   */
   return /^(https?:\/\/|data:image\/|\.{1,2}\/|\/)/i.test(
     url
   )
@@ -25915,7 +26087,9 @@ function sbNormalizeCatalogIconUrl(
 }
 
 
-function sbNormalizeMasterCatalog(items){
+function sbNormalizeMasterCatalog(
+  items
+){
   const seen =
     new Set();
 
@@ -25927,8 +26101,7 @@ function sbNormalizeMasterCatalog(items){
     .map(item => ({
       id:
         normalizeText(
-          item?.id ||
-          ''
+          item?.id || ''
         ),
 
       code:
@@ -25942,13 +26115,6 @@ function sbNormalizeMasterCatalog(items){
         normalizeText(
           item?.name ||
           item?.nombre ||
-          ''
-        ),
-
-      macroprocess_id:
-        normalizeText(
-          item?.macroprocess_id ||
-          item?.macroprocessId ||
           ''
         ),
 
@@ -26007,172 +26173,15 @@ function sbNormalizeMasterCatalog(items){
     });
 }
 
-function sbReadMacroprocessFromSource(source){
-  const finalSipoc =
-    source?.final_outputs?.sipoc_builder ||
-    source?.finalOutputs?.sipoc_builder ||
-    source?.finalOutputs?.sipocBuilder ||
-    source?.outputs?.sipoc_builder;
 
-  const directSipoc =
-    source?.sipoc_builder ||
-    source?.sipocBuilder;
-
-  const sipocInput =
-    source?.sipoc_input ||
-    finalSipoc?.sipoc_input ||
-    finalSipoc ||
-    directSipoc?.sipoc_input ||
-    directSipoc ||
-    source?.structured_process ||
-    source ||
-    {};
-
-  return {
-    code:
-      normalizeText(
-        sipocInput.macroprocess_code ||
-        sipocInput.macroprocess?.code ||
-        ''
-      ),
-
-    name:
-      normalizeText(
-        sipocInput.macroprocess_name ||
-        sipocInput.macroprocess?.name ||
-        ''
-      )
-  };
-}
-
-
-function sbGetSelectedMacroprocess(){
-  const select =
-    $('g_macroprocess');
-
-  const option =
-    select?.selectedOptions?.[0];
-
-  return {
-    code:
-      normalizeText(
-        select?.value ||
-        ''
-      ),
-
-    name:
-      normalizeText(
-        option?.dataset?.name ||
-        ''
-      )
-  };
-}
-
-
-function sbRenderMacroprocessOptions(selected){
-  const select =
-    $('g_macroprocess');
-
-  if(!select){
-    return;
-  }
-
-  const current = {
-    code:
-      normalizeText(
-        selected?.code ||
-        selected?.macroprocess_code ||
-        ''
-      ),
-
-    name:
-      normalizeText(
-        selected?.name ||
-        selected?.macroprocess_name ||
-        ''
-      )
-  };
-
-  const items =
-    sbNormalizeMasterCatalog(
-      S.masterCatalogs.macroprocesses
-    );
-
-  /*
-   * Si el proceso cargado ya contiene un
-   * macroproceso y el catálogo todavía no
-   * está disponible, se conserva temporalmente.
-   */
-  if(
-    current.code &&
-    current.name &&
-    !items.some(item =>
-      item.code.toLowerCase() ===
-      current.code.toLowerCase()
-    )
-  ){
-    items.push(
-      current
-    );
-  }
-
-  select.innerHTML =
-    '';
-
-  const placeholder =
-    document.createElement(
-      'option'
-    );
-
-  placeholder.value =
-    '';
-
-  placeholder.textContent =
-    'Selecciona un macroproceso';
-
-  select.appendChild(
-    placeholder
-  );
-
-  items.forEach(item => {
-    const option =
-      document.createElement(
-        'option'
-      );
-
-    option.value =
-      item.code;
-
-    option.dataset.name =
-      item.name;
-
-    option.textContent =
-      `${item.code} · ${item.name}`;
-
-    select.appendChild(
-      option
-    );
-  });
-
-  select.value =
-    current.code;
-}
-
-
-function sbSetMasterCatalogs(catalogs){
+function sbSetMasterCatalogs(
+  catalogs
+){
   const source =
     catalogs &&
     typeof catalogs === 'object'
       ? catalogs
       : {};
-
-  const current =
-    sbGetSelectedMacroprocess();
-
-  S.masterCatalogs.macroprocesses =
-    sbNormalizeMasterCatalog(
-      source.macroprocesses
-    );
 
   S.masterCatalogs.processes =
     sbNormalizeMasterCatalog(
@@ -26184,182 +26193,8 @@ function sbSetMasterCatalogs(catalogs){
       source.systems
     );
 
-  sbRenderMacroprocessOptions(
-    current
-  );
+  return S.masterCatalogs;
 }
-
-
-/*
- * Amplía el contrato vacío utilizado
- * para crear procesos manualmente.
- */
-const sbBuildEmptySBContractBase =
-  buildEmptySBContract;
-
-buildEmptySBContract =
-  function(){
-    const contract =
-      sbBuildEmptySBContractBase();
-
-    contract.sipoc_input.macroprocess_code =
-      '';
-
-    contract.sipoc_input.macroprocess_name =
-      '';
-
-    return contract;
-  };
-
-
-/*
- * Conserva el macroproceso al normalizar
- * JSON provenientes del LMP o del propio SB.
- */
-const sbNormalizeIncomingPayloadBase =
-  normalizeIncomingPayload;
-
-normalizeIncomingPayload =
-  function(parsed){
-    const payload =
-      sbNormalizeIncomingPayloadBase(
-        parsed
-      );
-
-    const macroprocess =
-      sbReadMacroprocessFromSource(
-        parsed
-      );
-
-    if(
-      payload?.normalized &&
-      typeof payload.normalized === 'object'
-    ){
-      payload.normalized.macroprocess_code =
-        macroprocess.code;
-
-      payload.normalized.macroprocess_name =
-        macroprocess.name;
-    }
-
-    return payload;
-  };
-
-
-/*
- * Añade el macroproceso cuando un JSON
- * anterior se convierte al contrato canónico.
- */
-const sbBuildCanonicalContractBase =
-  sbBuildCanonicalContract;
-
-sbBuildCanonicalContract =
-  function(
-    parsed,
-    sp,
-    source
-  ){
-    const contract =
-      sbBuildCanonicalContractBase(
-        parsed,
-        sp,
-        source
-      );
-
-    const fromParsed =
-      sbReadMacroprocessFromSource(
-        parsed
-      );
-
-    const fromNormalized =
-      sbReadMacroprocessFromSource(
-        sp
-      );
-
-    contract.sipoc_input.macroprocess_code =
-      fromParsed.code ||
-      fromNormalized.code;
-
-    contract.sipoc_input.macroprocess_name =
-      fromParsed.name ||
-      fromNormalized.name;
-
-    return contract;
-  };
-
-
-/*
- * Guarda la selección del desplegable
- * cada vez que el editor reconstruye
- * el contrato del proceso.
- */
-const sbSyncEditorToContractBase =
-  sbSyncEditorToContract;
-
-sbSyncEditorToContract =
-  function(){
-    const contract =
-      sbSyncEditorToContractBase();
-
-    const macroprocess =
-      sbGetSelectedMacroprocess();
-
-    contract.sipoc_input.macroprocess_code =
-      macroprocess.code;
-
-    contract.sipoc_input.macroprocess_name =
-      macroprocess.name;
-
-    S.contract =
-      contract;
-
-    const normalizedPayload =
-      normalizeIncomingPayload(
-        contract
-      );
-
-    S.sp =
-      normalizedPayload.normalized;
-
-    return contract;
-  };
-
-
-/*
- * Después de cargar un proceso, refleja
- * automáticamente el macroproceso recibido.
- */
-const sbProcessIncomingJsonBase =
-  processIncomingJson;
-
-processIncomingJson =
-  function(
-    raw,
-    source = 'unknown'
-  ){
-    const result =
-      sbProcessIncomingJsonBase(
-        raw,
-        source
-      );
-
-    const macroprocess =
-      sbReadMacroprocessFromSource(
-        S.contract ||
-        S.sp ||
-        {}
-      );
-
-    sbRenderMacroprocessOptions(
-      macroprocess
-    );
-
-    return result;
-  };
-
-
-sbRenderMacroprocessOptions();
-
 
 // ═══════════════════════════════════════════════════════════════
 // MODALIDAD DE EJECUCIÓN · SISTEMAS E IDENTIFICADORES
@@ -30753,10 +30588,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 // Fuentes de entrada
-$('btn_start_manual')
+$('btn_new_blank_flow')
   .addEventListener(
     'click',
-    startManualProcess
+    startBlankFlow
   );
 
 $('btn_lmp')
