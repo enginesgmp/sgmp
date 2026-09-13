@@ -20750,1090 +20750,6 @@ function sbNormalizeActivityType(
     : 'actividad';
 }
 
-function normActs(acts, options = {}){
-  const arr =
-    Array.isArray(acts) ? acts : [];
-
-  const actorById =
-    options.actorById || new Map();
-
-  const notes =
-    Array.isArray(options.notes)
-      ? options.notes
-      : [];
-
-  const suppliersByInput =
-    options.suppliersByInput || new Map();
-
-  const customersByOutput =
-    options.customersByOutput || new Map();
-
-  return arr.map((activity, index) => {
-    const previousRaw =
-      Array.isArray(activity.previous)
-        ? activity.previous
-        : [];
-
-    const nextRaw =
-      Array.isArray(activity.next)
-        ? activity.next
-        : [];
-
-    const previous =
-      sbUnique(
-        previousRaw.map(sbRelationName)
-      );
-
-    const next =
-      sbUnique(
-        nextRaw.map(sbRelationName)
-      );
-
-    const inputs =
-      sbUnique(
-        (
-          activity.ext_inputs ||
-          activity.inputs_used ||
-          activity.inputs ||
-          []
-        ).map(value =>
-          sbCatalogItemName(
-            value,
-            ['name', 'input']
-          )
-        )
-      );
-
-    const outputs =
-      sbUnique(
-        (
-          activity.ext_outputs ||
-          activity.outputs_generated ||
-          activity.outputs ||
-          []
-        ).map(value =>
-          sbCatalogItemName(
-            value,
-            ['name', 'output']
-          )
-        )
-      );
-
-    const suppliers =
-      sbUnique([
-        ...(activity.ext_suppliers || []),
-
-        ...inputs.flatMap(input =>
-          suppliersByInput.get(
-            input.toLowerCase()
-          ) || []
-        )
-      ]);
-
-    const customers =
-      sbUnique([
-        ...(activity.ext_customers || []),
-
-        ...outputs.flatMap(output =>
-          customersByOutput.get(
-            output.toLowerCase()
-          ) || []
-        )
-      ]);
-
-    const actor =
-      normalizeText(activity.actor || '') ||
-      actorById.get(
-        normalizeText(
-          activity.actor_lane_id || ''
-        )
-      ) ||
-      '';
-
-    const noteIds =
-      new Set(
-        Array.isArray(activity.note_ids)
-          ? activity.note_ids.map(String)
-          : []
-      );
-
-    const linkedNotes =
-      notes
-        .filter(note =>
-          noteIds.has(String(note.id || '')) ||
-          (
-            activity.id &&
-            note.activity_id === activity.id
-          ) ||
-          (
-            note.activity_name &&
-            normalizeText(note.activity_name)
-              .toLowerCase() ===
-            normalizeText(activity.name)
-              .toLowerCase()
-          )
-        )
-        .map(note =>
-          normalizeText(
-            note.text ||
-            note.content ||
-            ''
-          )
-        )
-        .filter(Boolean);
-
-    const routes =
-      nextRaw
-        .map(relation => {
-          const name =
-            sbRelationName(relation);
-
-          const label =
-            sbRelationLabel(relation);
-
-          return name && label
-            ? `${label} → ${name}`
-            : '';
-        })
-        .filter(Boolean);
-
-    const note =
-      sbUnique([
-        activity.note || '',
-        activity.notes || '',
-        ...linkedNotes,
-        routes.length
-          ? `Rutas: ${routes.join('; ')}`
-          : ''
-      ]).join('\n');
-
-    const branchLabels =
-      sbUnique(
-        nextRaw.map(sbRelationLabel)
-      );
-
-    return {
-      id:
-        normalizeText(
-          activity.id ||
-          `ACT-${String(index + 1).padStart(3, '0')}`
-        ),
-
-      order:
-        Number(
-          activity.order ||
-          activity.sequence ||
-          index + 1
-        ) || index + 1,
-
-      sequence:
-        Number(
-          activity.sequence ||
-          activity.order ||
-          index + 1
-        ) || index + 1,
-
-      name:
-        normalizeText(
-          activity.name ||
-          activity.activity_name ||
-          ''
-        ),
-
-      type:
-        sbNormalizeActivityType(
-          activity.type,
-          {
-            legacy:
-              options.legacyTypes ===
-              true
-          }
-        ),
-
-      actor_lane_id:
-        normalizeText(
-          activity.actor_lane_id ||
-          ''
-        ),
-
-      actor,
-
-      lane: actor,
-
-      document:
-        normalizeText(
-          activity.document || ''
-        ),
-
-      previous,
-      next,
-
-      previous_relations:
-        previousRaw.map(relation => ({
-          activity:
-            sbRelationName(relation),
-
-          label:
-            sbRelationLabel(relation)
-        })).filter(item => item.activity),
-
-      next_relations:
-        nextRaw.map(relation => ({
-          activity:
-            sbRelationName(relation),
-
-          label:
-            sbRelationLabel(relation)
-        })).filter(item => item.activity),
-
-      branch_label:
-        normalizeText(
-          activity.branch_label || ''
-        ) ||
-        branchLabels.join(' / '),
-
-      route_label:
-        normalizeText(
-          activity.route_label || ''
-        ),
-
-      ext_suppliers:
-        suppliers,
-
-      ext_inputs:
-        inputs,
-
-      ext_outputs:
-        outputs,
-
-ext_customers:
-  customers,
-
-input_relations:
-  (
-    activity.ext_inputs ||
-    activity.inputs_used ||
-    activity.inputs ||
-    []
-  )
-    .map(value => ({
-      name:
-        sbCatalogItemName(
-          value,
-          ['name', 'input']
-        ),
-
-      label:
-        value &&
-        typeof value === 'object'
-          ? normalizeText(
-              value.label ||
-              value.connector ||
-              ''
-            )
-          : ''
-    }))
-    .filter(item => item.name),
-
-output_relations:
-  (
-    activity.ext_outputs ||
-    activity.outputs_generated ||
-    activity.outputs ||
-    []
-  )
-    .map(value => ({
-      name:
-        sbCatalogItemName(
-          value,
-          ['name', 'output']
-        ),
-
-      label:
-        value &&
-        typeof value === 'object'
-          ? normalizeText(
-              value.label ||
-              value.connector ||
-              ''
-            )
-          : ''
-    }))
-    .filter(item => item.name),
-
-is_start:
-        typeof activity.is_start === 'boolean'
-          ? activity.is_start
-          : previous.length === 0,
-
-      is_end:
-        typeof activity.is_end === 'boolean'
-          ? activity.is_end
-          : next.length === 0,
-
-      note,
-
-      observations:
-        normalizeNoteText(
-          activity.observations ||
-          activity.observaciones ||
-          ''
-        )
-    };
-  });
-}
-
-
-function looksLikeSerializedJson(text){
-  const value =
-    String(text || '').trim();
-
-  if(!value){
-    return false;
-  }
-
-  return (
-    value.startsWith('{') &&
-    value.endsWith('}')
-  ) ||
-  /"totalActivities"|"ava"|"wastesCount"/
-    .test(value);
-}
-
-
-function normalizeIncomingPayload(parsed){
-  const finalSipoc =
-    parsed?.final_outputs?.sipoc_builder ||
-    parsed?.finalOutputs?.sipoc_builder ||
-    parsed?.finalOutputs?.sipocBuilder ||
-    parsed?.outputs?.sipoc_builder;
-
-  const directSipoc =
-    parsed?.sipoc_builder ||
-    parsed?.sipocBuilder;
-
-  const sp =
-    parsed?.sipoc_input ||
-    finalSipoc?.sipoc_input ||
-    finalSipoc ||
-    directSipoc?.sipoc_input ||
-    directSipoc ||
-    parsed?.structured_process ||
-    parsed ||
-    {};
-
-  const isLmpV3 =
-    parsed?.contract_code === 'LMP_TO_SB' &&
-    String(
-      parsed?.contract_version || ''
-    ).startsWith('3');
-
-  const suppliersInputs =
-    sp?.lanes?.suppliers_inputs ||
-    sp?.suppliers_inputs ||
-    [];
-
-  const actorLanes =
-    sp?.lanes?.actors ||
-    sp?.actors ||
-    [];
-
-  const outputsCustomers =
-    sp?.lanes?.outputs_customers ||
-    sp?.outputs_customers ||
-    [];
-
-  const clarifyingNotes =
-    Array.isArray(sp.clarifying_notes)
-      ? sp.clarifying_notes
-      : [];
-
-  const actorById =
-    new Map();
-
-  actorLanes.forEach(actor => {
-    if(
-      actor &&
-      typeof actor === 'object'
-    ){
-      actorById.set(
-        normalizeText(actor.id || ''),
-        normalizeText(actor.name || '')
-      );
-    }
-  });
-
-  const suppliersByInput =
-    new Map();
-
-  suppliersInputs.forEach(row => {
-    const input =
-      sbCatalogItemName(
-        row,
-        ['input', 'name']
-      );
-
-    const supplier =
-      sbCatalogItemName(
-        row,
-        ['supplier']
-      );
-
-    if(!input || !supplier) return;
-
-    const key =
-      input.toLowerCase();
-
-    suppliersByInput.set(
-      key,
-      sbUnique([
-        ...(suppliersByInput.get(key) || []),
-        supplier
-      ])
-    );
-  });
-
-  const customersByOutput =
-    new Map();
-
-  outputsCustomers.forEach(row => {
-    const output =
-      sbCatalogItemName(
-        row,
-        ['output', 'name']
-      );
-
-    const customer =
-      sbCatalogItemName(
-        row,
-        ['customer']
-      );
-
-    if(!output || !customer) return;
-
-    const key =
-      output.toLowerCase();
-
-    customersByOutput.set(
-      key,
-      sbUnique([
-        ...(customersByOutput.get(key) || []),
-        customer
-      ])
-    );
-  });
-
-  const suppliers =
-    suppliersInputs.length
-      ? sbUnique(
-          suppliersInputs.map(row =>
-            sbCatalogItemName(
-              row,
-              ['supplier']
-            )
-          )
-        )
-      : normalizeCatalogItems(
-          sp.catalogs?.suppliers ||
-          sp.suppliers ||
-          []
-        );
-
-  const inputs =
-    suppliersInputs.length
-      ? sbUnique(
-          suppliersInputs.map(row =>
-            sbCatalogItemName(
-              row,
-              ['input', 'name']
-            )
-          )
-        )
-      : normalizeCatalogItems(
-          sp.catalogs?.inputs ||
-          sp.inputs ||
-          []
-        );
-
-  const outputs =
-    outputsCustomers.length
-      ? sbUnique(
-          outputsCustomers.map(row =>
-            sbCatalogItemName(
-              row,
-              ['output', 'name']
-            )
-          )
-        )
-      : normalizeCatalogItems(
-          sp.catalogs?.outputs ||
-          sp.outputs ||
-          []
-        );
-
-  const customers =
-    outputsCustomers.length
-      ? sbUnique(
-          outputsCustomers.map(row =>
-            sbCatalogItemName(
-              row,
-              ['customer']
-            )
-          )
-        )
-      : normalizeCatalogItems(
-          sp.catalogs?.customers ||
-          sp.customers ||
-          []
-        );
-
-  const actors =
-    actorLanes.length
-      ? sbUnique(
-          actorLanes.map(actor =>
-            sbCatalogItemName(
-              actor,
-              ['name', 'actor']
-            )
-          )
-        )
-      : normalizeCatalogItems(
-          sp.catalogs?.actors ||
-          sp.actors ||
-          []
-        );
-
-  const supplierInputLinks =
-  sbNormalizePairLinks(
-    suppliersInputs,
-    'supplier',
-    'input'
-  );
-
-const outputCustomerLinks =
-  sbNormalizePairLinks(
-    outputsCustomers,
-    'output',
-    'customer'
-  );
-
-  const sourceActivities =
-    Array.isArray(sp.activities)
-      ? sp.activities
-      : [];
-
-  const sourceActivityById =
-    new Map(
-      sourceActivities
-        .filter(activity =>
-          normalizeText(
-            activity?.id || ''
-          )
-        )
-        .map(activity => [
-          normalizeText(
-            activity.id
-          ),
-          activity
-        ])
-    );
-
-  const sourceActivityByName =
-    new Map(
-      sourceActivities
-        .filter(activity =>
-          normalizeText(
-            activity?.name || ''
-          )
-        )
-        .map(activity => [
-          normalizeText(
-            activity.name
-          ).toLowerCase(),
-          activity
-        ])
-    );
-
-  const normalizedActivities =
-    normActs(
-      sourceActivities,
-      {
-        actorById,
-        notes:
-          clarifyingNotes,
-        suppliersByInput,
-        customersByOutput,
-        legacyTypes:
-          !isLmpV3
-      }
-    ).map(
-      (activity, index) => {
-        const sourceActivity =
-          sourceActivityById.get(
-            normalizeText(
-              activity?.id || ''
-            )
-          ) ||
-          sourceActivityByName.get(
-            normalizeText(
-              activity?.name || ''
-            ).toLowerCase()
-          ) ||
-          sourceActivities[index] ||
-          activity;
-
-        return {
-          ...activity,
-
-          ...sbNormalizeActivityExecution(
-            sourceActivity
-          ),
-
-          documents:
-            sbNormalizeActivityDocuments(
-              sourceActivity
-            )
-        };
-      }
-    );  
-
-  const normalized = {
-    process_code:
-      normalizeText(
-        sp.process_code ||
-        sp.processCode ||
-        ''
-      ),
-
-    process_name:
-      normalizeText(
-        sp.process_name ||
-        sp.processName ||
-        ''
-      ),
-
-    purpose:
-      normalizeText(
-        sp.purpose ||
-        sp.finality ||
-        ''
-      ),
-
-    start_event:
-      isLmpV3
-        ? ''
-        : normalizeText(
-            sp.start_event ||
-            sp.startEvent ||
-            ''
-          ),
-
-    end_event:
-      isLmpV3
-        ? ''
-        : normalizeText(
-            sp.end_event ||
-            sp.endEvent ||
-            ''
-          ),
-
-    notes:
-      normalizeNoteText(
-        sp.notes ||
-        clarifyingNotes
-          .filter(note =>
-            !note.activity_id &&
-            !note.activity_name
-          )
-          .map(note => note.text || '')
-          .filter(Boolean)
-          .join('\n')
-      ),
-
-suppliers,
-inputs,
-outputs,
-customers,
-actors,
-
-supplier_input_links:
-  supplierInputLinks,
-
-output_customer_links:
-  outputCustomerLinks,
-
-    documents:
-      sbNormalizeDocumentCatalog(
-        sp.catalogs?.documents ||
-        sp.documents ||
-        []
-      ),
-
-    layout_hints:
-      sp.layout_hints ||
-      sp.layoutHints ||
-      parsed?.layout_hints ||
-      parsed?.layoutHints ||
-      {},
-
-    activities:
-      normalizedActivities
-  };
-
-  return {
-    ok: true,
-
-    sourceBlock:
-      isLmpV3
-        ? 'lmp_to_sb_v3'
-        : (
-          parsed?.sipoc_input
-            ? 'sipoc_input'
-            : (
-              finalSipoc
-                ? 'final_outputs.sipoc_builder'
-                : (
-                  directSipoc
-                    ? 'sipoc_builder'
-                    : (
-                      parsed?.structured_process
-                        ? 'structured_process'
-                        : 'root'
-                    )
-                )
-            )
-        ),
-
-    normalized,
-    warnings: [],
-    errors: []
-  };
-}
-
-function sourceLabel(sourceKey) {
-  const map = {
-    lmp_to_sb_v3:
-  'Contrato LMP_TO_SB 3.0',
-    sipoc_input: 'JSON con bloque sipoc_input',
-    'final_outputs.sipoc_builder': 'JSON final LMP con salida SIPOC Builder',
-    sipoc_builder: 'JSON con bloque sipoc_builder',
-    structured_process: 'JSON con bloque structured_process',
-    root: 'JSON raíz directa',
-    lmp_json: 'Archivo JSON del LMP',
-    guided_capture: 'Captura guiada interna',
-    manual_json: 'JSON manual'
-  };
-  return map[sourceKey] || sourceKey || 'desconocido';
-}
-
-function buildSeverity(blockingCount, warningCount) {
-  if (blockingCount > 0) return { cls:'bad', text:'Bloqueado' };
-  if (warningCount > 0) return { cls:'warn', text:'Con advertencias' };
-  return { cls:'ok', text:'Listo para continuar' };
-}
-
-function validateSipocContract(sp) {
-  const blockingErrors = [];
-  const warnings = [];
-
-  if (!sp || typeof sp !== 'object') {
-    return {
-      valid: false,
-      blockingErrors: ['La estructura SIPOC no es válida.'],
-      warnings,
-      summary: {}
-    };
-  }
-
-  const activities = Array.isArray(sp.activities)
-    ? sp.activities
-    : [];
-
-  const actors = Array.isArray(sp.actors)
-    ? sp.actors
-    : [];
-
-  const inputs = Array.isArray(sp.inputs)
-    ? sp.inputs
-    : [];
-
-  const outputs = Array.isArray(sp.outputs)
-    ? sp.outputs
-    : [];
-
-  const customers = Array.isArray(sp.customers)
-    ? sp.customers
-    : [];
-
-  const suppliers = Array.isArray(sp.suppliers)
-    ? sp.suppliers
-    : [];
-
-  if (!normalizeText(sp.process_name)) {
-    blockingErrors.push('Falta process_name.');
-  }
-
-  if (!normalizeText(sp.purpose)) {
-    blockingErrors.push('Falta purpose.');
-  }
-
-  if (!activities.length) {
-    blockingErrors.push('Debe existir al menos una actividad.');
-  }
-
-  if (!normalizeText(sp.process_code)) {
-    warnings.push('process_code está vacío.');
-  }
-
-  if (!actors.length) {
-    blockingErrors.push('No existen actores/carriles.');
-  }
-
-  if (!inputs.length) {
-    warnings.push('No se detectaron entradas.');
-  }
-
-  if (!outputs.length) {
-    warnings.push('No se detectaron salidas.');
-  }
-
-  if (!suppliers.length) {
-    warnings.push('No se detectaron proveedores.');
-  }
-
-  if (!customers.length) {
-    warnings.push('No se detectaron clientes.');
-  }
-
-  if (looksLikeSerializedJson(sp.notes)) {
-    warnings.push('notes contiene JSON o métricas serializadas.');
-  }
-
-  return {
-    valid: blockingErrors.length === 0,
-    blockingErrors,
-    warnings,
-    summary: {
-      activities: activities.length,
-      actors: actors.length,
-      suppliers: suppliers.length,
-      inputs: inputs.length,
-      outputs: outputs.length,
-      customers: customers.length,
-      documents: Array.isArray(sp.documents)
-        ? sp.documents.length
-        : 0
-    }
-  };
-}
-
-
-function validateActivitiesSemantic(activities) {
-  const blockingErrors = [];
-  const warnings = [];
-
-  const list = Array.isArray(activities)
-    ? activities
-    : [];
-
-  const nameMap = new Map();
-  const idMap = new Map();
-
-  list.forEach((activity, index) => {
-    const name = normalizeText(activity.name);
-    const id = normalizeText(activity.id);
-    const actor = normalizeText(activity.actor);
-
-    const type =
-      normalizeText(
-        activity.type ||
-        ''
-      ).toLowerCase();
-
-    if(
-      type &&
-      type !== 'actividad' &&
-      type !== 'decision'
-    ){
-      blockingErrors.push(
-        `Actividad "${name || index + 1}" con tipo no permitido: ${type}.`
-      );
-    }
-
-    if(!type){
-      warnings.push(
-        `Actividad "${name || index + 1}" sin tipo definido.`
-      );
-    }
-
-    if (!name) {
-      blockingErrors.push(
-        `Actividad #${index + 1} sin nombre.`
-      );
-    }
-
-    if (!actor) {
-      blockingErrors.push(
-        `Actividad "${name || index + 1}" sin actor/carril.`
-      );
-    }
-
-    if (id) {
-      const key = id.toLowerCase();
-
-      if (idMap.has(key)) {
-        blockingErrors.push(
-          `ID de actividad duplicado: ${id}.`
-        );
-      }
-
-      idMap.set(key, activity);
-    }
-
-    if (name) {
-      const key = name.toLowerCase();
-
-      if (nameMap.has(key)) {
-        blockingErrors.push(
-          `Nombre de actividad duplicado: ${name}.`
-        );
-      }
-
-      nameMap.set(key, activity);
-    }
-  });
-
-  const validNames = new Set(
-    list
-      .map(activity =>
-        normalizeText(activity.name).toLowerCase()
-      )
-      .filter(Boolean)
-  );
-
-  list.forEach(activity => {
-    const name =
-      normalizeText(activity.name) || 'Sin nombre';
-
-    const previous =
-      Array.isArray(activity.previous)
-        ? activity.previous
-        : [];
-
-    const next =
-      Array.isArray(activity.next)
-        ? activity.next
-        : [];
-
-    previous.forEach(reference => {
-      const target =
-        normalizeText(reference).toLowerCase();
-
-      if (target && !validNames.has(target)) {
-        blockingErrors.push(
-          `"${name}" referencia una actividad previa inexistente: ${reference}.`
-        );
-      }
-    });
-
-    next.forEach(reference => {
-      const target =
-        normalizeText(reference).toLowerCase();
-
-      if (target && !validNames.has(target)) {
-        blockingErrors.push(
-          `"${name}" referencia una actividad siguiente inexistente: ${reference}.`
-        );
-      }
-    });
-
-    next.forEach(reference => {
-      const target =
-        nameMap.get(
-          normalizeText(reference).toLowerCase()
-        );
-
-      if (
-        target &&
-        !(
-          Array.isArray(target.previous)
-            ? target.previous
-            : []
-        )
-          .map(value =>
-            normalizeText(value).toLowerCase()
-          )
-          .includes(name.toLowerCase())
-      ) {
-        warnings.push(
-          `La conexión "${name}" → "${reference}" no es recíproca en previous.`
-        );
-      }
-    });
-
-    const isDecision =
-      normalizeText(
-        activity.type || ''
-      ).toLowerCase() === 'decision';
-
-    if (isDecision && previous.length < 1) {
-      blockingErrors.push(
-        `La decisión "${name}" debe tener al menos una actividad previa.`
-      );
-    }
-
-    if (isDecision && next.length < 2) {
-      blockingErrors.push(
-        `La decisión "${name}" debe tener al menos dos actividades siguientes.`
-      );
-    }
-
-    const directInputs =
-      Array.isArray(activity.ext_inputs)
-        ? activity.ext_inputs
-        : [];
-
-    const directOutputs =
-      Array.isArray(activity.ext_outputs)
-        ? activity.ext_outputs
-        : [];
-
-    if (
-      isDecision &&
-      (
-        directInputs.length ||
-        directOutputs.length
-      )
-    ) {
-      blockingErrors.push(
-        `La decisión "${name}" no puede tener entradas o salidas directas.`
-      );
-    }
-
-    if (
-      isDecision &&
-      Array.isArray(activity.next_relations)
-    ) {
-      const unlabeled =
-        activity.next_relations.filter(
-          relation =>
-            !normalizeText(relation.label)
-        );
-
-      if (unlabeled.length) {
-        warnings.push(
-          `La decisión "${name}" tiene rutas sin etiqueta Sí/No u otra condición.`
-        );
-      }
-    }
-  });
-
-  return {
-    blockingErrors: [...new Set(blockingErrors)],
-    warnings: [...new Set(warnings)]
-  };
-}
-
 function runSBContractPreflight(){
   if(!S.contract){
     gMsg(
@@ -21918,466 +20834,45 @@ function sbDeepClone(value){
   );
 }
 
-
-function sbBuildCanonicalContract(
-  parsed,
-  sp,
-  source
-){
-  const isCanonicalV3 =
-    parsed?.contract_code ===
-      'LMP_TO_SB' &&
-    String(
-      parsed?.contract_version || ''
-    ).startsWith('3') &&
-    parsed?.sipoc_input &&
-    typeof parsed.sipoc_input ===
-      'object';
-
-  /*
-   * Cuando el archivo ya corresponde al contrato
-   * vigente, se conserva sin reconstruirlo.
-   */
-  if(isCanonicalV3){
-    return sbDeepClone(
-      parsed
+function sbBuildCanonicalContract(parsed){
+  if(
+    !parsed ||
+    typeof parsed !== 'object'
+  ){
+    throw new Error(
+      'El archivo no contiene un objeto JSON válido.'
     );
   }
 
-  const actors =
-    Array.isArray(sp?.actors)
-      ? sp.actors
-      : [];
+  const valid =
+    parsed.contract_code ===
+      'LMP_TO_SB' &&
+    String(
+      parsed.contract_version ||
+      ''
+    ) === '3.0' &&
+    parsed.source_module ===
+      'LMP' &&
+    parsed.target_module ===
+      'SIPOC_BUILDER' &&
+    parsed.sipoc_input &&
+    typeof parsed.sipoc_input ===
+      'object';
 
-  const activities =
-    Array.isArray(sp?.activities)
-      ? sp.activities
-      : [];
-
-  const actorRows =
-    actors
-      .map((actor, index) => ({
-        id:
-          `LANE-${String(index + 1).padStart(3, '0')}`,
-
-        name:
-          normalizeText(actor)
-      }))
-      .filter(actor =>
-        actor.name
-      );
-
-  const actorIdByName =
-    new Map(
-      actorRows.map(actor => [
-        actor.name.toLowerCase(),
-        actor.id
-      ])
+  if(!valid){
+    throw new Error(
+      'SB solo admite el contrato canónico LMP_TO_SB 3.0.'
     );
-
-  const activityRows =
-    activities.map(
-      (activity, index) => ({
-        ...activity,
-
-        id:
-          normalizeText(
-            activity.id ||
-            `ACT-${String(index + 1).padStart(3, '0')}`
-          ),
-
-        sequence:
-          Number(
-            activity.sequence ||
-            activity.order ||
-            index + 1
-          ) || index + 1,
-
-        name:
-          normalizeText(
-            activity.name || ''
-          )
-      })
-    );
-
-  const activityIdByName =
-    new Map(
-      activityRows
-        .filter(activity =>
-          activity.name
-        )
-        .map(activity => [
-          activity.name.toLowerCase(),
-          activity.id
-        ])
-    );
-
-  const relationToCanonical =
-    relation => {
-      const activityName =
-        sbRelationName(
-          relation
-        );
-
-      if(!activityName){
-        return null;
-      }
-
-      return {
-        activity_id:
-          activityIdByName.get(
-            activityName.toLowerCase()
-          ) || '',
-
-        activity_name:
-          activityName,
-
-        label:
-          sbRelationLabel(
-            relation
-          )
-      };
-    };
-
-  const notes = [];
-  const noteIdsByActivity =
-    new Map();
-
-  let noteCounter =
-    0;
-
-  const nextNoteId =
-    () => {
-      noteCounter += 1;
-
-      return (
-        'NOTE-' +
-        String(noteCounter)
-          .padStart(3, '0')
-      );
-    };
-
-  /*
-   * Notas generales heredadas.
-   * Se conservan como notas contextuales,
-   * sin vincularlas artificialmente.
-   */
-  String(sp?.notes || '')
-    .split(/\r?\n/)
-    .map(normalizeText)
-    .filter(Boolean)
-    .forEach(text => {
-      notes.push({
-        id:
-          nextNoteId(),
-
-        activity_id:
-          '',
-
-        activity_name:
-          '',
-
-        text,
-
-        type:
-          'clarifying',
-
-        source:
-          'legacy_import'
-      });
-    });
-
-  /*
-   * Notas vinculadas a las actividades.
-   */
-  activityRows.forEach(activity => {
-    const text =
-      normalizeNoteText(
-        activity.note ||
-        activity.notes ||
-        ''
-      );
-
-    if(!text){
-      noteIdsByActivity.set(
-        activity.id,
-        []
-      );
-
-      return;
-    }
-
-    const noteId =
-      nextNoteId();
-
-    notes.push({
-      id:
-        noteId,
-
-      activity_id:
-        activity.id,
-
-      activity_name:
-        activity.name,
-
-      text,
-
-      type:
-        'clarifying',
-
-      source:
-        'legacy_import'
-    });
-
-    noteIdsByActivity.set(
-      activity.id,
-      [noteId]
-    );
-  });
-
-  const supplierInputLinks =
-    Array.isArray(
-      sp?.supplier_input_links
-    )
-      ? sp.supplier_input_links
-      : [];
-
-  const outputCustomerLinks =
-    Array.isArray(
-      sp?.output_customer_links
-    )
-      ? sp.output_customer_links
-      : [];
-
-  return {
-    contract_code:
-      'LMP_TO_SB',
-
-    contract_version:
-      '3.0',
-
-    source_module:
-      source === 'guided_capture'
-        ? 'SIPOC_BUILDER'
-        : 'LMP',
-
-    target_module:
-      'SIPOC_BUILDER',
-
-    generated_at:
-      new Date().toISOString(),
-
-    sipoc_input: {
-      process_code:
-        normalizeText(
-          sp?.process_code || ''
-        ),
-
-      process_name:
-        normalizeText(
-          sp?.process_name || ''
-        ),
-
-      purpose:
-        normalizeText(
-          sp?.purpose || ''
-        ),
-
-      lanes: {
-        suppliers_inputs:
-          supplierInputLinks.map(
-            (link, index) => ({
-              id:
-                `SI-${String(index + 1).padStart(3, '0')}`,
-
-              supplier:
-                normalizeText(
-                  link?.supplier || ''
-                ),
-
-              input:
-                normalizeText(
-                  link?.input || ''
-                )
-            })
-          ),
-
-        actors:
-          actorRows,
-
-        outputs_customers:
-          outputCustomerLinks.map(
-            (link, index) => ({
-              id:
-                `OC-${String(index + 1).padStart(3, '0')}`,
-
-              output:
-                normalizeText(
-                  link?.output || ''
-                ),
-
-              customer:
-                normalizeText(
-                  link?.customer || ''
-                )
-            })
-          )
-      },
-
-      activities:
-        activityRows.map(activity => {
-          const previousSource =
-            Array.isArray(
-              activity.previous_relations
-            ) &&
-            activity.previous_relations.length
-              ? activity.previous_relations
-              : (
-                  Array.isArray(activity.previous)
-                    ? activity.previous
-                    : []
-                );
-
-          const nextSource =
-            Array.isArray(
-              activity.next_relations
-            ) &&
-            activity.next_relations.length
-              ? activity.next_relations
-              : (
-                  Array.isArray(activity.next)
-                    ? activity.next
-                    : []
-                );
-
-          const inputSource =
-            Array.isArray(
-              activity.input_relations
-            ) &&
-            activity.input_relations.length
-              ? activity.input_relations
-              : asNameArray(
-                  activity.ext_inputs
-                ).map(name => ({
-                  name,
-                  label:
-                    ''
-                }));
-
-          const outputSource =
-            Array.isArray(
-              activity.output_relations
-            ) &&
-            activity.output_relations.length
-              ? activity.output_relations
-              : asNameArray(
-                  activity.ext_outputs
-                ).map(name => ({
-                  name,
-                  label:
-                    ''
-                }));
-
-          return {
-            id:
-              activity.id,
-
-            sequence:
-              activity.sequence,
-
-            actor_lane_id:
-              actorIdByName.get(
-                normalizeText(
-                  activity.actor ||
-                  activity.lane ||
-                  ''
-                ).toLowerCase()
-              ) || '',
-
-            name:
-              activity.name,
-
-            type:
-              activity.type === 'decision'
-                ? 'decision'
-                : 'actividad',
-
-            previous:
-              previousSource
-                .map(
-                  relationToCanonical
-                )
-                .filter(Boolean),
-
-            next:
-              nextSource
-                .map(
-                  relationToCanonical
-                )
-                .filter(Boolean),
-
-            inputs:
-              inputSource
-                .map(input => ({
-                  name:
-                    normalizeText(
-                      input?.name ||
-                      input?.input ||
-                      input ||
-                      ''
-                    ),
-
-                  label:
-                    typeof input ===
-                      'object'
-                      ? normalizeText(
-                          input?.label || ''
-                        )
-                      : ''
-                }))
-                .filter(input =>
-                  input.name
-                ),
-
-            outputs:
-              outputSource
-                .map(output => ({
-                  name:
-                    normalizeText(
-                      output?.name ||
-                      output?.output ||
-                      output ||
-                      ''
-                    ),
-
-                  label:
-                    typeof output ===
-                      'object'
-                      ? normalizeText(
-                          output?.label || ''
-                        )
-                      : ''
-                }))
-                .filter(output =>
-                  output.name
-                ),
-
-            note_ids:
-              noteIdsByActivity.get(
-                activity.id
-              ) || []
-          };
-        }),
-
-      clarifying_notes:
-        notes
-    }
-  };
+  }
+
+  return sbDeepClone(
+    parsed
+  );
 }
 
+
 function sbLoadRuntimeFromContract(
-  contract,
-  normalized = {}
+  contract
 ){
   const input =
     contract?.sipoc_input ||
@@ -22408,6 +20903,27 @@ function sbLoadRuntimeFromContract(
       ? lanes.outputs_customers
       : [];
 
+  const notes =
+    Array.isArray(
+      input.clarifying_notes
+    )
+      ? input.clarifying_notes
+      : [];
+
+  const notesById =
+    new Map(
+      notes
+        .filter(note =>
+          normalizeText(
+            note?.id || ''
+          )
+        )
+        .map(note => [
+          String(note.id),
+          note
+        ])
+    );
+
   S.cats.suppliers =
     supplierRows
       .map(row => ({
@@ -22418,37 +20934,12 @@ function sbLoadRuntimeFromContract(
 
         name:
           normalizeText(
-            row?.supplier_name ||
-            row?.supplier ||
-            row?.name ||
-            ''
+            row?.supplier || ''
           ),
 
         input:
           normalizeText(
             row?.input || ''
-          ),
-
-        party_type:
-          sbNormalizePartyType(
-            row?.supplier_type ||
-            (
-              row?.supplier_code
-                ? 'process'
-                : 'external'
-            )
-          ),
-
-        process_code:
-          normalizeText(
-            row?.supplier_code || ''
-          ).toUpperCase(),
-
-        process_name:
-          normalizeText(
-            row?.supplier_name ||
-            row?.supplier ||
-            ''
           )
       }))
       .filter(item =>
@@ -22466,9 +20957,7 @@ function sbLoadRuntimeFromContract(
           )
         )
         .filter(Boolean)
-    ).map(name => ({
-      name
-    }));
+    ).map(name => ({name}));
 
   S.cats.outputs =
     sbUnique(
@@ -22479,9 +20968,7 @@ function sbLoadRuntimeFromContract(
           )
         )
         .filter(Boolean)
-    ).map(name => ({
-      name
-    }));
+    ).map(name => ({name}));
 
   S.cats.customers =
     customerRows
@@ -22491,60 +20978,33 @@ function sbLoadRuntimeFromContract(
             row?.id || ''
           ),
 
-        name:
-          normalizeText(
-            row?.customer_name ||
-            row?.customer ||
-            row?.name ||
-            ''
-          ),
-
         output:
           normalizeText(
             row?.output || ''
           ),
 
-        party_type:
-          sbNormalizePartyType(
-            row?.customer_type ||
-            (
-              row?.customer_code
-                ? 'process'
-                : 'external'
-            )
-          ),
-
-        process_code:
+        name:
           normalizeText(
-            row?.customer_code || ''
-          ).toUpperCase(),
-
-        process_name:
-          normalizeText(
-            row?.customer_name ||
-            row?.customer ||
-            ''
+            row?.customer || ''
           )
       }))
       .filter(item =>
         item.id ||
-        item.name ||
-        item.output
+        item.output ||
+        item.name
       );
 
   S.cats.actors =
     actorRows
-      .map(actor => ({
+      .map(row => ({
         id:
           normalizeText(
-            actor?.id || ''
+            row?.id || ''
           ),
 
         name:
           normalizeText(
-            actor?.name ||
-            actor?.actor ||
-            ''
+            row?.name || ''
           )
       }))
       .filter(item =>
@@ -22554,170 +21014,311 @@ function sbLoadRuntimeFromContract(
 
   S.cats.documents =
     sbNormalizeDocumentCatalog(
-      input.documents,
-      normalized.documents
+      input.documents || []
     );
 
   S.acts =
-    Array.isArray(
-      normalized.activities
-    )
-      ? normalized.activities
-      : [];
+    (
+      Array.isArray(
+        input.activities
+      )
+        ? input.activities
+        : []
+    ).map((activity, index) => {
+      const previousRelations =
+        (
+          Array.isArray(
+            activity?.previous
+          )
+            ? activity.previous
+            : []
+        ).map(relation => ({
+          activity:
+            normalizeText(
+              relation?.activity_name ||
+              relation?.activity_id ||
+              ''
+            ),
+
+          label:
+            normalizeText(
+              relation?.label || ''
+            )
+        }));
+
+      const nextRelations =
+        (
+          Array.isArray(
+            activity?.next
+          )
+            ? activity.next
+            : []
+        ).map(relation => ({
+          activity:
+            normalizeText(
+              relation?.activity_name ||
+              relation?.activity_id ||
+              ''
+            ),
+
+          label:
+            normalizeText(
+              relation?.label || ''
+            )
+        }));
+
+      const inputRelations =
+        (
+          Array.isArray(
+            activity?.inputs
+          )
+            ? activity.inputs
+            : []
+        ).map(item => ({
+          name:
+            normalizeText(
+              item?.name || ''
+            ),
+
+          label:
+            normalizeText(
+              item?.label || ''
+            )
+        }));
+
+      const outputRelations =
+        (
+          Array.isArray(
+            activity?.outputs
+          )
+            ? activity.outputs
+            : []
+        ).map(item => ({
+          name:
+            normalizeText(
+              item?.name || ''
+            ),
+
+          label:
+            normalizeText(
+              item?.label || ''
+            )
+        }));
+
+      const noteIds =
+        Array.isArray(
+          activity?.note_ids
+        )
+          ? activity.note_ids
+              .map(String)
+          : [];
+
+      const noteText =
+        noteIds
+          .map(noteId =>
+            notesById.get(
+              noteId
+            )
+          )
+          .filter(Boolean)
+          .map(note =>
+            normalizeText(
+              note?.text || ''
+            )
+          )
+          .filter(Boolean)
+          .join('\n');
+
+      return {
+        id:
+          normalizeText(
+            activity?.id || ''
+          ),
+
+        sequence:
+          Number(
+            activity?.sequence ||
+            index + 1
+          ) || index + 1,
+
+        name:
+          normalizeText(
+            activity?.name || ''
+          ),
+
+        actor_lane_id:
+          normalizeText(
+            activity?.actor_lane_id || ''
+          ),
+
+        actor:
+          normalizeText(
+            activity?.actor || ''
+          ),
+
+        type:
+          sbNormalizeActivityType(
+            activity?.type
+          ),
+
+        previous:
+          previousRelations
+            .map(item => item.activity)
+            .filter(Boolean),
+
+        next:
+          nextRelations
+            .map(item => item.activity)
+            .filter(Boolean),
+
+        previous_relations:
+          previousRelations,
+
+        next_relations:
+          nextRelations,
+
+        input_relations:
+          inputRelations,
+
+        output_relations:
+          outputRelations,
+
+        note_ids:
+          noteIds,
+
+        note:
+          noteText,
+
+        documents:
+          sbNormalizeActivityDocuments(
+            activity
+          ),
+
+        ...sbNormalizeActivityExecution(
+          activity
+        )
+      };
+    });
 
   return true;
 }
-  
-  
-function processIncomingJson(raw, source = 'unknown') {
-  try {
-    if (!raw || !String(raw).trim()) {
-      gMsg('warn', 'No hay JSON para procesar.');
-      return;
-    }
 
-const parsed =
-  typeof raw === 'string'
-    ? JSON.parse(raw)
-    : raw;
 
-const payload =
-  normalizeIncomingPayload(
-    parsed
-  );
-
-const sp =
-  payload.normalized ||
-  payload.sp ||
-  payload;
-
-const canonicalContract =
-  sbBuildCanonicalContract(
-    parsed,
-    sp,
-    source
-  );
-
-    if (!sp || typeof sp !== 'object') {
-      gMsg('err', 'El JSON cargado no contiene una estructura SIPOC válida.');
-      return;
-    }
-
-    const blocking = [];
-    const warnings = [];
-
-    if (!sp.process_name) blocking.push('Falta process_name.');
-    if (!sp.purpose) blocking.push('Falta purpose.');
-    if (!Array.isArray(sp.activities) || !sp.activities.length) blocking.push('Faltan activities.');
-
-    if (looksLikeSerializedJson(sp.notes)) {
-      warnings.push('notes parece contener JSON serializado; debe ser texto descriptivo.');
-    }
-    const contractCheck = validateSipocContract(sp);
-    const semanticCheck = validateActivitiesSemantic(sp.activities || []);
-    blocking.push(...(contractCheck.blockingErrors || []), ...(semanticCheck.blockingErrors || []));
-    warnings.push(...(contractCheck.warnings || []), ...(semanticCheck.warnings || []));
-
-/*
- * El contrato canónico es la fuente oficial.
- * S.sp continúa temporalmente como adaptador
- * para las funciones heredadas.
- */
-S.contract =
-  canonicalContract;
-
-sbLoadRuntimeFromContract(
-  canonicalContract,
-  sp
-);
-
-    if ($('g_name')) $('g_name').value = sp.process_name || '';
-    if ($('g_code')) $('g_code').value = sp.process_code || '';
-    if ($('g_purpose')) $('g_purpose').value = sp.purpose || '';
-
-    ['suppliers', 'inputs', 'outputs', 'customers', 'actors'].forEach(type => {
-      if (typeof renderCatTable === 'function') renderCatTable(type);
-    });
-
+function processIncomingJson(
+  raw,
+  source = 'unknown'
+){
+  try{
     if(
-      typeof renderSBDocumentsTable ===
-      'function'
+      !raw ||
+      !String(raw).trim()
     ){
-      renderSBDocumentsTable();
+      gMsg(
+        'warn',
+        'No hay JSON para procesar.'
+      );
+
+      return false;
     }
 
-    if (typeof renderActsTable === 'function') renderActsTable();
-    if (typeof syncSelects === 'function') syncSelects();
+    const parsed =
+      typeof raw === 'string'
+        ? JSON.parse(raw)
+        : raw;
+
+    const canonicalContract =
+      sbBuildCanonicalContract(
+        parsed
+      );
+
+    resetSBGeneratedArtifacts();
+
+    S.contract =
+      canonicalContract;
+
+    sbLoadRuntimeFromContract(
+      canonicalContract
+    );
+
+    const input =
+      canonicalContract
+        .sipoc_input || {};
+
+    if($('g_name')){
+      $('g_name').value =
+        normalizeText(
+          input.process_name || ''
+        );
+    }
+
+    if($('g_code')){
+      $('g_code').value =
+        normalizeText(
+          input.process_code || ''
+        );
+    }
+
+    if($('g_purpose')){
+      $('g_purpose').value =
+        normalizeText(
+          input.purpose || ''
+        );
+    }
 
     S.loadTrace = {
-source:
-  payload.sourceBlock ||
-  source,
-      loadedAt: new Date().toISOString(),
-      processName: sp.process_name || '',
-      activityCount: Array.isArray(sp.activities) ? sp.activities.length : 0,
-      warningsCount: warnings.length,
-      blockingCount: blocking.length
+      source,
+      loadedAt:
+        new Date()
+          .toISOString(),
+      processName:
+        normalizeText(
+          input.process_name || ''
+        ),
+      activityCount:
+        Array.isArray(
+          input.activities
+        )
+          ? input.activities.length
+          : 0,
+      warningsCount:
+        0,
+      blockingCount:
+        0
     };
 
-/*
- * Ambos orígenes terminan en Datos del proceso.
- * Los bloqueantes se muestran para revisión,
- * pero no impiden abrir el constructor editable.
- */
-sbSetDataModuleLocked();
+    const rendered =
+      runSBContractPreflight();
 
-resetSBGeneratedArtifacts();
+    if(!rendered){
+      gMsg(
+        'err',
+        'El contrato fue recibido, pero Diagram Studio no pudo inicializarse.'
+      );
 
-switchTab(
-  'tab_guided'
-);
+      return false;
+    }
 
-if(source === 'lmp_json'){
-  sbCreateFlow({
-    contract:
-      S.contract,
+    if(source === 'lmp_json'){
+      sbCreateFlow({
+        contract:
+          S.contract,
+        sourceOrigin:
+          'lmp',
+        versionType:
+          'as_is'
+      });
+    }
 
-    sourceOrigin:
-      'lmp',
+    return true;
 
-    versionType:
-      'as_is'
-  });
-}
+  }catch(error){
+    gMsg(
+      'err',
+      'No fue posible cargar LMP_TO_SB 3.0: ' +
+      error.message
+    );
 
-if(source === 'guided_capture'){
-  gMsg(
-    'info',
-    'Proceso nuevo inicializado. Completa los datos y revisa los vacíos estructurales.'
-  );
-
-  return;
-}
-
-if(blocking.length){
-  gMsg(
-    'warn',
-    'JSON cargado para revisión. Se detectaron ' +
-    blocking.length +
-    ' vacío(s) estructural(es) que deben corregirse.'
-  );
-
-  return;
-}
-
-gMsg(
-  warnings.length
-    ? 'warn'
-    : 'ok',
-
-  warnings.length
-    ? 'JSON cargado con advertencias. Revisa los datos antes de construir el diagrama.'
-    : 'JSON del LMP cargado correctamente. Revisa y confirma los datos del proceso.'
-);
-
-  } catch (error) {
-    gMsg('err', 'No fue posible procesar el JSON cargado: ' + error.message);
+    return false;
   }
 }
   
@@ -22977,521 +21578,127 @@ function sbReadLMPHandoff(){
   };
 }
 
-function sbValidateLMPHandoffApplied(sourceContract){
-  const source = sourceContract?.sipoc_input || {};
-  const loaded = S.contract?.sipoc_input || {};
+function sbValidateLMPHandoffApplied(
+  sourceContract
+){
   const errors = [];
 
-  const t =
-    value =>
-      normalizeText(
-        value || ''
-      );
+  const sourceInput =
+    sourceContract?.sipoc_input;
 
-  const lower =
-    value =>
-      t(value).toLowerCase();
+  const loadedInput =
+    S.contract?.sipoc_input;
 
-  const same = (
-    left,
-    right,
-    mapper
-  ) => {
-    const normalize =
-      values =>
+  if(
+    !sourceInput ||
+    !loadedInput
+  ){
+    return {
+      ok:
+        false,
+      errors: [
+        'No existe sipoc_input para validar el handoff.'
+      ]
+    };
+  }
+
+  if(
+    JSON.stringify(
+      sourceInput
+    ) !==
+    JSON.stringify(
+      loadedInput
+    )
+  ){
+    errors.push(
+      'S.contract no preservó exactamente sipoc_input recibido desde LMP.'
+    );
+  }
+
+  const model =
+    S.diagramModel
+      ?.diagram_model;
+
+  if(!model){
+    errors.push(
+      'Diagram Studio no generó diagram_model.'
+    );
+  }else{
+    const nodeIds =
+      new Set(
         (
-          Array.isArray(values)
-            ? values
+          Array.isArray(model.nodes)
+            ? model.nodes
             : []
-        )
-          .map(mapper)
-          .filter(Boolean)
-          .sort();
-
-    return (
-      JSON.stringify(
-        normalize(left)
-      ) ===
-      JSON.stringify(
-        normalize(right)
-      )
-    );
-  };
-
-  const relationSig =
-    value => {
-      if(typeof value === 'string'){
-        return `${lower(value)}|`;
-      }
-
-      return (
-        `${lower(
-          value?.activity_name ||
-          value?.activity ||
-          value?.name ||
-          value?.activity_id
-        )}|` +
-        `${lower(
-          value?.label ||
-          value?.connector ||
-          value?.branch_label ||
-          value?.route_label
-        )}`
-      );
-    };
-
-  const ioSig =
-    (
-      value,
-      key
-    ) => {
-      if(typeof value === 'string'){
-        return `${lower(value)}|`;
-      }
-
-      return (
-        `${lower(
-          value?.name ||
-          value?.[key]
-        )}|` +
-        `${lower(
-          value?.label ||
-          value?.connector
-        )}`
-      );
-    };
-
-  const documentSig =
-    value =>
-      `${lower(value?.name)}|${lower(value?.code)}`;
-
-  const supplierPairSig =
-    value =>
-      (
-        `${t(value?.id)}|` +
-        `${lower(
-          value?.supplier ||
-          value?.name
-        )}|` +
-        `${lower(value?.input)}`
-      );
-
-  const customerPairSig =
-    value =>
-      (
-        `${t(value?.id)}|` +
-        `${lower(value?.output)}|` +
-        `${lower(
-          value?.customer ||
-          value?.name
-        )}`
-      );
-
-  const actorSig =
-    value =>
-      (
-        `${t(value?.id)}|` +
-        `${lower(
-          value?.name ||
-          value?.actor
-        )}`
-      );
-
-  const sourceLanes =
-    source.lanes ||
-    {};
-
-  const runtimeActivities =
-    Array.isArray(S.acts)
-      ? S.acts
-      : [];
-
-  const runtimeById =
-    new Map(
-      runtimeActivities
-        .filter(activity =>
-          t(activity?.id)
-        )
-        .map(activity => [
-          t(activity.id),
-          activity
-        ])
-    );
-
-  if(
-    t(source.process_code) !==
-    t(loaded.process_code)
-  ){
-    errors.push(
-      'process_code no fue preservado.'
-    );
-  }
-
-  if(
-    t(source.process_name) !==
-    t(loaded.process_name)
-  ){
-    errors.push(
-      'process_name no fue preservado.'
-    );
-  }
-
-  if(
-    t(source.purpose) !==
-    t(loaded.purpose)
-  ){
-    errors.push(
-      'purpose no fue preservado.'
-    );
-  }
-
-  if(
-    $('g_code') &&
-    t($('g_code').value) !==
-    t(source.process_code)
-  ){
-    errors.push(
-      'process_code no llegó al formulario.'
-    );
-  }
-
-  if(
-    $('g_name') &&
-    t($('g_name').value) !==
-    t(source.process_name)
-  ){
-    errors.push(
-      'process_name no llegó al formulario.'
-    );
-  }
-
-  if(
-    $('g_purpose') &&
-    t($('g_purpose').value) !==
-    t(source.purpose)
-  ){
-    errors.push(
-      'purpose no llegó al formulario.'
-    );
-  }
-
-  if(
-    !same(
-      sourceLanes.suppliers_inputs,
-      S.cats?.suppliers,
-      supplierPairSig
-    )
-  ){
-    errors.push(
-      'Proveedor → Entrada no fue preservado con sus IDs.'
-    );
-  }
-
-  if(
-    !same(
-      sourceLanes.actors,
-      S.cats?.actors,
-      actorSig
-    )
-  ){
-    errors.push(
-      'Actores/carriles no fueron preservados con sus IDs.'
-    );
-  }
-
-  if(
-    !same(
-      sourceLanes.outputs_customers,
-      S.cats?.customers,
-      customerPairSig
-    )
-  ){
-    errors.push(
-      'Salida → Cliente no fue preservado con sus IDs.'
-    );
-  }
-
-  const notesById =
-    new Map(
-      (
-        Array.isArray(
-          source.clarifying_notes
-        )
-          ? source.clarifying_notes
-          : []
-      )
-        .filter(note =>
-          t(note?.id)
-        )
-        .map(note => [
-          t(note.id),
-
-          lower(
-            note?.text ||
-            note?.content
+        ).map(node =>
+          normalizeText(
+            node?.id || ''
           )
-        ])
-    );
+        )
+      );
 
-  (
-    Array.isArray(source.activities)
-      ? source.activities
-      : []
-  ).forEach(
+    const laneIds =
+      new Set(
+        (
+          Array.isArray(model.lanes)
+            ? model.lanes
+            : []
+        ).map(lane =>
+          normalizeText(
+            lane?.id || ''
+          )
+        )
+      );
+
     (
-      sourceActivity,
-      index
-    ) => {
+      Array.isArray(
+        sourceInput.activities
+      )
+        ? sourceInput.activities
+        : []
+    ).forEach(activity => {
       const id =
-        t(sourceActivity?.id);
-
-      if(!id){
-        return;
-      }
-
-      const runtime =
-        runtimeById.get(id);
-
-      if(!runtime){
-        errors.push(
-          `No se preservó la actividad ${id}.`
-        );
-
-        return;
-      }
-
-      const expectedSequence =
-        Number(
-          sourceActivity?.sequence ||
-          sourceActivity?.order ||
-          index + 1
-        ) || index + 1;
-
-      const runtimeSequence =
-        Number(
-          runtime?.sequence ||
-          runtime?.order ||
-          index + 1
-        ) || index + 1;
-
-      if(
-        expectedSequence !==
-        runtimeSequence
-      ){
-        errors.push(
-          `${id}: sequence no fue preservado.`
-        );
-      }
-
-      const sourceType =
-        lower(
-          sourceActivity?.type
-        );
-
-      const runtimeType =
-        lower(
-          runtime?.type
+        normalizeText(
+          activity?.id || ''
         );
 
       if(
-        sourceType &&
-        ![
-          'actividad',
-          'decision'
-        ].includes(sourceType)
+        id &&
+        !nodeIds.has(id)
       ){
         errors.push(
-          `${id}: tipo canónico no permitido (${sourceType}).`
-        );
-      }else if(
-        sourceType &&
-        runtimeType !== sourceType
-      ){
-        errors.push(
-          `${id}: el tipo ${sourceType} cambió a ${runtimeType || '(vacío)'}.`
+          `La actividad ${id} no llegó al diagram_model.`
         );
       }
+    });
+
+    const actorRows =
+      Array.isArray(
+        sourceInput?.lanes?.actors
+      )
+        ? sourceInput.lanes.actors
+        : [];
+
+    actorRows.forEach(actor => {
+      const id =
+        normalizeText(
+          actor?.id || ''
+        );
 
       if(
-        t(
-          sourceActivity?.actor_lane_id
-        ) !==
-        t(
-          runtime?.actor_lane_id
-        )
+        id &&
+        !laneIds.has(id)
       ){
         errors.push(
-          `${id}: actor_lane_id no fue preservado.`
+          `El carril ${id} no llegó al diagram_model.`
         );
       }
-
-      if(
-        t(sourceActivity?.actor) &&
-        t(sourceActivity.actor) !==
-        t(runtime?.actor)
-      ){
-        errors.push(
-          `${id}: actor no fue preservado.`
-        );
-      }
-
-      if(
-        !same(
-          sourceActivity?.previous,
-          runtime?.previous_relations ||
-          runtime?.previous,
-          relationSig
-        )
-      ){
-        errors.push(
-          `${id}: previous o sus etiquetas cambiaron.`
-        );
-      }
-
-      if(
-        !same(
-          sourceActivity?.next,
-          runtime?.next_relations ||
-          runtime?.next,
-          relationSig
-        )
-      ){
-        errors.push(
-          `${id}: next o sus etiquetas cambiaron.`
-        );
-      }
-
-      if(
-        !same(
-          sourceActivity?.inputs,
-          runtime?.input_relations ||
-          runtime?.ext_inputs,
-
-          value =>
-            ioSig(
-              value,
-              'input'
-            )
-        )
-      ){
-        errors.push(
-          `${id}: inputs o sus etiquetas cambiaron.`
-        );
-      }
-
-      if(
-        !same(
-          sourceActivity?.outputs,
-          runtime?.output_relations ||
-          runtime?.ext_outputs,
-
-          value =>
-            ioSig(
-              value,
-              'output'
-            )
-        )
-      ){
-        errors.push(
-          `${id}: outputs o sus etiquetas cambiaron.`
-        );
-      }
-
-      if(
-        !same(
-          sbNormalizeActivityDocuments(
-            sourceActivity
-          ),
-
-          sbNormalizeActivityDocuments(
-            runtime
-          ),
-
-          documentSig
-        )
-      ){
-        errors.push(
-          `${id}: documentos de actividad cambiaron.`
-        );
-      }
-
-      const runtimeNote =
-        lower(
-          runtime?.note ||
-          runtime?.notes
-        );
-
-      (
-        Array.isArray(
-          sourceActivity?.note_ids
-        )
-          ? sourceActivity.note_ids
-          : []
-      ).forEach(noteId => {
-        const noteText =
-          notesById.get(
-            String(noteId)
-          ) || '';
-
-        if(
-          noteText &&
-          !runtimeNote.includes(
-            noteText
-          )
-        ){
-          errors.push(
-            `${id}: la nota ${noteId} no llegó al editor.`
-          );
-        }
-      });
-    }
-  );
-
-  const runtimeDocuments =
-    sbNormalizeDocumentCatalog(
-      S.cats?.documents ||
-      []
-    );
-
-  sbNormalizeDocumentCatalog(
-    source.documents ||
-    []
-  ).forEach(documentItem => {
-    const exists =
-      runtimeDocuments.some(
-        runtimeDocument =>
-          lower(
-            runtimeDocument.name
-          ) ===
-            lower(
-              documentItem.name
-            ) &&
-
-          (
-            !documentItem.code ||
-            lower(
-              runtimeDocument.code
-            ) ===
-              lower(
-                documentItem.code
-              )
-          )
-      );
-
-    if(!exists){
-      errors.push(
-        `Documento global no preservado: ${
-          documentItem.name ||
-          documentItem.code
-        }.`
-      );
-    }
-  });
+    });
+  }
 
   return {
     ok:
       errors.length === 0,
-
     errors
   };
 }
@@ -23575,67 +21782,25 @@ function sbConsumeLMPHandoff(){
   const {
     contract,
     context
-  } =
-    handoff;
+  } = handoff;
 
   const wasConsumed =
     Boolean(
       normalizeText(
-        context?.consumed_at ||
-        ''
+        context?.consumed_at || ''
       )
     );
 
-  const previousLoadTrace =
-    S.loadTrace;
+  const loaded =
+    processIncomingJson(
+      contract,
+      'lmp_handoff'
+    );
 
-  /*
-   * Reutiliza el importador canónico vigente.
-   * No existe una segunda vía de normalización.
-   */
-  processIncomingJson(
-    contract,
-    'lmp_handoff'
-  );
-
-  const guidedVisible =
-    $('tab_guided') &&
-    !$('tab_guided')
-      .classList
-      .contains('hidden');
-
-  const loadedCorrectly =
-    S.loadTrace &&
-    S.loadTrace !==
-      previousLoadTrace &&
-
-    S.contract
-      ?.contract_code ===
-        'LMP_TO_SB' &&
-
-    String(
-      S.contract
-        ?.contract_version ||
-      ''
-    ) ===
-      '3.0' &&
-
-    S.contract
-      ?.target_module ===
-        'SIPOC_BUILDER' &&
-
-    S.contract
-      ?.sipoc_input &&
-    typeof S.contract
-      .sipoc_input ===
-        'object' &&
-
-    guidedVisible;
-
-  if(!loadedCorrectly){
+  if(!loaded){
     gMsg(
       'err',
-      'El handoff fue leído, pero SB no confirmó una carga completa en Datos del proceso. No se marcó como consumido.'
+      'El handoff fue leído, pero SB no pudo inicializar Diagram Studio.'
     );
 
     return false;
@@ -23649,7 +21814,7 @@ function sbConsumeLMPHandoff(){
   if(!integrity.ok){
     gMsg(
       'err',
-      'El AS-IS no superó la verificación de integridad del handoff: ' +
+      'El handoff no superó la verificación de integridad: ' +
       integrity.errors
         .slice(0, 5)
         .join(' | ') +
@@ -23659,27 +21824,18 @@ function sbConsumeLMPHandoff(){
     return false;
   }
 
-  /*
-   * Solo después de comprobar la aplicación real
-   * se registra la identidad del flujo.
-   */
   const flow =
     sbCreateFlow({
       contract:
         S.contract,
-
       sourceOrigin:
         'lmp',
-
       versionType:
         'as_is',
-
       flowId:
         normalizeText(
-          context?.consumed_flow_id ||
-          ''
+          context?.consumed_flow_id || ''
         ),
-
       reuseExisting:
         true
     });
@@ -23687,7 +21843,7 @@ function sbConsumeLMPHandoff(){
   if(!flow){
     gMsg(
       'err',
-      'El AS-IS fue cargado, pero no pudo registrarse como flujo de trabajo. No se marcó como consumido.'
+      'El contrato fue cargado, pero no pudo registrarse como flujo de trabajo.'
     );
 
     return false;
@@ -23695,28 +21851,18 @@ function sbConsumeLMPHandoff(){
 
   S.loadTrace = {
     ...(S.loadTrace || {}),
-
     source:
       'lmp_handoff',
-
     intent:
       context.intent,
-
     returnExpected:
       context.return_expected,
-
     handoffCreatedAt:
       context.created_at,
-
     handoffConsumedAt:
-      context.consumed_at ||
-      ''
+      context.consumed_at || ''
   };
 
-  /*
-   * consumed_at / consumed_flow_id se escriben
-   * únicamente tras validar estado, render e IDs.
-   */
   const consumedResult =
     sbMarkLMPHandoffConsumed(
       context,
@@ -23728,39 +21874,10 @@ function sbConsumeLMPHandoff(){
       consumedResult
         .context
         .consumed_at;
-  }
-
-  const blockingCount =
-    Number(
-      S.loadTrace
-        ?.blockingCount
-    ) || 0;
-
-  const intentMessage =
-    context.intent ===
-      'asis_review'
-      ? 'Queda preparado para revisión AS-IS y retorno futuro al LMP.'
-      : 'Queda cargado como baseline para el trabajo posterior en SB.';
-
-  if(blockingCount){
+  }else{
     gMsg(
       'warn',
-      (
-        wasConsumed
-          ? 'AS-IS restaurado desde el handoff sin crear una identidad de flujo nueva. '
-          : 'AS-IS recibido automáticamente desde LMP. '
-      ) +
-      `${blockingCount} vacío(s) estructural(es) quedan como advertencias de revisión. ` +
-      intentMessage
-    );
-
-    return true;
-  }
-
-  if(!consumedResult.ok){
-    gMsg(
-      'warn',
-      'AS-IS cargado correctamente, pero no fue posible marcar el handoff como consumido. Evita recargar hasta revisar el almacenamiento local.'
+      'El flujo quedó cargado, pero no fue posible marcar el handoff como consumido.'
     );
 
     return true;
@@ -23768,17 +21885,17 @@ function sbConsumeLMPHandoff(){
 
   gMsg(
     'ok',
-    (
-      wasConsumed
-        ? 'AS-IS restaurado desde el handoff sin duplicar el flujo. '
-        : 'AS-IS recibido automáticamente desde LMP. '
-    ) +
-    intentMessage
+    wasConsumed
+      ? 'AS-IS restaurado desde LMP sin duplicar la identidad del flujo.'
+      : (
+          context.intent === 'asis_review'
+            ? 'AS-IS recibido desde LMP y abierto directamente en Diagram Studio.'
+            : 'Salida SGMP recibida desde LMP y abierta directamente en Diagram Studio.'
+        )
   );
 
   return true;
 }
-
 
 function sbInitAutomaticLMPHandoff(){
   const run =
@@ -25384,7 +23501,6 @@ function sbApplyActivityExecutionDrawioStyles(){
   return true;
 }
 
-
 function sbApplyActivityDocumentDrawioStyles(){
   const xml =
     String(
@@ -25422,10 +23538,6 @@ function sbApplyActivityDocumentDrawioStyles(){
     return false;
   }
 
-  /*
-   * Evita duplicados al reconstruir
-   * varias veces la plantilla.
-   */
   Array
     .from(
       documentXML.querySelectorAll(
@@ -25448,7 +23560,6 @@ function sbApplyActivityDocumentDrawioStyles(){
           cell.getAttribute(
             'id'
           ),
-
           cell
         ])
     );
@@ -25457,11 +23568,7 @@ function sbApplyActivityDocumentDrawioStyles(){
     parseIdReference();
 
   const activities =
-    Array.isArray(
-      S.sp?.activities
-    )
-      ? S.sp.activities
-      : [];
+    sbContractActivities();
 
   activities.forEach(activity => {
     const descriptor =
@@ -25519,11 +23626,8 @@ function sbApplyActivityDocumentDrawioStyles(){
       return;
     }
 
-    const badgeWidth =
-      72;
-
-    const badgeHeight =
-      18;
+    const badgeWidth = 72;
+    const badgeHeight = 18;
 
     const badge =
       documentXML.createElement(
@@ -25571,10 +23675,6 @@ function sbApplyActivityDocumentDrawioStyles(){
       '1'
     );
 
-    /*
-     * El documento queda como hijo de
-     * la actividad y se mueve con ella.
-     */
     badge.setAttribute(
       'parent',
       nodeId
@@ -25615,9 +23715,6 @@ function sbApplyActivityDocumentDrawioStyles(){
         'mxGeometry'
       );
 
-    /*
-     * Coordenadas relativas a la actividad.
-     */
     badgeGeometry.setAttribute(
       'x',
       '5'
@@ -25669,7 +23766,7 @@ function sbApplyActivityDocumentDrawioStyles(){
       );
 
   return true;
-}  
+}
   
 // ═══════════════════════════════════════════════════════════════
 // INJECT HEADER + FOOTER
@@ -26440,7 +24537,24 @@ function sbNormalizeActivityExecution(
       ''
     ).toLowerCase();
 
-  const rawSystemCode =
+  const mode =
+    [
+      'system',
+      'sistema',
+      'en sistema',
+      'en_sistema'
+    ].includes(rawMode)
+      ? 'system'
+      : (
+          [
+            'manual',
+            'manualmente'
+          ].includes(rawMode)
+            ? 'manual'
+            : ''
+        );
+
+  const systemCode =
     normalizeText(
       activity?.system_code ||
       activity?.systemCode ||
@@ -26450,7 +24564,17 @@ function sbNormalizeActivityExecution(
       ''
     ).toUpperCase();
 
-  const rawSupportCode =
+  const systemName =
+    normalizeText(
+      activity?.system_name ||
+      activity?.systemName ||
+      activity?.system?.name ||
+      activity?.execution
+        ?.system_name ||
+      ''
+    );
+
+  const supportCode =
     normalizeText(
       activity?.support_tool_code ||
       activity?.supportToolCode ||
@@ -26460,104 +24584,44 @@ function sbNormalizeActivityExecution(
       ''
     ).toUpperCase();
 
-  const systemModes =
-    new Set([
-      'system',
-      'sistema',
-      'en sistema',
-      'en_sistema'
-    ]);
-
-  const manualModes =
-    new Set([
-      'manual',
-      'manualmente'
-    ]);
-
-  /*
-   * La modalidad explícita tiene prioridad.
-   * Solo se infiere desde system_code cuando
-   * el origen no declaró ninguna modalidad.
-   */
-  const mode =
-    systemModes.has(
-      rawMode
-    )
-      ? 'system'
-      : (
-          manualModes.has(
-            rawMode
-          )
-            ? 'manual'
-            : (
-                rawSystemCode
-                  ? 'system'
-                  : 'manual'
-              )
-        );
-
-  const systemCatalog =
-    sbExecutionSystemCatalog();
-
-  const supportCatalog =
-    sbExecutionSupportCatalog();
-
-  const systemItem =
-    sbExecutionCatalogItem(
-      systemCatalog,
-      rawSystemCode
+  const supportName =
+    normalizeText(
+      activity?.support_tool_name ||
+      activity?.supportToolName ||
+      activity?.support_tool?.name ||
+      activity?.execution
+        ?.support_tool_name ||
+      ''
     );
 
-  const supportItem =
-    sbExecutionCatalogItem(
-      supportCatalog,
-      rawSupportCode
-    );
+  const result = {};
 
-  return {
-    execution_mode:
-      mode,
+  if(mode){
+    result.execution_mode =
+      mode;
+  }
 
-    system_code:
-      mode === 'system'
-        ? rawSystemCode
-        : '',
+  if(systemCode){
+    result.system_code =
+      systemCode;
+  }
 
-    system_name:
-      mode === 'system'
-        ? normalizeText(
-            activity?.system_name ||
-            activity?.systemName ||
-            activity?.system?.name ||
-            activity?.execution
-              ?.system_name ||
-            systemItem?.name ||
-            rawSystemCode
-          )
-        : '',
+  if(systemName){
+    result.system_name =
+      systemName;
+  }
 
-    support_tool_code:
-      mode === 'manual'
-        ? rawSupportCode
-        : '',
+  if(supportCode){
+    result.support_tool_code =
+      supportCode;
+  }
 
-    support_tool_name:
-      mode === 'manual'
-        ? normalizeText(
-            activity
-              ?.support_tool_name ||
-            activity
-              ?.supportToolName ||
-            activity
-              ?.support_tool?.name ||
-            activity
-              ?.execution
-              ?.support_tool_name ||
-            supportItem?.name ||
-            rawSupportCode
-          )
-        : ''
-  };
+  if(supportName){
+    result.support_tool_name =
+      supportName;
+  }
+
+  return result;
 }
 
 function sbExecutionOptions(
@@ -26965,166 +25029,6 @@ sbCollectInlineActivity =
             : ''
       })
     };
-  };
-
-
-function sbExecutionIncomingInput(
-  parsed
-){
-  const finalSipoc =
-    parsed?.final_outputs
-      ?.sipoc_builder ||
-    parsed?.finalOutputs
-      ?.sipoc_builder ||
-    parsed?.finalOutputs
-      ?.sipocBuilder ||
-    parsed?.outputs
-      ?.sipoc_builder;
-
-  const directSipoc =
-    parsed?.sipoc_builder ||
-    parsed?.sipocBuilder;
-
-  return (
-    parsed?.sipoc_input ||
-    finalSipoc?.sipoc_input ||
-    finalSipoc ||
-    directSipoc?.sipoc_input ||
-    directSipoc ||
-    parsed?.structured_process ||
-    parsed ||
-    {}
-  );
-}
-
-
-
-const sbCollectStructuralIssuesExecutionBase =
-  sbCollectStructuralIssues;
-
-
-sbCollectStructuralIssues =
-  function(
-    contract
-  ){
-    const issues =
-      sbCollectStructuralIssuesExecutionBase(
-        contract
-      );
-
-    const activities =
-      Array.isArray(
-        contract?.sipoc_input
-          ?.activities
-      )
-        ? contract
-            .sipoc_input
-            .activities
-        : [];
-
-    const systemCodes =
-      new Set(
-        sbExecutionSystemCatalog()
-          .map(item =>
-            item.code
-          )
-      );
-
-    const supportCodes =
-      new Set(
-        sbExecutionSupportCatalog()
-          .map(item =>
-            item.code
-          )
-      );
-
-    activities.forEach(
-      (
-        activity,
-        index
-      ) => {
-        const execution =
-          sbNormalizeActivityExecution(
-            activity
-          );
-
-        const name =
-          normalizeText(
-            activity?.name ||
-            ''
-          ) ||
-          `Actividad ${index + 1}`;
-
-        if(
-          execution.execution_mode ===
-            'system' &&
-          !execution.system_code
-        ){
-          issues.push({
-            title:
-              `${name} no tiene sistema seleccionado`,
-
-            detail:
-              'Selecciona SIAA, 4TUNA, SAP o BLZ.',
-
-            targetId:
-              'sb_acc_activities',
-
-            activityIndex:
-              index
-          });
-        }
-
-        if(
-          execution.execution_mode ===
-            'system' &&
-          execution.system_code &&
-          !systemCodes.has(
-            execution.system_code
-          )
-        ){
-          issues.push({
-            title:
-              `${name} utiliza un sistema no autorizado`,
-
-            detail:
-              `El código ${execution.system_code} no existe en el catálogo SISTEMAS.`,
-
-            targetId:
-              'sb_acc_activities',
-
-            activityIndex:
-              index
-          });
-        }
-
-        if(
-          execution.execution_mode ===
-            'manual' &&
-          execution.support_tool_code &&
-          !supportCodes.has(
-            execution
-              .support_tool_code
-          )
-        ){
-          issues.push({
-            title:
-              `${name} utiliza un identificador no autorizado`,
-
-            detail:
-              `El código ${execution.support_tool_code} no corresponde a Excel, WhatsApp o Drive.`,
-
-            targetId:
-              'sb_acc_activities',
-
-            activityIndex:
-              index
-          });
-        }
-      }
-    );
-
-    return issues;
   };
 
 
@@ -28475,51 +26379,6 @@ function sbRemoveInlineDocument(
   return true;
 }
 
-
-function sbDocumentIncomingInput(
-  parsed
-){
-  const finalSipoc =
-    parsed
-      ?.final_outputs
-      ?.sipoc_builder ||
-
-    parsed
-      ?.finalOutputs
-      ?.sipoc_builder ||
-
-    parsed
-      ?.finalOutputs
-      ?.sipocBuilder ||
-
-    parsed
-      ?.outputs
-      ?.sipoc_builder;
-
-  const directSipoc =
-    parsed?.sipoc_builder ||
-    parsed?.sipocBuilder;
-
-  return (
-    parsed?.sipoc_input ||
-
-    finalSipoc?.sipoc_input ||
-
-    finalSipoc ||
-
-    directSipoc?.sipoc_input ||
-
-    directSipoc ||
-
-    parsed?.structured_process ||
-
-    parsed ||
-
-    {}
-  );
-}
-
-
 function sbCollectActivityDocumentIssues(
   activities
 ){
@@ -29288,6 +27147,15 @@ function sbPartyMetadata(
   item,
   prefix
 ){
+  void item;
+  void prefix;
+
+  /*
+   * LMP_TO_SB 3.0 no transporta metadata
+   * de tipo de entidad o proceso relacionado.
+   */
+  return {};
+}{
   const type =
     sbPartyItemType(
       item
