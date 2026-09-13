@@ -17029,12 +17029,8 @@ function buildAsIsProcessContract(){
         .filter(Boolean);
     };
 
-  const normalizeDocuments =
-    function(activity, isDecision){
-
-      if(isDecision){
-        return [];
-      }
+const normalizeDocuments =
+    function(activity){
 
       const map =
         new Map();
@@ -17062,10 +17058,7 @@ function buildAsIsProcessContract(){
               )
             : '';
 
-        if(
-          !name &&
-          !code
-        ){
+        if(!name){
           return;
         }
 
@@ -17085,42 +17078,11 @@ function buildAsIsProcessContract(){
         }
       });
 
-      /*
-       * Compatibilidad con el campo simple
-       * document ya existente en el LMP.
-       */
-      const legacyDocument =
-        normalizeContractString(
-          activity?.document ||
-          ''
-        );
-
-      if(legacyDocument){
-        const key =
-          lmpLower(
-            legacyDocument
-          ) +
-          '::';
-
-        if(!map.has(key)){
-          map.set(
-            key,
-            {
-              name:
-                legacyDocument,
-
-              code:
-                ''
-            }
-          );
-        }
-      }
-
       return Array.from(
         map.values()
       );
     };
-
+  
   return {
     as_is_process: {
       source_route:
@@ -17146,6 +17108,11 @@ function buildAsIsProcessContract(){
           safeArray(
             state.asis.outputs_customers
           )
+        ),
+
+      documents:
+        normalizeAsIsDocumentsCatalog(
+          state.asis.documents
         ),
 
       activities:
@@ -17199,11 +17166,10 @@ function buildAsIsProcessContract(){
                 ? rawSequence
                 : index + 1;
 
-            const documents =
-              normalizeDocuments(
-                activity,
-                isDecision
-              );
+const documents =
+  normalizeDocuments(
+    activity
+  );
 
             return {
               id,
@@ -19046,22 +19012,119 @@ function canonicalActivityType(value){
 function buildSipocActivities(){
   return safeArray(state.asis?.activities)
     .map((a, index) => ({
-      id: normalizeContractString(a.id || 'ACT-' + String(index + 1).padStart(3, '0')),
-      name: normalizeContractString(a.name || a.activity || a.activity_name || ''),
-      type: normalizePromptAType(a.type || 'actividad'),
-      actor: normalizeCatalogValue(a.actor || a.owner || a.responsable || 'pendiente_validacion'),
-      document: normalizeCatalogValue(a.document || ''),
-      estimated_time: normalizeContractString(a.estimated_time || a.time || ''),
+      id:
+        normalizeContractString(
+          a.id ||
+          'ACT-' +
+          String(index + 1).padStart(3, '0')
+        ),
 
-      previous: normalizeActivityConnectionList(a.previous),
-      next: normalizeActivityConnectionList(a.next),
+      name:
+        normalizeContractString(
+          a.name ||
+          a.activity ||
+          a.activity_name ||
+          ''
+        ),
 
-      inputs_used: normalizeActivityInputList(a.inputs_used || a.inputsUsed || a.ext_inputs),
-      outputs_generated: normalizeActivityOutputList(a.outputs_generated || a.outputsGenerated || a.ext_outputs),
+      type:
+        normalizePromptAType(
+          a.type ||
+          'actividad'
+        ),
 
-      observations: normalizeContractString(a.observations || a.note || ''),
-      clarifying_notes: normalizePromptAList(a.clarifying_notes || a.clarifyingNotes),
-      editable: a.editable !== false
+      actor:
+        normalizeCatalogValue(
+          a.actor ||
+          a.owner ||
+          a.responsable ||
+          'pendiente_validacion'
+        ),
+
+      documents:
+        normalizeAsIsDocumentsCatalog(
+          a.documents
+        ).map(name => ({
+          name,
+          code: ''
+        })),
+
+      execution_mode:
+        normalizeContractString(
+          a.execution_mode ||
+          ''
+        ),
+
+      system_code:
+        normalizeContractString(
+          a.system_code ||
+          ''
+        ),
+
+      system_name:
+        normalizeContractString(
+          a.system_name ||
+          ''
+        ),
+
+      support_tool_code:
+        normalizeContractString(
+          a.support_tool_code ||
+          ''
+        ),
+
+      support_tool_name:
+        normalizeContractString(
+          a.support_tool_name ||
+          ''
+        ),
+
+      estimated_time:
+        normalizeContractString(
+          a.estimated_time ||
+          a.time ||
+          ''
+        ),
+
+      previous:
+        normalizeActivityConnectionList(
+          a.previous
+        ),
+
+      next:
+        normalizeActivityConnectionList(
+          a.next
+        ),
+
+      inputs_used:
+        normalizeActivityInputList(
+          a.inputs_used ||
+          a.inputsUsed ||
+          a.ext_inputs
+        ),
+
+      outputs_generated:
+        normalizeActivityOutputList(
+          a.outputs_generated ||
+          a.outputsGenerated ||
+          a.ext_outputs
+        ),
+
+      observations:
+        normalizeContractString(
+          a.observations ||
+          a.note ||
+          ''
+        ),
+
+      clarifying_notes:
+        normalizePromptAList(
+          a.clarifying_notes ||
+          a.clarifyingNotes
+        ),
+
+      editable:
+        a.editable !== false
     }))
     .filter(a => a.name);
 }
@@ -19751,6 +19814,24 @@ function buildSipocContract(){
   const globalDocumentMap =
     new Map();
 
+  normalizeAsIsDocumentsCatalog(
+    state.asis?.documents
+  ).forEach(documentName => {
+    const key =
+      lmpLower(documentName) +
+      '::';
+
+    if(!globalDocumentMap.has(key)){
+      globalDocumentMap.set(
+        key,
+        {
+          name: documentName,
+          code: ''
+        }
+      );
+    }
+  });
+
   const activities =
     sourceActivities.map(
       (activity, index) => {
@@ -19837,20 +19918,16 @@ function buildSipocContract(){
               )
           }));
 
-        const documentName =
-          normalizeContractString(
-            activity.document || ''
-          );
-
         const documents =
-          documentName
-            ? [{
-                name:
-                  documentName,
-                code:
-                  ''
-              }]
-            : [];
+          normalizeAsIsDocumentsCatalog(
+            activity.documents
+          ).map(documentName => ({
+            name:
+              documentName,
+
+            code:
+              ''
+          }));
 
         documents.forEach(documentItem => {
           const key =
@@ -19913,7 +19990,77 @@ function buildSipocContract(){
                 note => note.id
               ),
 
-          documents
+          documents,
+
+          ...(
+            normalizeContractString(
+              activity.execution_mode ||
+              ''
+            )
+              ? {
+                  execution_mode:
+                    normalizeContractString(
+                      activity.execution_mode
+                    )
+                }
+              : {}
+          ),
+
+          ...(
+            normalizeContractString(
+              activity.system_code ||
+              ''
+            )
+              ? {
+                  system_code:
+                    normalizeContractString(
+                      activity.system_code
+                    )
+                }
+              : {}
+          ),
+
+          ...(
+            normalizeContractString(
+              activity.system_name ||
+              ''
+            )
+              ? {
+                  system_name:
+                    normalizeContractString(
+                      activity.system_name
+                    )
+                }
+              : {}
+          ),
+
+          ...(
+            normalizeContractString(
+              activity.support_tool_code ||
+              ''
+            )
+              ? {
+                  support_tool_code:
+                    normalizeContractString(
+                      activity.support_tool_code
+                    )
+                }
+              : {}
+          ),
+
+          ...(
+            normalizeContractString(
+              activity.support_tool_name ||
+              ''
+            )
+              ? {
+                  support_tool_name:
+                    normalizeContractString(
+                      activity.support_tool_name
+                    )
+                }
+              : {}
+          )
         };
       }
     );
@@ -29286,6 +29433,13 @@ function lmpGetValidatedAsIsEvidence_(){
       : currentContract.outputs_customers
   );
 
+  const documents =
+    normalizeAsIsDocumentsCatalog(
+      safeArray(state.asis?.documents).length
+        ? state.asis.documents
+        : currentContract.documents
+    );
+
   const additionalInformation = safeArray(
     safeArray(state.asis?.additional_information).length
       ? state.asis.additional_information
@@ -29322,6 +29476,11 @@ function lmpGetValidatedAsIsEvidence_(){
       'salidas y clientes'
     ),
 
+    documents: lmpCloneJsonEvidence_(
+      documents,
+      'catálogo documental'
+    ),
+
     additional_information: lmpCloneJsonEvidence_(
       additionalInformation,
       'información adicional'
@@ -29350,6 +29509,9 @@ function lmpGetValidatedAsIsEvidence_(){
 
       output_customer_count:
         outputsCustomers.length,
+
+      document_count:
+        documents.length,
 
       additional_information_count:
         additionalInformation.length
