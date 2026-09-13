@@ -6372,6 +6372,68 @@ function sbCreateFlow({
   return flow;
 }
 
+ function sbSaveActiveFlowSnapshot(){
+  const activeFlowId =
+    normalizeText(
+      SB_LIBRARY_STATE.active_flow_id || ''
+    );
+
+  if(!activeFlowId){
+    return null;
+  }
+
+  const found =
+    sbFindFlowById(
+      activeFlowId
+    );
+
+  if(
+    !found ||
+    found.location !== 'flows'
+  ){
+    return null;
+  }
+
+  const now =
+    new Date().toISOString();
+
+  found.flow.payload = {
+    contract:
+      sbDeepClone(
+        S.contract
+      ),
+
+    diagram_model:
+      sbDeepClone(
+        S.diagramModel
+      ),
+
+    optimized_diagram_model:
+      sbDeepClone(
+        S.optimizedDiagramModel
+      )
+  };
+
+  found.flow.revision =
+    Number(
+      found.flow.revision || 0
+    ) + 1;
+
+  found.flow.persisted =
+    true;
+
+  found.flow.updated_at =
+    now;
+
+  found.flow.saved_at =
+    now;
+
+  found.master.updated_at =
+    now;
+
+  return found.flow;
+} 
+
 const S = {
   /*
    * Fuente oficial de Datos del proceso.
@@ -7369,105 +7431,111 @@ function sbStudioEnterDiagramMode(){
   return true;
 }
 
-function sbStudioCloseAndSave(options = {}){
-  if(!S.studio.editing) return false;
+function sbStudioCloseAndSave(
+  options = {}
+){
+  if(!S.studio.editing){
+    return false;
+  }
 
-  const host = $('sb_studio_fullscreen_host');
+  const host =
+    $('sb_studio_fullscreen_host');
 
-  if(options.skipFullscreenExit && document.fullscreenElement !== host){
-    return sbStudioCancelEditing({skipFullscreenExit:true});
+  if(
+    options.skipFullscreenExit &&
+    document.fullscreenElement !== host
+  ){
+    return sbStudioCancelEditing({
+      skipFullscreenExit:true
+    });
   }
 
   if(!S.diagramModel){
-    gMsg('err','No existe un modelo visual para guardar.');
-    return false;
-  }
-
-  const semanticBackup = {
-    acts: sbDeepClone(S.acts || []),
-    cats: sbDeepClone(S.cats || {}),
-    contract: sbDeepClone(S.contract),
-    tplXml: S.tplXml || '',
-    diagramXml: S.diagramXml || '',
-    xmlFinal: S.xmlFinal || '',
-    idRef: S.idRef || ''
-  };
-
-  const restoreSemanticBackup = () => {
-    S.acts = semanticBackup.acts;
-    S.cats = semanticBackup.cats;
-    S.contract = semanticBackup.contract;
-    S.tplXml = semanticBackup.tplXml;
-    S.diagramXml = semanticBackup.diagramXml;
-    S.xmlFinal = semanticBackup.xmlFinal;
-    S.idRef = semanticBackup.idRef;
-
-    ['suppliers','inputs','outputs','customers','actors','documents']
-      .forEach(type => renderCatTable(type));
-
-    renderActsTable();
-    syncSelects();
-
-    if($('xml_diagram')){
-      $('xml_diagram').value = S.diagramXml;
-    }
-
-    if($('xml_final')){
-      $('xml_final').value = S.xmlFinal;
-    }
-  };
-
-  const semanticSync =
-    sbStudioProjectDiagramToEditor();
-
-  if(!semanticSync.ok){
-    restoreSemanticBackup();
-
     gMsg(
-      'warn',
-      semanticSync.message ||
-      'Completa las conexiones obligatorias antes de guardar.'
+      'err',
+      'No existe un modelo visual para guardar.'
     );
 
     return false;
   }
 
-  if(!genTemplate()){
-    restoreSemanticBackup();
+  const contractBackup =
+    sbDeepClone(
+      S.contract
+    );
+
+  const projection =
+    sbStudioProjectDiagramToContract();
+
+  if(!projection.ok){
+    S.contract =
+      contractBackup;
 
     gMsg(
       'err',
-      'No fue posible regenerar la salida con las conexiones actualizadas.'
+      projection.message ||
+      'No fue posible sincronizar el diagrama con el contrato.'
     );
 
     return false;
   }
 
-  S.diagramModel.source_contract =
-    sbDeepClone(S.contract);
-
   S.optimizedDiagramModel =
-    sbDeepClone(S.diagramModel);
+    sbDeepClone(
+      S.diagramModel
+    );
 
-  S.optimization.status = 'saved';
-  S.studio.saved = true;
-  S.studio.editing = false;
-  S.studio.editSnapshot = null;
-  S.studio.selectedElement = null;
-  S.studio.nodeDrag = null;
-  S.studio.dragging = false;
-  S.studio.pointerId = null;
+  S.optimizedDiagramModel.source_contract =
+    sbDeepClone(
+      S.contract
+    );
 
-  sbStudioResetConnectMode(true);
+  S.optimization.status =
+    'saved';
 
-  sbStudioSetEditingUI(false);
+  S.studio.saved =
+    true;
+
+  S.studio.editing =
+    false;
+
+  S.studio.editSnapshot =
+    null;
+
+  S.studio.selectedElement =
+    null;
+
+  S.studio.nodeDrag =
+    null;
+
+  S.studio.dragging =
+    false;
+
+  S.studio.pointerId =
+    null;
+
+  sbStudioResetConnectMode(
+    true
+  );
+
+  sbStudioSetEditingUI(
+    false
+  );
+
   sbStudioSyncVisualControls();
+
+  sbSaveActiveFlowSnapshot();
+
+  sbRenderStructuralIssues(
+    projection.issues || []
+  );
 
   if(
     !options.skipFullscreenExit &&
     document.fullscreenElement === host
   ){
-    S.studio.fullscreenExitInProgress = true;
+    S.studio.fullscreenExitInProgress =
+      true;
 
     document
       .exitFullscreen()
@@ -7478,11 +7546,14 @@ function sbStudioCloseAndSave(options = {}){
         )
       )
       .finally(() => {
-        S.studio.fullscreenExitInProgress = false;
+        S.studio.fullscreenExitInProgress =
+          false;
+
         requestAnimationFrame(
           sbStudioResetPreviewCamera
         );
       });
+
   }else{
     requestAnimationFrame(
       sbStudioResetPreviewCamera
@@ -7490,8 +7561,17 @@ function sbStudioCloseAndSave(options = {}){
   }
 
   gMsg(
-    'ok',
-    'Diagrama guardado. Las conexiones del lienzo actualizaron las tarjetas, el contrato y la salida del proceso.'
+    projection.issues?.length
+      ? 'warn'
+      : 'ok',
+
+    projection.issues?.length
+      ? (
+          `Diagrama guardado con ${
+            projection.issues.length
+          } alerta(s) pendiente(s).`
+        )
+      : 'Diagrama guardado y contrato canónico actualizado.'
   );
 
   return true;
@@ -9184,762 +9264,626 @@ function sbStudioDeleteSelectedEdge(){
   return true;
 }
 
-
-function sbStudioProjectDiagramToEditor(){
+function sbStudioProjectDiagramToContract(){
   const model =
-    S.diagramModel
-      ?.diagram_model;
+    S.diagramModel?.diagram_model;
 
   if(!model){
     return {
-      ok:
-        false,
-
-      message:
-        'No existe un modelo editable.'
+      ok:false,
+      message:'No existe un modelo editable.'
     };
   }
 
+  const envelope =
+    S.contract &&
+    typeof S.contract === 'object'
+      ? S.contract
+      : buildBlankSBContract();
+
+  const previousInput =
+    envelope?.sipoc_input &&
+    typeof envelope.sipoc_input === 'object'
+      ? envelope.sipoc_input
+      : {};
+
   const nodes =
-    Array.isArray(
-      model.nodes
-    )
+    Array.isArray(model.nodes)
       ? model.nodes
       : [];
 
   const edges =
-    Array.isArray(
-      model.edges
-    )
+    Array.isArray(model.edges)
       ? model.edges
+      : [];
+
+  const lanes =
+    Array.isArray(model.lanes)
+      ? model.lanes
       : [];
 
   const nodeById =
     new Map(
-      nodes.map(
-        node => [
-          node.id,
-          node
-        ]
+      nodes.map(node => [
+        normalizeText(node?.id || ''),
+        node
+      ])
+    );
+
+  const byRole =
+    role =>
+      nodes.filter(node =>
+        sbStudioNodeRole(node) === role
+      );
+
+  const buildSideRows = ({
+    leftRole,
+    rightRole,
+    leftKey,
+    rightKey,
+    prefix,
+    previousRows
+  }) => {
+    const leftNodes =
+      byRole(leftRole);
+
+    const rightNodes =
+      byRole(rightRole);
+
+    const usedLeft =
+      new Set();
+
+    const usedRight =
+      new Set();
+
+    const usedIds =
+      new Set();
+
+    const nextId =
+      sbCreateIdFactory(
+        prefix,
+        previousRows
+      );
+
+    const rows = [];
+
+    const addRow = (
+      leftNode,
+      rightNode
+    ) => {
+      const candidateId =
+        normalizeText(
+          leftNode?.source_ref ||
+          rightNode?.source_ref ||
+          ''
+        );
+
+      rows.push({
+        id:
+          sbTakeStableId(
+            candidateId,
+            usedIds,
+            nextId
+          ),
+
+        [leftKey]:
+          normalizeText(
+            leftNode?.label || ''
+          ),
+
+        [rightKey]:
+          normalizeText(
+            rightNode?.label || ''
+          )
+      });
+    };
+
+    edges.forEach(edge => {
+      const source =
+        nodeById.get(
+          normalizeText(edge?.source || '')
+        );
+
+      const target =
+        nodeById.get(
+          normalizeText(edge?.target || '')
+        );
+
+      if(
+        sbStudioNodeRole(source) !== leftRole ||
+        sbStudioNodeRole(target) !== rightRole
+      ){
+        return;
+      }
+
+      usedLeft.add(source.id);
+      usedRight.add(target.id);
+
+      addRow(
+        source,
+        target
+      );
+    });
+
+    leftNodes
+      .filter(node =>
+        !usedLeft.has(node.id)
       )
-    );
-
-  const incoming =
-    id =>
-      edges.filter(
-        edge =>
-          edge.target === id
+      .forEach(node =>
+        addRow(node,null)
       );
 
-  const outgoing =
-    id =>
-      edges.filter(
-        edge =>
-          edge.source === id
-      );
-
-  const suppliers =
-    nodes.filter(
-      node =>
-        sbStudioNodeRole(node) ===
-        'supplier'
-    );
-
-  const inputs =
-    nodes.filter(
-      node =>
-        sbStudioNodeRole(node) ===
-        'input'
-    );
-
-  const outputs =
-    nodes.filter(
-      node =>
-        sbStudioNodeRole(node) ===
-        'output'
-    );
-
-  const customers =
-    nodes.filter(
-      node =>
-        sbStudioNodeRole(node) ===
-        'customer'
-    );
-
-  for(const node of suppliers){
-    if(
-      !outgoing(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.target
-            )
-          ) ===
-          'input'
+    rightNodes
+      .filter(node =>
+        !usedRight.has(node.id)
       )
-    ){
-      return {
-        ok:
-          false,
-
-        message:
-          (
-            `El proveedor "${node.label}" ` +
-            'debe quedar conectado a una entrada antes de guardar.'
-          )
-      };
-    }
-  }
-
-  for(const node of inputs){
-    const hasSupplier =
-      incoming(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.source
-            )
-          ) ===
-          'supplier'
+      .forEach(node =>
+        addRow(null,node)
       );
 
-    const hasActivity =
-      outgoing(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.target
-            )
-          ) ===
-          'activity'
-      );
+    return rows;
+  };
 
-    if(
-      !hasSupplier ||
-      !hasActivity
-    ){
-      return {
-        ok:
-          false,
+  const suppliersInputs =
+    buildSideRows({
+      leftRole:'supplier',
+      rightRole:'input',
+      leftKey:'supplier',
+      rightKey:'input',
+      prefix:'SI',
 
-        message:
-          (
-            `La entrada "${node.label}" debe mantener ` +
-            'Proveedor → Entrada → Actividad.'
-          )
-      };
-    }
-  }
+      previousRows:
+        previousInput?.lanes
+          ?.suppliers_inputs || []
+    });
 
-  for(const node of outputs){
-    const hasActivity =
-      incoming(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.source
-            )
-          ) ===
-          'activity'
-      );
+  const outputsCustomers =
+    buildSideRows({
+      leftRole:'output',
+      rightRole:'customer',
+      leftKey:'output',
+      rightKey:'customer',
+      prefix:'OC',
 
-    const hasCustomer =
-      outgoing(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.target
-            )
-          ) ===
-          'customer'
-      );
+      previousRows:
+        previousInput?.lanes
+          ?.outputs_customers || []
+    });
 
-    if(
-      !hasActivity ||
-      !hasCustomer
-    ){
-      return {
-        ok:
-          false,
-
-        message:
-          (
-            `La salida "${node.label}" debe mantener ` +
-            'Actividad → Salida → Cliente.'
-          )
-      };
-    }
-  }
-
-  for(const node of customers){
-    if(
-      !incoming(
-        node.id
-      ).some(
-        edge =>
-          sbStudioNodeRole(
-            nodeById.get(
-              edge.source
-            )
-          ) ===
-          'output'
+  const actors =
+    lanes
+      .filter(lane =>
+        lane?.kind === 'actor' &&
+        normalizeText(
+          lane?.id || ''
+        ) !== 'LANE-UNASSIGNED'
       )
-    ){
-      return {
-        ok:
-          false,
+      .map(lane => ({
+        id:
+          normalizeText(
+            lane?.id || ''
+          ),
 
-        message:
-          (
-            `El cliente "${node.label}" ` +
-            'debe quedar conectado a una salida antes de guardar.'
+        name:
+          normalizeText(
+            lane?.label || ''
           )
-      };
-    }
-  }
+      }))
+      .filter(actor =>
+        actor.id ||
+        actor.name
+      );
 
-  const currentById =
+  const laneById =
+    new Map(
+      lanes.map(lane => [
+        normalizeText(
+          lane?.id || ''
+        ),
+        lane
+      ])
+    );
+
+  const previousById =
     new Map(
       (
-        S.acts ||
-        []
+        Array.isArray(
+          previousInput.activities
+        )
+          ? previousInput.activities
+          : []
       )
-        .filter(
-          activity =>
-            normalizeText(
-              activity?.id ||
-              ''
-            )
+        .filter(activity =>
+          normalizeText(
+            activity?.id || ''
+          )
         )
-        .map(
-          activity => [
-            normalizeText(
-              activity.id
-            ),
-
-            activity
-          ]
-        )
+        .map(activity => [
+          normalizeText(
+            activity.id
+          ),
+          activity
+        ])
     );
 
   const activityNodes =
-    nodes
-      .filter(
-        node =>
-          sbStudioNodeRole(
-            node
-          ) ===
-          'activity'
-      )
+    byRole('activity')
       .slice()
       .sort(
-        (
-          a,
-          b
-        ) =>
+        (left,right) =>
           (
             Number(
-              a.sequence ||
-              0
+              left?.sequence || 0
             ) -
             Number(
-              b.sequence ||
-              0
+              right?.sequence || 0
             )
           ) ||
           (
             Number(
-              a.y ||
-              0
+              left?.y || 0
             ) -
             Number(
-              b.y ||
-              0
+              right?.y || 0
             )
           )
       );
 
-  const nextActivities =
+  const activities =
     activityNodes.map(
-      (
-        node,
-        index
-      ) => {
+      (node,index) => {
+        let id =
+          normalizeText(
+            node?.id || ''
+          );
+
+        if(!id){
+          id =
+            `ACT-${String(
+              index + 1
+            ).padStart(
+              3,
+              '0'
+            )}`;
+
+          node.id =
+            id;
+        }
+
         const base =
-          currentById.get(
-            normalizeText(
-              node.id
-            )
-          ) ||
-          node.activity ||
+          previousById.get(id) ||
+          node?.activity ||
           {};
 
         const lane =
-          model.lanes.find(
-            item =>
-              item.id ===
-              node.lane_id
+          laneById.get(
+            normalizeText(
+              node?.lane_id || ''
+            )
           );
 
+        const actorLaneId =
+          normalizeText(
+            lane?.id || ''
+          ) === 'LANE-UNASSIGNED'
+            ? ''
+            : normalizeText(
+                lane?.id || ''
+              );
+
         return {
-          ...sbDeepClone(
-            base
-          ),
-
-          id:
-            node.id,
-
-          order:
-            index + 1,
+          id,
 
           sequence:
+            Number(
+              node?.sequence ||
+              base?.sequence ||
+              index + 1
+            ) ||
             index + 1,
 
           name:
             normalizeText(
-              node.label
+              node?.label || ''
             ),
 
+          actor_lane_id:
+            actorLaneId,
+
+          actor:
+            actorLaneId
+              ? normalizeText(
+                  lane?.label || ''
+                )
+              : '',
+
           type:
-            node.shape ===
-            'decision'
+            sbStudioIsDecisionNode(node)
               ? 'decision'
               : 'actividad',
 
-          actor:
-            normalizeText(
-              lane?.label ||
-              ''
+          previous:[],
+          next:[],
+          inputs:[],
+          outputs:[],
+
+          note_ids:
+            Array.isArray(
+              base?.note_ids
+            )
+              ? base.note_ids.map(String)
+              : [],
+
+          documents:
+            sbNormalizeActivityDocuments(
+              base
             ),
 
-          lane:
-            normalizeText(
-              lane?.label ||
-              ''
-            ),
-
-          previous:
-            [],
-
-          next:
-            [],
-
-          previous_relations:
-            [],
-
-          next_relations:
-            [],
-
-          ext_suppliers:
-            [],
-
-          ext_inputs:
-            [],
-
-          ext_outputs:
-            [],
-
-          ext_customers:
-            [],
-
-          input_relations:
-            [],
-
-          output_relations:
-            [],
-
-          entry_links:
-            [],
-
-          exit_links:
-            []
+          ...sbNormalizeActivityExecution(
+            base
+          )
         };
       }
     );
 
   const activityById =
     new Map(
-      nextActivities.map(
-        activity => [
-          activity.id,
-          activity
-        ]
-      )
+      activities.map(activity => [
+        activity.id,
+        activity
+      ])
     );
 
-  edges.forEach(
-    edge => {
-      const source =
-        nodeById.get(
-          edge.source
-        );
-
-      const target =
-        nodeById.get(
-          edge.target
-        );
-
-      const from =
-        sbStudioNodeRole(
-          source
-        );
-
-      const to =
-        sbStudioNodeRole(
-          target
-        );
-
-      const label =
+  edges.forEach(edge => {
+    const source =
+      nodeById.get(
         normalizeText(
-          edge.label ||
-          ''
+          edge?.source || ''
+        )
+      );
+
+    const target =
+      nodeById.get(
+        normalizeText(
+          edge?.target || ''
+        )
+      );
+
+    if(!source || !target){
+      return;
+    }
+
+    const from =
+      sbStudioNodeRole(source);
+
+    const to =
+      sbStudioNodeRole(target);
+
+    const label =
+      normalizeText(
+        edge?.label || ''
+      );
+
+    if(
+      from === 'activity' &&
+      to === 'activity'
+    ){
+      const sourceActivity =
+        activityById.get(
+          source.id
+        );
+
+      const targetActivity =
+        activityById.get(
+          target.id
         );
 
       if(
-        from === 'activity' &&
-        to === 'activity'
+        sourceActivity &&
+        targetActivity
       ){
-        const a =
-          activityById.get(
-            source.id
-          );
+        sourceActivity.next.push({
+          activity_id:
+            targetActivity.id,
 
-        const b =
-          activityById.get(
-            target.id
-          );
+          activity_name:
+            targetActivity.name,
 
-        if(
-          a &&
-          b
-        ){
-          a.next.push(
-            b.name
-          );
+          label
+        });
 
-          a.next_relations.push({
-            activity:
-              b.name,
+        targetActivity.previous.push({
+          activity_id:
+            sourceActivity.id,
 
-            label
-          });
+          activity_name:
+            sourceActivity.name,
 
-          b.previous.push(
-            a.name
-          );
-
-          b.previous_relations.push({
-            activity:
-              a.name,
-
-            label
-          });
-        }
+          label
+        });
       }
 
-      if(
-        from === 'input' &&
-        to === 'activity'
-      ){
-        const activity =
-          activityById.get(
-            target.id
-          );
-
-        if(activity){
-          activity.ext_inputs.push(
-            source.label
-          );
-
-          activity.input_relations.push({
-            name:
-              source.label,
-
-            label
-          });
-
-          incoming(
-            source.id
-          ).forEach(
-            parent => {
-              const supplier =
-                nodeById.get(
-                  parent.source
-                );
-
-              if(
-                sbStudioNodeRole(
-                  supplier
-                ) ===
-                'supplier'
-              ){
-                activity.ext_suppliers.push(
-                  supplier.label
-                );
-
-                activity.entry_links.push({
-                  supplier:
-                    supplier.label,
-
-                  input:
-                    source.label
-                });
-              }
-            }
-          );
-        }
-      }
-
-      if(
-        from === 'activity' &&
-        to === 'output'
-      ){
-        const activity =
-          activityById.get(
-            source.id
-          );
-
-        if(activity){
-          activity.ext_outputs.push(
-            target.label
-          );
-
-          activity.output_relations.push({
-            name:
-              target.label,
-
-            label
-          });
-
-          outgoing(
-            target.id
-          ).forEach(
-            child => {
-              const customer =
-                nodeById.get(
-                  child.target
-                );
-
-              if(
-                sbStudioNodeRole(
-                  customer
-                ) ===
-                'customer'
-              ){
-                activity.ext_customers.push(
-                  customer.label
-                );
-
-                activity.exit_links.push({
-                  output:
-                    target.label,
-
-                  customer:
-                    customer.label
-                });
-              }
-            }
-          );
-        }
-      }
+      return;
     }
-  );
 
-  nextActivities.forEach(
-    activity => {
-      [
-        'previous',
-        'next',
-        'ext_suppliers',
-        'ext_inputs',
-        'ext_outputs',
-        'ext_customers'
-      ].forEach(
-        key =>
-          activity[key] =
-            uniqueStrings(
-              activity[key]
-            )
-      );
-    }
-  );
+    if(
+      from === 'input' &&
+      to === 'activity'
+    ){
+      const activity =
+        activityById.get(
+          target.id
+        );
 
-  S.cats.suppliers =
-    edges
-      .map(
-        edge => {
-          const source =
-            nodeById.get(
-              edge.source
-            );
-
-          const target =
-            nodeById.get(
-              edge.target
-            );
-
-          return (
-            sbStudioNodeRole(
-              source
-            ) === 'supplier' &&
-            sbStudioNodeRole(
-              target
-            ) === 'input'
-          )
-            ? {
-                name:
-                  source.label,
-
-                input:
-                  target.label,
-
-                party_type:
-                  source.party_type ||
-                  'external',
-
-                process_code:
-                  source.process_code ||
-                  '',
-
-                process_name:
-                  source.label ||
-                  ''
-              }
-            : null;
-        }
-      )
-      .filter(
-        Boolean
-      );
-
-  S.cats.inputs =
-    uniqueStrings(
-      inputs.map(
-        node =>
-          node.label
-      )
-    ).map(
-      name => ({
-        name
-      })
-    );
-
-  S.cats.outputs =
-    uniqueStrings(
-      outputs.map(
-        node =>
-          node.label
-      )
-    ).map(
-      name => ({
-        name
-      })
-    );
-
-  S.cats.customers =
-    edges
-      .map(
-        edge => {
-          const source =
-            nodeById.get(
-              edge.source
-            );
-
-          const target =
-            nodeById.get(
-              edge.target
-            );
-
-          return (
-            sbStudioNodeRole(
-              source
-            ) === 'output' &&
-            sbStudioNodeRole(
-              target
-            ) === 'customer'
-          )
-            ? {
-                output:
-                  source.label,
-
-                name:
-                  target.label,
-
-                party_type:
-                  target.party_type ||
-                  'external',
-
-                process_code:
-                  target.process_code ||
-                  '',
-
-                process_name:
-                  target.label ||
-                  ''
-              }
-            : null;
-        }
-      )
-      .filter(
-        Boolean
-      );
-
-  S.cats.actors =
-    model.lanes
-      .filter(
-        lane =>
-          lane.kind ===
-          'actor'
-      )
-      .map(
-        lane => ({
-          id:
-            lane.id,
-
+      if(activity){
+        activity.inputs.push({
           name:
-            lane.label
-        })
+            normalizeText(
+              source?.label || ''
+            ),
+
+          label
+        });
+      }
+
+      return;
+    }
+
+    if(
+      from === 'activity' &&
+      to === 'output'
+    ){
+      const activity =
+        activityById.get(
+          source.id
+        );
+
+      if(activity){
+        activity.outputs.push({
+          name:
+            normalizeText(
+              target?.label || ''
+            ),
+
+          label
+        });
+      }
+    }
+  });
+
+  activityNodes.forEach(node => {
+    const activity =
+      activityById.get(
+        normalizeText(
+          node?.id || ''
+        )
       );
 
-  S.acts =
-    nextActivities;
+    if(activity){
+      node.sequence =
+        activity.sequence;
 
-  [
-    'suppliers',
-    'inputs',
-    'outputs',
-    'customers',
-    'actors',
-    'documents'
-  ].forEach(
-    type =>
-      renderCatTable(
-        type
+      node.activity =
+        sbDeepClone(
+          activity
+        );
+    }
+  });
+
+  const survivingIds =
+    new Set(
+      activities.map(
+        activity =>
+          activity.id
       )
-  );
+    );
 
-  renderActsTable();
+  const clarifyingNotes =
+    (
+      Array.isArray(
+        previousInput.clarifying_notes
+      )
+        ? previousInput.clarifying_notes
+        : []
+    )
+      .filter(note => {
+        const activityId =
+          normalizeText(
+            note?.activity_id || ''
+          );
 
-  syncSelects();
+        return (
+          !activityId ||
+          survivingIds.has(
+            activityId
+          )
+        );
+      })
+      .map(note => {
+        const activity =
+          activityById.get(
+            normalizeText(
+              note?.activity_id || ''
+            )
+          );
 
-  const contract =
-    sbSyncEditorToContract();
+        return {
+          ...sbDeepClone(note),
+
+          activity_id:
+            activity?.id ||
+            normalizeText(
+              note?.activity_id || ''
+            ),
+
+          activity_name:
+            activity?.name ||
+            normalizeText(
+              note?.activity_name || ''
+            )
+        };
+      });
+
+  const contract = {
+    ...sbDeepClone(
+      envelope
+    ),
+
+    sipoc_input: {
+      ...sbDeepClone(
+        previousInput
+      ),
+
+      lanes: {
+        suppliers_inputs:
+          suppliersInputs,
+
+        actors,
+
+        outputs_customers:
+          outputsCustomers
+      },
+
+      activities,
+
+      clarifying_notes:
+        clarifyingNotes,
+
+      documents:
+        sbNormalizeDocumentCatalog(
+          previousInput.documents || [],
+
+          activities.flatMap(
+            activity =>
+              activity.documents || []
+          )
+        )
+    }
+  };
+
+  S.contract =
+    contract;
+
+  S.diagramModel.source_contract =
+    sbDeepClone(
+      contract
+    );
+
+  const issues =
+    sbCollectStructuralIssues(
+      contract
+    );
+
+  S.alerts =
+    issues.map(issue => ({
+      type:'structural_gap',
+      message:issue.title
+    }));
 
   return {
-    ok:
-      true,
-
-    contract
+    ok:true,
+    contract,
+    issues
   };
 }
 
@@ -11768,69 +11712,49 @@ function openSBStudio(){
 }
 
 function openSBOutput(){
-  let finalXML =
-    String(
-      S.xmlFinal ||
-      $('xml_final')?.value ||
-      ''
-    ).trim();
+  if(!S.contract){
+    gMsg(
+      'warn',
+      'No existe un flujo activo.'
+    );
 
-  /*
-   * La salida no depende de entrar al editor.
-   * Si el diagrama determinista ya existe,
-   * se genera el XML final al abrir esta etapa.
-   */
-  if(!finalXML){
-    const diagramXML =
-      String(
-        S.diagramXml ||
-        $('xml_diagram')?.value ||
-        ''
-      ).trim();
-
-    if(!diagramXML){
-      gMsg(
-        'warn',
-        'La salida todavía no está disponible. Primero valida y construye el diagrama.'
-      );
-
-      openSBStudio();
-
-      return false;
-    }
-
-    const outputReady =
-      finalizeSBBuiltDiagram({
-        stayInStudio:
-          true,
-
-        silent:
-          true
-      });
-
-    if(!outputReady){
-      gMsg(
-        'err',
-        'No fue posible generar la salida porque el diagrama no superó la validación.'
-      );
-
-      openSBStudio();
-
-      return false;
-    }
-
-    finalXML =
-      String(
-        S.xmlFinal ||
-        $('xml_final')?.value ||
-        ''
-      ).trim();
+    return false;
   }
 
-  if(!finalXML){
+  const templateReady =
+    genTemplate();
+
+  if(!templateReady){
     gMsg(
       'err',
-      'La salida final quedó vacía después de la validación.'
+      'No fue posible generar el adaptador XML.'
+    );
+
+    return false;
+  }
+
+  const diagramReady =
+    buildSBConnectedDiagram();
+
+  if(!diagramReady){
+    gMsg(
+      'err',
+      'No fue posible construir las conexiones de la salida XML.'
+    );
+
+    return false;
+  }
+
+  const outputReady =
+    finalizeSBBuiltDiagram({
+      stayInStudio:true,
+      silent:true
+    });
+
+  if(!outputReady){
+    gMsg(
+      'err',
+      'No fue posible generar la salida XML.'
     );
 
     return false;
@@ -11842,7 +11766,7 @@ function openSBOutput(){
 
   gMsg(
     'ok',
-    'Salida XML generada y disponible.'
+    'Salida XML generada como adaptador del contrato vigente.'
   );
 
   return true;
@@ -20225,85 +20149,22 @@ function exportJSON(){
 
 
 function goToTemplate(){
-  sbCollectAllInlineActivities();
+  try{
+    sbCollectAllInlineActivities();
+    sbSyncEditorToContract();
+    resetSBGeneratedArtifacts();
 
-  if(
-    !$('g_name')?.value.trim()
-  ){
+    return runSBContractPreflight();
+
+  }catch(error){
     gMsg(
-      'warn',
-      'Completa el nombre del proceso.'
+      'err',
+      'No fue posible abrir Diagram Studio: ' +
+      error.message
     );
 
-    return;
+    return false;
   }
-
-  if(!S.acts.length){
-    gMsg(
-      'warn',
-      'Agrega al menos una actividad.'
-    );
-
-    return;
-  }
-
-  const invalidExecutionIndex =
-    S.acts.findIndex(
-      activity => {
-        const execution =
-          sbNormalizeActivityExecution(
-            activity
-          );
-
-        return (
-          execution.execution_mode ===
-            'system' &&
-          !execution.system_code
-        );
-      }
-    );
-
-  if(
-    invalidExecutionIndex >=
-    0
-  ){
-    const activity =
-      S.acts[
-        invalidExecutionIndex
-      ];
-
-    if(
-      $('sb_acc_activities')
-    ){
-      $('sb_acc_activities').open =
-        true;
-    }
-
-    sbReopenInlineActivity(
-      invalidExecutionIndex
-    );
-
-    gMsg(
-      'warn',
-
-      'La actividad "' +
-      normalizeText(
-        activity?.name ||
-        `Actividad ${
-          invalidExecutionIndex +
-          1
-        }`
-      ) +
-      '" está marcada como En sistema, pero no tiene un sistema seleccionado.'
-    );
-
-    return;
-  }
-
-  resetSBGeneratedArtifacts();
-
-  sbSyncEditorToContract();
-  genTemplate();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -22778,11 +22639,7 @@ if(
   );
 }
 
-switchTab(
-  'tab_tpl'
-);
-
-return runSBContractPreflight();
+return true;
 }
 
 function sbApplyRelatedProcessDrawioStyles(){
