@@ -9337,6 +9337,59 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
     
   </details>
 
+<details class="asis-accordion asis-documents-accordion">
+  <summary>
+    <div class="asis-summary-main">
+      <span>Documentación identificada</span>
+      <small>
+        Catálogo editable de documentos existentes identificados durante el levantamiento.
+      </small>
+    </div>
+  </summary>
+
+  <article class="card">
+
+    <div
+      class="list"
+      id="asisDocumentsCatalog"
+    ></div>
+
+    <div
+      class="actions"
+      style="
+        border-top:none;
+        padding-top:8px;
+        margin-top:8px;
+      "
+    >
+      <div class="actions-left">
+
+        <button
+          class="btn-ok asis-add-inline-btn"
+          onclick="addAsIsDocumentRow()"
+          type="button"
+        >
+          + Agregar documento
+        </button>
+
+      </div>
+
+      <div class="actions-right">
+
+        <button
+          class="btn"
+          onclick="saveAsIsDocumentsCatalog()"
+          type="button"
+        >
+          Guardar documentación
+        </button>
+
+      </div>
+    </div>
+
+  </article>
+</details>
+  
       <details class="asis-accordion asis-additional-accordion">
         <summary>
           <div class="asis-summary-main">
@@ -23075,14 +23128,53 @@ const invalidOutputs = outputs.filter(value => !registeredOutputs.has(lmpLower(v
 const normalizedType = normalizePromptAType(activity.type);
 const isDecision = normalizedType === 'decision';
 
-const hasInputConnection = isDecision
-  ? previous.length > 0
-  : previous.length > 0 || validInputs.length > 0;
+const referencedByOtherActivity =
+  activities.some(
+    (
+      otherActivity,
+      otherIndex
+    ) => {
 
-const hasOutputConnection = isDecision
-  ? next.length > 0
-  : next.length > 0 || validOutputs.length > 0;
+      if(
+        otherIndex === index
+      ){
+        return false;
+      }
 
+      const references = [
+        ...normalizeActivityConnectionList(
+          otherActivity?.previous
+        ),
+
+        ...normalizeActivityConnectionList(
+          otherActivity?.next
+        )
+      ];
+
+      return references.some(
+        row =>
+          lmpLower(
+            normalizeContractString(
+              row?.activity || ''
+            )
+          ) ===
+          lmpLower(
+            normalizeContractString(
+              activity?.name || ''
+            )
+          )
+      );
+    }
+  );
+
+const hasAnyConnection = !!(
+  previous.length ||
+  next.length ||
+  validInputs.length ||
+  validOutputs.length ||
+  referencedByOtherActivity
+);
+    
 if(lmpStructuralIsPending(activity.name)){
   issues.push(lmpStructuralIssue(
     'activity_without_name',
@@ -23136,41 +23228,40 @@ if(
     }
   ));
 }
-    
-if(!hasInputConnection && !hasOutputConnection){
-  issues.push(lmpStructuralIssue(
-    'activity_isolated',
-    'critical',
-    `${base}.previous / ${base}.next`,
-    `${typeLabel} aislada`,
-    '',
-    {
-      where: label,
-      searchHint: activity.name || activity.id || '',
-      targetSection: 'activities',
-      targetIndex: index,
-      targetField: 'connections'
-    }
-  ));
-}
 
-else{
-  if(!hasInputConnection){
-    issues.push(lmpStructuralIssue(
-      isDecision ? 'decision_without_previous_activity' : 'activity_without_input_connection',
+
+if(
+  activities.length > 1 &&
+  !hasAnyConnection
+){
+  issues.push(
+    lmpStructuralIssue(
+      'activity_isolated',
       'critical',
-      isDecision ? `${base}.previous` : `${base}.previous / ${base}.inputs_used`,
-      isDecision ? 'Decisión sin actividad previa' : 'Actividad sin entrada funcional',
+      `${base}.previous / ${base}.next`,
+      `${typeLabel} aislada`,
       '',
       {
-        where: label,
-        searchHint: activity.name || activity.id || '',
-        targetSection: 'activities',
-        targetIndex: index,
-        targetField: 'input_connection'
+        where:
+          label,
+
+        searchHint:
+          activity.name ||
+          activity.id ||
+          '',
+
+        targetSection:
+          'activities',
+
+        targetIndex:
+          index,
+
+        targetField:
+          'connections'
       }
-    ));
-  }
+    )
+  );
+}
 
   if(!hasOutputConnection){
     issues.push(lmpStructuralIssue(
@@ -25179,65 +25270,167 @@ function normalizePromptAList(value){
 
 function normalizePromptAActivity(activity, index){
   const a = activity || {};
-  const type = normalizePromptAType(a.type);
+  const type =
+    normalizePromptAType(
+      a.type
+    );
+
+  /*
+   * Contrato nuevo:
+   * activities[].documents = string[]
+   *
+   * Se mantiene compatibilidad temporal
+   * con document/documento legacy.
+   */
+  const rawDocuments = [
+    ...safeArray(
+      a.documents
+    ),
+
+    ...(
+      !Array.isArray(
+        a.documents
+      ) &&
+      a.documents
+        ? [a.documents]
+        : []
+    ),
+
+    ...(
+      a.document
+        ? [a.document]
+        : []
+    ),
+
+    ...(
+      a.documento
+        ? [a.documento]
+        : []
+    )
+  ];
+
+  const documents =
+    normalizeAsIsDocumentsCatalog(
+      rawDocuments
+    );
 
   return {
-    id: String(a.id || (type === 'decision'
-      ? 'DEC-' + String(index + 1).padStart(3, '0')
-      : 'ACT-' + String(index + 1).padStart(3, '0')
-    )).trim(),
+    id:
+      String(
+        a.id ||
+        (
+          type === 'decision'
+            ? 'DEC-' +
+              String(
+                index + 1
+              ).padStart(3, '0')
+            : 'ACT-' +
+              String(
+                index + 1
+              ).padStart(3, '0')
+        )
+      ).trim(),
 
-    name: String(a.name || a.activity || a.activity_name || a.title || '').trim(),
-    actor: String(a.actor || a.owner || a.responsable || 'pendiente_validacion').trim(),
+    name:
+      String(
+        a.name ||
+        a.activity ||
+        a.activity_name ||
+        a.title ||
+        ''
+      ).trim(),
+
+    actor:
+      String(
+        a.actor ||
+        a.owner ||
+        a.responsable ||
+        'pendiente_validacion'
+      ).trim(),
+
     type,
-document:
-  String(
-    a.document ||
-    a.documento ||
-    ''
-  ).trim(),
 
-system_name:
-  String(
-    a.system_name ||
-    a.system ||
-    a.sistema ||
-    a.tool ||
-    a.herramienta ||
-    ''
-  ).trim(),
+    documents,
 
-estimated_time:
-  String(
-    a.estimated_time ||
-    a.time ||
-    a.tiempo ||
-    ''
-  ).trim(),
+    /*
+     * Compatibilidad temporal con
+     * consumidores legacy del LMP.
+     * La fuente oficial nueva es documents[].
+     */
+    document:
+      documents[0] || '',
 
-    previous: normalizeActivityConnectionList(a.previous || a.prev || a.predecessors),
-    next: normalizeActivityConnectionList(a.next || a.successors),
+    system_name:
+      String(
+        a.system_name ||
+        a.system ||
+        a.sistema ||
+        a.tool ||
+        a.herramienta ||
+        ''
+      ).trim(),
 
-    inputs_used: normalizeActivityInputList(
-      a.inputs_used ||
-      a.inputsUsed ||
-      a.ext_inputs ||
-      a.inputs ||
-      []
-    ),
+    estimated_time:
+      String(
+        a.estimated_time ||
+        a.time ||
+        a.tiempo ||
+        ''
+      ).trim(),
 
-    outputs_generated: normalizeActivityOutputList(
-      a.outputs_generated ||
-      a.outputsGenerated ||
-      a.ext_outputs ||
-      a.outputs ||
-      []
-    ),
+    previous:
+      normalizeActivityConnectionList(
+        a.previous ||
+        a.prev ||
+        a.predecessors
+      ),
 
-    observations: String(a.observations || a.observation || a.note || '').trim(),
-    clarifying_notes: normalizePromptAList(a.clarifying_notes || a.clarifyingNotes),
-    source: String(a.source || 'prompt_a').trim(),
-    editable: a.editable !== false
+    next:
+      normalizeActivityConnectionList(
+        a.next ||
+        a.successors
+      ),
+
+    inputs_used:
+      normalizeActivityInputList(
+        a.inputs_used ||
+        a.inputsUsed ||
+        a.ext_inputs ||
+        a.inputs ||
+        []
+      ),
+
+    outputs_generated:
+      normalizeActivityOutputList(
+        a.outputs_generated ||
+        a.outputsGenerated ||
+        a.ext_outputs ||
+        a.outputs ||
+        []
+      ),
+
+    observations:
+      String(
+        a.observations ||
+        a.observation ||
+        a.note ||
+        ''
+      ).trim(),
+
+    clarifying_notes:
+      normalizePromptAList(
+        a.clarifying_notes ||
+        a.clarifyingNotes
+      ),
+
+    source:
+      String(
+        a.source ||
+        'prompt_a'
+      ).trim(),
+
+    editable:
+      a.editable !== false
   };
 }
 
@@ -25450,215 +25643,717 @@ function normalizePromptAAsIsProcess(payload){
 
 function validatePromptAAsIsProcess(asIsPayload){
   const issues = [];
-  const p = asIsPayload?.as_is_process;
+  const p =
+    asIsPayload?.as_is_process;
 
-  if(!p || typeof p !== 'object'){
-    issues.push('No existe raíz as_is_process.');
+  if(
+    !p ||
+    typeof p !== 'object'
+  ){
+    issues.push(
+      'No existe raíz as_is_process.'
+    );
+
     return issues;
   }
 
-  if(!Array.isArray(p.suppliers_inputs)){
-    issues.push('as_is_process.suppliers_inputs debe ser un arreglo.');
+  if(
+    !Array.isArray(
+      p.suppliers_inputs
+    )
+  ){
+    issues.push(
+      'as_is_process.suppliers_inputs debe ser un arreglo.'
+    );
   }
 
-  if(!Array.isArray(p.outputs_customers)){
-    issues.push('as_is_process.outputs_customers debe ser un arreglo.');
+  if(
+    !Array.isArray(
+      p.outputs_customers
+    )
+  ){
+    issues.push(
+      'as_is_process.outputs_customers debe ser un arreglo.'
+    );
   }
 
-  if(!Array.isArray(p.activities)){
-    issues.push('as_is_process.activities debe ser un arreglo.');
+  if(
+    !Array.isArray(
+      p.documents
+    )
+  ){
+    issues.push(
+      'as_is_process.documents debe ser un arreglo.'
+    );
+  }
+
+  if(
+    !Array.isArray(
+      p.activities
+    )
+  ){
+    issues.push(
+      'as_is_process.activities debe ser un arreglo.'
+    );
+
     return issues;
   }
 
-  const inputCatalog = new Set(
-    safeArray(p.suppliers_inputs)
-      .flatMap(row => safeArray(row.inputs))
-      .map(x => normalizeContractString(x).toLowerCase())
-      .filter(Boolean)
+  if(
+    !Array.isArray(
+      p.additional_information
+    )
+  ){
+    issues.push(
+      'as_is_process.additional_information debe ser un arreglo.'
+    );
+  }
+
+  const inputCatalog =
+    new Set(
+      safeArray(
+        p.suppliers_inputs
+      )
+        .flatMap(
+          row =>
+            safeArray(
+              row?.inputs
+            )
+        )
+        .map(
+          value =>
+            lmpLower(
+              normalizeContractString(
+                value || ''
+              )
+            )
+        )
+        .filter(Boolean)
+    );
+
+  const outputCatalog =
+    new Set(
+      safeArray(
+        p.outputs_customers
+      )
+        .map(
+          row =>
+            lmpLower(
+              normalizeContractString(
+                row?.output || ''
+              )
+            )
+        )
+        .filter(Boolean)
+    );
+
+  const documentCatalog =
+    new Set(
+      normalizeAsIsDocumentsCatalog(
+        p.documents
+      ).map(
+        name =>
+          lmpLower(name)
+      )
+    );
+
+  const activityNames =
+    new Set(
+      safeArray(
+        p.activities
+      )
+        .map(
+          row =>
+            lmpLower(
+              normalizeContractString(
+                row?.name ||
+                row?.activity ||
+                row?.activity_name ||
+                ''
+              )
+            )
+        )
+        .filter(Boolean)
+    );
+
+  safeArray(
+    p.documents
+  ).forEach(
+    (documentItem, index) => {
+
+      if(
+        typeof documentItem !==
+        'string'
+      ){
+        issues.push(
+          `Documento #${index + 1}: documents debe contener únicamente nombres como strings.`
+        );
+
+        return;
+      }
+
+      if(
+        !normalizeContractString(
+          documentItem
+        )
+      ){
+        issues.push(
+          `Documento #${index + 1}: nombre vacío.`
+        );
+      }
+    }
   );
 
-  const outputCatalog = new Set(
-    safeArray(p.outputs_customers)
-      .map(row => normalizeContractString(row.output).toLowerCase())
-      .filter(Boolean)
+  safeArray(
+    p.suppliers_inputs
+  ).forEach(
+    (row, index) => {
+
+      if(
+        !normalizeContractString(
+          row?.supplier || ''
+        )
+      ){
+        issues.push(
+          `Proveedor/entrada #${index + 1}: falta supplier.`
+        );
+      }
+
+      if(
+        !Array.isArray(
+          row?.inputs
+        ) ||
+        !row.inputs.length
+      ){
+        issues.push(
+          `Proveedor/entrada #${index + 1}: inputs debe ser un arreglo con al menos una entrada.`
+        );
+      }
+    }
   );
 
-  const activityNames = new Set(
-    safeArray(p.activities)
-      .map(row => normalizeContractString(row.name || row.activity || row.activity_name).toLowerCase())
-      .filter(Boolean)
+  safeArray(
+    p.outputs_customers
+  ).forEach(
+    (row, index) => {
+
+      if(
+        !normalizeContractString(
+          row?.output || ''
+        )
+      ){
+        issues.push(
+          `Salida/cliente #${index + 1}: falta output.`
+        );
+      }
+
+      if(
+        !Array.isArray(
+          row?.customers
+        ) ||
+        !row.customers.length
+      ){
+        issues.push(
+          `Salida/cliente #${index + 1}: customers debe ser un arreglo con al menos un cliente.`
+        );
+      }
+    }
   );
 
-  safeArray(p.suppliers_inputs).forEach((row, index) => {
-    if(!normalizeContractString(row.supplier || '')){
-      issues.push(`Proveedor/entrada #${index + 1}: falta supplier.`);
-    }
+  const normalizedActivities =
+    safeArray(
+      p.activities
+    ).map(
+      (activity, index) =>
+        normalizePromptAActivity(
+          activity,
+          index
+        )
+    );
 
-    if(!Array.isArray(row.inputs) || !row.inputs.length){
-      issues.push(`Proveedor/entrada #${index + 1}: inputs debe ser un arreglo con al menos una entrada.`);
-    }
-  });
+  normalizedActivities.forEach(
+    (activity, index) => {
 
-  safeArray(p.outputs_customers).forEach((row, index) => {
-    if(!normalizeContractString(row.output || '')){
-      issues.push(`Salida/cliente #${index + 1}: falta output.`);
-    }
+      const ref =
+        activity?.name ||
+        `Actividad #${index + 1}`;
 
-    if(!Array.isArray(row.customers) || !row.customers.length){
-      issues.push(`Salida/cliente #${index + 1}: customers debe ser un arreglo con al menos un cliente.`);
-    }
-  });
+      const name =
+        normalizeContractString(
+          activity?.name || ''
+        );
 
-  safeArray(p.activities).forEach((activity, index) => {
-    const ref = activity?.name || ('Actividad #' + (index + 1));
+      const actor =
+        normalizeContractString(
+          activity?.actor || ''
+        );
 
-    const name = normalizeContractString(activity?.name || activity?.activity || activity?.activity_name || '');
-    const actor = normalizeContractString(activity?.actor || '');
-    const type = normalizePromptAType(activity?.type || '');
+      const type =
+        normalizePromptAType(
+          activity?.type || ''
+        );
 
-    const previous = normalizeActivityConnectionList(activity?.previous);
-    const next = normalizeActivityConnectionList(activity?.next);
-    const inputs = normalizeActivityInputList(activity?.inputs_used || activity?.inputsUsed || activity?.ext_inputs);
-    const outputs = normalizeActivityOutputList(activity?.outputs_generated || activity?.outputsGenerated || activity?.ext_outputs);
+      const previous =
+        normalizeActivityConnectionList(
+          activity?.previous
+        );
 
-    if(!name){
-      issues.push(ref + ': falta nombre de actividad.');
-    }
+      const next =
+        normalizeActivityConnectionList(
+          activity?.next
+        );
 
-    if(!actor || lmpStructuralIsPending(actor)){
-      issues.push(ref + ': falta cargo, actor o rol responsable.');
-    }
+      const inputs =
+        normalizeActivityInputList(
+          activity?.inputs_used
+        );
 
-    if(type !== 'actividad' && type !== 'decision'){
-      issues.push(ref + ': type debe ser actividad o decision.');
-    }
+      const outputs =
+        normalizeActivityOutputList(
+          activity?.outputs_generated
+        );
 
-    if(!Array.isArray(activity.inputs_used)){
-      issues.push(ref + ': inputs_used debe ser un arreglo de strings.');
-    }
+      const documents =
+        normalizeAsIsDocumentsCatalog(
+          activity?.documents
+        );
 
-    if(!Array.isArray(activity.outputs_generated)){
-      issues.push(ref + ': outputs_generated debe ser un arreglo de strings.');
-    }
-
-    safeArray(activity.inputs_used).forEach((item, itemIndex) => {
-      if(item && typeof item === 'object'){
-        issues.push(ref + ': inputs_used #' + (itemIndex + 1) + ' no debe ser objeto; debe ser string.');
+      if(!name){
+        issues.push(
+          ref +
+          ': falta nombre de actividad.'
+        );
       }
-    });
 
-    safeArray(activity.outputs_generated).forEach((item, itemIndex) => {
-      if(item && typeof item === 'object'){
-        issues.push(ref + ': outputs_generated #' + (itemIndex + 1) + ' no debe ser objeto; debe ser string.');
+      if(
+        !actor ||
+        lmpStructuralIsPending(
+          actor
+        )
+      ){
+        issues.push(
+          ref +
+          ': falta cargo, actor o rol responsable.'
+        );
       }
-    });
 
-    inputs.forEach(input => {
-      if(input !== 'pendiente_validacion' && !inputCatalog.has(lmpLower(input))){
-        issues.push(ref + ': entrada usada no existe en suppliers_inputs: ' + input);
+      if(
+        type !== 'actividad' &&
+        type !== 'decision'
+      ){
+        issues.push(
+          ref +
+          ': type debe ser actividad o decision.'
+        );
       }
-    });
 
-    outputs.forEach(output => {
-      if(output !== 'pendiente_validacion' && !outputCatalog.has(lmpLower(output))){
-        issues.push(ref + ': salida generada no existe en outputs_customers: ' + output);
+      previous.forEach(row => {
+        const target =
+          normalizeContractString(
+            row?.activity || ''
+          );
+
+        if(
+          target &&
+          target !==
+            'pendiente_validacion' &&
+          !activityNames.has(
+            lmpLower(target)
+          )
+        ){
+          issues.push(
+            ref +
+            ': previous apunta a actividad inexistente: ' +
+            target
+          );
+        }
+      });
+
+      next.forEach(row => {
+        const target =
+          normalizeContractString(
+            row?.activity || ''
+          );
+
+        if(
+          target &&
+          target !==
+            'pendiente_validacion' &&
+          !activityNames.has(
+            lmpLower(target)
+          )
+        ){
+          issues.push(
+            ref +
+            ': next apunta a actividad inexistente: ' +
+            target
+          );
+        }
+      });
+
+      inputs.forEach(row => {
+        const input =
+          normalizeContractString(
+            row?.input || ''
+          );
+
+        if(
+          input &&
+          input !==
+            'pendiente_validacion' &&
+          !inputCatalog.has(
+            lmpLower(input)
+          )
+        ){
+          issues.push(
+            ref +
+            ': entrada usada no existe en suppliers_inputs: ' +
+            input
+          );
+        }
+      });
+
+      outputs.forEach(row => {
+        const output =
+          normalizeContractString(
+            row?.output || ''
+          );
+
+        if(
+          output &&
+          output !==
+            'pendiente_validacion' &&
+          !outputCatalog.has(
+            lmpLower(output)
+          )
+        ){
+          issues.push(
+            ref +
+            ': salida generada no existe en outputs_customers: ' +
+            output
+          );
+        }
+      });
+
+      documents.forEach(
+        documentName => {
+
+          if(
+            !documentCatalog.has(
+              lmpLower(
+                documentName
+              )
+            )
+          ){
+            issues.push(
+              ref +
+              ': documento asociado no existe en documents: ' +
+              documentName
+            );
+          }
+        }
+      );
+
+      /*
+       * No exigimos entrada Y salida a
+       * todas las actividades.
+       *
+       * Solo identificamos cajas
+       * realmente aisladas.
+       */
+      const referencedByOtherActivity =
+        normalizedActivities.some(
+          (
+            otherActivity,
+            otherIndex
+          ) => {
+
+            if(
+              otherIndex === index
+            ){
+              return false;
+            }
+
+            const references = [
+              ...normalizeActivityConnectionList(
+                otherActivity?.previous
+              ),
+
+              ...normalizeActivityConnectionList(
+                otherActivity?.next
+              )
+            ];
+
+            return references.some(
+              row =>
+                lmpLower(
+                  normalizeContractString(
+                    row?.activity ||
+                    ''
+                  )
+                ) ===
+                lmpLower(name)
+            );
+          }
+        );
+
+      const hasAnyConnection = !!(
+        previous.length ||
+        next.length ||
+        inputs.length ||
+        outputs.length ||
+        referencedByOtherActivity
+      );
+
+      if(
+        normalizedActivities.length >
+          1 &&
+        !hasAnyConnection
+      ){
+        issues.push(
+          ref +
+          ': actividad aislada; debe conectarse funcionalmente con el flujo.'
+        );
       }
-    });
-
-    previous.forEach(row => {
-      if(row.activity !== 'pendiente_validacion' && !activityNames.has(lmpLower(row.activity))){
-        issues.push(ref + ': previous apunta a actividad inexistente: ' + row.activity);
-      }
-    });
-
-    next.forEach(row => {
-      if(row.activity !== 'pendiente_validacion' && !activityNames.has(lmpLower(row.activity))){
-        issues.push(ref + ': next apunta a actividad inexistente: ' + row.activity);
-      }
-    });
-
-    const hasInputConnection = previous.length > 0 || inputs.length > 0;
-    const hasOutputConnection = next.length > 0 || outputs.length > 0;
-
-    if(!hasInputConnection){
-      issues.push(ref + ': falta conexión de entrada. Debe tener actividad previa o entrada usada.');
     }
-
-    if(!hasOutputConnection){
-      issues.push(ref + ': falta conexión de salida. Debe tener actividad siguiente o salida generada.');
-    }
-  });
+  );
 
   return issues;
 }
+
 function applyPromptAAsIsProcess(asIsPayload){
-  const p = asIsPayload.as_is_process;
+  const p =
+    asIsPayload?.as_is_process ||
+    {};
 
-  state.asIsProcess = asIsPayload;
+  state.asis =
+    state.asis || {};
 
-state.asis = state.asis || {};
+  const activities =
+    safeArray(
+      p.activities
+    )
+      .map(
+        (activity, index) =>
+          normalizePromptAActivity(
+            activity,
+            index
+          )
+      )
+      .filter(
+        activity =>
+          normalizeContractString(
+            activity?.name || ''
+          )
+      );
 
-state.asis.actors_catalog = normalizeAsIsActorsCatalog(
-  safeArray(p.actors_catalog).length
-    ? p.actors_catalog
-    : safeArray(p.actors).length
-      ? p.actors
-      : safeArray(p.activities).map(activity => activity.actor)
-);
+  /*
+   * El catálogo global incorpora:
+   * 1. documentos globales detectados;
+   * 2. documentos asociados explícitamente
+   *    a cualquier actividad.
+   */
+  const globalDocuments =
+    normalizeAsIsDocumentsCatalog([
+      ...safeArray(
+        p.documents
+      ),
 
-state.asis.suppliers_inputs =
-  normalizeSuppliersInputsCatalog(
-    p.suppliers_inputs
-  );
+      ...activities.flatMap(
+        activity =>
+          safeArray(
+            activity.documents
+          )
+      )
+    ]);
 
-state.asis.outputs_customers =
-  normalizeOutputsCustomersCatalog(
-    p.outputs_customers
-  );
+  const globalDocumentSet =
+    new Set(
+      globalDocuments.map(
+        documentName =>
+          lmpLower(
+            documentName
+          )
+      )
+    );
 
-state.asis.documents =
-  normalizeAsIsDocumentsCatalog(
-    p.documents
-  );
+  state.asis.actors_catalog =
+    normalizeAsIsActorsCatalog(
+      safeArray(
+        p.actors_catalog
+      ).length
+        ? p.actors_catalog
+        : safeArray(
+            p.actors
+          ).length
+          ? p.actors
+          : activities.map(
+              activity =>
+                activity.actor
+            )
+    );
 
-state.asis.additional_information =
-  safeArray(
-    p.additional_information
-  );
+  state.asis.suppliers_inputs =
+    normalizeSuppliersInputsCatalog(
+      p.suppliers_inputs
+    );
 
-  state.asis.activities = safeArray(p.activities).map((activity, index) => ({
-    id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
-    name: activity.name || activity.activity || activity.activity_name || '',
-    actor: activity.actor || activity.owner || activity.responsable || 'pendiente_validacion',
-    type: normalizePromptAType(activity.type || 'actividad'),
-    document: activity.document || '',
-    estimated_time: activity.estimated_time || activity.time || '',
-    inputs_used: normalizeActivityInputList(activity.inputs_used || activity.inputsUsed || activity.ext_inputs),
-    outputs_generated: normalizeActivityOutputList(activity.outputs_generated || activity.outputsGenerated || activity.ext_outputs),
-    previous: normalizeActivityConnectionList(activity.previous),
-    next: normalizeActivityConnectionList(activity.next),
-    observations: activity.observations || activity.note || '',
-    clarifying_notes: normalizePromptAList(activity.clarifying_notes || activity.clarifyingNotes),
-    source: activity.source || p.source_route || sourceRouteLabel(),
-    editable: activity.editable !== false
-  })).filter(activity => normalizeContractString(activity.name || ''));
+  state.asis.outputs_customers =
+    normalizeOutputsCustomersCatalog(
+      p.outputs_customers
+    );
 
-  state.brief = asIsPayload;
+  state.asis.documents =
+    globalDocuments;
+
+  state.asis.additional_information =
+    safeArray(
+      p.additional_information
+    );
+
+  state.asis.activities =
+    activities.map(
+      (activity, index) => {
+
+        const documents =
+          normalizeAsIsDocumentsCatalog(
+            activity.documents
+          ).filter(
+            documentName =>
+              globalDocumentSet.has(
+                lmpLower(
+                  documentName
+                )
+              )
+          );
+
+        return Object.assign(
+          {},
+          activity,
+          {
+            id:
+              activity.id ||
+              (
+                normalizePromptAType(
+                  activity.type
+                ) === 'decision'
+                  ? 'DEC-'
+                  : 'ACT-'
+              ) +
+              String(
+                index + 1
+              ).padStart(
+                3,
+                '0'
+              ),
+
+            documents,
+
+            /*
+             * Compatibilidad temporal.
+             */
+            document:
+              documents[0] ||
+              '',
+
+            system_name:
+              normalizeContractString(
+                activity.system_name ||
+                ''
+              )
+          }
+        );
+      }
+    );
+
+  /*
+   * La versión aplicada debe contener
+   * exactamente lo que quedó cargado
+   * en el constructor editable.
+   */
+  state.asIsProcess = {
+    as_is_process:
+      Object.assign(
+        {},
+        p,
+        {
+          actors:
+            state.asis
+              .actors_catalog
+              .map(
+                actor =>
+                  actor.name
+              ),
+
+          actors_catalog:
+            state.asis
+              .actors_catalog,
+
+          suppliers_inputs:
+            state.asis
+              .suppliers_inputs,
+
+          outputs_customers:
+            state.asis
+              .outputs_customers,
+
+          documents:
+            state.asis
+              .documents,
+
+          activities:
+            state.asis
+              .activities,
+
+          additional_information:
+            state.asis
+              .additional_information
+        }
+      )
+  };
+
+  state.brief =
+    JSON.parse(
+      JSON.stringify(
+        state.asIsProcess
+      )
+    );
+
   state.briefReview = {
-    raw: asIsPayload,
+    raw:
+      JSON.parse(
+        JSON.stringify(
+          state.asIsProcess
+        )
+      ),
+
     approved: false,
     type: 'as_is_process'
   };
 
-  if(qs('briefEditor')){
-    qs('briefEditor').value = JSON.stringify(asIsPayload, null, 2);
+  if(
+    qs(
+      'briefEditor'
+    )
+  ){
+    qs(
+      'briefEditor'
+    ).value =
+      JSON.stringify(
+        state.asIsProcess,
+        null,
+        2
+      );
   }
 
   renderAsIsActivities();
   updateAsIsPreview();
   updateTopStatus();
 
-  if(typeof refreshCargaFlowState === 'function'){
+  if(
+    typeof refreshCargaFlowState ===
+    'function'
+  ){
     refreshCargaFlowState();
   }
 }
@@ -25897,13 +26592,24 @@ function processPromptAResponse(){
         )
         .length;
 
-    const structureOk = !!(
-      Array.isArray(asis.suppliers_inputs) &&
-      Array.isArray(asis.outputs_customers) &&
-      Array.isArray(asis.activities) &&
-      Array.isArray(asis.additional_information) &&
-      activityCount > 0
-    );
+const structureOk = !!(
+  Array.isArray(
+    asis.suppliers_inputs
+  ) &&
+  Array.isArray(
+    asis.outputs_customers
+  ) &&
+  Array.isArray(
+    asis.documents
+  ) &&
+  Array.isArray(
+    asis.activities
+  ) &&
+  Array.isArray(
+    asis.additional_information
+  ) &&
+  activityCount > 0
+);
 
     if(!structureOk){
       state.promptAOutput = null;
