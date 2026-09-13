@@ -22702,6 +22702,200 @@ function sbBuildCanonicalContract(
     }
   };
 }
+
+function sbLoadRuntimeFromContract(
+  contract,
+  normalized = {}
+){
+  const input =
+    contract?.sipoc_input ||
+    {};
+
+  const lanes =
+    input?.lanes ||
+    {};
+
+  const supplierRows =
+    Array.isArray(
+      lanes.suppliers_inputs
+    )
+      ? lanes.suppliers_inputs
+      : [];
+
+  const actorRows =
+    Array.isArray(
+      lanes.actors
+    )
+      ? lanes.actors
+      : [];
+
+  const customerRows =
+    Array.isArray(
+      lanes.outputs_customers
+    )
+      ? lanes.outputs_customers
+      : [];
+
+  S.cats.suppliers =
+    supplierRows
+      .map(row => ({
+        id:
+          normalizeText(
+            row?.id || ''
+          ),
+
+        name:
+          normalizeText(
+            row?.supplier_name ||
+            row?.supplier ||
+            row?.name ||
+            ''
+          ),
+
+        input:
+          normalizeText(
+            row?.input || ''
+          ),
+
+        party_type:
+          sbNormalizePartyType(
+            row?.supplier_type ||
+            (
+              row?.supplier_code
+                ? 'process'
+                : 'external'
+            )
+          ),
+
+        process_code:
+          normalizeText(
+            row?.supplier_code || ''
+          ).toUpperCase(),
+
+        process_name:
+          normalizeText(
+            row?.supplier_name ||
+            row?.supplier ||
+            ''
+          )
+      }))
+      .filter(item =>
+        item.id ||
+        item.name ||
+        item.input
+      );
+
+  S.cats.inputs =
+    sbUnique(
+      supplierRows
+        .map(row =>
+          normalizeText(
+            row?.input || ''
+          )
+        )
+        .filter(Boolean)
+    ).map(name => ({
+      name
+    }));
+
+  S.cats.outputs =
+    sbUnique(
+      customerRows
+        .map(row =>
+          normalizeText(
+            row?.output || ''
+          )
+        )
+        .filter(Boolean)
+    ).map(name => ({
+      name
+    }));
+
+  S.cats.customers =
+    customerRows
+      .map(row => ({
+        id:
+          normalizeText(
+            row?.id || ''
+          ),
+
+        name:
+          normalizeText(
+            row?.customer_name ||
+            row?.customer ||
+            row?.name ||
+            ''
+          ),
+
+        output:
+          normalizeText(
+            row?.output || ''
+          ),
+
+        party_type:
+          sbNormalizePartyType(
+            row?.customer_type ||
+            (
+              row?.customer_code
+                ? 'process'
+                : 'external'
+            )
+          ),
+
+        process_code:
+          normalizeText(
+            row?.customer_code || ''
+          ).toUpperCase(),
+
+        process_name:
+          normalizeText(
+            row?.customer_name ||
+            row?.customer ||
+            ''
+          )
+      }))
+      .filter(item =>
+        item.id ||
+        item.name ||
+        item.output
+      );
+
+  S.cats.actors =
+    actorRows
+      .map(actor => ({
+        id:
+          normalizeText(
+            actor?.id || ''
+          ),
+
+        name:
+          normalizeText(
+            actor?.name ||
+            actor?.actor ||
+            ''
+          )
+      }))
+      .filter(item =>
+        item.id ||
+        item.name
+      );
+
+  S.cats.documents =
+    sbNormalizeDocumentCatalog(
+      input.documents,
+      normalized.documents
+    );
+
+  S.acts =
+    Array.isArray(
+      normalized.activities
+    )
+      ? normalized.activities
+      : [];
+
+  return true;
+}
+  
   
 function processIncomingJson(raw, source = 'unknown') {
   try {
