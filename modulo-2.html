@@ -20431,6 +20431,55 @@ function sbSyncEditorToContract(){
     });
 
 
+  sbSyncDocumentCatalogFromActivities({
+    render:
+      false
+  });
+
+  const supplierRows =
+    suppliersInputs.map((row, index) => ({
+      ...row,
+
+      ...sbPartyMetadata(
+        S.cats.suppliers?.[index] ||
+        row,
+        'supplier'
+      )
+    }));
+
+  const customerRows =
+    outputsCustomers.map((row, index) => ({
+      ...row,
+
+      ...sbPartyMetadata(
+        S.cats.customers?.[index] ||
+        row,
+        'customer'
+      )
+    }));
+
+  const canonicalActivities =
+    activities.map((activity, index) => ({
+      ...activity,
+
+      ...sbNormalizeActivityExecution(
+        S.acts?.[index] ||
+        activity
+      ),
+
+      documents:
+        sbNormalizeActivityDocuments(
+          S.acts?.[index] ||
+          activity
+        )
+    }));
+
+  const canonicalDocuments =
+    sbNormalizeDocumentCatalog(
+      S.cats.documents ||
+      []
+    );
+  
   const contract = {
     contract_code:
       'LMP_TO_SB',
@@ -20471,18 +20520,22 @@ function sbSyncEditorToContract(){
 
       lanes: {
         suppliers_inputs:
-          suppliersInputs,
+          supplierRows,
 
         actors,
 
         outputs_customers:
-          outputsCustomers
+          customerRows
       },
 
-      activities,
+      activities:
+        canonicalActivities,
 
       clarifying_notes:
-        clarifyingNotes
+        clarifyingNotes,
+
+      documents:
+        canonicalDocuments
     }
   };
 
@@ -20500,6 +20553,16 @@ function sbSyncEditorToContract(){
 
   S.sp =
     normalizedPayload.normalized;
+
+  S.sp.supplier_input_links =
+    supplierRows.map(row => ({
+      ...row
+    }));
+
+  S.sp.output_customer_links =
+    customerRows.map(row => ({
+      ...row
+    }));
 
   return contract;
 }
@@ -21521,6 +21584,86 @@ const outputCustomerLinks =
     'customer'
   );
 
+  const sourceActivities =
+    Array.isArray(sp.activities)
+      ? sp.activities
+      : [];
+
+  const sourceActivityById =
+    new Map(
+      sourceActivities
+        .filter(activity =>
+          normalizeText(
+            activity?.id || ''
+          )
+        )
+        .map(activity => [
+          normalizeText(
+            activity.id
+          ),
+          activity
+        ])
+    );
+
+  const sourceActivityByName =
+    new Map(
+      sourceActivities
+        .filter(activity =>
+          normalizeText(
+            activity?.name || ''
+          )
+        )
+        .map(activity => [
+          normalizeText(
+            activity.name
+          ).toLowerCase(),
+          activity
+        ])
+    );
+
+  const normalizedActivities =
+    normActs(
+      sourceActivities,
+      {
+        actorById,
+        notes:
+          clarifyingNotes,
+        suppliersByInput,
+        customersByOutput,
+        legacyTypes:
+          !isLmpV3
+      }
+    ).map(
+      (activity, index) => {
+        const sourceActivity =
+          sourceActivityById.get(
+            normalizeText(
+              activity?.id || ''
+            )
+          ) ||
+          sourceActivityByName.get(
+            normalizeText(
+              activity?.name || ''
+            ).toLowerCase()
+          ) ||
+          sourceActivities[index] ||
+          activity;
+
+        return {
+          ...activity,
+
+          ...sbNormalizeActivityExecution(
+            sourceActivity
+          ),
+
+          documents:
+            sbNormalizeActivityDocuments(
+              sourceActivity
+            )
+        };
+      }
+    );  
+
   const normalized = {
     process_code:
       normalizeText(
@@ -21587,7 +21730,7 @@ output_customer_links:
   outputCustomerLinks,
 
     documents:
-      normalizeCatalogItems(
+      sbNormalizeDocumentCatalog(
         sp.catalogs?.documents ||
         sp.documents ||
         []
@@ -21601,19 +21744,7 @@ output_customer_links:
       {},
 
     activities:
-      normActs(
-        sp.activities || [],
-        {
-          actorById,
-          notes:
-            clarifyingNotes,
-          suppliersByInput,
-          customersByOutput,
-
-          legacyTypes:
-            !isLmpV3
-        }
-      )
+      normalizedActivities
   };
 
   return {
@@ -27213,211 +27344,6 @@ function sbExecutionIncomingInput(
 }
 
 
-const sbNormalizeIncomingPayloadExecutionBase =
-  normalizeIncomingPayload;
-
-
-normalizeIncomingPayload =
-  function(
-    parsed
-  ){
-    const payload =
-      sbNormalizeIncomingPayloadExecutionBase(
-        parsed
-      );
-
-    const input =
-      sbExecutionIncomingInput(
-        parsed
-      );
-
-    const sourceActivities =
-      Array.isArray(
-        input?.activities
-      )
-        ? input.activities
-        : [];
-
-    const sourceById =
-      new Map(
-        sourceActivities
-          .filter(activity =>
-            normalizeText(
-              activity?.id || ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.id
-            ),
-
-            activity
-          ])
-      );
-
-    const sourceByName =
-      new Map(
-        sourceActivities
-          .filter(activity =>
-            normalizeText(
-              activity?.name || ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.name
-            ).toLowerCase(),
-
-            activity
-          ])
-      );
-
-    if(
-      Array.isArray(
-        payload?.normalized
-          ?.activities
-      )
-    ){
-      payload.normalized.activities =
-        payload.normalized.activities
-          .map(
-            (
-              activity,
-              index
-            ) => {
-              const source =
-                sourceById.get(
-                  normalizeText(
-                    activity?.id ||
-                    ''
-                  )
-                ) ||
-                sourceByName.get(
-                  normalizeText(
-                    activity?.name ||
-                    ''
-                  ).toLowerCase()
-                ) ||
-                sourceActivities[
-                  index
-                ] ||
-                {};
-
-              return {
-                ...activity,
-
-                ...sbNormalizeActivityExecution(
-                  source
-                )
-              };
-            }
-          );
-    }
-
-    return payload;
-  };
-
-
-const sbSyncEditorToContractExecutionBase =
-  sbSyncEditorToContract;
-
-
-sbSyncEditorToContract =
-  function(){
-    const contract =
-      sbSyncEditorToContractExecutionBase();
-
-    const sourceById =
-      new Map(
-        (
-          S.acts || []
-        )
-          .filter(activity =>
-            normalizeText(
-              activity?.id || ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.id
-            ),
-
-            activity
-          ])
-      );
-
-    const sourceByName =
-      new Map(
-        (
-          S.acts || []
-        )
-          .filter(activity =>
-            normalizeText(
-              activity?.name || ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.name
-            ).toLowerCase(),
-
-            activity
-          ])
-      );
-
-    const activities =
-      Array.isArray(
-        contract?.sipoc_input
-          ?.activities
-      )
-        ? contract
-            .sipoc_input
-            .activities
-        : [];
-
-    contract.sipoc_input.activities =
-      activities.map(
-        (
-          activity,
-          index
-        ) => {
-          const source =
-            sourceById.get(
-              normalizeText(
-                activity?.id ||
-                ''
-              )
-            ) ||
-            sourceByName.get(
-              normalizeText(
-                activity?.name ||
-                ''
-              ).toLowerCase()
-            ) ||
-            S.acts?.[index] ||
-            {};
-
-          return {
-            ...activity,
-
-            ...sbNormalizeActivityExecution(
-              source
-            )
-          };
-        }
-      );
-
-    S.contract =
-      contract;
-
-    S.sp =
-      normalizeIncomingPayload(
-        contract
-      ).normalized;
-
-    return contract;
-  };
-
 
 const sbCollectStructuralIssuesExecutionBase =
   sbCollectStructuralIssues;
@@ -28938,118 +28864,6 @@ function sbDocumentIncomingInput(
     {}
   );
 }
-
-
-const sbNormalizeIncomingPayloadDocumentsBase =
-  normalizeIncomingPayload;
-
-
-normalizeIncomingPayload =
-  function(
-    parsed
-  ){
-    const payload =
-      sbNormalizeIncomingPayloadDocumentsBase(
-        parsed
-      );
-
-    const input =
-      sbDocumentIncomingInput(
-        parsed
-      );
-
-    const sourceActivities =
-      Array.isArray(
-        input?.activities
-      )
-        ? input.activities
-        : [];
-
-    const sourceById =
-      new Map(
-        sourceActivities
-          .filter(activity =>
-            normalizeText(
-              activity?.id ||
-              ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.id
-            ),
-
-            activity
-          ])
-      );
-
-    const sourceByName =
-      new Map(
-        sourceActivities
-          .filter(activity =>
-            normalizeText(
-              activity?.name ||
-              ''
-            )
-          )
-          .map(activity => [
-            normalizeText(
-              activity.name
-            ).toLowerCase(),
-
-            activity
-          ])
-      );
-
-    if(
-      Array.isArray(
-        payload
-          ?.normalized
-          ?.activities
-      )
-    ){
-      payload.normalized.activities =
-        payload
-          .normalized
-          .activities
-          .map(
-            (
-              activity,
-              index
-            ) => {
-              const source =
-                sourceById.get(
-                  normalizeText(
-                    activity?.id ||
-                    ''
-                  )
-                ) ||
-
-                sourceByName.get(
-                  normalizeText(
-                    activity?.name ||
-                    ''
-                  ).toLowerCase()
-                ) ||
-
-                sourceActivities[index] ||
-
-                activity;
-
-              return {
-                ...activity,
-
-                documents:
-                  sbNormalizeActivityDocuments(
-                    source
-                  )
-              };
-            }
-          );
-    }
-
-    return payload;
-  };
 
 
 const sbSyncEditorToContractDocumentsBase =
