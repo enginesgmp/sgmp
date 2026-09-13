@@ -15190,6 +15190,157 @@ function renderAdditionalInfoActivityOptions(selectedValue){
     ${options}
   `;
 }
+
+function renderAsIsDocumentsCatalog(){
+  const container =
+    qs(
+      'asisDocumentsCatalog'
+    );
+
+  if(!container){
+    return;
+  }
+
+  const documents =
+    getAsIsDocumentsCatalog();
+
+  if(!documents.length){
+    container.innerHTML =
+      '<div class="mini-note">No se identificaron documentos existentes.</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    documents
+      .map(
+        (name, index) => `
+          <div
+            class="repeat-item asis-document-item"
+            data-index="${index}"
+          >
+            <div class="field-grid">
+              <div class="field w-12">
+                <label>Nombre del documento</label>
+
+                <input
+                  class="asis_document_name"
+                  value="${escapeHtml(name)}"
+                  placeholder="Ej. Solicitud de compra"
+                />
+              </div>
+            </div>
+
+            <div
+              class="actions"
+              style="
+                border-top:none;
+                padding-top:8px;
+                margin-top:8px;
+              "
+            >
+              <div class="actions-left">
+                <button
+                  class="btn-danger"
+                  onclick="deleteAsIsDocumentRow(this)"
+                  type="button"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        `
+      )
+      .join('');
+}
+
+function collectAsIsDocumentsCatalog(){
+  state.asis =
+    state.asis || {};
+
+  const container =
+    qs(
+      'asisDocumentsCatalog'
+    );
+
+  if(!container){
+    state.asis.documents =
+      normalizeAsIsDocumentsCatalog(
+        state.asis.documents
+      );
+
+    return state.asis.documents;
+  }
+
+  state.asis.documents =
+    normalizeAsIsDocumentsCatalog(
+      qsa(
+        '.asis-document-item',
+        container
+      ).map(
+        item =>
+          item
+            .querySelector(
+              '.asis_document_name'
+            )
+            ?.value
+            ?.trim() ||
+          ''
+      )
+    );
+
+  return state.asis.documents;
+}
+
+function addAsIsDocumentRow(){
+  collectAsIsDocumentsCatalog();
+
+  state.asis.documents =
+    getAsIsDocumentsCatalog();
+
+  state.asis.documents.push(
+    'Nuevo documento'
+  );
+
+  state.asis.documents =
+    normalizeAsIsDocumentsCatalog(
+      state.asis.documents
+    );
+
+  renderAsIsDocumentsCatalog();
+}
+
+function deleteAsIsDocumentRow(button){
+  const row =
+    button?.closest(
+      '.asis-document-item'
+    );
+
+  if(row){
+    row.remove();
+  }
+
+  collectAsIsDocumentsCatalog();
+  updateAsIsPreview();
+}
+
+function saveAsIsDocumentsCatalog(){
+  collectAsIsDocumentsCatalog();
+
+  renderAsIsDocumentsCatalog();
+
+  updateAsIsPreview();
+
+  closeSingleAsIsAccordion(
+    '.asis-documents-accordion'
+  );
+
+  showAsisMessage(
+    'ok',
+    'Catálogo documental guardado y actualizado.'
+  );
+}  
   
 function renderAdditionalInformation(){
   const container = qs('asisAdditionalInfo');
@@ -15815,6 +15966,7 @@ function renderAsIsActivities(){
       state.asis.activities
     );
 
+  renderAsIsDocumentsCatalog();
   renderAsIsGlobalCatalogs();
 
   container.innerHTML = '';
