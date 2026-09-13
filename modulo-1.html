@@ -9389,6 +9389,41 @@ window.updatePreparationArtifactsByRoute = updatePreparationArtifactsByRoute;
 
   </article>
 </details>
+
+<details class="asis-accordion asis-documents-accordion">
+  <summary>
+    <div class="asis-summary-main">
+      <span>Documentación identificada</span>
+      <small>Catálogo editable de documentos existentes identificados durante el levantamiento.</small>
+    </div>
+  </summary>
+
+  <article class="card">
+    <div class="list" id="asisDocumentsCatalog"></div>
+
+    <div class="actions" style="border-top:none;padding-top:8px;margin-top:8px;">
+      <div class="actions-left">
+        <button
+          class="btn-ok asis-add-inline-btn"
+          onclick="addAsIsDocumentRow()"
+          type="button"
+        >
+          + Agregar documento
+        </button>
+      </div>
+
+      <div class="actions-right">
+        <button
+          class="btn"
+          onclick="saveAsIsDocumentsCatalog()"
+          type="button"
+        >
+          Guardar documentación
+        </button>
+      </div>
+    </div>
+  </article>
+</details>
   
       <details class="asis-accordion asis-additional-accordion">
         <summary>
@@ -14299,6 +14334,49 @@ function updateAsisQuickCounterFromList(listEl){
   const count = Array.from(listEl.querySelectorAll('.asis-line-row')).length;
   counter.textContent = String(count);
 }
+
+function renderAsIsActivityDocumentOptions(selectedDocuments, index){
+  const selected =
+    new Set(
+      normalizeAsIsDocumentsCatalog(
+        selectedDocuments
+      ).map(name =>
+        lmpLower(name)
+      )
+    );
+
+  const catalog =
+    getAsIsDocumentsCatalog();
+
+  if(!catalog.length){
+    return `
+      <div class="mini-note">
+        No existen documentos en el catálogo global.
+      </div>
+    `;
+  }
+
+  return catalog.map(name => `
+    <label
+      style="
+        display:flex;
+        align-items:center;
+        gap:8px;
+        margin:0 0 6px 0;
+        cursor:pointer;
+      "
+    >
+      <input
+        type="checkbox"
+        class="a_document_option"
+        value="${escapeHtml(name)}"
+        onchange="syncAsisRow(${index})"
+        ${selected.has(lmpLower(name)) ? 'checked' : ''}
+      />
+      <span>${escapeHtml(name)}</span>
+    </label>
+  `).join('');
+}  
   
 function asisActivityTemplate(a, index){
   const safe = a || {};
@@ -14315,6 +14393,16 @@ function asisActivityTemplate(a, index){
     .map(normalizeContractString)
     .filter(Boolean)
     .join('\n');
+
+  const activityDocuments =
+  normalizeAsIsDocumentsCatalog([
+    ...safeArray(
+      safe.documents
+    ),
+    ...splitItems(
+      safe.document || ''
+    )
+  ]);
 
   return `
     <details class="activity-item asis-activity-accordion" data-index="${index}">
@@ -14364,17 +14452,44 @@ function asisActivityTemplate(a, index){
   />
 </div>
 
-              ${isDecision ? '' : `
-                <div class="field w-6">
-                  <label>Documento / sistema si aplica</label>
-                  <input class="a_document" value="${escapeHtml(safe.document || '')}" placeholder="Documento, sistema, formato o evidencia" oninput="syncAsisRow(${index})" />
-                </div>
+<div class="field w-6">
+  <label>Documentos asociados</label>
 
-                <div class="field w-4">
-                  <label>Tiempo estimado</label>
-                  <input class="a_estimated_time" value="${escapeHtml(safe.estimated_time || safe.time || '')}" placeholder="Ej. 10 min, 2 horas, 1 día" oninput="syncAsisRow(${index})" />
-                </div>
-              `}
+  <div class="asis-activity-documents">
+    ${renderAsIsActivityDocumentOptions(
+      activityDocuments,
+      index
+    )}
+  </div>
+
+  <small>
+    Opcional. Solo documentos existentes en el catálogo.
+  </small>
+</div>
+
+<div class="field w-6">
+  <label>Sistema / herramienta</label>
+
+  <input
+    class="a_system_name"
+    value="${escapeHtml(safe.system_name || '')}"
+    placeholder="Ej. SAP, SIIA, Excel"
+    oninput="syncAsisRow(${index})"
+  />
+</div>
+
+${isDecision ? '' : `
+  <div class="field w-4">
+    <label>Tiempo estimado</label>
+
+    <input
+      class="a_estimated_time"
+      value="${escapeHtml(safe.estimated_time || safe.time || '')}"
+      placeholder="Ej. 10 min, 2 horas, 1 día"
+      oninput="syncAsisRow(${index})"
+    />
+  </div>
+`}
 
               <div class="field w-6">
                 <label>Notas aclaratorias</label>
@@ -15048,11 +15163,20 @@ function readAsisRow(item){
   const isDecision =
     type === 'decision';
 
-  /*
-   * Se parte de la actividad previa para conservar
-   * identidad y campos que LMP no edita directamente
-   * pero que pueden proceder de SIPOC Builder.
-   */
+  const documents =
+    normalizeAsIsDocumentsCatalog(
+      qsa(
+        '.a_document_option',
+        item
+      )
+        .filter(input =>
+          input.checked
+        )
+        .map(input =>
+          input.value
+        )
+    );
+
   const activity =
     Object.assign(
       {},
@@ -15076,10 +15200,17 @@ function readAsisRow(item){
 
         type,
 
+        documents,
+
+        /*
+         * Compatibilidad interna temporal.
+         * La fuente nueva es documents[].
+         */
         document:
-          isDecision
-            ? ''
-            : get('.a_document'),
+          documents[0] || '',
+
+        system_name:
+          get('.a_system_name'),
 
         estimated_time:
           isDecision
@@ -15125,7 +15256,8 @@ function readAsisRow(item){
           previousActivity.source ||
           sourceRouteLabel(),
 
-        editable: true
+        editable:
+          true
       }
     );
 
@@ -16117,8 +16249,10 @@ function addAsisActivity(data = {}){
     name: '',
     actor: '',
     type: 'actividad',
-    document: '',
-    estimated_time: '',
+documents: [],
+document: '',
+system_name: '',
+estimated_time: '',
     previous: [],
     next: [],
     inputs_used: [],
@@ -16388,12 +16522,11 @@ function handleAsIsActivityTypeChange(index){
   const activity = state.asis?.activities?.[index];
   const type = normalizePromptAType(activity?.type || 'actividad');
 
-  if(type === 'decision'){
-    activity.document = '';
-    activity.estimated_time = '';
-    activity.inputs_used = [];
-    activity.outputs_generated = [];
-  }
+if(type === 'decision'){
+  activity.estimated_time = '';
+  activity.inputs_used = [];
+  activity.outputs_generated = [];
+}
 
   if(typeof normalizeAllAsisBidirectionalConnections === 'function'){
     normalizeAllAsisBidirectionalConnections();
@@ -25269,50 +25402,26 @@ function normalizePromptAList(value){
 }
 
 function normalizePromptAActivity(activity, index){
-  const a = activity || {};
+  const a =
+    activity || {};
+
   const type =
     normalizePromptAType(
       a.type
     );
 
-  /*
-   * Contrato nuevo:
-   * activities[].documents = string[]
-   *
-   * Se mantiene compatibilidad temporal
-   * con document/documento legacy.
-   */
-  const rawDocuments = [
-    ...safeArray(
-      a.documents
-    ),
-
-    ...(
-      !Array.isArray(
-        a.documents
-      ) &&
-      a.documents
-        ? [a.documents]
-        : []
-    ),
-
-    ...(
-      a.document
-        ? [a.document]
-        : []
-    ),
-
-    ...(
-      a.documento
-        ? [a.documento]
-        : []
-    )
-  ];
-
   const documents =
-    normalizeAsIsDocumentsCatalog(
-      rawDocuments
-    );
+    normalizeAsIsDocumentsCatalog([
+      ...safeArray(
+        a.documents
+      ),
+
+      ...splitItems(
+        a.document ||
+        a.documento ||
+        ''
+      )
+    ]);
 
   return {
     id:
@@ -25321,13 +25430,11 @@ function normalizePromptAActivity(activity, index){
         (
           type === 'decision'
             ? 'DEC-' +
-              String(
-                index + 1
-              ).padStart(3, '0')
+              String(index + 1)
+                .padStart(3, '0')
             : 'ACT-' +
-              String(
-                index + 1
-              ).padStart(3, '0')
+              String(index + 1)
+                .padStart(3, '0')
         )
       ).trim(),
 
@@ -25352,11 +25459,6 @@ function normalizePromptAActivity(activity, index){
 
     documents,
 
-    /*
-     * Compatibilidad temporal con
-     * consumidores legacy del LMP.
-     * La fuente oficial nueva es documents[].
-     */
     document:
       documents[0] || '',
 
@@ -25367,6 +25469,30 @@ function normalizePromptAActivity(activity, index){
         a.sistema ||
         a.tool ||
         a.herramienta ||
+        ''
+      ).trim(),
+
+    system_code:
+      String(
+        a.system_code ||
+        ''
+      ).trim(),
+
+    execution_mode:
+      String(
+        a.execution_mode ||
+        ''
+      ).trim(),
+
+    support_tool_code:
+      String(
+        a.support_tool_code ||
+        ''
+      ).trim(),
+
+    support_tool_name:
+      String(
+        a.support_tool_name ||
         ''
       ).trim(),
 
