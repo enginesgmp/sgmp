@@ -13269,13 +13269,14 @@ function lmpCreateImportBaseState_(){
     asIsProcess: null,
     asIsProcessApproved: false,
 
-    asis: {
-      activities: [],
-      actors_catalog: [],
-      suppliers_inputs: [],
-      outputs_customers: [],
-      additional_information: []
-    },
+asis: {
+  activities: [],
+  actors_catalog: [],
+  suppliers_inputs: [],
+  outputs_customers: [],
+  documents: [],
+  additional_information: []
+},
 
     analysis: null,
 
@@ -13468,13 +13469,14 @@ function lmpClearDerivedProcessState_(message){
     approved: false
   };
 
-  state.asis = {
-    activities: [],
-    actors_catalog: [],
-    suppliers_inputs: [],
-    outputs_customers: [],
-    additional_information: []
-  };
+state.asis = {
+  activities: [],
+  actors_catalog: [],
+  suppliers_inputs: [],
+  outputs_customers: [],
+  documents: [],
+  additional_information: []
+};
 
   state.analysis = null;
 
@@ -15415,6 +15417,60 @@ function normalizeAsIsActorsCatalog(list){
   return Array.from(
     map.values()
   );
+}
+
+  function normalizeAsIsDocumentsCatalog(list){
+  const map =
+    new Map();
+
+  safeArray(
+    list
+  ).forEach(item => {
+
+    const name =
+      typeof item === 'string'
+        ? normalizeContractString(
+            item
+          )
+        : normalizeContractString(
+            item?.name ||
+            item?.title ||
+            item?.document ||
+            ''
+          );
+
+    if(!name){
+      return;
+    }
+
+    const key =
+      lmpLower(
+        name
+      );
+
+    if(!map.has(key)){
+      map.set(
+        key,
+        name
+      );
+    }
+  });
+
+  return Array.from(
+    map.values()
+  );
+}
+
+function getAsIsDocumentsCatalog(){
+  state.asis =
+    state.asis || {};
+
+  state.asis.documents =
+    normalizeAsIsDocumentsCatalog(
+      state.asis.documents
+    );
+
+  return state.asis.documents;
 }
 
 function getAsIsActorCatalog(){
@@ -24982,8 +25038,30 @@ function normalizePromptAActivity(activity, index){
     name: String(a.name || a.activity || a.activity_name || a.title || '').trim(),
     actor: String(a.actor || a.owner || a.responsable || 'pendiente_validacion').trim(),
     type,
-    document: String(a.document || a.documento || '').trim(),
-    estimated_time: String(a.estimated_time || a.time || a.tiempo || '').trim(),
+document:
+  String(
+    a.document ||
+    a.documento ||
+    ''
+  ).trim(),
+
+system_name:
+  String(
+    a.system_name ||
+    a.system ||
+    a.sistema ||
+    a.tool ||
+    a.herramienta ||
+    ''
+  ).trim(),
+
+estimated_time:
+  String(
+    a.estimated_time ||
+    a.time ||
+    a.tiempo ||
+    ''
+  ).trim(),
 
     previous: normalizeActivityConnectionList(a.previous || a.prev || a.predecessors),
     next: normalizeActivityConnectionList(a.next || a.successors),
@@ -25012,52 +25090,208 @@ function normalizePromptAActivity(activity, index){
 }
 
 function normalizePromptAAsIsProcess(payload){
-  const root = payload?.as_is_process ? payload : { as_is_process: payload };
-  const p = root.as_is_process || {};
+  const root =
+    payload?.as_is_process
+      ? payload
+      : {
+          as_is_process:
+            payload
+        };
 
-  const normalizedActivities = safeArray(p.activities)
-    .map((activity, index) => normalizePromptAActivity(activity, index))
-    .filter(activity => activity.name);
+  const p =
+    root.as_is_process || {};
 
-  const normalizedActorsCatalog = normalizeAsIsActorsCatalog(
-    safeArray(p.actors_catalog).length
-      ? p.actors_catalog
-      : safeArray(p.actors).length
-        ? p.actors
-        : normalizedActivities.map(activity => activity.actor)
-  );
+  const normalizedActivities =
+    safeArray(
+      p.activities
+    )
+      .map(
+        (activity, index) =>
+          normalizePromptAActivity(
+            activity,
+            index
+          )
+      )
+      .filter(
+        activity =>
+          activity.name
+      );
+
+  const normalizedActorsCatalog =
+    normalizeAsIsActorsCatalog(
+      safeArray(
+        p.actors_catalog
+      ).length
+        ? p.actors_catalog
+        : safeArray(
+            p.actors
+          ).length
+          ? p.actors
+          : normalizedActivities.map(
+              activity =>
+                activity.actor
+            )
+    );
+
+  /*
+   * Catálogo documental canónico del LMP.
+   *
+   * Internamente solo necesitamos el nombre.
+   * Se aceptan temporalmente objetos para
+   * compatibilidad con respuestas antiguas
+   * de Prompt A.
+   */
+  const documentMap =
+    new Map();
+
+  safeArray(
+    p.documents
+  ).forEach(item => {
+
+    const name =
+      typeof item === 'string'
+        ? normalizeContractString(
+            item
+          )
+        : normalizeContractString(
+            item?.name ||
+            item?.title ||
+            item?.document ||
+            ''
+          );
+
+    if(!name){
+      return;
+    }
+
+    const key =
+      lmpLower(
+        name
+      );
+
+    if(!documentMap.has(key)){
+      documentMap.set(
+        key,
+        name
+      );
+    }
+  });
 
   return {
     as_is_process: {
-      source_route: String(p.source_route || 'pending_validation').trim(),
+      source_route:
+        String(
+          p.source_route ||
+          'pending_validation'
+        ).trim(),
 
-      actors: normalizedActorsCatalog.map(row => row.name),
-      actors_catalog: normalizedActorsCatalog,
+      actors:
+        normalizedActorsCatalog.map(
+          row => row.name
+        ),
 
-      activities: normalizedActivities,
+      actors_catalog:
+        normalizedActorsCatalog,
 
-      suppliers_inputs: safeArray(p.suppliers_inputs || p.suppliersInputs).map(row => ({
-        supplier: String(row?.supplier || 'pendiente_validacion').trim(),
-        inputs: normalizePromptAList(row?.inputs),
-        source: String(row?.source || 'prompt_a').trim(),
-        editable: row?.editable !== false
-      })),
+      suppliers_inputs:
+        safeArray(
+          p.suppliers_inputs ||
+          p.suppliersInputs
+        ).map(row => ({
+          supplier:
+            String(
+              row?.supplier ||
+              'pendiente_validacion'
+            ).trim(),
 
-      outputs_customers: safeArray(p.outputs_customers || p.outputsCustomers).map(row => ({
-        output: String(row?.output || 'pendiente_validacion').trim(),
-        customers: normalizePromptAList(row?.customers),
-        source: String(row?.source || 'prompt_a').trim(),
-        editable: row?.editable !== false
-      })),
+          inputs:
+            normalizePromptAList(
+              row?.inputs
+            ),
 
-      additional_information: safeArray(p.additional_information || p.additionalInformation).map(item => ({
-        title: String(item?.title || 'Información adicional').trim(),
-        type: String(item?.type || 'nota_contextual').trim(),
-        related_activity: String(item?.related_activity || item?.relatedActivity || '').trim(),
-        content: String(item?.content || '').trim(),
-        source: String(item?.source || 'pendiente_validacion').trim(),
-        editable: item?.editable !== false
-      }))
+          source:
+            String(
+              row?.source ||
+              'prompt_a'
+            ).trim(),
+
+          editable:
+            row?.editable !== false
+        })),
+
+      outputs_customers:
+        safeArray(
+          p.outputs_customers ||
+          p.outputsCustomers
+        ).map(row => ({
+          output:
+            String(
+              row?.output ||
+              'pendiente_validacion'
+            ).trim(),
+
+          customers:
+            normalizePromptAList(
+              row?.customers
+            ),
+
+          source:
+            String(
+              row?.source ||
+              'prompt_a'
+            ).trim(),
+
+          editable:
+            row?.editable !== false
+        })),
+
+      documents:
+        Array.from(
+          documentMap.values()
+        ),
+
+      activities:
+        normalizedActivities,
+
+      additional_information:
+        safeArray(
+          p.additional_information ||
+          p.additionalInformation
+        ).map(item => ({
+          title:
+            String(
+              item?.title ||
+              'Información adicional'
+            ).trim(),
+
+          type:
+            String(
+              item?.type ||
+              'nota_contextual'
+            ).trim(),
+
+          related_activity:
+            String(
+              item?.related_activity ||
+              item?.relatedActivity ||
+              ''
+            ).trim(),
+
+          content:
+            String(
+              item?.content ||
+              ''
+            ).trim(),
+
+          source:
+            String(
+              item?.source ||
+              'pendiente_validacion'
+            ).trim(),
+
+          editable:
+            item?.editable !== false
+        }))
     }
   };
 }
@@ -25220,9 +25454,25 @@ state.asis.actors_catalog = normalizeAsIsActorsCatalog(
       : safeArray(p.activities).map(activity => activity.actor)
 );
 
-state.asis.suppliers_inputs = normalizeSuppliersInputsCatalog(p.suppliers_inputs);
-state.asis.outputs_customers = normalizeOutputsCustomersCatalog(p.outputs_customers);
-state.asis.additional_information = safeArray(p.additional_information);
+state.asis.suppliers_inputs =
+  normalizeSuppliersInputsCatalog(
+    p.suppliers_inputs
+  );
+
+state.asis.outputs_customers =
+  normalizeOutputsCustomersCatalog(
+    p.outputs_customers
+  );
+
+state.asis.documents =
+  normalizeAsIsDocumentsCatalog(
+    p.documents
+  );
+
+state.asis.additional_information =
+  safeArray(
+    p.additional_information
+  );
 
   state.asis.activities = safeArray(p.activities).map((activity, index) => ({
     id: activity.id || 'ACT-' + String(index + 1).padStart(3, '0'),
