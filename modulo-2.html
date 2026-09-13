@@ -3196,7 +3196,14 @@ body{font-size:14px !important}
         </div>
       </div>
       <div class="sb-library-actions">
-        <button class="primary" id="btn_new_blank_flow" type="button">+ Nuevo flujo en blanco</button>
+<button
+  class="primary"
+  id="btn_new_blank_flow"
+  type="button"
+  onclick="startBlankFlow()"
+>
+  + Nuevo flujo en blanco
+</button>
       </div>
     </section>
 
@@ -17479,126 +17486,132 @@ function buildBlankSBContract(){
 
 
 function startBlankFlow(){
-  resetSBGeneratedArtifacts();
-
-  const contract =
-    buildBlankSBContract();
-
-  const master =
-    sbGetActiveMaster();
-
-  if(master){
-    contract.sipoc_input.process_code =
-      master.process_code || '';
-
-    contract.sipoc_input.process_name =
-      master.process_name || '';
-
-    const referenceFlow =
-      (master.flows || [])
-        .find(flow =>
-          flow.payload?.contract?.sipoc_input?.purpose
-        );
-
-    contract.sipoc_input.purpose =
-      referenceFlow
-        ?.payload
-        ?.contract
-        ?.sipoc_input
-        ?.purpose ||
-      '';
-  }
-
-  const diagram =
-    createEmptySBDiagramModel();
-
-  diagram.source_contract =
-    sbDeepClone(
-      contract
-    );
-
-  S.contract =
-    contract;
-
-  S.diagramModel =
-    diagram;
-
-  S.optimizedDiagramModel =
-    sbDeepClone(
-      diagram
-    );
-
-  S.acts =
-    [];
-
-  S.cats = {
-    suppliers:[],
-    inputs:[],
-    outputs:[],
-    customers:[],
-    actors:[],
-    documents:[]
-  };
-
-  let flow;
-
   try{
-    flow =
+    resetSBGeneratedArtifacts();
+
+    const contract =
+      buildBlankSBContract();
+
+    const master =
+      sbGetActiveMaster();
+
+    if(master){
+      contract.sipoc_input.process_code =
+        master.process_code || '';
+
+      contract.sipoc_input.process_name =
+        master.process_name || '';
+
+      const referenceFlow =
+        (master.flows || [])
+          .find(flow =>
+            flow.payload
+              ?.contract
+              ?.sipoc_input
+              ?.purpose
+          );
+
+      contract.sipoc_input.purpose =
+        referenceFlow
+          ?.payload
+          ?.contract
+          ?.sipoc_input
+          ?.purpose ||
+        '';
+    }
+
+    const diagram =
+      createEmptySBDiagramModel();
+
+    diagram.source_contract =
+      sbDeepClone(contract);
+
+    S.contract =
+      contract;
+
+    S.diagramModel =
+      diagram;
+
+    S.optimizedDiagramModel =
+      sbDeepClone(diagram);
+
+    S.acts = [];
+
+    S.cats = {
+      suppliers:[],
+      inputs:[],
+      outputs:[],
+      customers:[],
+      actors:[],
+      documents:[]
+    };
+
+    const flow =
       sbCreateFlow({
         contract,
-        sourceOrigin:
-          'blank',
-        versionType:
-          'as_is',
-        persisted:
-          true
+        sourceOrigin:'blank',
+        versionType:'as_is',
+        persisted:true
       });
+
+    flow.payload.diagram_model =
+      sbDeepClone(diagram);
+
+    flow.payload.optimized_diagram_model =
+      sbDeepClone(diagram);
+
+    flow.saved_at =
+      new Date().toISOString();
+
+    S.loadTrace = {
+      source:'blank',
+      loadedAt:
+        new Date().toISOString(),
+      processName:
+        contract.sipoc_input.process_name || '',
+      activityCount:0,
+      warningsCount:0,
+      blockingCount:0
+    };
+
+    S.studio.rendered =
+      false;
+
+    S.studio.saved =
+      true;
+
+    sbRenderFlowLibrary();
+
+    const opened =
+      sbOpenFlow(
+        flow.flow_id
+      );
+
+    if(!opened){
+      throw new Error(
+        'El flujo fue creado, pero Diagram Studio no pudo abrirlo.'
+      );
+    }
+
+    return true;
+
   }catch(error){
+    console.error(
+      'Error creando flujo en blanco:',
+      error
+    );
+
     gMsg(
       'err',
-      error.message
+      'No fue posible crear el flujo en blanco: ' +
+      (
+        error?.message ||
+        'error desconocido'
+      )
     );
+
     return false;
   }
-
-  flow.payload.diagram_model =
-    sbDeepClone(
-      diagram
-    );
-
-  flow.payload.optimized_diagram_model =
-    sbDeepClone(
-      diagram
-    );
-
-  flow.saved_at =
-    new Date()
-      .toISOString();
-
-  S.loadTrace = {
-    source:'blank',
-    loadedAt:
-      new Date()
-        .toISOString(),
-    processName:
-      contract.sipoc_input.process_name || '',
-    activityCount:0,
-    warningsCount:0,
-    blockingCount:0
-  };
-
-  S.studio.rendered =
-    false;
-
-  S.studio.saved =
-    true;
-
-  sbRenderFlowLibrary();
-  sbOpenFlow(
-    flow.flow_id
-  );
-
-  return true;
 }
 
 function sbCloseDataAccordion(
@@ -29045,14 +29058,6 @@ sbSetMasterCatalogs =
 // WIRE ALL EVENTS — called once on DOMContentLoaded
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-
-
-// Fuentes de entrada
-$('btn_new_blank_flow')
-  .addEventListener(
-    'click',
-    startBlankFlow
-  );
 
 $('btn_lmp')
   .addEventListener(
