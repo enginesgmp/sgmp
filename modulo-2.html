@@ -274,7 +274,7 @@ const nowIso = () => new Date().toISOString();
 const text = value => String(value ?? '').trim();
 const upper = value => text(value).toUpperCase();
 const uid = prefix => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`}`.toUpperCase();
-const snap = value => Math.round(Number(value || 0) / 10) * 10;
+const snap = value => Math.round(Number(value || 0) / 5) * 5;
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 const escapeXml = escapeHtml;
 
@@ -300,7 +300,7 @@ const STANDARD = Object.freeze({
   routeStub:24,
   routeChannelGap:10,
   connectorRadius:13,
-  connectorPeripheralInset:17,
+  connectorPeripheralInset:24,
   connectorInternalOffset:42
 });
 
@@ -890,29 +890,42 @@ function crossingEdgeIds(model,geometry){
   return bad;
 }
 
-function connectorZoneBounds(edge,geometry,model){
+function connectorZoneBounds(edge,markerKey,geometry,model){
   const kind=edge.connector_kind,source=nodeById(edge.source,model),target=nodeById(edge.target,model),sk=laneKindForNode(source,model),tk=laneKindForNode(target,model),pad=STANDARD.connectorRadius+4;
   let x1=STANDARD.canvasMargin,x2=geometry.width-STANDARD.canvasMargin,y1=geometry.bodyTop+pad,y2=geometry.bodyTop+model.layout.body_height-pad;
+  const setLaneBounds=lane=>{if(lane){x1=lane.x+pad;x2=lane.x+lane.width-pad;}};
+  const setActorBounds=()=>{const actors=geometry.lanes.filter(item=>item.kind==='actor');if(actors.length){x1=actors[0].x+pad;const last=actors[actors.length-1];x2=last.x+last.width-pad;}};
   if(kind==='input'){
-    const lane=geometry.lanes.find(item=>item.kind==='input');if(lane){x1=lane.x+pad;x2=lane.x+lane.width-pad;}
+    if(markerKey==='source')setLaneBounds(geometry.lanes.find(item=>item.kind==='input'));
+    else setActorBounds();
   }else if(kind==='output'){
-    const lane=geometry.lanes.find(item=>item.kind==='output');if(lane){x1=lane.x+pad;x2=lane.x+lane.width-pad;}
+    if(markerKey==='source')setActorBounds();
+    else setLaneBounds(geometry.lanes.find(item=>item.kind==='output'));
   }else if(sk==='supplier'&&tk==='input'){
     const a=geometry.lanes.find(item=>item.kind==='supplier'),b=geometry.lanes.find(item=>item.kind==='input');if(a&&b){x1=a.x+pad;x2=b.x+b.width-pad;}
   }else if(sk==='output'&&tk==='customer'){
     const a=geometry.lanes.find(item=>item.kind==='output'),b=geometry.lanes.find(item=>item.kind==='customer');if(a&&b){x1=a.x+pad;x2=b.x+b.width-pad;}
-  }else{
-    const actors=geometry.lanes.filter(item=>item.kind==='actor');if(actors.length){x1=actors[0].x+pad;const last=actors[actors.length-1];x2=last.x+last.width-pad;}
-  }
+  }else setActorBounds();
   return{x1,x2,y1,y2};
 }
 function clampPointToBounds(point,bounds){return{x:Math.max(bounds.x1,Math.min(bounds.x2,Number(point?.x)||bounds.x1)),y:Math.max(bounds.y1,Math.min(bounds.y2,Number(point?.y)||bounds.y1))};}
+function keepConnectorMarkerOutsideNode(point,node,side,bounds,geometry,model){
+  if(!node)return clampPointToBounds(point,bounds);
+  const box=nodeBox(node,geometry,model),gap=STANDARD.connectorRadius+10,next={...point};
+  if(side==='right')next.x=Math.max(next.x,box.x+box.w+gap);
+  else if(side==='left')next.x=Math.min(next.x,box.x-gap);
+  else if(side==='bottom')next.y=Math.max(next.y,box.y+box.h+gap);
+  else if(side==='top')next.y=Math.min(next.y,box.y-gap);
+  return clampPointToBounds(next,bounds);
+}
 function defaultConnectorMarkers(edge,geometry,model,a,b){
   if(edge.connector_kind==='input'){
-    const lane=geometry.lanes.find(item=>item.kind==='input'),x=lane?lane.x+lane.width-STANDARD.connectorPeripheralInset:a.x+STANDARD.connectorInternalOffset;return{source:{x,y:a.y},target:{x,y:b.y}};
+    const lane=geometry.lanes.find(item=>item.kind==='input'),x=lane?lane.x+lane.width-STANDARD.connectorPeripheralInset:a.x+STANDARD.connectorInternalOffset;
+    return{source:{x,y:a.y},target:pointOffset(b,edge.target_side||'left',STANDARD.connectorInternalOffset)};
   }
   if(edge.connector_kind==='output'){
-    const lane=geometry.lanes.find(item=>item.kind==='output'),x=lane?lane.x+STANDARD.connectorPeripheralInset:b.x-STANDARD.connectorInternalOffset;return{source:{x,y:a.y},target:{x,y:b.y}};
+    const lane=geometry.lanes.find(item=>item.kind==='output'),x=lane?lane.x+STANDARD.connectorPeripheralInset:b.x-STANDARD.connectorInternalOffset;
+    return{source:pointOffset(a,edge.source_side||'right',STANDARD.connectorInternalOffset),target:{x,y:b.y}};
   }
   return{source:pointOffset(a,edge.source_side||'right',STANDARD.connectorInternalOffset),target:pointOffset(b,edge.target_side||'left',STANDARD.connectorInternalOffset)};
 }
@@ -933,9 +946,9 @@ function connectorBranchLogicalPoints(edge,branch,geometryData){
 }
 function connectorGeometry(edge,geometry,model){
   const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return null;
-  const a=anchorPoint(source,edge.source_side||'right',edge,geometry,model),b=anchorPoint(target,edge.target_side||'left',edge,geometry,model),bounds=connectorZoneBounds(edge,geometry,model),defaults=defaultConnectorMarkers(edge,geometry,model,a,b);
-  const stored=edge.connector_points||{};const sourceMarker=clampPointToBounds(stored.source||defaults.source,bounds),targetMarker=clampPointToBounds(stored.target||defaults.target,bounds);
-  const base={a,b,sourceMarker,targetMarker,bounds};const sourceLogical=connectorBranchLogicalPoints(edge,'source',base),targetLogical=connectorBranchLogicalPoints(edge,'target',base);
+  const sourceSide=edge.source_side||'right',targetSide=edge.target_side||'left',a=anchorPoint(source,sourceSide,edge,geometry,model),b=anchorPoint(target,targetSide,edge,geometry,model),sourceBounds=connectorZoneBounds(edge,'source',geometry,model),targetBounds=connectorZoneBounds(edge,'target',geometry,model),defaults=defaultConnectorMarkers(edge,geometry,model,a,b);
+  const stored=edge.connector_points||{},sourceMarker=keepConnectorMarkerOutsideNode(clampPointToBounds(stored.source||defaults.source,sourceBounds),source,sourceSide,sourceBounds,geometry,model),targetMarker=keepConnectorMarkerOutsideNode(clampPointToBounds(stored.target||defaults.target,targetBounds),target,targetSide,targetBounds,geometry,model);
+  const bounds={source:sourceBounds,target:targetBounds},base={a,b,sourceMarker,targetMarker,bounds};const sourceLogical=connectorBranchLogicalPoints(edge,'source',base),targetLogical=connectorBranchLogicalPoints(edge,'target',base);
   return{...base,sourceLogical,targetLogical,sourcePoints:trimPolylineEnd(sourceLogical,STANDARD.connectorRadius),targetPoints:trimPolylineStart(targetLogical,STANDARD.connectorRadius)};
 }
 function pointOnPolyline(points,t=.5){
@@ -986,7 +999,7 @@ function renderRouteHandles(edge,points,branch=''){
 function renderSvg(model=currentModel(),{interactive=true}={}){
   if(!model)return '';
   const g=laneGeometry(model),noteMap=g.noteMap,crossing=crossingEdgeIds(model,g);APP.validation.crossingEdges=crossing;
-  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.canvasHeight}" width="${g.width}" height="${g.canvasHeight}" role="img" aria-label="Diagrama SIPOC" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#000"/></marker><marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#D92D20"/></marker></defs>`;
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.canvasHeight}" width="${g.width}" height="${g.canvasHeight}" role="img" aria-label="Diagrama SIPOC" font-family="Segoe UI,Arial,sans-serif" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#000"/></marker><marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#D92D20"/></marker></defs>`;
   svg+=`<rect x="${STANDARD.canvasMargin}" y="0" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.titleHeight}" fill="#fff" stroke="#000" stroke-width="1"/><rect x="${STANDARD.canvasMargin}" y="${STANDARD.titleHeight}" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.purposeHeight}" fill="#fff" stroke="#000" stroke-width="1"/>`;
   const title=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' ')||'NOMBRE DEL PROCESO PENDIENTE';
   svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight/2+1}" dominant-baseline="middle" font-size="12" font-weight="800" pointer-events="none">${escapeXml(upper(title))}</text>`;
@@ -1004,8 +1017,8 @@ function renderSvg(model=currentModel(),{interactive=true}={}){
   if(interactive)svg+=renderConnectPorts(model,g);
   if(interactive)svg+=renderFlowResizeHandle(model,g);
 
-  const notesY=g.bodyTop+model.layout.body_height+24;svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY}" font-size="9" font-weight="800" pointer-events="none">NOTAS ACLARATORIAS</text>`;
-  noteMap.ordered.forEach((note,i)=>{svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY+18+i*17}" font-size="9" pointer-events="none"><tspan font-weight="800">${escapeXml(noteMap.map.get(note.id))} </tspan><tspan>${escapeXml(upper(note.text))}</tspan></text>`;});
+  const notesY=g.bodyTop+model.layout.body_height+24;svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY}" font-size="10" font-weight="800" pointer-events="none">NOTAS ACLARATORIAS</text>`;
+  noteMap.ordered.forEach((note,i)=>{svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY+19+i*18}" font-size="10" pointer-events="none"><tspan font-weight="800">${escapeXml(noteMap.map.get(note.id))} </tspan><tspan>${escapeXml(upper(note.text))}</tspan></text>`;});
   svg+='</svg>';return svg;
 }
 
@@ -1241,7 +1254,9 @@ function beginConnectorMarkerDrag(event,edgeId,markerKey){
   APP.selection={type:'edge',id:edgeId};APP.connectorDrag={edgeId,markerKey,pointerId:event.pointerId,start:clientToCanvas(event.clientX,event.clientY),startPoint:clone(startPoint),snapshot:captureHistoryState(),moved:false};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleConnectorMarkerDrag);vp.addEventListener('pointerup',endConnectorMarkerDrag,{once:true});vp.addEventListener('pointercancel',endConnectorMarkerDrag,{once:true});
 }
 function handleConnectorMarkerDrag(event){
-  const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const p=clientToCanvas(event.clientX,event.clientY),cg=connectorGeometry(edge,laneGeometry(model),model);if(!cg)return;const bounds=cg.bounds,next=clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds);edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false);
+  const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),cg=connectorGeometry(edge,geometry,model);if(!cg)return;
+  const node=drag.markerKey==='source'?nodeById(edge.source,model):nodeById(edge.target,model),side=drag.markerKey==='source'?(edge.source_side||'right'):(edge.target_side||'left'),bounds=cg.bounds[drag.markerKey],next=keepConnectorMarkerOutsideNode(clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds),node,side,bounds,geometry,model);
+  edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false);
 }
 function endConnectorMarkerDrag(event){
   const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleConnectorMarkerDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.connectorDrag=null;renderStudio();
