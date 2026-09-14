@@ -83,6 +83,18 @@ label{display:block;margin-bottom:5px;color:#315674;font-size:.72rem;font-weight
 .flow-meta{display:flex;gap:6px;flex-wrap:wrap}.tag{display:inline-flex;padding:4px 7px;border-radius:999px;background:#EEF7FC;color:#24587B;font-size:.68rem;font-weight:900;text-transform:uppercase}
 .tag.warn{background:#FFF4DE;color:#8A5700}.flow-card small{color:#71849A}
 .flow-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}.flow-actions button{min-height:33px;padding:6px 9px;font-size:.74rem}
+.document-catalog-accordion{padding:0;overflow:hidden}
+.document-catalog-accordion>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:900;color:#123A63;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.document-catalog-accordion>summary::-webkit-details-marker{display:none}
+.document-catalog-accordion>summary::after{content:'▾';font-size:.82rem;color:#5B6F8A;transition:transform .15s}
+.document-catalog-accordion[open]>summary::after{transform:rotate(180deg)}
+.document-catalog-body{border-top:1px solid var(--line);padding:14px 16px;background:#FBFDFF}
+.document-catalog-list{display:flex;flex-direction:column;gap:7px;margin-bottom:10px}
+.document-catalog-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.document-catalog-row input{font-size:.78rem}
+.document-catalog-row button{min-height:34px;padding:5px 8px;font-size:.7rem}
+.document-catalog-add{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}
+.document-catalog-add button{min-height:36px}
 
 /* STUDIO */
 .studio-shell{display:flex;flex-direction:column;gap:10px}
@@ -201,6 +213,13 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
       </section>
 
       <section id="flow_list" class="flow-list"><div class="flow-empty">Todavía no existe ningún flujo. Importa desde LMP o crea un flujo en blanco.</div></section>
+
+      <details id="document_catalog_accordion" class="panel document-catalog-accordion hidden">
+        <summary><span>Catálogo de documentos</span><small id="document_catalog_count">0 documento(s)</small></summary>
+        <div class="document-catalog-body">
+          <div id="document_catalog_content"></div>
+        </div>
+      </details>
     </div>
   </main>
 
@@ -301,7 +320,7 @@ const STANDARD = Object.freeze({
   connectorPeripheralInset:36,
   connectorInternalOffset:42,
   connectorBoundarySafety:18,
-  connectorObstacleGap:7,
+  connectorObstacleGap:0,
   connectPortRadius:8,
   connectPortOffset:13,
   pdfTopMargin:24
@@ -396,6 +415,7 @@ function createMaster(process={}){
     process_code:upper(process.process_code||''),
     process_name:upper(process.process_name||''),
     purpose:upper(process.purpose||''),
+    document_catalog:[],
     created_at:nowIso(),updated_at:nowIso(),flows:[]
   };
 }
@@ -488,7 +508,8 @@ function captureHistoryState(){
     process:{
       process_code:APP.master.process_code||'',
       process_name:APP.master.process_name||'',
-      purpose:APP.master.purpose||''
+      purpose:APP.master.purpose||'',
+      document_catalog:clone(normalizeDocumentCatalog(APP.master))
     },
     flow:{
       version_name:flow.version_name||'',
@@ -504,6 +525,7 @@ function restoreHistoryState(state){
   APP.master.process_code=state.process?.process_code||'';
   APP.master.process_name=state.process?.process_name||'';
   APP.master.purpose=state.process?.purpose||'';
+  APP.master.document_catalog=Array.isArray(state.process?.document_catalog)?clone(state.process.document_catalog):[];
   flow.version_name=state.flow?.version_name||flow.version_name;
   flow.version_type=state.flow?.version_type||flow.version_type;
   flow.status=state.flow?.status||flow.status;
@@ -868,23 +890,38 @@ function autoRoutePoints(edge,geometry,model,a,b,sourceSide,targetSide){
 }
 
 function connectorObstaclePoints(model,geometry,ignoreEdgeId=null){
-  const points=[];(model?.edges||[]).filter(edge=>edge.mode==='connector'&&edge.id!==ignoreEdgeId).forEach(edge=>{['source','target'].forEach(markerKey=>{const bounds=connectorZoneBounds(edge,markerKey,geometry,model),raw=rawConnectorMarker(edge,markerKey,geometry,model);if(raw)points.push(separateConnectorMarker(raw,edge,markerKey,geometry,model,bounds));});});return points;
+  const points=[];
+  (model?.edges||[]).filter(edge=>edge.mode==='connector'&&edge.id!==ignoreEdgeId).forEach(edge=>{
+    ['source','target'].forEach(markerKey=>{const p=rawConnectorMarker(edge,markerKey,geometry,model);if(p)points.push(p);});
+  });
+  return points;
 }
 function segmentHitsConnectorObstacle(a,b,obstacle,radius){
   const horizontal=Math.abs(a.y-b.y)<.01,vertical=Math.abs(a.x-b.x)<.01;if(!horizontal&&!vertical)return false;
-  if(horizontal){const min=Math.min(a.x,b.x),max=Math.max(a.x,b.x);return obstacle.x>min&&obstacle.x<max&&Math.abs(a.y-obstacle.y)<radius;}
-  const min=Math.min(a.y,b.y),max=Math.max(a.y,b.y);return obstacle.y>min&&obstacle.y<max&&Math.abs(a.x-obstacle.x)<radius;
+  const x1=obstacle.x-radius,x2=obstacle.x+radius,y1=obstacle.y-radius,y2=obstacle.y+radius;
+  if(horizontal){const min=Math.min(a.x,b.x),max=Math.max(a.x,b.x);return a.y>y1&&a.y<y2&&max>x1&&min<x2;}
+  const min=Math.min(a.y,b.y),max=Math.max(a.y,b.y);return a.x>x1&&a.x<x2&&max>y1&&min<y2;
 }
 function avoidConnectorObstacles(points,edge,geometry,model){
-  let route=compactRoutePoints(points,false);const obstacles=connectorObstaclePoints(model,geometry,edge?.id),radius=STANDARD.connectorRadius+STANDARD.connectorObstacleGap;if(route.length<2||!obstacles.length)return route;
-  for(let pass=0;pass<10;pass++){
+  let route=compactRoutePoints(points,false);
+  if(APP.connectorDrag)return route;
+  const obstacles=connectorObstaclePoints(model,geometry,edge?.id),radius=STANDARD.connectorRadius;
+  if(route.length<2||!obstacles.length)return route;
+  for(let pass=0;pass<4;pass++){
     let changed=false,next=[route[0]];
     for(let i=0;i<route.length-1;i++){
       const a=next[next.length-1],b=route[i+1],horizontal=Math.abs(a.y-b.y)<.01;
-      const hits=obstacles.filter(o=>segmentHitsConnectorObstacle(a,b,o,radius)).sort((p,q)=>horizontal?(a.x<=b.x?p.x-q.x:q.x-p.x):(a.y<=b.y?p.y-q.y:q.y-p.y));
+      const hits=obstacles.filter(o=>segmentHitsConnectorObstacle(a,b,o,radius));
       if(!hits.length){next.push(b);continue;}
-      const o=hits[0],dir=horizontal?(b.x>=a.x?1:-1):(b.y>=a.y?1:-1),buffer=radius+4;
-      if(horizontal){const before={x:o.x-dir*buffer,y:a.y},after={x:o.x+dir*buffer,y:a.y},up=o.y-radius-4,down=o.y+radius+4,newY=Math.abs(up-a.y)<=Math.abs(down-a.y)?up:down;next.push(before,{x:before.x,y:newY},{x:after.x,y:newY},after,b);}else{const before={x:a.x,y:o.y-dir*buffer},after={x:a.x,y:o.y+dir*buffer},left=o.x-radius-4,right=o.x+radius+4,newX=Math.abs(left-a.x)<=Math.abs(right-a.x)?left:right;next.push(before,{x:newX,y:before.y},{x:newX,y:after.y},after,b);}changed=true;
+      const o=hits[0],dir=horizontal?(b.x>=a.x?1:-1):(b.y>=a.y?1:-1),buffer=radius+1;
+      if(horizontal){
+        const before={x:o.x-dir*buffer,y:a.y},after={x:o.x+dir*buffer,y:a.y},up=o.y-buffer,down=o.y+buffer,newY=Math.abs(up-a.y)<=Math.abs(down-a.y)?up:down;
+        next.push(before,{x:before.x,y:newY},{x:after.x,y:newY},after,b);
+      }else{
+        const before={x:a.x,y:o.y-dir*buffer},after={x:a.x,y:o.y+dir*buffer},left=o.x-buffer,right=o.x+buffer,newX=Math.abs(left-a.x)<=Math.abs(right-a.x)?left:right;
+        next.push(before,{x:newX,y:before.y},{x:newX,y:after.y},after,b);
+      }
+      changed=true;
     }
     route=compactRoutePoints(next);if(!changed)break;
   }
@@ -929,13 +966,15 @@ function connectorZoneBounds(edge,markerKey,geometry,model){
   const kind=edge.connector_kind,source=nodeById(edge.source,model),target=nodeById(edge.target,model),sk=laneKindForNode(source,model),tk=laneKindForNode(target,model),pad=STANDARD.connectorRadius+4,peripheralPad=STANDARD.connectorRadius+STANDARD.connectorBoundarySafety;
   let x1=STANDARD.canvasMargin,x2=geometry.width-STANDARD.canvasMargin,y1=geometry.bodyTop+pad,y2=geometry.bodyTop+model.layout.body_height-pad;
   const setLaneBounds=lane=>{if(lane){x1=lane.x+peripheralPad;x2=lane.x+lane.width-peripheralPad;}};
+  const setInputPeripheralBounds=lane=>{if(lane){x1=lane.x+peripheralPad;x2=lane.x+lane.width-STANDARD.connectorRadius;}};
+  const setOutputPeripheralBounds=lane=>{if(lane){x1=lane.x+STANDARD.connectorRadius;x2=lane.x+lane.width-peripheralPad;}};
   const setActorBounds=()=>{const actors=geometry.lanes.filter(item=>item.kind==='actor');if(actors.length){x1=actors[0].x+pad;const last=actors[actors.length-1];x2=last.x+last.width-pad;}};
   if(kind==='input'){
-    if(markerKey==='source')setLaneBounds(geometry.lanes.find(item=>item.kind==='input'));
+    if(markerKey==='source')setInputPeripheralBounds(geometry.lanes.find(item=>item.kind==='input'));
     else setActorBounds();
   }else if(kind==='output'){
     if(markerKey==='source')setActorBounds();
-    else setLaneBounds(geometry.lanes.find(item=>item.kind==='output'));
+    else setOutputPeripheralBounds(geometry.lanes.find(item=>item.kind==='output'));
   }else if(sk==='supplier'&&tk==='input'){
     const a=geometry.lanes.find(item=>item.kind==='supplier'),b=geometry.lanes.find(item=>item.kind==='input');if(a&&b){x1=a.x+pad;x2=b.x+b.width-pad;}
   }else if(sk==='output'&&tk==='customer'){
@@ -960,14 +999,17 @@ function rawConnectorMarker(edge,markerKey,geometry,model){
   return keepConnectorMarkerOutsideNode(clampPointToBounds(stored[markerKey]||defaults[markerKey],bounds),node,side,bounds,geometry,model);
 }
 function separateConnectorMarker(point,edge,markerKey,geometry,model,bounds){
-  let candidate=clampPointToBounds(point,bounds);const minDistance=STANDARD.connectorRadius*2+STANDARD.connectorObstacleGap;
-  const prior=(model.edges||[]).filter(other=>other.mode==='connector'&&other.id!==edge.id&&((Number(other.order)||0)<(Number(edge.order)||0)||(Number(other.order)||0)===(Number(edge.order)||0)&&String(other.id)<String(edge.id)));
-  const occupied=[];prior.forEach(other=>['source','target'].forEach(key=>{const otherBounds=connectorZoneBounds(other,key,geometry,model),raw=rawConnectorMarker(other,key,geometry,model),p=raw?separateConnectorMarker(raw,other,key,geometry,model,otherBounds):null;if(p)occupied.push(p);}));
-  for(let guard=0;guard<occupied.length+4;guard++){
-    const hit=occupied.find(p=>Math.hypot(candidate.x-p.x,candidate.y-p.y)<minDistance);if(!hit)break;
-    const down={x:candidate.x,y:hit.y+minDistance},up={x:candidate.x,y:hit.y-minDistance};
-    const options=[down,up].map(p=>clampPointToBounds(p,bounds)).sort((a,b)=>Math.hypot(a.x-candidate.x,a.y-candidate.y)-Math.hypot(b.x-candidate.x,b.y-candidate.y));
-    candidate=options.find(p=>Math.hypot(p.x-hit.x,p.y-hit.y)>=minDistance-.1)||clampPointToBounds({x:hit.x+minDistance,y:candidate.y},bounds);
+  let candidate=clampPointToBounds(point,bounds);
+  if(APP.connectorDrag)return candidate;
+  const minDistance=STANDARD.connectorRadius*2+2,occupied=[];
+  (model.edges||[]).filter(other=>other.mode==='connector'&&other.id!==edge.id).forEach(other=>{
+    ['source','target'].forEach(key=>{const p=rawConnectorMarker(other,key,geometry,model);if(p)occupied.push(p);});
+  });
+  const collides=p=>occupied.some(o=>Math.abs(p.x-o.x)<minDistance&&Math.abs(p.y-o.y)<minDistance);
+  if(!collides(candidate))return candidate;
+  for(let step=1;step<=8;step++){
+    const d=minDistance*step,candidates=[{x:candidate.x,y:candidate.y+d},{x:candidate.x,y:candidate.y-d},{x:candidate.x+d,y:candidate.y},{x:candidate.x-d,y:candidate.y}].map(p=>clampPointToBounds(p,bounds));
+    const free=candidates.find(p=>!collides(p));if(free)return free;
   }
   return candidate;
 }
@@ -1051,9 +1093,9 @@ function renderRouteHandles(edge,points,branch=''){
   return html;
 }
 
-function renderSvg(model=currentModel(),{interactive=true}={}){
+function renderSvg(model=currentModel(),{interactive=true,fast=false}={}){
   if(!model)return '';
-  const g=laneGeometry(model),noteMap=g.noteMap,crossing=crossingEdgeIds(model,g);APP.validation.crossingEdges=crossing;
+  const g=laneGeometry(model),noteMap=g.noteMap,crossing=fast?(APP.validation.crossingEdges||new Set()):crossingEdgeIds(model,g);if(!fast)APP.validation.crossingEdges=crossing;
   let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.canvasHeight}" width="${g.width}" height="${g.canvasHeight}" role="img" aria-label="Diagrama SIPOC" font-family="Segoe UI,Arial,sans-serif" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#000"/></marker><marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#D92D20"/></marker></defs>`;
   svg+=`<rect x="${STANDARD.canvasMargin}" y="0" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.titleHeight}" fill="#fff" stroke="#000" stroke-width="1"/><rect x="${STANDARD.canvasMargin}" y="${STANDARD.titleHeight}" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.purposeHeight}" fill="#fff" stroke="#000" stroke-width="1"/>`;
   const title=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' ')||'NOMBRE DEL PROCESO PENDIENTE';
@@ -1114,13 +1156,13 @@ function renderFlowResizeHandle(model,geometry){
   return `<g data-flow-resize="1" class="flow-resize-handle"><rect x="${x}" y="${y-7}" width="${right-x}" height="14" fill="transparent"/><line x1="${x}" y1="${y}" x2="${right}" y2="${y}" stroke="#7C91A3" stroke-width="1" stroke-dasharray="5 4"/><rect x="${mid-18}" y="${y-7}" width="36" height="14" rx="7" fill="#FFFFFF" stroke="#7C91A3" stroke-width="1"/><text x="${mid}" y="${y+1}" text-anchor="middle" dominant-baseline="middle" font-size="8" fill="#526F80" pointer-events="none">↕</text></g>`;
 }
 
-function renderStudio(redrawInspector=true){
+function renderStudio(redrawInspector=true,fast=false){
   const flow=activeFlow(),model=currentModel();renderStudioContext();
-  if(!flow||!model){$('canvas').innerHTML='<div class="empty-note">Abre un flujo desde Biblioteca.</div>';renderInspector();return;}
-  const g=laneGeometry(model);$('canvas').innerHTML=renderSvg(model,{interactive:true});
+  if(!flow||!model){$('canvas').innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';renderInspector();return;}
+  const g=laneGeometry(model);$('canvas').innerHTML=renderSvg(model,{interactive:true,fast});
+  if(fast){applyCamera();return;}
   bindSvgInteractions();if(redrawInspector)renderInspector();refreshValidation();updateInsertButton();updateDeleteButton();updateHistoryButtons();updateConnectStatus();applyCamera();
 }
-
 function renderStudioContext(){
   const flow=activeFlow();
   if(!flow){$('active_flow_title').textContent='Ningún flujo abierto';$('active_flow_meta').textContent='Abre un flujo desde Biblioteca.';return;}
@@ -1129,14 +1171,47 @@ function renderStudioContext(){
 }
 function statusLabel(status){return status==='validated'?'Validado':status==='frozen'?'Congelado':'Borrador';}
 
+function documentTextValue(value){
+  if(value&&typeof value==='object')return upper([value.name||'',value.code||''].filter(Boolean).join(' '));
+  return upper(value||'');
+}
+function documentKey(value){return documentTextValue(value).replace(/\s+/g,' ').trim();}
+function normalizeDocumentCatalog(master=APP.master){
+  if(!master)return[];const seen=new Set(),out=[];
+  (Array.isArray(master.document_catalog)?master.document_catalog:[]).forEach(item=>{const value=documentTextValue(item),key=documentKey(value);if(value&&!seen.has(key)){seen.add(key);out.push(value);}});
+  master.document_catalog=out;return out;
+}
+function ensureCatalogDocument(value,master=APP.master){
+  if(!master)return'';const clean=documentTextValue(value);if(!clean)return'';const docs=normalizeDocumentCatalog(master);if(!docs.some(item=>documentKey(item)===documentKey(clean)))docs.push(clean);master.document_catalog=docs;master.updated_at=nowIso();return clean;
+}
+function renderDocumentCatalog(){
+  const accordion=$('document_catalog_accordion'),content=$('document_catalog_content'),count=$('document_catalog_count');
+  if(!accordion||!content||!count)return;
+  if(!APP.master){accordion.classList.add('hidden');content.innerHTML='';count.textContent='0 documento(s)';return;}
+  accordion.classList.remove('hidden');const docs=normalizeDocumentCatalog(APP.master);count.textContent=`${docs.length} documento(s)`;
+  const rows=docs.length?`<div class="document-catalog-list">${docs.map((doc,index)=>`<div class="document-catalog-row"><input data-catalog-input="${index}" value="${escapeHtml(doc)}" aria-label="Documento ${index+1}"><button type="button" data-catalog-save="${index}">Aplicar</button><button type="button" class="danger" data-catalog-delete="${index}">Eliminar</button></div>`).join('')}</div>`:'<div class="empty-note">Sin documentos en el catálogo.</div>';
+  content.innerHTML=`${rows}<div class="document-catalog-add"><input id="catalog_new_document" placeholder="Código y nombre del documento"><button id="catalog_add_document" class="primary" type="button">+ Agregar</button></div>`;
+}
+function addCatalogDocument(){
+  const input=$('catalog_new_document'),value=documentTextValue(input?.value||'');if(!APP.master||!value){gMsg('warn','Escribe código y nombre del documento.');return;}pushHistory();ensureCatalogDocument(value);if(activeFlow())markDirty();else APP.master.updated_at=nowIso();renderLibrary();if(activeFlow())renderStudio(false);
+}
+function updateCatalogDocument(index){
+  const model=currentModel(),docs=normalizeDocumentCatalog(APP.master),input=document.querySelector(`[data-catalog-input="${index}"]`),value=documentTextValue(input?.value||'');if(!APP.master||!docs[index]||!value){gMsg('warn','El documento no puede quedar vacío.');return;}const previous=docs[index];pushHistory();docs[index]=value;APP.master.document_catalog=docs.filter((item,i,array)=>array.findIndex(other=>documentKey(other)===documentKey(item))===i);if(model)(model.nodes||[]).forEach(node=>{(node.documents||[]).forEach(doc=>{if(documentKey(doc)===documentKey(previous)){doc.name=value;doc.code='';}});});APP.master.updated_at=nowIso();if(activeFlow())markDirty();renderLibrary();if(activeFlow())renderStudio(false);
+}
+function deleteCatalogDocument(index){
+  const docs=normalizeDocumentCatalog(APP.master);if(!APP.master||!docs[index])return;pushHistory();APP.master.document_catalog=docs.filter((_,i)=>i!==index);APP.master.updated_at=nowIso();if(activeFlow())markDirty();renderLibrary();if(activeFlow())renderStudio(false);
+}
+function attachCatalogDocumentToNode(nodeId){
+  const model=currentModel(),node=nodeById(nodeId,model),value=documentTextValue($('catalog_doc_select')?.value||'');if(!model||!node||!value)return;if((node.documents||[]).some(doc=>documentKey(doc)===documentKey(value))){gMsg('info','Ese documento ya está asociado a la caja.');return;}pushHistory();node.documents=node.documents||[];node.documents.push({id:uid('DOC'),name:value,code:''});ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
+}
 function renderLibrary(){
   const s=$('process_summary'),list=$('flow_list');
-  if(!APP.master){s.innerHTML='<span class="chip">Sin proceso activo</span>';list.innerHTML='<div class="flow-empty">Todavía no existe ningún flujo. Importa desde LMP o crea un flujo en blanco.</div>';return;}
+  if(!APP.master){s.innerHTML='<span class="chip">Sin proceso activo</span>';list.innerHTML='<div class="flow-empty">Todavía no existe ningún flujo. Importa desde LMP o crea un flujo en blanco.</div>';renderDocumentCatalog();return;}
   s.innerHTML=`<span class="chip">${escapeHtml(APP.master.process_code||'SIN CÓDIGO')}</span><span class="chip">${escapeHtml(APP.master.process_name||'PROCESO SIN NOMBRE')}</span><span class="chip">${APP.master.flows.length} flujo(s)</span>`;
-  if(!APP.master.flows.length){list.innerHTML='<div class="flow-empty">El proceso todavía no contiene flujos.</div>';return;}
+  if(!APP.master.flows.length){list.innerHTML='<div class="flow-empty">El proceso todavía no contiene flujos.</div>';renderDocumentCatalog();return;}
   list.innerHTML=APP.master.flows.slice().sort((a,b)=>a.version_number-b.version_number).map(flow=>`<article class="flow-card ${flow.flow_id===APP.activeFlowId?'is-active':''}"><div class="flow-card-head"><div><h3>${escapeHtml(flow.version_name)}</h3><small>Flujo ${flow.version_number} · ${flow.saved_at?'Guardado':'Sin guardar'}</small></div></div><div class="flow-meta"><span class="tag">${flow.version_type==='to_be'?'TO-BE':'AS-IS'}</span><span class="tag ${flow.status==='draft'?'warn':''}">${statusLabel(flow.status)}</span></div><div class="flow-actions"><button data-flow-action="open" data-flow-id="${flow.flow_id}">Abrir</button><button data-flow-action="duplicate" data-flow-id="${flow.flow_id}">Duplicar</button><button data-flow-action="rename" data-flow-id="${flow.flow_id}">Renombrar</button><button data-flow-action="export" data-flow-id="${flow.flow_id}">Exportar</button><button class="danger" data-flow-action="delete" data-flow-id="${flow.flow_id}">Eliminar</button></div></article>`).join('');
+  renderDocumentCatalog();
 }
-
 function updateInsertButton(){return APP.selection?.type==='lane'?laneById(APP.selection.id):null;}
 function updateDeleteButton(){const s=APP.selection;let enabled=false;if(s?.type==='node'||s?.type==='edge')enabled=true;if(s?.type==='lane'){const lane=laneById(s.id),actors=currentModel()?.lanes?.filter(l=>l.kind==='actor')||[];enabled=lane?.kind==='actor'&&actors.length>2&&!currentModel().nodes.some(n=>n.lane_id===lane.id);}$('btn_delete').disabled=!enabled;}
 
@@ -1164,8 +1239,9 @@ function renderInspector(){
   if(sel.type==='node'){
     const node=nodeById(sel.id,model);if(!node){APP.selection=null;renderInspector();return;}
     const lane=laneById(node.lane_id,model),notes=(node.note_ids||[]).map(id=>model.notes.find(note=>note.id===id)).filter(Boolean);
-    root.innerHTML=`<div class="inspector-info" aria-label="Información del elemento"><span class="info-chip">${escapeHtml(SYMBOLS[node.type]?.label||node.type)}</span><span class="info-chip">${escapeHtml(lane?.kind==='actor'?(lane.label||'ACTOR SIN NOMBRE'):lane?.label||'')}</span></div><div class="field"><label>Texto principal</label><textarea id="ins_node_label">${escapeHtml(node.label||'')}</textarea></div><div class="inspector-actions"><button id="ins_node_apply" class="primary">Aplicar texto</button></div><div class="inspector-section"><h4>Documentos</h4><div id="doc_list">${renderDocRows(node.documents||[])}</div><div class="field"><label>Documento · nombre y código</label><input id="new_doc_text" placeholder="Ej: REGISTRO DE RECEPCIÓN AS-RG-10401-4"></div><button id="btn_add_doc" type="button">+ Agregar documento</button></div><div class="inspector-section"><h4>Notas aclaratorias</h4><div id="note_list">${renderNoteRows(notes,model)}</div><div class="field"><label>Nueva nota</label><textarea id="new_note_text"></textarea></div><button id="btn_add_note" type="button">+ Agregar nota</button></div>`;
-    $('ins_node_apply').onclick=()=>{pushHistory();node.label=upper($('ins_node_label').value);markDirty();renderStudio();};$('btn_add_doc').onclick=()=>addDocumentToNode(node.id);$('btn_add_note').onclick=()=>addNoteToNode(node.id);
+    const catalogDocs=normalizeDocumentCatalog(APP.master),catalogOptions=catalogDocs.length?catalogDocs.map(doc=>`<option value="${escapeHtml(doc)}">${escapeHtml(doc)}</option>`).join(''):'<option value="">Catálogo vacío</option>';
+    root.innerHTML=`<div class="inspector-info" aria-label="Información del elemento"><span class="info-chip">${escapeHtml(SYMBOLS[node.type]?.label||node.type)}</span><span class="info-chip">${escapeHtml(lane?.kind==='actor'?(lane.label||'ACTOR SIN NOMBRE'):lane?.label||'')}</span></div><div class="field"><label>Texto principal</label><textarea id="ins_node_label">${escapeHtml(node.label||'')}</textarea></div><div class="inspector-actions"><button id="ins_node_apply" class="primary">Aplicar texto</button></div><div class="inspector-section"><h4>Documentos</h4><div id="doc_list">${renderDocRows(node.documents||[])}</div><div class="field"><label>Seleccionar del catálogo</label><select id="catalog_doc_select" ${catalogDocs.length?'':'disabled'}>${catalogOptions}</select></div><button id="btn_attach_catalog_doc" type="button" ${catalogDocs.length?'':'disabled'}>+ Asociar del catálogo</button><div class="field" style="margin-top:9px"><label>Documento nuevo · código y nombre</label><input id="new_doc_text" placeholder="Ej: AS-RG-10401-4 REGISTRO DE RECEPCIÓN"></div><button id="btn_add_doc" type="button">+ Agregar documento nuevo</button></div><div class="inspector-section"><h4>Notas aclaratorias</h4><div id="note_list">${renderNoteRows(notes,model)}</div><div class="field"><label>Nueva nota</label><textarea id="new_note_text"></textarea></div><button id="btn_add_note" type="button">+ Agregar nota</button></div>`;
+    $('ins_node_apply').onclick=()=>{pushHistory();node.label=upper($('ins_node_label').value);markDirty();renderStudio();};$('btn_add_doc').onclick=()=>addDocumentToNode(node.id);if($('btn_attach_catalog_doc'))$('btn_attach_catalog_doc').onclick=()=>attachCatalogDocumentToNode(node.id);$('btn_add_note').onclick=()=>addNoteToNode(node.id);
     root.querySelectorAll('[data-doc-save]').forEach(btn=>btn.onclick=()=>updateDocumentOnNode(node.id,Number(btn.dataset.docSave)));root.querySelectorAll('[data-doc-remove]').forEach(btn=>btn.onclick=()=>removeDocumentFromNode(node.id,Number(btn.dataset.docRemove)));root.querySelectorAll('[data-note-save]').forEach(btn=>btn.onclick=()=>updateNoteOnNode(node.id,btn.dataset.noteSave));root.querySelectorAll('[data-note-remove]').forEach(btn=>btn.onclick=()=>removeNoteFromNode(node.id,btn.dataset.noteRemove));return;
   }
 }
@@ -1178,12 +1254,11 @@ function renderNoteRows(notes,model){
   return notes.length?notes.map(note=>`<div class="editable-list-row"><textarea data-note-input="${note.id}">${escapeHtml(upper(note.text))}</textarea><button data-note-save="${note.id}">${escapeHtml(map.get(note.id)||'Aplicar')}</button><button data-note-remove="${note.id}" class="danger">Quitar</button></div>`).join(''):'<div class="empty-note">Sin notas.</div>';
 }
 function addDocumentToNode(nodeId){
-  const node=nodeById(nodeId),value=upper($('new_doc_text')?.value||'');if(!node||!value){gMsg('warn','Escribe el nombre y código del documento.');return;}pushHistory();node.documents=node.documents||[];node.documents.push({id:uid('DOC'),name:value,code:''});markDirty();renderStudio();
+  const model=currentModel(),node=nodeById(nodeId,model),value=documentTextValue($('new_doc_text')?.value||'');if(!node||!value){gMsg('warn','Escribe código y nombre del documento.');return;}pushHistory();node.documents=node.documents||[];if(!node.documents.some(doc=>documentKey(doc)===documentKey(value)))node.documents.push({id:uid('DOC'),name:value,code:''});ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
 }
 function updateDocumentOnNode(nodeId,index){
-  const node=nodeById(nodeId);if(!node||!node.documents?.[index])return;const input=document.querySelector(`[data-doc-input="${index}"]`),value=upper(input?.value||'');if(!value){gMsg('warn','El documento no puede quedar vacío.');return;}pushHistory();node.documents[index]={...(node.documents[index]||{}),name:value,code:''};markDirty();renderStudio();
+  const model=currentModel(),node=nodeById(nodeId,model);if(!node||!node.documents?.[index])return;const input=document.querySelector(`[data-doc-input="${index}"]`),value=documentTextValue(input?.value||'');if(!value){gMsg('warn','El documento no puede quedar vacío.');return;}pushHistory();node.documents[index]={...(node.documents[index]||{}),name:value,code:''};ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
 }
-
 function removeDocumentFromNode(nodeId,index){const node=nodeById(nodeId);if(!node)return;pushHistory();node.documents.splice(index,1);markDirty();renderStudio();}
 function addNoteToNode(nodeId){const model=currentModel(),node=nodeById(nodeId,model),value=upper($('new_note_text').value);if(!value){gMsg('warn','Escribe el texto de la nota.');return;}pushHistory();const note={id:uid('NOTE'),node_id:nodeId,text:value,created_at:nowIso()};model.notes.push(note);node.note_ids=node.note_ids||[];node.note_ids.push(note.id);markDirty();renderStudio();}
 function updateNoteOnNode(nodeId,noteId){
@@ -1319,11 +1394,13 @@ function beginConnectorMarkerDrag(event,edgeId,markerKey){
 }
 function handleConnectorMarkerDrag(event){
   const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),cg=connectorGeometry(edge,geometry,model);if(!cg)return;
-  const node=drag.markerKey==='source'?nodeById(edge.source,model):nodeById(edge.target,model),side=drag.markerKey==='source'?(edge.source_side||'right'):(edge.target_side||'left'),bounds=cg.bounds[drag.markerKey],raw=keepConnectorMarkerOutsideNode(clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds),node,side,bounds,geometry,model),next=separateConnectorMarker(raw,edge,drag.markerKey,geometry,model,bounds);
-  edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false);
+  const node=drag.markerKey==='source'?nodeById(edge.source,model):nodeById(edge.target,model),side=drag.markerKey==='source'?(edge.source_side||'right'):(edge.target_side||'left'),bounds=cg.bounds[drag.markerKey],next=keepConnectorMarkerOutsideNode(clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds),node,side,bounds,geometry,model);
+  edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false,true);
 }
 function endConnectorMarkerDrag(event){
-  const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleConnectorMarkerDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.connectorDrag=null;renderStudio();
+  const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleConnectorMarkerDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}
+  const model=currentModel(),edge=edgeById(drag.edgeId,model);if(drag.moved&&edge&&model){const geometry=laneGeometry(model),bounds=connectorZoneBounds(edge,drag.markerKey,geometry,model),current=edge.connector_points?.[drag.markerKey];if(current)edge.connector_points[drag.markerKey]=separateConnectorMarker(current,edge,drag.markerKey,geometry,model,bounds);}
+  if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.connectorDrag=null;renderStudio();
 }
 function nearestPolylinePosition(points,point){
   if(!points||points.length<2)return 0;let total=0;const lengths=[];for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return 0;let best={dist:Infinity,along:0},passed=0;
@@ -1418,17 +1495,22 @@ function showValidation(flowId=APP.activeFlowId){const flow=flowById(flowId);if(
 
 function openExport(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;if(flowId===APP.activeFlowId)saveActiveFlow({silent:true});const issues=collectValidation(flow);if(issues.length){showValidation(flowId);return false;}APP.exportFlowId=flowId;$('export_dialog').showModal();return true;}
 
+function validNodeTypeForLane(kind,value){
+  const allowed=ALLOWED_BY_LANE[kind]||[],candidate=text(value).toLowerCase();return allowed.includes(candidate)?candidate:'white_box';
+}
+function noteTargetKind(node,model){
+  const laneKind=laneKindForNode(node,model);if(laneKind==='actor')return node?.type==='decision'?'decision':'activity';return laneKind||'node';
+}
 function buildSipocInput(flow){
   const model=flow.payload.model,geom=laneGeometry(model),actorLanes=model.lanes.filter(l=>l.kind==='actor');const nodesByLane=kind=>model.nodes.filter(n=>laneKindForNode(n,model)===kind);const suppliers=nodesByLane('supplier'),inputs=nodesByLane('input'),outputs=nodesByLane('output'),customers=nodesByLane('customer'),actorNodes=nodesByLane('actor');
-  const supplierRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='supplier'&&laneKindForNode(nodeById(e.target,model),model)==='input').map(e=>({id:e.id,supplier:upper(nodeById(e.source,model)?.label),input:upper(nodeById(e.target,model)?.label)}));
-  const customerRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='output'&&laneKindForNode(nodeById(e.target,model),model)==='customer').map(e=>({id:e.id,output:upper(nodeById(e.source,model)?.label),customer:upper(nodeById(e.target,model)?.label)}));
+  const supplierRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='supplier'&&laneKindForNode(nodeById(e.target,model),model)==='input').map(e=>{const supplier=nodeById(e.source,model),input=nodeById(e.target,model);return{id:e.id,supplier_id:supplier?.id||'',supplier:upper(supplier?.label),supplier_node_type:validNodeTypeForLane('supplier',supplier?.type),input_id:input?.id||'',input:upper(input?.label),input_node_type:validNodeTypeForLane('input',input?.type)};});
+  const customerRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='output'&&laneKindForNode(nodeById(e.target,model),model)==='customer').map(e=>{const output=nodeById(e.source,model),customer=nodeById(e.target,model);return{id:e.id,output_id:output?.id||'',output:upper(output?.label),output_node_type:validNodeTypeForLane('output',output?.type),customer_id:customer?.id||'',customer:upper(customer?.label),customer_node_type:validNodeTypeForLane('customer',customer?.type)};});
   const laneIndex=new Map(actorLanes.map((l,i)=>[l.id,i]));actorNodes.sort((a,b)=>(a.y||0)-(b.y||0)||(laneIndex.get(a.lane_id)||0)-(laneIndex.get(b.lane_id)||0));
-  const activities=actorNodes.map((node,index)=>{const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(d=>({name:upper(d.name||d),code:upper(d.code||'')}))};});
-  const noteMap=buildNoteNumberMap(model,geom.lanes);const clarifying_notes=noteMap.ordered.map(note=>{const node=nodeById(note.node_id,model);return{id:note.id,activity_id:node?.id||'',activity_name:upper(node?.label||''),text:upper(note.text),number:noteMap.map.get(note.id)};});
-  const docMap=new Map();model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const name=upper(d.name||d),code=upper(d.code||'');if(name){const key=`${name}|${code}`;if(!docMap.has(key))docMap.set(key,{name,code});}});
+  const activities=actorNodes.map((node,index)=>{const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
+  const noteMap=buildNoteNumberMap(model,geom.lanes);const clarifying_notes=noteMap.ordered.map(note=>{const node=nodeById(note.node_id,model),targetKind=noteTargetKind(node,model),isActivity=targetKind==='activity'||targetKind==='decision';return{id:note.id,target_id:node?.id||'',target_kind:targetKind,target_name:upper(node?.label||''),activity_id:isActivity?(node?.id||''):'',activity_name:isActivity?upper(node?.label||''):'',text:upper(note.text),number:noteMap.map.get(note.id)};});
+  const docMap=new Map();normalizeDocumentCatalog(APP.master).forEach(value=>docMap.set(documentKey(value),documentTextValue(value)));model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const value=documentTextValue(d);if(value)docMap.set(documentKey(value),value);});
   return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(APP.master.purpose),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
 }
-
 function buildSBToLMP(flow){return{contract_code:'SB_TO_LMP',contract_version:'1.0',source_module:'SIPOC_BUILDER',target_module:'LMP',generated_at:nowIso(),sipoc_input:buildSipocInput(flow)};}
 function downloadText(content,filename,mime='application/json'){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function exportLmp(flowId=APP.exportFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('export_dialog').close();}
@@ -1453,7 +1535,7 @@ function downloadPdfPreview(){
 }
 
 function saveBackup(){if(!APP.master){gMsg('warn','No existe un proceso para respaldar.');return;}if(activeFlow())saveActiveFlow({silent:true});const backup={backup_code:'SB_MASTER_BACKUP',backup_version:'1.0',generated_at:nowIso(),active_flow_id:APP.activeFlowId,master:clone(APP.master)};downloadText(JSON.stringify(backup,null,2),`SB_MASTER_BACKUP_${(APP.master.process_code||'PROCESO').replace(/[^A-Z0-9_-]+/g,'_')}.json`);}
-function restoreBackup(raw){try{const data=typeof raw==='string'?JSON.parse(raw):raw;if(data?.backup_code!=='SB_MASTER_BACKUP'||!data.master||!Array.isArray(data.master.flows))throw new Error('El archivo no corresponde a un respaldo maestro válido.');APP.master=clone(data.master);APP.master.flows.forEach(flow=>{flow.payload=flow.payload||{};flow.payload.model=normalizeLoadedModel(flow.payload.model);});APP.activeFlowId=data.active_flow_id&&flowById(data.active_flow_id)?data.active_flow_id:APP.master.flows[0]?.flow_id||null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();if(APP.activeFlowId)openFlow(APP.activeFlowId);else switchView('library');gMsg('ok','Respaldo maestro restaurado.');}catch(error){gMsg('err',`No fue posible restaurar el respaldo: ${error.message}`);}}
+function restoreBackup(raw){try{const data=typeof raw==='string'?JSON.parse(raw):raw;if(data?.backup_code!=='SB_MASTER_BACKUP'||!data.master||!Array.isArray(data.master.flows))throw new Error('El archivo no corresponde a un respaldo maestro válido.');APP.master=clone(data.master);APP.master.document_catalog=Array.isArray(APP.master.document_catalog)?APP.master.document_catalog:[];APP.master.flows.forEach(flow=>{flow.payload=flow.payload||{};flow.payload.model=normalizeLoadedModel(flow.payload.model);});normalizeDocumentCatalog(APP.master);APP.activeFlowId=data.active_flow_id&&flowById(data.active_flow_id)?data.active_flow_id:APP.master.flows[0]?.flow_id||null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();if(APP.activeFlowId)openFlow(APP.activeFlowId);else switchView('library');gMsg('ok','Respaldo maestro restaurado.');}catch(error){gMsg('err',`No fue posible restaurar el respaldo: ${error.message}`);}}
 
 function readFileInput(input,callback){const file=input?.files?.[0];if(!file){gMsg('warn','Selecciona un archivo JSON.');return;}const reader=new FileReader();reader.onload=()=>callback(String(reader.result||''));reader.onerror=()=>gMsg('err','No fue posible leer el archivo.');reader.readAsText(file);}
 
@@ -1466,27 +1548,28 @@ function importLmp(raw){
 }
 
 function modelFromLmp(contract){
-  const input=contract.sipoc_input||{},model=createBlankModel();const actorRows=Array.isArray(input?.lanes?.actors)?input.lanes.actors:[];model.lanes=model.lanes.filter(l=>l.kind!=='actor');const outIdx=model.lanes.findIndex(l=>l.kind==='output');const actors=(actorRows.length?actorRows:[{name:''},{name:''}]).map(a=>({id:text(a.id)||uid('LANE-ACTOR'),kind:'actor',label:upper(a.name||a.actor||''),width:STANDARD.actorLaneWidth}));while(actors.length<2)actors.push(actorLane(''));model.lanes.splice(outIdx,0,...actors);
-  const nodeMap=new Map();const make=(laneId,label,type='white_box',id='')=>{const pos=nextPositionForImport(model,laneId);const n={id:text(id)||uid('NODE'),lane_id:laneId,type,label:upper(label),x_rel:pos.x_rel,y:pos.y,documents:[],note_ids:[],meta:{}};model.nodes.push(n);return n;};
-  const getOrCreate=(key,laneId,label,type='white_box')=>{if(nodeMap.has(key))return nodeMap.get(key);const n=make(laneId,label,type);nodeMap.set(key,n);return n;};
-  (input?.lanes?.suppliers_inputs||[]).forEach((row,i)=>{const s=getOrCreate(`S|${upper(row.supplier)}`,'LANE-SUPPLIER',row.supplier,'white_box');const inp=getOrCreate(`I|${upper(row.input)}`,'LANE-INPUT',row.input,'white_box');model.edges.push(importEdge(model,s.id,inp.id,'right','left'));});
-  const actMap=new Map();const actorIds=new Set(model.lanes.filter(l=>l.kind==='actor').map(l=>l.id));(input.activities||[]).slice().sort((a,b)=>(Number(a.sequence)||0)-(Number(b.sequence)||0)).forEach((a,i)=>{let laneId=upper(a.actor_lane_id);if(!actorIds.has(laneId)){const hit=model.lanes.find(l=>l.kind==='actor'&&upper(l.label)===upper(a.actor));laneId=hit?.id||model.lanes.find(l=>l.kind==='actor')?.id;}const pos=nextPositionForImport(model,laneId,(Number(a.sequence)||i+1)*88);const visual=String(a.type||'').toLowerCase().includes('decision')?'decision':(a.execution_mode==='system'||a.system_code?'activity':'white_box');const n={id:text(a.id)||uid('NODE'),lane_id:laneId,type:visual,label:upper(a.name),x_rel:pos.x_rel,y:pos.y,documents:(a.documents||[]).map(d=>typeof d==='string'?{id:uid('DOC'),name:upper(d),code:''}:{id:uid('DOC'),name:upper(d.name||''),code:upper(d.code||'')}),note_ids:[],meta:clone(a)};model.nodes.push(n);actMap.set(n.id,n);if(a.id)actMap.set(String(a.id),n);actMap.set(`NAME|${upper(a.name)}`,n);});
-  const noteLookup=new Map((input.clarifying_notes||[]).map(n=>[String(n.id),n]));(input.activities||[]).forEach(a=>{const node=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!node)return;(a.note_ids||[]).forEach(id=>{const src=noteLookup.get(String(id));if(src){const note={id:text(src.id)||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};model.notes.push(note);node.note_ids.push(note.id);}});});
+  const input=contract.sipoc_input||{},model=createBlankModel();
+  (input.documents||[]).forEach(doc=>ensureCatalogDocument(doc));
+  const actorRows=Array.isArray(input?.lanes?.actors)?input.lanes.actors:[];model.lanes=model.lanes.filter(l=>l.kind!=='actor');const outIdx=model.lanes.findIndex(l=>l.kind==='output');const actors=(actorRows.length?actorRows:[{name:''},{name:''}]).map(a=>({id:text(a.id)||uid('LANE-ACTOR'),kind:'actor',label:upper(a.name||a.actor||''),width:STANDARD.actorLaneWidth}));while(actors.length<2)actors.push(actorLane(''));model.lanes.splice(outIdx,0,...actors);
+  const nodeMap=new Map();
+  const registerNode=(node,kind)=>{nodeMap.set(`${kind.toUpperCase()}|${upper(node.label)}`,node);nodeMap.set(node.id,node);return node;};
+  const make=(laneId,label,type='white_box',id='')=>{const lane=model.lanes.find(l=>l.id===laneId),kind=lane?.kind||'actor',pos=nextPositionForImport(model,laneId);const n={id:text(id)||uid('NODE'),lane_id:laneId,type:validNodeTypeForLane(kind,type),label:upper(label),x_rel:pos.x_rel,y:pos.y,documents:[],note_ids:[],meta:{}};model.nodes.push(n);return registerNode(n,kind);};
+  const getOrCreate=(kind,laneId,label,type='white_box',id='')=>{const key=`${kind.toUpperCase()}|${upper(label)}`;if(nodeMap.has(key))return nodeMap.get(key);return make(laneId,label,type,id);};
+  (input?.lanes?.suppliers_inputs||[]).forEach(row=>{const supplier=getOrCreate('supplier','LANE-SUPPLIER',row.supplier,row.supplier_node_type||row.supplier_type||'white_box',row.supplier_id||'');const inp=getOrCreate('input','LANE-INPUT',row.input,row.input_node_type||row.input_type||'white_box',row.input_id||'');if(!model.edges.some(e=>e.source===supplier.id&&e.target===inp.id))model.edges.push(importEdge(model,supplier.id,inp.id,'right','left'));});
+  (input?.lanes?.outputs_customers||[]).forEach(row=>{const out=getOrCreate('output','LANE-OUTPUT',row.output,row.output_node_type||row.output_type||'white_box',row.output_id||'');const customer=getOrCreate('customer','LANE-CUSTOMER',row.customer,row.customer_node_type||row.customer_type||'white_box',row.customer_id||'');if(!model.edges.some(e=>e.source===out.id&&e.target===customer.id))model.edges.push(importEdge(model,out.id,customer.id,'right','left'));});
+  const actMap=new Map(),actorIds=new Set(model.lanes.filter(l=>l.kind==='actor').map(l=>l.id));
+  (input.activities||[]).slice().sort((a,b)=>(Number(a.sequence)||0)-(Number(b.sequence)||0)).forEach((a,i)=>{let laneId=text(a.actor_lane_id);if(!actorIds.has(laneId)){const hit=model.lanes.find(l=>l.kind==='actor'&&upper(l.label)===upper(a.actor));laneId=hit?.id||model.lanes.find(l=>l.kind==='actor')?.id;}const pos=nextPositionForImport(model,laneId,(Number(a.sequence)||i+1)*88);const fallbackVisual=String(a.type||'').toLowerCase().includes('decision')?'decision':(a.execution_mode==='system'||a.system_code?'activity':'white_box'),visual=validNodeTypeForLane('actor',a.node_type||fallbackVisual);const n={id:text(a.id)||uid('NODE'),lane_id:laneId,type:visual,label:upper(a.name),x_rel:pos.x_rel,y:pos.y,documents:(a.documents||[]).map(d=>({id:uid('DOC'),name:documentTextValue(d),code:''})).filter(d=>d.name),note_ids:[],meta:clone(a)};model.nodes.push(n);registerNode(n,'actor');actMap.set(n.id,n);if(a.id)actMap.set(String(a.id),n);actMap.set(`NAME|${upper(a.name)}`,n);n.documents.forEach(d=>ensureCatalogDocument(d));});
+  (input.activities||[]).forEach(a=>{const source=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!source)return;(a.next||[]).forEach(r=>{const target=(r.activity_id&&actMap.get(String(r.activity_id)))||actMap.get(`NAME|${upper(r.activity_name||r.name)}`);if(target&&!model.edges.some(e=>e.source===source.id&&e.target===target.id)){const [ss,ts]=defaultSidesForModel(source,target,model);const e=importEdge(model,source.id,target.id,ss,ts);e.label=upper(r.label);model.edges.push(e);}});(a.inputs||[]).forEach(r=>{const inp=getOrCreate('input','LANE-INPUT',r.name||r.input,r.node_type||'white_box',r.id||r.input_id||'');if(!model.edges.some(e=>e.source===inp.id&&e.target===source.id)){const e=importEdge(model,inp.id,source.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});(a.outputs||[]).forEach(r=>{const out=getOrCreate('output','LANE-OUTPUT',r.name||r.output,r.node_type||'white_box',r.id||r.output_id||'');if(!model.edges.some(e=>e.source===source.id&&e.target===out.id)){const e=importEdge(model,source.id,out.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});});
+  const noteLookup=new Map((input.clarifying_notes||[]).map(n=>[String(n.id),n]));
+  (input.activities||[]).forEach(a=>{const node=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!node)return;(a.note_ids||[]).forEach(id=>{const src=noteLookup.get(String(id));if(src&&!model.notes.some(note=>note.id===String(src.id))){const note={id:text(src.id)||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};model.notes.push(note);node.note_ids.push(note.id);}});});
   (input.clarifying_notes||[]).forEach(src=>{
-    const srcId=text(src.id);
-    if(srcId&&model.notes.some(note=>note.id===srcId))return;
-    const node=
-      (src.activity_id&&actMap.get(String(src.activity_id)))||
-      actMap.get(`NAME|${upper(src.activity_name||'')}`);
-    if(!node)return;
-    const note={id:srcId||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};
-    model.notes.push(note);
-    node.note_ids.push(note.id);
+    const srcId=text(src.id);if(srcId&&model.notes.some(note=>note.id===srcId))return;
+    let node=null;const targetId=text(src.target_id||src.activity_id);if(targetId)node=nodeMap.get(targetId)||actMap.get(targetId)||null;
+    if(!node&&src.activity_name)node=actMap.get(`NAME|${upper(src.activity_name)}`)||null;
+    if(!node&&src.target_name){const kind=text(src.target_kind).toLowerCase(),mapKind=kind==='activity'||kind==='decision'?'actor':kind;node=nodeMap.get(`${mapKind.toUpperCase()}|${upper(src.target_name)}`)||null;}
+    if(!node)return;const note={id:srcId||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};model.notes.push(note);node.note_ids=node.note_ids||[];node.note_ids.push(note.id);
   });
-  (input.activities||[]).forEach(a=>{const source=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!source)return;(a.next||[]).forEach(r=>{const target=(r.activity_id&&actMap.get(String(r.activity_id)))||actMap.get(`NAME|${upper(r.activity_name||r.name)}`);if(target&&!model.edges.some(e=>e.source===source.id&&e.target===target.id)){const [ss,ts]=defaultSidesForModel(source,target,model);const e=importEdge(model,source.id,target.id,ss,ts);e.label=upper(r.label);model.edges.push(e);}});(a.inputs||[]).forEach(r=>{const inp=getOrCreate(`I|${upper(r.name||r.input)}`,'LANE-INPUT',r.name||r.input,'white_box');if(!model.edges.some(e=>e.source===inp.id&&e.target===source.id)){const e=importEdge(model,inp.id,source.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});(a.outputs||[]).forEach(r=>{const out=getOrCreate(`O|${upper(r.name||r.output)}`,'LANE-OUTPUT',r.name||r.output,'white_box');if(!model.edges.some(e=>e.source===source.id&&e.target===out.id)){const e=importEdge(model,source.id,out.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});});
-  (input?.lanes?.outputs_customers||[]).forEach(row=>{const out=getOrCreate(`O|${upper(row.output)}`,'LANE-OUTPUT',row.output,'white_box');const c=getOrCreate(`C|${upper(row.customer)}`,'LANE-CUSTOMER',row.customer,'white_box');if(!model.edges.some(e=>e.source===out.id&&e.target===c.id))model.edges.push(importEdge(model,out.id,c.id,'right','left'));});
-  normalizeDecisionPorts(model);
-  return model;
+  normalizeDocumentCatalog(APP.master);normalizeDecisionPorts(model);return model;
 }
 function nextPositionForImport(model,laneId,preferredY=null){const lane=model.lanes.find(l=>l.id===laneId),same=model.nodes.filter(n=>n.lane_id===laneId);let y=preferredY!==null?preferredY:30+same.length*88;while(same.some(n=>Math.abs((n.y||0)-y)<70))y+=78;if(y+90>model.layout.body_height)model.layout.body_height=y+120;return{x_rel:lane?Math.max(10,(lane.width-STANDARD.nodeWidth)/2):20,y};}
 function importEdge(model,source,target,source_side='right',target_side='left'){model.counters.edge=(model.counters.edge||0)+1;return{id:uid('EDGE'),order:model.counters.edge,source,target,source_side,target_side,label:'',label_position:.5,mode:'line',connector_kind:null,connector_label:null,connector_sequence:null,waypoints:[]};}
@@ -1509,11 +1592,12 @@ function normalizeDecisionPorts(model){
 function normalizeLoadedModel(model){
   if(!model||typeof model!=='object')return createBlankModel();
   model.model_version='6.1';model.layout=model.layout||{};model.layout.body_height=Math.max(STANDARD.defaultBodyHeight,Number(model.layout.body_height)||STANDARD.defaultBodyHeight);model.counters=model.counters||{edge:0,connector_input:0,connector_internal:0,connector_output:0};
+  if(Array.isArray(model.document_catalog)){model.document_catalog.forEach(doc=>ensureCatalogDocument(doc));delete model.document_catalog;}
+  (model.nodes||[]).forEach(node=>{node.documents=Array.isArray(node.documents)?node.documents:[];node.note_ids=Array.isArray(node.note_ids)?node.note_ids:[];node.documents.forEach(doc=>ensureCatalogDocument(doc));});
   (model.edges||[]).forEach(edge=>{if(!Array.isArray(edge.waypoints))edge.waypoints=[];if(typeof edge.label_position!=='number')edge.label_position=.5;if(edge.mode==='connector'){edge.connector_routes=edge.connector_routes||{source:[],target:[]};if(!Array.isArray(edge.connector_routes.source))edge.connector_routes.source=[];if(!Array.isArray(edge.connector_routes.target))edge.connector_routes.target=[];if(edge.connector_points&&typeof edge.connector_points!=='object')edge.connector_points=null;}});
   (model.lanes||[]).forEach(lane=>{if(['supplier','input','output','customer'].includes(lane.kind))lane.width=STANDARD.peripheralLaneWidth;});
-  normalizeDecisionPorts(model);return model;
+  normalizeDocumentCatalog(APP.master);normalizeDecisionPorts(model);return model;
 }
-
 function clearWorkspace(){if(!APP.master)return;if(!confirm('Limpiar cerrará el proceso actual en SB. Guarda un respaldo si deseas conservarlo.'))return;APP.master=null;APP.activeFlowId=null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();switchView('library');gMsg('info','Workspace limpio.');}
 
 function openManual(){$('manual_dialog').showModal();}
@@ -1523,6 +1607,7 @@ function bindGlobalEvents(){
   $('btn_new_blank_flow').addEventListener('click',startBlankFlow);$('btn_backup_master').addEventListener('click',saveBackup);$('btn_clear_workspace').addEventListener('click',clearWorkspace);$('btn_manual').addEventListener('click',openManual);
   $('btn_import_lmp').addEventListener('click',()=>readFileInput($('lmp_file'),importLmp));$('btn_restore_backup').addEventListener('click',()=>readFileInput($('backup_file'),restoreBackup));
   $('flow_list').addEventListener('click',event=>{const btn=event.target.closest('[data-flow-action]');if(!btn)return;const id=btn.dataset.flowId,act=btn.dataset.flowAction;if(act==='open')openFlow(id);if(act==='duplicate')duplicateFlow(id);if(act==='rename')renameFlow(id);if(act==='export')openExport(id);if(act==='delete')deleteFlow(id);});
+  $('document_catalog_content').addEventListener('click',event=>{const add=event.target.closest('#catalog_add_document');if(add){addCatalogDocument();return;}const save=event.target.closest('[data-catalog-save]');if(save){updateCatalogDocument(Number(save.dataset.catalogSave));return;}const del=event.target.closest('[data-catalog-delete]');if(del){deleteCatalogDocument(Number(del.dataset.catalogDelete));}});
   $('btn_save_flow').addEventListener('click',()=>saveActiveFlow());$('btn_duplicate_flow').addEventListener('click',()=>duplicateFlow());$('btn_export_flow').addEventListener('click',()=>openExport());$('validation_badge').addEventListener('click',()=>showValidation());
   $('btn_add_actor').addEventListener('click',addActorLane);$('btn_undo').addEventListener('click',undo);$('btn_redo').addEventListener('click',redo);$('btn_delete').addEventListener('click',deleteSelection);$('btn_zoom_out').addEventListener('click',()=>zoomBy(1/STANDARD.zoomStep));$('btn_zoom_in').addEventListener('click',()=>zoomBy(STANDARD.zoomStep));
   $('btn_export_pdf').addEventListener('click',()=>exportPdf());$('btn_export_lmp').addEventListener('click',()=>exportLmp());$('btn_download_pdf').addEventListener('click',downloadPdfPreview);$('pdf_preview_dialog').addEventListener('close',clearPdfPreview);
