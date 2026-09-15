@@ -271,7 +271,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 
 <dialog id="insert_dialog"><div class="dialog-inner"><h3 id="insert_title">Insertar</h3><p id="insert_help">Selecciona la figura permitida para el carril activo.</p><div id="insert_palette" class="palette"></div><div class="dialog-actions"><button data-dialog-close="insert_dialog" type="button">Cancelar</button></div></div></dialog>
 <dialog id="validation_dialog"><div class="dialog-inner"><h3>Validación estructural</h3><p>Guardar nunca se bloquea. Estas alertas solo impiden una salida final.</p><div id="validation_list" class="issue-list"></div><div class="dialog-actions"><button data-dialog-close="validation_dialog" type="button">Cerrar</button></div></div></dialog>
-<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>Las salidas finales comparten el mismo validador estructural.</p><div class="palette"><button id="btn_export_pdf" type="button"><strong>PDF</strong><small>Vista previa y descarga vectorial en una sola página del tamaño exacto del SIPOC.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
+<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>Las salidas finales comparten el mismo validador estructural.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el bloque completo de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin bloque de notas</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el bloque inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Selecciona el encabezado de un carril y pulsa el botón celeste <strong>+</strong> que aparece en ese encabezado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas solo bloquean PDF y JSON→LMP.</li></ol>
@@ -548,7 +548,7 @@ function redo(){
 }
 function updateHistoryButtons(){$('btn_undo').disabled=!APP.history.length;$('btn_redo').disabled=!APP.future.length;}
 
-function laneGeometry(model=currentModel()){
+function laneGeometry(model=currentModel(),{includeNotesBlock=true}={}){
   if(!model)return {lanes:[],width:0,canvasHeight:0,bodyTop:0,laneTop:0};
   const laneTop=STANDARD.titleHeight+STANDARD.purposeHeight;
   const bodyTop=laneTop+STANDARD.laneHeaderHeight;
@@ -559,10 +559,27 @@ function laneGeometry(model=currentModel()){
     return g;
   });
   const noteMap=buildNoteNumberMap(model,lanes);
-  const notesHeight=Math.max(68,noteMap.ordered.length*20+46);
-  const width=x+STANDARD.canvasMargin;
-  const canvasHeight=bodyTop+model.layout.body_height+notesHeight+STANDARD.canvasMargin;
-  return {lanes,width,canvasHeight,bodyTop,laneTop,noteMap};
+const notesHeight=includeNotesBlock
+  ?Math.max(68,noteMap.ordered.length*20+46)
+  :0;
+
+const width=x+STANDARD.canvasMargin;
+const canvasHeight=
+  bodyTop+
+  model.layout.body_height+
+  notesHeight+
+  STANDARD.canvasMargin;
+
+return {
+  lanes,
+  width,
+  canvasHeight,
+  bodyTop,
+  laneTop,
+  noteMap,
+  notesHeight,
+  includeNotesBlock
+};
 }
 
 function laneById(id,model=currentModel()){return model?.lanes?.find(l=>l.id===id)||null;}
@@ -627,13 +644,31 @@ function duplicateSelectedNode(){
 }
 
 function deleteSelection(){
-  const model=currentModel();if(!model||!APP.selection)return;
-  if(APP.selection.type==='lane'){const lane=laneById(APP.selection.id,model);if(lane?.kind==='actor')deleteActorLane(lane.id);return;}
+  const model=currentModel();
+  if(!model||!APP.selection)return;
+
+  if(APP.selection.type==='lane'){
+    const lane=laneById(APP.selection.id,model);
+    if(lane?.kind==='actor')deleteActorLane(lane.id);
+    return;
+  }
+
   pushHistory();
+
   if(APP.selection.type==='node'){
-    const id=APP.selection.id;model.nodes=model.nodes.filter(n=>n.id!==id);model.edges=model.edges.filter(e=>e.source!==id&&e.target!==id);model.notes=model.notes.filter(n=>n.node_id!==id);
-  }else if(APP.selection.type==='edge'){model.edges=model.edges.filter(e=>e.id!==APP.selection.id);}
-  APP.selection=null;markDirty();renderStudio();
+    const id=APP.selection.id;
+    model.nodes=model.nodes.filter(n=>n.id!==id);
+    model.edges=model.edges.filter(e=>e.source!==id&&e.target!==id);
+    model.notes=model.notes.filter(n=>n.node_id!==id);
+  }else if(APP.selection.type==='edge'){
+    model.edges=model.edges.filter(e=>e.id!==APP.selection.id);
+  }
+
+  renumberConnectors(model);
+
+  APP.selection=null;
+  markDirty();
+  renderStudio();
 }
 
 function validateEdgeRelation(source,target,model=currentModel()){
@@ -743,12 +778,64 @@ function connectorKindForEdge(edge,model=currentModel()){
 function roman(n){const vals=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];let out='';for(const [v,s] of vals){while(n>=v){out+=s;n-=v;}}return out;}
 function connectorLabel(kind,seq){if(kind==='input')return String.fromCharCode(64+seq);if(kind==='output')return roman(seq+1);return String(seq);}
 
-function convertSelectedEdgeToConnector(){
-  const model=currentModel();if(!model||APP.selection?.type!=='edge')return;const edge=edgeById(APP.selection.id,model);if(!edge||edge.mode==='connector')return;
-  const kind=connectorKindForEdge(edge,model);if(!kind){gMsg('warn','Esta relación no admite conector metodológico.');return;}
-  pushHistory();const key=`connector_${kind}`;model.counters[key]=(model.counters[key]||0)+1;edge.mode='connector';edge.connector_kind=kind;edge.connector_sequence=model.counters[key];edge.connector_label=connectorLabel(kind,edge.connector_sequence);edge.connector_points=null;edge.connector_routes={source:[],target:[]};edge.waypoints=[];markDirty();renderStudio();
+function renumberConnectors(model=currentModel()){
+  if(!model)return;
+
+  model.counters=model.counters||{
+    edge:0,
+    connector_input:0,
+    connector_internal:0,
+    connector_output:0
+  };
+
+  ['input','internal','output'].forEach(kind=>{
+    const edges=(model.edges||[])
+      .filter(edge=>edge.mode==='connector'&&edge.connector_kind===kind)
+      .sort((a,b)=>
+        (Number(a.order)||0)-(Number(b.order)||0) ||
+        String(a.id||'').localeCompare(String(b.id||''))
+      );
+
+    edges.forEach((edge,index)=>{
+      const sequence=index+1;
+      edge.connector_sequence=sequence;
+      edge.connector_label=connectorLabel(kind,sequence);
+    });
+
+    model.counters[`connector_${kind}`]=edges.length;
+  });
 }
-function revertSelectedConnector(){const model=currentModel();if(!model||APP.selection?.type!=='edge')return;const edge=edgeById(APP.selection.id,model);if(!edge||edge.mode!=='connector')return;pushHistory();edge.mode='line';edge.connector_kind=null;edge.connector_label=null;edge.connector_sequence=null;edge.connector_points=null;edge.connector_routes=null;markDirty();renderStudio();}
+
+function convertSelectedEdgeToConnector(){
+  const model=currentModel();
+  if(!model||APP.selection?.type!=='edge')return;
+
+  const edge=edgeById(APP.selection.id,model);
+  if(!edge||edge.mode==='connector')return;
+
+  const kind=connectorKindForEdge(edge,model);
+  if(!kind){
+    gMsg('warn','Esta relación no admite conector metodológico.');
+    return;
+  }
+
+  pushHistory();
+
+  edge.mode='connector';
+  edge.connector_kind=kind;
+  edge.connector_sequence=null;
+  edge.connector_label=null;
+  edge.connector_points=null;
+  edge.connector_routes={source:[],target:[]};
+  edge.waypoints=[];
+
+  renumberConnectors(model);
+
+  markDirty();
+  renderStudio();
+}
+  
+function revertSelectedConnector(){   const model=currentModel();   if(!model||APP.selection?.type!=='edge')return;    const edge=edgeById(APP.selection.id,model);   if(!edge||edge.mode!=='connector')return;    pushHistory();    edge.mode='line';   edge.connector_kind=null;   edge.connector_label=null;   edge.connector_sequence=null;   edge.connector_points=null;   edge.connector_routes=null;    renumberConnectors(model);    markDirty();   renderStudio(); }
 
 function buildNoteNumberMap(model=currentModel(),geometryLanes=null){
   if(!model)return {map:new Map(),ordered:[]};
@@ -794,7 +881,24 @@ function renderNodeShape(node,b,selected){
 }
 
 function renderNodeText(node,b,noteMap){
-  const fit=fitText(nodeLogicalLines(node,noteMap),b.w,b.h,node.type==='decision'?9.5:10.5);const total=(fit.lines.length-1)*fit.lineHeight;const startY=b.y+b.h/2-total/2;
+  const isDecision=node.type==='decision';
+
+  // El rombo conserva siempre sus dimensiones.
+  // Solo se reduce el área disponible para el texto,
+  // obligando a fitText() a reducir fuente y ajustar líneas.
+  const textWidth=isDecision?b.w*.62:b.w;
+  const textHeight=isDecision?b.h*.34:b.h;
+
+  const fit=fitText(
+    nodeLogicalLines(node,noteMap),
+    textWidth,
+    textHeight,
+    isDecision?9.5:10.5
+  );
+
+  const total=(fit.lines.length-1)*fit.lineHeight;
+  const startY=b.y+b.h/2-total/2;
+
   return `<text x="${b.x+b.w/2}" y="${startY}" text-anchor="middle" dominant-baseline="middle" font-family="Segoe UI,Arial,sans-serif" font-size="${fit.fontSize}" fill="#000">${fit.lines.map((line,i)=>`<tspan x="${b.x+b.w/2}" dy="${i===0?0:fit.lineHeight}">${escapeXml(line)}</tspan>`).join('')}</text>`;
 }
 
@@ -1094,9 +1198,14 @@ function renderRouteHandles(edge,points,branch=''){
   return html;
 }
 
-function renderSvg(model=currentModel(),{interactive=true,fast=false}={}){
-  if(!model)return '';
-  const g=laneGeometry(model),noteMap=g.noteMap,crossing=fast?(APP.validation.crossingEdges||new Set()):crossingEdgeIds(model,g);if(!fast)APP.validation.crossingEdges=crossing;
+function renderSvg(model=currentModel(),{interactive=true,fast=false,includeNotesBlock=true}={}){
+const g=laneGeometry(model,{includeNotesBlock}),
+      noteMap=g.noteMap,
+      crossing=fast
+        ?(APP.validation.crossingEdges||new Set())
+        :crossingEdgeIds(model,g);
+
+if(!fast)APP.validation.crossingEdges=crossing;
   let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.canvasHeight}" width="${g.width}" height="${g.canvasHeight}" role="img" aria-label="Diagrama SIPOC" font-family="Segoe UI,Arial,sans-serif" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#000"/></marker><marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#D92D20"/></marker></defs>`;
   svg+=`<rect x="${STANDARD.canvasMargin}" y="0" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.titleHeight}" fill="#fff" stroke="#000" stroke-width="1"/><rect x="${STANDARD.canvasMargin}" y="${STANDARD.titleHeight}" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.purposeHeight}" fill="#fff" stroke="#000" stroke-width="1"/>`;
   const title=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' ')||'NOMBRE DEL PROCESO PENDIENTE';
@@ -1115,8 +1224,15 @@ function renderSvg(model=currentModel(),{interactive=true,fast=false}={}){
   if(interactive)svg+=renderConnectPorts(model,g);
   if(interactive)svg+=renderFlowResizeHandle(model,g);
 
-  const notesY=g.bodyTop+model.layout.body_height+24;svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY}" font-size="11" font-weight="800" pointer-events="none">NOTAS ACLARATORIAS</text>`;
-  noteMap.ordered.forEach((note,i)=>{svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY+21+i*20}" font-size="11" pointer-events="none"><tspan font-weight="800">${escapeXml(noteMap.map.get(note.id))} </tspan><tspan>${escapeXml(upper(note.text))}</tspan></text>`;});
+if(includeNotesBlock){
+  const notesY=g.bodyTop+model.layout.body_height+24;
+
+  svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY}" font-size="11" font-weight="800" pointer-events="none">NOTAS ACLARATORIAS</text>`;
+
+  noteMap.ordered.forEach((note,i)=>{
+    svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY+21+i*20}" font-size="11" pointer-events="none"><tspan font-weight="800">${escapeXml(noteMap.map.get(note.id))} </tspan><tspan>${escapeXml(upper(note.text))}</tspan></text>`;
+  });
+}
   svg+='</svg>';return svg;
 }
 
@@ -1516,20 +1632,102 @@ function buildSBToLMP(flow){return{contract_code:'SB_TO_LMP',contract_version:'1
 function downloadText(content,filename,mime='application/json'){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function exportLmp(flowId=APP.exportFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('export_dialog').close();}
 
-function svgForFlow(flow){const oldActive=APP.activeFlowId,oldSelection=APP.selection;APP.activeFlowId=flow.flow_id;APP.selection=null;const svg=renderSvg(flow.payload.model,{interactive:false});APP.activeFlowId=oldActive;APP.selection=oldSelection;return svg;}
+function svgForFlow(flow,{includeNotesBlock=true}={}){   const oldActive=APP.activeFlowId,         oldSelection=APP.selection;    APP.activeFlowId=flow.flow_id;   APP.selection=null;    const svg=renderSvg(     flow.payload.model,     {       interactive:false,       includeNotesBlock     }   );    APP.activeFlowId=oldActive;   APP.selection=oldSelection;    return svg; }
 function clearPdfPreview(){
   if(APP.pdfPreview.url){URL.revokeObjectURL(APP.pdfPreview.url);APP.pdfPreview.url=null;}APP.pdfPreview.filename=null;const frame=$('pdf_preview_frame'),status=$('pdf_preview_status'),button=$('btn_download_pdf');if(frame){frame.src='about:blank';frame.classList.add('hidden');}if(status){status.classList.remove('hidden');status.textContent='Generando vista previa…';}if(button)button.disabled=true;
 }
-async function buildPdfBlob(flow){
-  const jsPDF=window.jspdf?.jsPDF;if(!jsPDF||typeof jsPDF.API?.svg!=='function')throw new Error('No se cargaron las librerías de PDF. Verifica la conexión y recarga la página.');
-  const svgString=svgForFlow(flow),parser=new DOMParser(),docSvg=parser.parseFromString(svgString,'image/svg+xml').documentElement,model=flow.payload.model,geometry=(()=>{const old=APP.activeFlowId;APP.activeFlowId=flow.flow_id;const g=laneGeometry(model);APP.activeFlowId=old;return g;})();
-  const width=Math.max(1,Math.ceil(geometry.width)),height=Math.max(1,Math.ceil(geometry.canvasHeight)),topMargin=STANDARD.pdfTopMargin,pageHeight=height+topMargin,pdf=new jsPDF({orientation:width>=pageHeight?'landscape':'portrait',unit:'pt',format:[width,pageHeight],compress:true,putOnlyUsedFonts:true});
-  await pdf.svg(docSvg,{x:0,y:topMargin,width,height});return pdf.output('blob');
+async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
+  const jsPDF=window.jspdf?.jsPDF;
+
+  if(!jsPDF||typeof jsPDF.API?.svg!=='function'){
+    throw new Error(
+      'No se cargaron las librerías de PDF. Verifica la conexión y recarga la página.'
+    );
+  }
+
+  const svgString=svgForFlow(flow,{includeNotesBlock}),
+        parser=new DOMParser(),
+        docSvg=parser
+          .parseFromString(svgString,'image/svg+xml')
+          .documentElement,
+        model=flow.payload.model,
+        geometry=(()=>{
+          const old=APP.activeFlowId;
+          APP.activeFlowId=flow.flow_id;
+
+          const g=laneGeometry(model,{includeNotesBlock});
+
+          APP.activeFlowId=old;
+          return g;
+        })();
+
+  const width=Math.max(1,Math.ceil(geometry.width)),
+        height=Math.max(1,Math.ceil(geometry.canvasHeight)),
+        topMargin=STANDARD.pdfTopMargin,
+        pageHeight=height+topMargin,
+        pdf=new jsPDF({
+          orientation:width>=pageHeight?'landscape':'portrait',
+          unit:'pt',
+          format:[width,pageHeight],
+          compress:true,
+          putOnlyUsedFonts:true
+        });
+
+  await pdf.svg(docSvg,{
+    x:0,
+    y:topMargin,
+    width,
+    height
+  });
+
+  return pdf.output('blob');
 }
-async function exportPdf(flowId=APP.exportFlowId){
-  const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}
-  $('export_dialog').close();clearPdfPreview();const dialog=$('pdf_preview_dialog'),status=$('pdf_preview_status'),frame=$('pdf_preview_frame'),button=$('btn_download_pdf');dialog.showModal();
-  try{const blob=await buildPdfBlob(flow),url=URL.createObjectURL(blob),filename=`SIPOC_${(APP.master?.process_code||APP.master?.process_name||flow.version_name||'PROCESO').replace(/[^A-Z0-9_-]+/gi,'_')}_${flow.version_number}.pdf`;APP.pdfPreview.url=url;APP.pdfPreview.filename=filename;frame.src=url;frame.classList.remove('hidden');status.classList.add('hidden');button.disabled=false;}catch(error){status.classList.remove('hidden');status.textContent=`No fue posible generar el PDF: ${error.message}`;gMsg('err',status.textContent);}
+async function exportPdf(flowId=APP.exportFlowId,includeNotesBlock=true){
+  const flow=flowById(flowId);
+  if(!flow)return;
+
+  const issues=collectValidation(flow);
+
+  if(issues.length){
+    $('export_dialog').close();
+    showValidation(flowId);
+    return;
+  }
+
+  $('export_dialog').close();
+  clearPdfPreview();
+
+  const dialog=$('pdf_preview_dialog'),
+        status=$('pdf_preview_status'),
+        frame=$('pdf_preview_frame'),
+        button=$('btn_download_pdf');
+
+  dialog.showModal();
+
+  try{
+    const blob=await buildPdfBlob(flow,{includeNotesBlock}),
+          url=URL.createObjectURL(blob),
+          suffix=includeNotesBlock?'CON_NOTAS':'SIN_BLOQUE_NOTAS',
+          filename=
+            `SIPOC_${(
+              APP.master?.process_code||
+              APP.master?.process_name||
+              flow.version_name||
+              'PROCESO'
+            ).replace(/[^A-Z0-9_-]+/gi,'_')}_${flow.version_number}_${suffix}.pdf`;
+
+    APP.pdfPreview.url=url;
+    APP.pdfPreview.filename=filename;
+
+    frame.src=url;
+    frame.classList.remove('hidden');
+    status.classList.add('hidden');
+    button.disabled=false;
+  }catch(error){
+    status.classList.remove('hidden');
+    status.textContent=`No fue posible generar el PDF: ${error.message}`;
+    gMsg('err',status.textContent);
+  }
 }
 function downloadPdfPreview(){
   if(!APP.pdfPreview.url||!APP.pdfPreview.filename)return;const a=document.createElement('a');a.href=APP.pdfPreview.url;a.download=APP.pdfPreview.filename;document.body.appendChild(a);a.click();a.remove();
@@ -1598,7 +1796,7 @@ function normalizeLoadedModel(model){
   (model.nodes||[]).forEach(node=>{node.documents=Array.isArray(node.documents)?node.documents:[];node.note_ids=Array.isArray(node.note_ids)?node.note_ids:[];node.documents.forEach(doc=>ensureCatalogDocument(doc));});
   (model.edges||[]).forEach(edge=>{if(!Array.isArray(edge.waypoints))edge.waypoints=[];if(typeof edge.label_position!=='number')edge.label_position=.5;if(edge.mode==='connector'){edge.connector_routes=edge.connector_routes||{source:[],target:[]};if(!Array.isArray(edge.connector_routes.source))edge.connector_routes.source=[];if(!Array.isArray(edge.connector_routes.target))edge.connector_routes.target=[];if(edge.connector_points&&typeof edge.connector_points!=='object')edge.connector_points=null;}});
   (model.lanes||[]).forEach(lane=>{if(['supplier','input','output','customer'].includes(lane.kind))lane.width=STANDARD.peripheralLaneWidth;});
-  normalizeDocumentCatalog(APP.master);normalizeDecisionPorts(model);return model;
+  normalizeDocumentCatalog(APP.master); normalizeDecisionPorts(model); renumberConnectors(model); return model;
 }
 function clearWorkspace(){if(!APP.master)return;if(!confirm('Limpiar cerrará el proceso actual en SB. Guarda un respaldo si deseas conservarlo.'))return;APP.master=null;APP.activeFlowId=null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();switchView('library');gMsg('info','Workspace limpio.');}
 
@@ -1612,7 +1810,7 @@ function bindGlobalEvents(){
   $('document_catalog_content').addEventListener('click',event=>{const add=event.target.closest('#catalog_add_document');if(add){addCatalogDocument();return;}const save=event.target.closest('[data-catalog-save]');if(save){updateCatalogDocument(Number(save.dataset.catalogSave));return;}const del=event.target.closest('[data-catalog-delete]');if(del){deleteCatalogDocument(Number(del.dataset.catalogDelete));}});
   $('btn_save_flow').addEventListener('click',()=>saveActiveFlow());$('btn_duplicate_flow').addEventListener('click',()=>duplicateFlow());$('btn_export_flow').addEventListener('click',()=>openExport());$('validation_badge').addEventListener('click',()=>showValidation());
   $('btn_add_actor').addEventListener('click',addActorLane);$('btn_undo').addEventListener('click',undo);$('btn_redo').addEventListener('click',redo);$('btn_delete').addEventListener('click',deleteSelection);$('btn_zoom_out').addEventListener('click',()=>zoomBy(1/STANDARD.zoomStep));$('btn_zoom_in').addEventListener('click',()=>zoomBy(STANDARD.zoomStep));
-  $('btn_export_pdf').addEventListener('click',()=>exportPdf());$('btn_export_lmp').addEventListener('click',()=>exportLmp());$('btn_download_pdf').addEventListener('click',downloadPdfPreview);$('pdf_preview_dialog').addEventListener('close',clearPdfPreview);
+  $('btn_export_pdf_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,true) );  $('btn_export_pdf_no_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,false) );  $('btn_export_lmp').addEventListener(   'click',   ()=>exportLmp() );  $('btn_download_pdf').addEventListener(   'click',   downloadPdfPreview );  $('pdf_preview_dialog').addEventListener(   'close',   clearPdfPreview );
   document.querySelectorAll('[data-dialog-close]').forEach(btn=>btn.addEventListener('click',()=>$(btn.dataset.dialogClose)?.close()));
   window.addEventListener('resize',()=>{if(APP.view==='studio'&&currentModel())applyCamera();});
   document.addEventListener('keydown',event=>{
