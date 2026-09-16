@@ -8356,43 +8356,122 @@ async function adminConfirmReopenProcess(procesoId){
   }
 }
 
+async function adminDeactivateProcess(
+  procesoId
+){
+  if(!isAdmin()) return;
 
-async function adminDeactivateProcess(procesoId){
-  const p = processById(procesoId);
+  const p =
+    processById(
+      procesoId
+    );
 
-  if(!p) return;
+  if(!p){
+    return toast(
+      "Proceso no encontrado."
+    );
+  }
+
+  if(!isActiveRow(p)){
+    return toast(
+      "El proceso ya está inactivo."
+    );
+  }
 
   const confirmation =
     await radarDialog({
-      title:"Inactivar proceso",
-      text:`El proceso ${processDisplayName(p)} dejará de aparecer en las vistas operativas. No se eliminará su información.`,
-      comment:false,
-      confirmLabel:"Inactivar proceso"
+      title:
+        "Inactivar proceso",
+
+      text:
+        `El proceso ${processDisplayName(p)} dejará de aparecer en las vistas operativas. ` +
+        "Su ID, hitos, actividades, avance e historial se conservarán. " +
+        "El código empresarial pasará automáticamente a N/A.",
+
+      comment:
+        true,
+
+      confirmLabel:
+        "Inactivar proceso"
     });
 
-  if(!confirmation) return;
+  if(!confirmation){
+    return;
+  }
 
   showSyncLoading(
     "Inactivando proceso..."
   );
 
   try{
-    await api(
-      "deactivate_process",
-      {
-        proceso_id:
-          procesoId
-      }
-    );
+    const result =
+      await api(
+        "deactivate_process",
+        {
+          proceso_id:
+            procesoId,
+
+          comentario:
+            String(
+              confirmation
+                .comentario || ""
+            ).trim()
+        }
+      );
+
+    if(
+      !result?.updated ||
+      String(
+        result.activo || ""
+      )
+        .trim()
+        .toUpperCase() !==
+        "NO" ||
+      String(
+        result.codigo_proceso || ""
+      )
+        .trim()
+        .toUpperCase() !==
+        "N/A"
+    ){
+      throw new Error(
+        "El backend no confirmó correctamente la inactivación."
+      );
+    }
+
+    const fresh =
+      await api(
+        "bootstrap"
+      );
 
     applyBootstrapData(
-      await api("bootstrap")
+      fresh
     );
+
+    const persisted =
+      processById(
+        procesoId
+      );
+
+    if(
+      !persisted ||
+      isActiveRow(persisted) ||
+      String(
+        persisted.codigo_proceso || ""
+      )
+        .trim()
+        .toUpperCase() !==
+        "N/A"
+    ){
+      throw new Error(
+        "RADAR no pudo verificar la inactivación después de recargar."
+      );
+    }
 
     renderAdminWorkspace();
 
     toast(
-      "Proceso inactivado."
+      "Proceso inactivado. La trazabilidad se conservó."
     );
 
   }catch(error){
