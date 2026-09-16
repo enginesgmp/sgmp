@@ -501,17 +501,28 @@ function saveActiveFlow({silent=false}={}){
 
 function markDirty(){APP.dirty=true;const flow=activeFlow();if(flow)flow.updated_at=nowIso();renderStudioContext();}
 
-function captureHistoryState(){
-  const flow=activeFlow(),model=currentModel();
+function captureHistoryState(options={}){
+  const flow=activeFlow(),
+        model=currentModel();
+
   if(!flow||!model||!APP.master)return null;
+
   return {
     model:clone(model),
+
+    all_flows:
+      options.includeAllFlows
+        ? clone(APP.master.flows)
+        : null,
+
     process:{
       process_code:APP.master.process_code||'',
       process_name:APP.master.process_name||'',
       purpose:APP.master.purpose||'',
-      document_catalog:clone(normalizeDocumentCatalog(APP.master))
+      document_catalog:
+        clone(normalizeDocumentCatalog(APP.master))
     },
+
     flow:{
       version_name:flow.version_name||'',
       version_type:flow.version_type||'as_is',
@@ -519,67 +530,206 @@ function captureHistoryState(){
     }
   };
 }
+
 function restoreHistoryState(state){
+  if(!state||!APP.master)return false;
+
+  if(Array.isArray(state.all_flows)){
+    APP.master.flows=clone(state.all_flows);
+  }
+
   const flow=activeFlow();
-  if(!state||!flow||!APP.master)return false;
-  flow.payload.model=clone(state.model);
-  APP.master.process_code=state.process?.process_code||'';
-  APP.master.process_name=state.process?.process_name||'';
-  APP.master.purpose=state.process?.purpose||'';
-  APP.master.document_catalog=Array.isArray(state.process?.document_catalog)?clone(state.process.document_catalog):[];
-  flow.version_name=state.flow?.version_name||flow.version_name;
-  flow.version_type=state.flow?.version_type||flow.version_type;
-  flow.status=state.flow?.status||flow.status;
+  if(!flow)return false;
+
+  if(!Array.isArray(state.all_flows)){
+    flow.payload.model=clone(state.model);
+  }
+
+  APP.master.process_code=
+    state.process?.process_code||'';
+
+  APP.master.process_name=
+    state.process?.process_name||'';
+
+  APP.master.purpose=
+    state.process?.purpose||'';
+
+  APP.master.document_catalog=
+    Array.isArray(state.process?.document_catalog)
+      ? clone(state.process.document_catalog)
+      : [];
+
+  flow.version_name=
+    state.flow?.version_name||
+    flow.version_name;
+
+  flow.version_type=
+    state.flow?.version_type||
+    flow.version_type;
+
+  flow.status=
+    state.flow?.status||
+    flow.status;
+
   return true;
 }
-function pushHistory(){
-  const state=captureHistoryState();if(!state)return;
-  APP.history.push(state);if(APP.history.length>60)APP.history.shift();APP.future=[];updateHistoryButtons();
+
+function pushHistory(options={}){
+  const state=captureHistoryState(options);
+  if(!state)return;
+
+  APP.history.push(state);
+
+  if(APP.history.length>60){
+    APP.history.shift();
+  }
+
+  APP.future=[];
+  updateHistoryButtons();
 }
+
 function undo(){
   if(!activeFlow()||!APP.history.length)return;
-  const current=captureHistoryState();if(current)APP.future.push(current);
-  restoreHistoryState(APP.history.pop());APP.selection=null;markDirty();renderLibrary();renderStudio();updateHistoryButtons();
+
+  const previous=APP.history.pop();
+
+  const current=captureHistoryState({
+    includeAllFlows:
+      Array.isArray(previous?.all_flows)
+  });
+
+  if(current){
+    APP.future.push(current);
+  }
+
+  restoreHistoryState(previous);
+
+  APP.selection=null;
+  markDirty();
+  renderLibrary();
+  renderStudio();
+  updateHistoryButtons();
 }
+
 function redo(){
   if(!activeFlow()||!APP.future.length)return;
-  const current=captureHistoryState();if(current)APP.history.push(current);
-  restoreHistoryState(APP.future.pop());APP.selection=null;markDirty();renderLibrary();renderStudio();updateHistoryButtons();
+
+  const next=APP.future.pop();
+
+  const current=captureHistoryState({
+    includeAllFlows:
+      Array.isArray(next?.all_flows)
+  });
+
+  if(current){
+    APP.history.push(current);
+  }
+
+  restoreHistoryState(next);
+
+  APP.selection=null;
+  markDirty();
+  renderLibrary();
+  renderStudio();
+  updateHistoryButtons();
 }
 function updateHistoryButtons(){$('btn_undo').disabled=!APP.history.length;$('btn_redo').disabled=!APP.future.length;}
 
-function laneGeometry(model=currentModel(),{includeNotesBlock=true}={}){
-  if(!model)return {lanes:[],width:0,canvasHeight:0,bodyTop:0,laneTop:0};
-  const laneTop=STANDARD.titleHeight+STANDARD.purposeHeight;
-  const bodyTop=laneTop+STANDARD.laneHeaderHeight;
-  let x=STANDARD.canvasMargin;
-  const lanes=model.lanes.map((lane,index)=>{
-    const g={...lane,index,x,y:laneTop,width:Number(lane.width)||STANDARD.actorLaneWidth,height:STANDARD.laneHeaderHeight+model.layout.body_height,bodyTop};
-    x+=g.width;
-    return g;
-  });
-  const noteMap=buildNoteNumberMap(model,lanes);
-const notesHeight=includeNotesBlock
-  ?Math.max(68,noteMap.ordered.length*20+46)
-  :0;
+function laneGeometry(
+  model=currentModel(),
+  {includeNotesBlock=true}={}
+){
+  if(!model){
+    return {
+      lanes:[],
+      width:0,
+      canvasHeight:0,
+      bodyTop:0,
+      laneTop:0
+    };
+  }
 
-const width=x+STANDARD.canvasMargin;
-const canvasHeight=
-  bodyTop+
-  model.layout.body_height+
-  notesHeight+
-  STANDARD.canvasMargin;
+  const laneTop=
+    STANDARD.titleHeight+
+    STANDARD.purposeHeight;
 
-return {
-  lanes,
-  width,
-  canvasHeight,
-  bodyTop,
-  laneTop,
-  noteMap,
-  notesHeight,
-  includeNotesBlock
-};
+  const bodyTop=
+    laneTop+
+    STANDARD.laneHeaderHeight;
+
+  let x=
+    STANDARD.canvasMargin;
+
+  const lanes=
+    model.lanes.map(
+      (lane,index)=>{
+
+        const g={
+          ...lane,
+          index,
+          x,
+          y:laneTop,
+          width:
+            Number(lane.width)||
+            STANDARD.actorLaneWidth,
+          height:
+            STANDARD.laneHeaderHeight+
+            model.layout.body_height,
+          bodyTop
+        };
+
+        x+=g.width;
+
+        return g;
+      });
+
+  /*
+   * Este ancho depende exclusivamente
+   * de los carriles del SIPOC.
+   */
+  const width=
+    x+
+    STANDARD.canvasMargin;
+
+  const noteMap=
+    buildNoteNumberMap(
+      model,
+      lanes
+    );
+
+  const notesLayout=
+    includeNotesBlock
+      ? buildNotesBlockLayout(
+          noteMap,
+          width
+        )
+      : {
+          items:[],
+          height:0
+        };
+
+  const notesHeight=
+    includeNotesBlock
+      ? notesLayout.height
+      : 0;
+
+  const canvasHeight=
+    bodyTop+
+    model.layout.body_height+
+    notesHeight+
+    STANDARD.canvasMargin;
+
+  return {
+    lanes,
+    width,
+    canvasHeight,
+    bodyTop,
+    laneTop,
+    noteMap,
+    notesLayout,
+    notesHeight,
+    includeNotesBlock
+  };
 }
 
 function laneById(id,model=currentModel()){return model?.lanes?.find(l=>l.id===id)||null;}
@@ -845,6 +995,138 @@ function buildNoteNumberMap(model=currentModel(),geometryLanes=null){
   const ordered=(model.notes||[]).slice().sort((a,b)=>{const pa=nodeOrder.get(a.node_id)||{y:999999,x:999999},pb=nodeOrder.get(b.node_id)||{y:999999,x:999999};return pa.y-pb.y||pa.x-pb.x||String(a.created_at||'').localeCompare(String(b.created_at||''));});
   const map=new Map();ordered.forEach((note,i)=>map.set(note.id,`5.${i+2}`));return {map,ordered};
 }
+
+function wrapPdfNoteText(value,maxChars){
+  const chunks=[];
+
+  String(value||'')
+    .split(/\s+/)
+    .filter(Boolean)
+    .forEach(word=>{
+
+      if(word.length<=maxChars){
+        chunks.push(word);
+        return;
+      }
+
+      /*
+       * También parte palabras extremadamente
+       * largas para impedir desbordamiento.
+       */
+      for(
+        let i=0;
+        i<word.length;
+        i+=maxChars
+      ){
+        chunks.push(
+          word.slice(
+            i,
+            i+maxChars
+          )
+        );
+      }
+    });
+
+  if(!chunks.length){
+    return [''];
+  }
+
+  const lines=[];
+  let current='';
+
+  chunks.forEach(chunk=>{
+    if(!current){
+      current=chunk;
+      return;
+    }
+
+    if(
+      (current+' '+chunk).length
+      <=maxChars
+    ){
+      current+=' '+chunk;
+    }else{
+      lines.push(current);
+      current=chunk;
+    }
+  });
+
+  if(current){
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function buildNotesBlockLayout(noteMap,width){
+  const fontSize=11,
+        lineHeight=15,
+        noteGap=5,
+        headerY=24,
+        firstLineY=45;
+
+  /*
+   * El ancho máximo siempre depende
+   * del ancho YA EXISTENTE del SIPOC.
+   * Las notas nunca lo amplían.
+   */
+  const availableWidth=
+    Math.max(
+      120,
+      width-
+      STANDARD.canvasMargin*2-
+      34
+    );
+
+  const maxChars=
+    Math.max(
+      18,
+      Math.floor(
+        availableWidth/
+        (fontSize*.58)
+      )
+    );
+
+  let cursorY=firstLineY;
+
+  const items=
+    (noteMap?.ordered||[])
+      .map(note=>{
+
+        const lines=
+          wrapPdfNoteText(
+            upper(note.text),
+            maxChars
+          );
+
+        const item={
+          note,
+          number:
+            noteMap.map.get(note.id)||'',
+          lines,
+          y:cursorY
+        };
+
+        cursorY+=
+          lines.length*lineHeight+
+          noteGap;
+
+        return item;
+      });
+
+  return {
+    items,
+    fontSize,
+    lineHeight,
+    noteGap,
+    headerY,
+    height:
+      Math.max(
+        68,
+        cursorY+8
+      )
+  };
+}  
 
 function nodeLogicalLines(node,noteMap){
   const lines=[];if(text(node.label))lines.push(upper(node.label));
@@ -1225,12 +1507,67 @@ if(!fast)APP.validation.crossingEdges=crossing;
   if(interactive)svg+=renderFlowResizeHandle(model,g);
 
 if(includeNotesBlock){
-  const notesY=g.bodyTop+model.layout.body_height+24;
+  const notesBaseY=
+    g.bodyTop+
+    model.layout.body_height;
 
-  svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY}" font-size="11" font-weight="800" pointer-events="none">NOTAS ACLARATORIAS</text>`;
+  const layout=
+    g.notesLayout||
+    buildNotesBlockLayout(
+      noteMap,
+      g.width
+    );
 
-  noteMap.ordered.forEach((note,i)=>{
-    svg+=`<text x="${STANDARD.canvasMargin}" y="${notesY+21+i*20}" font-size="11" pointer-events="none"><tspan font-weight="800">${escapeXml(noteMap.map.get(note.id))} </tspan><tspan>${escapeXml(upper(note.text))}</tspan></text>`;
+  svg+=
+    `<text `+
+    `x="${STANDARD.canvasMargin}" `+
+    `y="${notesBaseY+layout.headerY}" `+
+    `font-size="11" `+
+    `font-weight="800" `+
+    `pointer-events="none">`+
+    `NOTAS ACLARATORIAS`+
+    `</text>`;
+
+  layout.items.forEach(item=>{
+
+    item.lines.forEach(
+      (line,lineIndex)=>{
+
+        const y=
+          notesBaseY+
+          item.y+
+          lineIndex*
+          layout.lineHeight;
+
+        if(lineIndex===0){
+
+          svg+=
+            `<text `+
+            `x="${STANDARD.canvasMargin}" `+
+            `y="${y}" `+
+            `font-size="${layout.fontSize}" `+
+            `pointer-events="none">`+
+            `<tspan font-weight="800">`+
+            `${escapeXml(item.number)} `+
+            `</tspan>`+
+            `<tspan>`+
+            `${escapeXml(line)}`+
+            `</tspan>`+
+            `</text>`;
+
+        }else{
+
+          svg+=
+            `<text `+
+            `x="${STANDARD.canvasMargin+28}" `+
+            `y="${y}" `+
+            `font-size="${layout.fontSize}" `+
+            `pointer-events="none">`+
+            `${escapeXml(line)}`+
+            `</text>`;
+        }
+      }
+    );
   });
 }
   svg+='</svg>';return svg;
@@ -1293,6 +1630,92 @@ function documentTextValue(value){
   return upper(value||'');
 }
 function documentKey(value){return documentTextValue(value).replace(/\s+/g,' ').trim();}
+
+  function processDocumentUsages(value,master=APP.master){
+  const key=documentKey(value);
+
+  if(!master||!key)return [];
+
+  const usages=[];
+
+  (master.flows||[]).forEach(flow=>{
+    const model=flow?.payload?.model;
+
+    (model?.nodes||[]).forEach(node=>{
+      (node.documents||[]).forEach((doc,index)=>{
+        if(documentKey(doc)===key){
+          usages.push({
+            flow,
+            node,
+            index
+          });
+        }
+      });
+    });
+  });
+
+  return usages;
+}
+
+function renameDocumentAcrossProcess(
+  previous,
+  next,
+  master=APP.master
+){
+  const previousKey=documentKey(previous),
+        clean=documentTextValue(next);
+
+  if(!master||!previousKey||!clean)return 0;
+
+  let changed=0;
+
+  (master.flows||[]).forEach(flow=>{
+    let flowChanged=false;
+
+    const model=flow?.payload?.model;
+
+    (model?.nodes||[]).forEach(node=>{
+      const seen=new Set();
+      const normalized=[];
+
+      (node.documents||[]).forEach(doc=>{
+        let item=doc;
+
+        if(documentKey(doc)===previousKey){
+          const base=
+            doc&&typeof doc==='object'
+              ? doc
+              : {id:uid('DOC')};
+
+          item={
+            ...base,
+            name:clean,
+            code:''
+          };
+
+          changed++;
+          flowChanged=true;
+        }
+
+        const key=documentKey(item);
+
+        if(key&&!seen.has(key)){
+          seen.add(key);
+          normalized.push(item);
+        }
+      });
+
+      node.documents=normalized;
+    });
+
+    if(flowChanged){
+      flow.updated_at=nowIso();
+    }
+  });
+
+  return changed;
+}
+  
 function normalizeDocumentCatalog(master=APP.master){
   if(!master)return[];const seen=new Set(),out=[];
   (Array.isArray(master.document_catalog)?master.document_catalog:[]).forEach(item=>{const value=documentTextValue(item),key=documentKey(value);if(value&&!seen.has(key)){seen.add(key);out.push(value);}});
@@ -1312,12 +1735,126 @@ function renderDocumentCatalog(){
 function addCatalogDocument(){
   const input=$('catalog_new_document'),value=documentTextValue(input?.value||'');if(!APP.master||!value){gMsg('warn','Escribe código y nombre del documento.');return;}pushHistory();ensureCatalogDocument(value);if(activeFlow())markDirty();else APP.master.updated_at=nowIso();renderLibrary();if(activeFlow())renderStudio(false);
 }
+  
 function updateCatalogDocument(index){
-  const model=currentModel(),docs=normalizeDocumentCatalog(APP.master),input=document.querySelector(`[data-catalog-input="${index}"]`),value=documentTextValue(input?.value||'');if(!APP.master||!docs[index]||!value){gMsg('warn','El documento no puede quedar vacío.');return;}const previous=docs[index];pushHistory();docs[index]=value;APP.master.document_catalog=docs.filter((item,i,array)=>array.findIndex(other=>documentKey(other)===documentKey(item))===i);if(model)(model.nodes||[]).forEach(node=>{(node.documents||[]).forEach(doc=>{if(documentKey(doc)===documentKey(previous)){doc.name=value;doc.code='';}});});APP.master.updated_at=nowIso();if(activeFlow())markDirty();renderLibrary();if(activeFlow())renderStudio(false);
+  const docs=normalizeDocumentCatalog(APP.master),
+        input=document.querySelector(
+          `[data-catalog-input="${index}"]`
+        ),
+        value=documentTextValue(input?.value||'');
+
+  if(!APP.master||!docs[index]||!value){
+    gMsg(
+      'warn',
+      'El documento no puede quedar vacío.'
+    );
+    return;
+  }
+
+  const previous=docs[index];
+  const usages=processDocumentUsages(previous);
+
+  if(
+    documentKey(previous)!==documentKey(value) &&
+    usages.length
+  ){
+    const ok=confirm(
+      `Este documento está asociado ${usages.length} vez/veces en los flujos del proceso. `+
+      `El cambio se aplicará en todas las versiones. ¿Continuar?`
+    );
+
+    if(!ok)return;
+  }
+
+  pushHistory({
+    includeAllFlows:true
+  });
+
+  docs[index]=value;
+
+  APP.master.document_catalog=
+    docs.filter(
+      (item,i,array)=>
+        array.findIndex(
+          other=>
+            documentKey(other)===
+            documentKey(item)
+        )===i
+    );
+
+  const changed=
+    renameDocumentAcrossProcess(
+      previous,
+      value,
+      APP.master
+    );
+
+  normalizeDocumentCatalog(APP.master);
+
+  APP.master.updated_at=nowIso();
+
+  if(activeFlow()){
+    markDirty();
+  }
+
+  renderLibrary();
+
+  if(activeFlow()){
+    renderStudio(false);
+  }
+
+  gMsg(
+    'ok',
+    changed
+      ? `Documento actualizado en ${changed} asociación(es) del proceso.`
+      : 'Documento actualizado en el catálogo.'
+  );
 }
+
 function deleteCatalogDocument(index){
-  const docs=normalizeDocumentCatalog(APP.master);if(!APP.master||!docs[index])return;pushHistory();APP.master.document_catalog=docs.filter((_,i)=>i!==index);APP.master.updated_at=nowIso();if(activeFlow())markDirty();renderLibrary();if(activeFlow())renderStudio(false);
+  const docs=
+    normalizeDocumentCatalog(APP.master);
+
+  if(!APP.master||!docs[index])return;
+
+  const value=docs[index];
+  const usages=processDocumentUsages(value);
+
+  if(usages.length){
+    gMsg(
+      'warn',
+      `No se puede eliminar: el documento está asociado ${usages.length} vez/veces en los flujos del proceso. `+
+      `Quita primero esas asociaciones.`
+    );
+    return;
+  }
+
+  if(
+    !confirm(
+      `Eliminar "${value}" del catálogo del proceso?`
+    )
+  ){
+    return;
+  }
+
+  pushHistory();
+
+  APP.master.document_catalog=
+    docs.filter((_,i)=>i!==index);
+
+  APP.master.updated_at=nowIso();
+
+  if(activeFlow()){
+    markDirty();
+  }
+
+  renderLibrary();
+
+  if(activeFlow()){
+    renderStudio(false);
+  }
 }
+  
 function attachCatalogDocumentToNode(nodeId){
   const model=currentModel(),node=nodeById(nodeId,model),value=documentTextValue($('catalog_doc_select')?.value||'');if(!model||!node||!value)return;if((node.documents||[]).some(doc=>documentKey(doc)===documentKey(value))){gMsg('info','Ese documento ya está asociado a la caja.');return;}pushHistory();node.documents=node.documents||[];node.documents.push({id:uid('DOC'),name:value,code:''});ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
 }
@@ -1618,12 +2155,115 @@ function validNodeTypeForLane(kind,value){
 function noteTargetKind(node,model){
   const laneKind=laneKindForNode(node,model);if(laneKind==='actor')return node?.type==='decision'?'decision':'activity';return laneKind||'node';
 }
+
+function semanticActorNodeOrder(model){
+  if(!model)return [];
+
+  const nodes=(model.nodes||[])
+    .filter(node=>laneKindForNode(node,model)==='actor');
+
+  const nodeIds=new Set(nodes.map(node=>node.id));
+
+  const actorEdges=(model.edges||[])
+    .filter(edge=>nodeIds.has(edge.source)&&nodeIds.has(edge.target))
+    .slice()
+    .sort((a,b)=>
+      (Number(a.order)||0)-(Number(b.order)||0) ||
+      String(a.id||'').localeCompare(String(b.id||''))
+    );
+
+  const outgoing=new Map(nodes.map(node=>[node.id,[]]));
+  const incomingCount=new Map(nodes.map(node=>[node.id,0]));
+
+  actorEdges.forEach(edge=>{
+    outgoing.get(edge.source)?.push(edge);
+    incomingCount.set(
+      edge.target,
+      (incomingCount.get(edge.target)||0)+1
+    );
+  });
+
+  const priorSequence=node=>{
+    const value=Number(node?.meta?.sequence);
+    return Number.isFinite(value)&&value>0
+      ? value
+      : Number.MAX_SAFE_INTEGER;
+  };
+
+  const firstEdgeOrder=node=>{
+    const orders=(model.edges||[])
+      .filter(edge=>
+        edge.source===node.id ||
+        edge.target===node.id
+      )
+      .map(edge=>Number(edge.order))
+      .filter(Number.isFinite);
+
+    return orders.length
+      ? Math.min(...orders)
+      : Number.MAX_SAFE_INTEGER;
+  };
+
+  const compareNodes=(a,b)=>
+    priorSequence(a)-priorSequence(b) ||
+    firstEdgeOrder(a)-firstEdgeOrder(b) ||
+    String(a.id||'').localeCompare(String(b.id||''));
+
+  const roots=nodes
+    .filter(node=>(incomingCount.get(node.id)||0)===0)
+    .sort(compareNodes);
+
+  const fallback=nodes.slice().sort(compareNodes);
+
+  const ordered=[];
+  const visited=new Set();
+
+  const walk=start=>{
+    const stack=[start];
+
+    while(stack.length){
+      const node=stack.pop();
+
+      if(!node||visited.has(node.id))continue;
+
+      visited.add(node.id);
+      ordered.push(node);
+
+      const targets=(outgoing.get(node.id)||[])
+        .slice()
+        .sort((a,b)=>
+          (Number(a.order)||0)-(Number(b.order)||0) ||
+          upper(a.label).localeCompare(upper(b.label)) ||
+          String(a.target||'').localeCompare(String(b.target||''))
+        )
+        .map(edge=>nodeById(edge.target,model))
+        .filter(Boolean);
+
+      for(let i=targets.length-1;i>=0;i--){
+        if(!visited.has(targets[i].id)){
+          stack.push(targets[i]);
+        }
+      }
+    }
+  };
+
+  (roots.length ? roots : fallback.slice(0,1))
+    .forEach(walk);
+
+  fallback.forEach(walk);
+
+  return ordered;
+}
+  
 function buildSipocInput(flow){
   const model=flow.payload.model,geom=laneGeometry(model),actorLanes=model.lanes.filter(l=>l.kind==='actor');const nodesByLane=kind=>model.nodes.filter(n=>laneKindForNode(n,model)===kind);const suppliers=nodesByLane('supplier'),inputs=nodesByLane('input'),outputs=nodesByLane('output'),customers=nodesByLane('customer'),actorNodes=nodesByLane('actor');
   const supplierRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='supplier'&&laneKindForNode(nodeById(e.target,model),model)==='input').map(e=>{const supplier=nodeById(e.source,model),input=nodeById(e.target,model);return{id:e.id,supplier_id:supplier?.id||'',supplier:upper(supplier?.label),supplier_node_type:validNodeTypeForLane('supplier',supplier?.type),input_id:input?.id||'',input:upper(input?.label),input_node_type:validNodeTypeForLane('input',input?.type),input_documents:(input?.documents||[]).map(documentTextValue).filter(Boolean)};});
   const customerRows=model.edges.filter(e=>laneKindForNode(nodeById(e.source,model),model)==='output'&&laneKindForNode(nodeById(e.target,model),model)==='customer').map(e=>{const output=nodeById(e.source,model),customer=nodeById(e.target,model);return{id:e.id,output_id:output?.id||'',output:upper(output?.label),output_node_type:validNodeTypeForLane('output',output?.type),output_documents:(output?.documents||[]).map(documentTextValue).filter(Boolean),customer_id:customer?.id||'',customer:upper(customer?.label),customer_node_type:validNodeTypeForLane('customer',customer?.type)};});
-  const laneIndex=new Map(actorLanes.map((l,i)=>[l.id,i]));actorNodes.sort((a,b)=>(a.y||0)-(b.y||0)||(laneIndex.get(a.lane_id)||0)-(laneIndex.get(b.lane_id)||0));
-  const activities=actorNodes.map((node,index)=>{const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
+const orderedActorNodes=semanticActorNodeOrder(model);
+
+const activities=orderedActorNodes.map((node,index)=>{
+    
+    const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
   const noteMap=buildNoteNumberMap(model,geom.lanes);const clarifying_notes=noteMap.ordered.map(note=>{const node=nodeById(note.node_id,model),targetKind=noteTargetKind(node,model),isActivity=targetKind==='activity'||targetKind==='decision';return{id:note.id,target_id:node?.id||'',target_kind:targetKind,target_name:upper(node?.label||''),activity_id:isActivity?(node?.id||''):'',activity_name:isActivity?upper(node?.label||''):'',text:upper(note.text),number:noteMap.map.get(note.id)};});
   const docMap=new Map();normalizeDocumentCatalog(APP.master).forEach(value=>docMap.set(documentKey(value),documentTextValue(value)));model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const value=documentTextValue(d);if(value)docMap.set(documentKey(value),value);});
   return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(APP.master.purpose),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
@@ -1734,16 +2374,1018 @@ function downloadPdfPreview(){
 }
 
 function saveBackup(){if(!APP.master){gMsg('warn','No existe un proceso para respaldar.');return;}if(activeFlow())saveActiveFlow({silent:true});const backup={backup_code:'SB_MASTER_BACKUP',backup_version:'1.0',generated_at:nowIso(),active_flow_id:APP.activeFlowId,master:clone(APP.master)};downloadText(JSON.stringify(backup,null,2),`SB_MASTER_BACKUP_${(APP.master.process_code||'PROCESO').replace(/[^A-Z0-9_-]+/g,'_')}.json`);}
-function restoreBackup(raw){try{const data=typeof raw==='string'?JSON.parse(raw):raw;if(data?.backup_code!=='SB_MASTER_BACKUP'||!data.master||!Array.isArray(data.master.flows))throw new Error('El archivo no corresponde a un respaldo maestro válido.');APP.master=clone(data.master);APP.master.document_catalog=Array.isArray(APP.master.document_catalog)?APP.master.document_catalog:[];APP.master.flows.forEach(flow=>{flow.payload=flow.payload||{};flow.payload.model=normalizeLoadedModel(flow.payload.model);});normalizeDocumentCatalog(APP.master);APP.activeFlowId=data.active_flow_id&&flowById(data.active_flow_id)?data.active_flow_id:APP.master.flows[0]?.flow_id||null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();if(APP.activeFlowId)openFlow(APP.activeFlowId);else switchView('library');gMsg('ok','Respaldo maestro restaurado.');}catch(error){gMsg('err',`No fue posible restaurar el respaldo: ${error.message}`);}}
+function restoreBackup(raw){
+  try{
+    const data=
+      typeof raw==='string'
+        ? JSON.parse(raw)
+        : raw;
 
-function readFileInput(input,callback){const file=input?.files?.[0];if(!file){gMsg('warn','Selecciona un archivo JSON.');return;}const reader=new FileReader();reader.onload=()=>callback(String(reader.result||''));reader.onerror=()=>gMsg('err','No fue posible leer el archivo.');reader.readAsText(file);}
+    if(
+      data?.backup_code!=='SB_MASTER_BACKUP' ||
+      !data.master ||
+      !Array.isArray(data.master.flows)
+    ){
+      throw new Error(
+        'El archivo no corresponde a un respaldo maestro válido.'
+      );
+    }
 
+    validateMasterBackupStructure(data);
+
+    APP.master=clone(data.master);
+
+    APP.master.document_catalog=
+      Array.isArray(
+        APP.master.document_catalog
+      )
+        ? APP.master.document_catalog
+        : [];
+
+    APP.master.flows.forEach(flow=>{
+      flow.payload=flow.payload||{};
+
+      flow.payload.model=
+        normalizeLoadedModel(
+          flow.payload.model
+        );
+    });
+
+    normalizeDocumentCatalog(APP.master);
+
+    APP.activeFlowId=
+      data.active_flow_id &&
+      flowById(data.active_flow_id)
+        ? data.active_flow_id
+        : APP.master.flows[0]?.flow_id||null;
+
+    APP.selection=null;
+    APP.history=[];
+    APP.future=[];
+    APP.dirty=false;
+
+    renderLibrary();
+
+    if(APP.activeFlowId){
+      openFlow(APP.activeFlowId);
+    }else{
+      switchView('library');
+    }
+
+    gMsg(
+      'ok',
+      'Respaldo maestro restaurado.'
+    );
+
+  }catch(error){
+    gMsg(
+      'err',
+      `No fue posible restaurar el respaldo: ${error.message}`
+    );
+  }
+}
+  
+const MAX_JSON_FILE_BYTES=10*1024*1024;
+
+function assertPlainObject(value,label){
+  if(
+    !value ||
+    typeof value!=='object' ||
+    Array.isArray(value)
+  ){
+    throw new Error(
+      `${label} debe ser un objeto.`
+    );
+  }
+
+  return value;
+}
+
+function assertArrayValue(value,label){
+  if(!Array.isArray(value)){
+    throw new Error(
+      `${label} debe ser un arreglo.`
+    );
+  }
+
+  return value;
+}
+
+function validateLmpContractStructure(contract){
+  const input=
+    assertPlainObject(
+      contract?.sipoc_input,
+      'sipoc_input'
+    );
+
+  const lanes=
+    assertPlainObject(
+      input.lanes,
+      'sipoc_input.lanes'
+    );
+
+  const supplierRows=
+    assertArrayValue(
+      lanes.suppliers_inputs,
+      'lanes.suppliers_inputs'
+    );
+
+  const actorRows=
+    assertArrayValue(
+      lanes.actors,
+      'lanes.actors'
+    );
+
+  const customerRows=
+    assertArrayValue(
+      lanes.outputs_customers,
+      'lanes.outputs_customers'
+    );
+
+  const activities=
+    assertArrayValue(
+      input.activities,
+      'sipoc_input.activities'
+    );
+
+  if(input.clarifying_notes!==undefined){
+    assertArrayValue(
+      input.clarifying_notes,
+      'sipoc_input.clarifying_notes'
+    );
+  }
+
+  if(input.documents!==undefined){
+    assertArrayValue(
+      input.documents,
+      'sipoc_input.documents'
+    );
+  }
+
+  const registry=new Map();
+
+  const register=(id,kind,label)=>{
+    const cleanId=text(id);
+
+    if(!cleanId)return;
+
+    const signature=
+      `${kind}|${upper(label)}`;
+
+    const previous=
+      registry.get(cleanId);
+
+    if(
+      previous &&
+      previous!==signature
+    ){
+      throw new Error(
+        `El ID ${cleanId} identifica elementos diferentes dentro del contrato.`
+      );
+    }
+
+    registry.set(
+      cleanId,
+      signature
+    );
+  };
+
+  const actorIds=new Set();
+
+  actorRows.forEach((actor,index)=>{
+    assertPlainObject(
+      actor,
+      `lanes.actors[${index}]`
+    );
+
+    const id=text(actor.id);
+
+    if(!id){
+      throw new Error(
+        `lanes.actors[${index}] no tiene ID estable.`
+      );
+    }
+
+    if(actorIds.has(id)){
+      throw new Error(
+        `ID de actor duplicado: ${id}.`
+      );
+    }
+
+    actorIds.add(id);
+
+    register(
+      id,
+      'actor_lane',
+      actor.name||actor.actor||''
+    );
+  });
+
+  const activityIds=new Set();
+
+  activities.forEach((activity,index)=>{
+    assertPlainObject(
+      activity,
+      `activities[${index}]`
+    );
+
+    const id=text(activity.id);
+
+    if(!id){
+      throw new Error(
+        `activities[${index}] no tiene ID estable.`
+      );
+    }
+
+    if(activityIds.has(id)){
+      throw new Error(
+        `ID de actividad duplicado: ${id}.`
+      );
+    }
+
+    activityIds.add(id);
+
+    register(
+      id,
+      'activity',
+      activity.name||''
+    );
+  });
+
+  supplierRows.forEach((row,index)=>{
+    assertPlainObject(
+      row,
+      `lanes.suppliers_inputs[${index}]`
+    );
+
+    register(
+      row.supplier_id,
+      'supplier',
+      row.supplier||''
+    );
+
+    register(
+      row.input_id,
+      'input',
+      row.input||''
+    );
+
+    if(
+      row.supplier_node_type &&
+      !ALLOWED_BY_LANE.supplier.includes(
+        text(row.supplier_node_type)
+          .toLowerCase()
+      )
+    ){
+      throw new Error(
+        `Tipo de proveedor inválido en suppliers_inputs[${index}].`
+      );
+    }
+
+    if(
+      row.input_node_type &&
+      !ALLOWED_BY_LANE.input.includes(
+        text(row.input_node_type)
+          .toLowerCase()
+      )
+    ){
+      throw new Error(
+        `Tipo de entrada inválido en suppliers_inputs[${index}].`
+      );
+    }
+
+    if(row.input_documents!==undefined){
+      assertArrayValue(
+        row.input_documents,
+        `suppliers_inputs[${index}].input_documents`
+      );
+    }
+  });
+
+  customerRows.forEach((row,index)=>{
+    assertPlainObject(
+      row,
+      `lanes.outputs_customers[${index}]`
+    );
+
+    register(
+      row.output_id,
+      'output',
+      row.output||''
+    );
+
+    register(
+      row.customer_id,
+      'customer',
+      row.customer||''
+    );
+
+    if(
+      row.output_node_type &&
+      !ALLOWED_BY_LANE.output.includes(
+        text(row.output_node_type)
+          .toLowerCase()
+      )
+    ){
+      throw new Error(
+        `Tipo de salida inválido en outputs_customers[${index}].`
+      );
+    }
+
+    if(
+      row.customer_node_type &&
+      !ALLOWED_BY_LANE.customer.includes(
+        text(row.customer_node_type)
+          .toLowerCase()
+      )
+    ){
+      throw new Error(
+        `Tipo de cliente inválido en outputs_customers[${index}].`
+      );
+    }
+
+    if(row.output_documents!==undefined){
+      assertArrayValue(
+        row.output_documents,
+        `outputs_customers[${index}].output_documents`
+      );
+    }
+  });
+
+  activities.forEach((activity,index)=>{
+    const semanticType=
+      text(activity.type)
+        .toLowerCase();
+
+    if(
+      semanticType &&
+      ![
+        'actividad',
+        'activity',
+        'decision'
+      ].includes(semanticType)
+    ){
+      throw new Error(
+        `Tipo semántico inválido en activities[${index}].`
+      );
+    }
+
+    if(
+      activity.node_type &&
+      !ALLOWED_BY_LANE.actor.includes(
+        text(activity.node_type)
+          .toLowerCase()
+      )
+    ){
+      throw new Error(
+        `Tipo visual inválido en activities[${index}].`
+      );
+    }
+
+    if(
+      activity.actor_lane_id &&
+      !actorIds.has(
+        text(activity.actor_lane_id)
+      )
+    ){
+      throw new Error(
+        `activities[${index}] referencia un actor_lane_id inexistente.`
+      );
+    }
+
+    [
+      'previous',
+      'next',
+      'inputs',
+      'outputs',
+      'note_ids',
+      'documents'
+    ].forEach(field=>{
+      if(activity[field]!==undefined){
+        assertArrayValue(
+          activity[field],
+          `activities[${index}].${field}`
+        );
+      }
+    });
+
+    ['previous','next']
+      .forEach(field=>{
+
+        (activity[field]||[])
+          .forEach((ref,refIndex)=>{
+
+            assertPlainObject(
+              ref,
+              `activities[${index}].${field}[${refIndex}]`
+            );
+
+            const refId=
+              text(ref.activity_id);
+
+            if(
+              refId &&
+              !activityIds.has(refId)
+            ){
+              throw new Error(
+                `activities[${index}].${field}[${refIndex}] referencia una actividad inexistente: ${refId}.`
+              );
+            }
+
+            if(
+              !refId &&
+              !text(
+                ref.activity_name||
+                ref.name
+              )
+            ){
+              throw new Error(
+                `activities[${index}].${field}[${refIndex}] no identifica la actividad relacionada.`
+              );
+            }
+          });
+      });
+
+    (activity.inputs||[])
+      .forEach((ref,refIndex)=>{
+
+        assertPlainObject(
+          ref,
+          `activities[${index}].inputs[${refIndex}]`
+        );
+
+        if(
+          ref.node_type &&
+          !ALLOWED_BY_LANE.input.includes(
+            text(ref.node_type)
+              .toLowerCase()
+          )
+        ){
+          throw new Error(
+            `Tipo de entrada inválido en activities[${index}].inputs[${refIndex}].`
+          );
+        }
+      });
+
+    (activity.outputs||[])
+      .forEach((ref,refIndex)=>{
+
+        assertPlainObject(
+          ref,
+          `activities[${index}].outputs[${refIndex}]`
+        );
+
+        if(
+          ref.node_type &&
+          !ALLOWED_BY_LANE.output.includes(
+            text(ref.node_type)
+              .toLowerCase()
+          )
+        ){
+          throw new Error(
+            `Tipo de salida inválido en activities[${index}].outputs[${refIndex}].`
+          );
+        }
+      });
+  });
+
+  const noteIds=new Set();
+
+  (input.clarifying_notes||[])
+    .forEach((note,index)=>{
+
+      assertPlainObject(
+        note,
+        `clarifying_notes[${index}]`
+      );
+
+      const id=text(note.id);
+
+      if(id){
+        if(noteIds.has(id)){
+          throw new Error(
+            `ID de nota duplicado: ${id}.`
+          );
+        }
+
+        noteIds.add(id);
+      }
+
+      if(!text(note.text)){
+        throw new Error(
+          `clarifying_notes[${index}] no tiene texto.`
+        );
+      }
+
+      const targetId=
+        text(
+          note.target_id||
+          note.activity_id
+        );
+
+      if(
+        targetId &&
+        !registry.has(targetId)
+      ){
+        throw new Error(
+          `clarifying_notes[${index}] referencia un elemento inexistente: ${targetId}.`
+        );
+      }
+    });
+
+  return true;
+}
+
+function validateMasterBackupStructure(data){
+  const master=
+    assertPlainObject(
+      data?.master,
+      'master'
+    );
+
+  const flows=
+    assertArrayValue(
+      master.flows,
+      'master.flows'
+    );
+
+  const flowIds=new Set();
+
+  flows.forEach((flow,flowIndex)=>{
+    assertPlainObject(
+      flow,
+      `master.flows[${flowIndex}]`
+    );
+
+    const flowId=text(flow.flow_id);
+
+    if(!flowId){
+      throw new Error(
+        `master.flows[${flowIndex}] no tiene flow_id.`
+      );
+    }
+
+    if(flowIds.has(flowId)){
+      throw new Error(
+        `flow_id duplicado: ${flowId}.`
+      );
+    }
+
+    flowIds.add(flowId);
+
+    const model=
+      assertPlainObject(
+        flow?.payload?.model,
+        `master.flows[${flowIndex}].payload.model`
+      );
+
+    const lanes=
+      assertArrayValue(
+        model.lanes,
+        `flow ${flowId}.lanes`
+      );
+
+    const nodes=
+      assertArrayValue(
+        model.nodes,
+        `flow ${flowId}.nodes`
+      );
+
+    const edges=
+      assertArrayValue(
+        model.edges,
+        `flow ${flowId}.edges`
+      );
+
+    const notes=
+      assertArrayValue(
+        model.notes,
+        `flow ${flowId}.notes`
+      );
+
+    const allIds=new Set();
+
+    const addId=(id,label)=>{
+      const clean=text(id);
+
+      if(!clean){
+        throw new Error(
+          `${label} no tiene ID.`
+        );
+      }
+
+      if(allIds.has(clean)){
+        throw new Error(
+          `ID duplicado en ${flowId}: ${clean}.`
+        );
+      }
+
+      allIds.add(clean);
+
+      return clean;
+    };
+
+    const laneMap=new Map();
+
+    lanes.forEach((lane,index)=>{
+      assertPlainObject(
+        lane,
+        `flow ${flowId}.lanes[${index}]`
+      );
+
+      const id=
+        addId(
+          lane.id,
+          `flow ${flowId}.lanes[${index}]`
+        );
+
+      if(
+        ![
+          'supplier',
+          'input',
+          'actor',
+          'output',
+          'customer'
+        ].includes(lane.kind)
+      ){
+        throw new Error(
+          `Carril inválido en ${flowId}: ${lane.kind}.`
+        );
+      }
+
+      laneMap.set(id,lane);
+    });
+
+    [
+      'supplier',
+      'input',
+      'output',
+      'customer'
+    ].forEach(kind=>{
+      if(
+        lanes.filter(
+          lane=>lane.kind===kind
+        ).length!==1
+      ){
+        throw new Error(
+          `El flujo ${flowId} debe contener exactamente un carril ${kind}.`
+        );
+      }
+    });
+
+    if(
+      lanes.filter(
+        lane=>lane.kind==='actor'
+      ).length<2
+    ){
+      throw new Error(
+        `El flujo ${flowId} debe conservar al menos dos carriles de actor.`
+      );
+    }
+
+    const nodeMap=new Map();
+
+    nodes.forEach((node,index)=>{
+      assertPlainObject(
+        node,
+        `flow ${flowId}.nodes[${index}]`
+      );
+
+      const id=
+        addId(
+          node.id,
+          `flow ${flowId}.nodes[${index}]`
+        );
+
+      const lane=
+        laneMap.get(
+          text(node.lane_id)
+        );
+
+      if(!lane){
+        throw new Error(
+          `La caja ${id} referencia un carril inexistente.`
+        );
+      }
+
+      if(
+        !ALLOWED_BY_LANE[
+          lane.kind
+        ]?.includes(
+          text(node.type)
+            .toLowerCase()
+        )
+      ){
+        throw new Error(
+          `La caja ${id} tiene un tipo no permitido para el carril ${lane.kind}.`
+        );
+      }
+
+      if(
+        node.documents!==undefined &&
+        !Array.isArray(node.documents)
+      ){
+        throw new Error(
+          `La caja ${id} tiene documents inválido.`
+        );
+      }
+
+      if(
+        node.note_ids!==undefined &&
+        !Array.isArray(node.note_ids)
+      ){
+        throw new Error(
+          `La caja ${id} tiene note_ids inválido.`
+        );
+      }
+
+      nodeMap.set(id,node);
+    });
+
+    edges.forEach((edge,index)=>{
+      assertPlainObject(
+        edge,
+        `flow ${flowId}.edges[${index}]`
+      );
+
+      const id=
+        addId(
+          edge.id,
+          `flow ${flowId}.edges[${index}]`
+        );
+
+      const source=
+        nodeMap.get(
+          text(edge.source)
+        );
+
+      const target=
+        nodeMap.get(
+          text(edge.target)
+        );
+
+      if(!source||!target){
+        throw new Error(
+          `La conexión ${id} referencia una caja inexistente.`
+        );
+      }
+
+      if(
+        !validateEdgeRelation(
+          source,
+          target,
+          model
+        )
+      ){
+        throw new Error(
+          `La conexión ${id} no respeta la relación metodológica permitida.`
+        );
+      }
+
+      if(
+        edge.mode &&
+        ![
+          'line',
+          'connector'
+        ].includes(edge.mode)
+      ){
+        throw new Error(
+          `Modo de conexión inválido en ${id}.`
+        );
+      }
+
+      if(
+        edge.mode==='connector' &&
+        ![
+          'input',
+          'internal',
+          'output'
+        ].includes(edge.connector_kind)
+      ){
+        throw new Error(
+          `Familia de conector inválida en ${id}.`
+        );
+      }
+    });
+
+    const noteMap=new Map();
+
+    notes.forEach((note,index)=>{
+      assertPlainObject(
+        note,
+        `flow ${flowId}.notes[${index}]`
+      );
+
+      const id=
+        addId(
+          note.id,
+          `flow ${flowId}.notes[${index}]`
+        );
+
+      if(
+        !nodeMap.has(
+          text(note.node_id)
+        )
+      ){
+        throw new Error(
+          `La nota ${id} referencia una caja inexistente.`
+        );
+      }
+
+      if(!text(note.text)){
+        throw new Error(
+          `La nota ${id} no tiene texto.`
+        );
+      }
+
+      noteMap.set(id,note);
+    });
+
+    nodes.forEach(node=>{
+      (node.note_ids||[])
+        .forEach(noteId=>{
+
+          const note=
+            noteMap.get(
+              text(noteId)
+            );
+
+          if(!note){
+            throw new Error(
+              `La caja ${node.id} referencia una nota inexistente: ${noteId}.`
+            );
+          }
+
+          if(
+            text(note.node_id)!==
+            text(node.id)
+          ){
+            throw new Error(
+              `La nota ${noteId} no pertenece a la caja ${node.id}.`
+            );
+          }
+        });
+    });
+  });
+
+  return true;
+}
+  
+function readFileInput(input,callback){
+  const file=input?.files?.[0];
+
+  if(!file){
+    gMsg(
+      'warn',
+      'Selecciona un archivo JSON.'
+    );
+    return;
+  }
+
+  if(file.size>MAX_JSON_FILE_BYTES){
+    gMsg(
+      'err',
+      'El archivo JSON supera el límite de 10 MB.'
+    );
+    return;
+  }
+
+  const reader=new FileReader();
+
+  reader.onload=()=>
+    callback(
+      String(reader.result||'')
+    );
+
+  reader.onerror=()=>
+    gMsg(
+      'err',
+      'No fue posible leer el archivo.'
+    );
+
+  reader.readAsText(file);
+}
+  
 function importLmp(raw){
-  try{const contract=typeof raw==='string'?JSON.parse(raw):raw;if(contract?.contract_code!=='LMP_TO_SB'||String(contract?.contract_version)!=='3.0'||contract?.source_module!=='LMP'||contract?.target_module!=='SIPOC_BUILDER'||!contract?.sipoc_input)throw new Error('SB solo admite el contrato canónico LMP_TO_SB 3.0.');const input=contract.sipoc_input;
-    if(APP.master){const currentCode=upper(APP.master.process_code),incomingCode=upper(input.process_code);const currentName=upper(APP.master.process_name),incomingName=upper(input.process_name);if((currentCode&&incomingCode&&currentCode!==incomingCode)||(!currentCode&&!incomingCode&&currentName&&incomingName&&currentName!==incomingName))throw new Error('SB trabaja un solo proceso a la vez. Guarda respaldo y usa Limpiar antes de importar un proceso diferente.');}
-    if(!APP.master)APP.master=createMaster(input);else{if(!APP.master.process_code)APP.master.process_code=upper(input.process_code);if(!APP.master.process_name)APP.master.process_name=upper(input.process_name);if(!APP.master.purpose)APP.master.purpose=upper(input.purpose);}
-    const model=modelFromLmp(contract);const flow=createFlow({name:'AS-IS RECIBIDO DESDE LMP',type:'as_is',status:'draft',source:'lmp',model});flow.saved_at=nowIso();renderLibrary();openFlow(flow.flow_id);gMsg('ok','LMP_TO_SB 3.0 importado correctamente.');
-  }catch(error){gMsg('err',`No fue posible importar LMP_TO_SB 3.0: ${error.message}`);}
+  const previousMaster=
+    APP.master
+      ? clone(APP.master)
+      : null;
+
+  const previousActiveFlowId=
+    APP.activeFlowId;
+
+  try{
+    const contract=
+      typeof raw==='string'
+        ? JSON.parse(raw)
+        : raw;
+
+    if(
+      contract?.contract_code!=='LMP_TO_SB' ||
+      String(contract?.contract_version)!=='3.0' ||
+      contract?.source_module!=='LMP' ||
+      contract?.target_module!=='SIPOC_BUILDER' ||
+      !contract?.sipoc_input
+    ){
+      throw new Error(
+        'SB solo admite el contrato canónico LMP_TO_SB 3.0.'
+      );
+    }
+
+    validateLmpContractStructure(
+      contract
+    );
+
+    const input=
+      contract.sipoc_input;
+
+    if(APP.master){
+      const currentCode=
+              upper(APP.master.process_code),
+            incomingCode=
+              upper(input.process_code),
+            currentName=
+              upper(APP.master.process_name),
+            incomingName=
+              upper(input.process_name);
+
+      if(
+        (
+          currentCode &&
+          incomingCode &&
+          currentCode!==incomingCode
+        ) ||
+        (
+          !currentCode &&
+          !incomingCode &&
+          currentName &&
+          incomingName &&
+          currentName!==incomingName
+        )
+      ){
+        throw new Error(
+          'SB trabaja un solo proceso a la vez. Guarda respaldo y usa Limpiar antes de importar un proceso diferente.'
+        );
+      }
+    }
+
+    if(!APP.master){
+      APP.master=createMaster(input);
+    }else{
+      if(!APP.master.process_code){
+        APP.master.process_code=
+          upper(input.process_code);
+      }
+
+      if(!APP.master.process_name){
+        APP.master.process_name=
+          upper(input.process_name);
+      }
+
+      if(!APP.master.purpose){
+        APP.master.purpose=
+          upper(input.purpose);
+      }
+    }
+
+    const model=
+      modelFromLmp(contract);
+
+    const flow=
+      createFlow({
+        name:'AS-IS RECIBIDO DESDE LMP',
+        type:'as_is',
+        status:'draft',
+        source:'lmp',
+        model
+      });
+
+    flow.saved_at=nowIso();
+
+    renderLibrary();
+    openFlow(flow.flow_id);
+
+    gMsg(
+      'ok',
+      'LMP_TO_SB 3.0 importado correctamente.'
+    );
+
+  }catch(error){
+    /*
+     * Importación transaccional:
+     * si algo falla, SB vuelve exactamente
+     * al estado previo.
+     */
+    APP.master=previousMaster;
+    APP.activeFlowId=
+      previousActiveFlowId;
+
+    gMsg(
+      'err',
+      `No fue posible importar LMP_TO_SB 3.0: ${error.message}`
+    );
+  }
 }
 
 function modelFromLmp(contract){
@@ -1780,12 +3422,88 @@ function preferredDecisionSide(decision,other,model){
   const geometry=laneGeometry(model),a=nodeBox(decision,geometry,model),b=nodeBox(other,geometry,model),ax=a.x+a.w/2,ay=a.y+a.h/2,bx=b.x+b.w/2,by=b.y+b.h/2,dx=bx-ax,dy=by-ay;
   if(Math.abs(dx)>Math.abs(dy))return dx>=0?'right':'left';return dy>=0?'bottom':'top';
 }
+  
 function normalizeDecisionPorts(model){
-  if(!model)return model;const order=['top','right','bottom','left'];
-  model.nodes.filter(node=>node.type==='decision').forEach(decision=>{
-    const attached=model.edges.filter(edge=>edge.source===decision.id||edge.target===decision.id);const used=new Set();
-    attached.forEach(edge=>{const other=nodeById(edge.source===decision.id?edge.target:edge.source,model);if(!other)return;const preferred=preferredDecisionSide(decision,other,model),choices=[preferred,...order.filter(side=>side!==preferred)],side=choices.find(candidate=>!used.has(candidate))||preferred;used.add(side);if(edge.source===decision.id)edge.source_side=side;else edge.target_side=side;});
-  });
+  if(!model)return model;
+
+  const sides=['top','right','bottom','left'];
+
+  model.nodes
+    .filter(node=>node.type==='decision')
+    .forEach(decision=>{
+
+      const attached=(model.edges||[])
+        .filter(edge=>
+          edge.source===decision.id ||
+          edge.target===decision.id
+        )
+        .slice()
+        .sort((a,b)=>
+          (Number(a.order)||0)-(Number(b.order)||0) ||
+          String(a.id||'').localeCompare(String(b.id||''))
+        );
+
+      const used=new Set();
+      const pending=[];
+
+      /*
+       * PRIMERA PASADA:
+       * conservar exactamente los lados válidos ya guardados.
+       */
+      attached.forEach(edge=>{
+        const key=
+          edge.source===decision.id
+            ? 'source_side'
+            : 'target_side';
+
+        const current=edge[key];
+
+        if(
+          sides.includes(current) &&
+          !used.has(current)
+        ){
+          used.add(current);
+        }else{
+          pending.push({edge,key});
+        }
+      });
+
+      /*
+       * SEGUNDA PASADA:
+       * reparar únicamente lados faltantes,
+       * inválidos o duplicados.
+       */
+      pending.forEach(({edge,key})=>{
+        const other=nodeById(
+          edge.source===decision.id
+            ? edge.target
+            : edge.source,
+          model
+        );
+
+        if(!other)return;
+
+        const preferred=
+          preferredDecisionSide(
+            decision,
+            other,
+            model
+          );
+
+        const choices=[
+          preferred,
+          ...sides.filter(side=>side!==preferred)
+        ];
+
+        const side=
+          choices.find(candidate=>!used.has(candidate))
+          || preferred;
+
+        edge[key]=side;
+        used.add(side);
+      });
+    });
+
   return model;
 }
 
