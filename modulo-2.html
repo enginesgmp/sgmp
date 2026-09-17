@@ -3017,6 +3017,105 @@ function semanticActorNodeOrder(model){
 
   return ordered;
 }
+
+function semanticActorNodeOrder(model){
+  if(!model)return [];
+
+  const nodes=(model.nodes||[])
+    .filter(node=>laneKindForNode(node,model)==='actor');
+
+  const nodeIds=new Set(nodes.map(node=>node.id));
+
+  const actorEdges=(model.edges||[])
+    .filter(edge=>nodeIds.has(edge.source)&&nodeIds.has(edge.target))
+    .slice()
+    .sort((a,b)=>
+      (Number(a.order)||0)-(Number(b.order)||0) ||
+      String(a.id||'').localeCompare(String(b.id||''))
+    );
+
+  const outgoing=new Map(nodes.map(node=>[node.id,[]]));
+  const incomingCount=new Map(nodes.map(node=>[node.id,0]));
+
+  actorEdges.forEach(edge=>{
+    outgoing.get(edge.source)?.push(edge);
+    incomingCount.set(
+      edge.target,
+      (incomingCount.get(edge.target)||0)+1
+    );
+  });
+
+  const priorSequence=node=>{
+    const value=Number(node?.meta?.sequence);
+    return Number.isFinite(value)&&value>0
+      ? value
+      : Number.MAX_SAFE_INTEGER;
+  };
+
+  const firstEdgeOrder=node=>{
+    const orders=(model.edges||[])
+      .filter(edge=>
+        edge.source===node.id ||
+        edge.target===node.id
+      )
+      .map(edge=>Number(edge.order))
+      .filter(Number.isFinite);
+
+    return orders.length
+      ? Math.min(...orders)
+      : Number.MAX_SAFE_INTEGER;
+  };
+
+  const compareNodes=(a,b)=>
+    priorSequence(a)-priorSequence(b) ||
+    firstEdgeOrder(a)-firstEdgeOrder(b) ||
+    String(a.id||'').localeCompare(String(b.id||''));
+
+  const roots=nodes
+    .filter(node=>(incomingCount.get(node.id)||0)===0)
+    .sort(compareNodes);
+
+  const fallback=nodes.slice().sort(compareNodes);
+
+  const ordered=[];
+  const visited=new Set();
+
+  const walk=start=>{
+    const stack=[start];
+
+    while(stack.length){
+      const node=stack.pop();
+
+      if(!node||visited.has(node.id))continue;
+
+      visited.add(node.id);
+      ordered.push(node);
+
+      const targets=(outgoing.get(node.id)||[])
+        .slice()
+        .sort((a,b)=>
+          (Number(a.order)||0)-(Number(b.order)||0) ||
+          upper(a.label).localeCompare(upper(b.label)) ||
+          String(a.target||'').localeCompare(String(b.target||''))
+        )
+        .map(edge=>nodeById(edge.target,model))
+        .filter(Boolean);
+
+      for(let i=targets.length-1;i>=0;i--){
+        if(!visited.has(targets[i].id)){
+          stack.push(targets[i]);
+        }
+      }
+    }
+  };
+
+  (roots.length ? roots : fallback.slice(0,1))
+    .forEach(walk);
+
+  fallback.forEach(walk);
+
+  return ordered;
+}
   
 function buildSipocInput(flow){
   const model=flow.payload.model,geom=laneGeometry(model),actorLanes=model.lanes.filter(l=>l.kind==='actor');const nodesByLane=kind=>model.nodes.filter(n=>laneKindForNode(n,model)===kind);const suppliers=nodesByLane('supplier'),inputs=nodesByLane('input'),outputs=nodesByLane('output'),customers=nodesByLane('customer'),actorNodes=nodesByLane('actor');
