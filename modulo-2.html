@@ -2293,12 +2293,6 @@ if(sel.type==='node'){
 
   return;
 }   
-    const lane=laneById(node.lane_id,model),notes=(node.note_ids||[]).map(id=>model.notes.find(note=>note.id===id)).filter(Boolean);
-    const catalogDocs=normalizeDocumentCatalog(APP.master),catalogOptions=catalogDocs.length?catalogDocs.map(doc=>`<option value="${escapeHtml(doc)}">${escapeHtml(doc)}</option>`).join(''):'<option value="">Catálogo vacío</option>';
-    root.innerHTML=`<div class="inspector-info" aria-label="Información del elemento"><span class="info-chip">${escapeHtml(SYMBOLS[node.type]?.label||node.type)}</span><span class="info-chip">${escapeHtml(lane?.kind==='actor'?(lane.label||'ACTOR SIN NOMBRE'):lane?.label||'')}</span></div><div class="field"><label>Texto principal</label><textarea id="ins_node_label">${escapeHtml(node.label||'')}</textarea></div><div class="inspector-actions"><button id="ins_node_apply" class="primary">Aplicar texto</button></div><div class="inspector-section"><h4>Documentos</h4><div id="doc_list">${renderDocRows(node.documents||[])}</div><div class="field"><label>Seleccionar del catálogo</label><select id="catalog_doc_select" ${catalogDocs.length?'':'disabled'}>${catalogOptions}</select></div><button id="btn_attach_catalog_doc" type="button" ${catalogDocs.length?'':'disabled'}>+ Asociar del catálogo</button><div class="field" style="margin-top:9px"><label>Documento nuevo · código y nombre</label><input id="new_doc_text" placeholder="Ej: AS-RG-10401-4 REGISTRO DE RECEPCIÓN"></div><button id="btn_add_doc" type="button">+ Agregar documento nuevo</button></div><div class="inspector-section"><h4>Notas aclaratorias</h4><div id="note_list">${renderNoteRows(notes,model)}</div><div class="field"><label>Nueva nota</label><textarea id="new_note_text"></textarea></div><button id="btn_add_note" type="button">+ Agregar nota</button></div>`;
-    $('ins_node_apply').onclick=()=>{pushHistory();node.label=upper($('ins_node_label').value);markDirty();renderStudio();};$('btn_add_doc').onclick=()=>addDocumentToNode(node.id);if($('btn_attach_catalog_doc'))$('btn_attach_catalog_doc').onclick=()=>attachCatalogDocumentToNode(node.id);$('btn_add_note').onclick=()=>addNoteToNode(node.id);
-    root.querySelectorAll('[data-doc-save]').forEach(btn=>btn.onclick=()=>updateDocumentOnNode(node.id,Number(btn.dataset.docSave)));root.querySelectorAll('[data-doc-remove]').forEach(btn=>btn.onclick=()=>removeDocumentFromNode(node.id,Number(btn.dataset.docRemove)));root.querySelectorAll('[data-note-save]').forEach(btn=>btn.onclick=()=>updateNoteOnNode(node.id,btn.dataset.noteSave));root.querySelectorAll('[data-note-remove]').forEach(btn=>btn.onclick=()=>removeNoteFromNode(node.id,btn.dataset.noteRemove));return;
-  }
 }
 function sideOptions(current){return ['top','right','bottom','left'].map(s=>`<option value="${s}" ${current===s?'selected':''}>${({top:'Arriba',right:'Derecha',bottom:'Abajo',left:'Izquierda'})[s]}</option>`).join('');}
   
@@ -4406,7 +4400,104 @@ function bindGlobalEvents(){
   bindViewportPan();
 }
 
-function init(){bindGlobalEvents();renderLibrary();renderStudioContext();updateHistoryButtons();}
+const LMP_TO_SB_CONTRACT_KEY='SGMP_LMP_TO_SB_CONTRACT';
+const LMP_TO_SB_CONTEXT_KEY='SGMP_LMP_TO_SB_CONTEXT';
+
+function receiveLmpTransfer(){
+  let rawContract,
+      rawContext;
+
+  try{
+    rawContract=localStorage.getItem(
+      LMP_TO_SB_CONTRACT_KEY
+    );
+
+    rawContext=localStorage.getItem(
+      LMP_TO_SB_CONTEXT_KEY
+    );
+  }catch(error){
+    gMsg(
+      'err',
+      `No fue posible acceder al intercambio LMP → SB: ${error.message}`
+    );
+    return false;
+  }
+
+  if(!rawContract||!rawContext)return false;
+
+  try{
+    const context=JSON.parse(rawContext);
+
+    if(
+      context?.source_module!=='LMP' ||
+      context?.target_module!=='SIPOC_BUILDER' ||
+      context?.contract_code!=='LMP_TO_SB' ||
+      String(context?.contract_version)!=='3.0' ||
+      !['asis_review','sgmp_output'].includes(context?.intent)
+    ){
+      throw new Error(
+        'El contexto de transferencia LMP → SB no es válido.'
+      );
+    }
+
+    const previousFlowIds=new Set(
+      APP.master?.flows?.map(flow=>flow.flow_id)||[]
+    );
+
+    importLmp(rawContract);
+
+    const imported=
+      APP.master?.flows?.some(
+        flow=>
+          !previousFlowIds.has(flow.flow_id) &&
+          flow.source_origin==='lmp'
+      )||false;
+
+    if(!imported)return false;
+
+    localStorage.removeItem(
+      LMP_TO_SB_CONTRACT_KEY
+    );
+
+    localStorage.removeItem(
+      LMP_TO_SB_CONTEXT_KEY
+    );
+
+    return true;
+  }catch(error){
+    gMsg(
+      'err',
+      `No fue posible recibir el flujo desde LMP: ${error.message}`
+    );
+    return false;
+  }
+}
+
+function bindLmpTransferReceiver(){
+  window.addEventListener(
+    'storage',
+    event=>{
+      if(
+        ![
+          LMP_TO_SB_CONTRACT_KEY,
+          LMP_TO_SB_CONTEXT_KEY
+        ].includes(event.key)
+      )return;
+
+      receiveLmpTransfer();
+    }
+  );
+}
+
+function init(){
+  bindGlobalEvents();
+  bindLmpTransferReceiver();
+  renderLibrary();
+  renderStudioContext();
+  updateHistoryButtons();
+  receiveLmpTransfer();
+}
+  
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
 </script>
 
