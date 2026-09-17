@@ -121,6 +121,73 @@ label{display:block;margin-bottom:5px;color:#315674;font-size:.72rem;font-weight
 .inspector h3{color:#123A63;margin-bottom:4px}.inspector>p{color:#71849A;font-size:.75rem;margin-bottom:12px}.inspector .field{margin-bottom:9px}.inspector-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.inspector-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.inspector-actions button{flex:1 1 auto;font-size:.74rem;min-height:34px}
 .inspector-section{margin-top:12px;padding-top:11px;border-top:1px solid #EDF2F7}.inspector-section h4{font-size:.78rem;color:#315674;margin-bottom:7px;text-transform:uppercase;letter-spacing:.03em}
 .list-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;padding:7px 8px;border:1px solid #E6EDF4;border-radius:9px;background:#FAFCFF;margin-bottom:6px}.list-row small{color:#5B6F8A;word-break:break-word}.list-row button{min-height:30px;padding:4px 7px;font-size:.7rem}
+
+.doc-combobox{position:relative}
+.doc-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:start}
+
+.doc-suggestions{
+  position:absolute;
+  z-index:40;
+  left:0;
+  right:0;
+  top:calc(100% + 4px);
+  max-height:220px;
+  overflow:auto;
+  border:1px solid #BFD7E6;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 10px 26px rgba(15,43,70,.16);
+  padding:4px
+}
+
+.doc-suggestion{
+  width:100%;
+  min-height:34px;
+  border:none;
+  border-radius:7px;
+  padding:7px 9px;
+  text-align:left;
+  background:#fff;
+  color:#234A68;
+  font-size:.74rem;
+  font-weight:700
+}
+
+.doc-suggestion:hover,
+.doc-suggestion.is-active{
+  background:#EEF8FE;
+  border:none
+}
+
+.doc-suggestions-empty{
+  padding:9px;
+  color:#71849A;
+  font-size:.72rem
+}
+
+.doc-associated{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:6px;
+  align-items:center;
+  padding:7px 8px;
+  border:1px solid #E6EDF4;
+  border-radius:9px;
+  background:#FAFCFF;
+  margin-bottom:6px
+}
+
+.doc-associated small{
+  color:#385B73;
+  word-break:break-word
+}
+
+.doc-associated button{
+  min-height:30px;
+  padding:4px 7px;
+  font-size:.7rem
+}
+  
 .empty-note{padding:12px;border:1px dashed #C8D8E5;border-radius:10px;color:#71849A;font-size:.76rem;background:#FAFCFF}
 .dirty-dot{color:#C26A00;font-weight:950}
 
@@ -1145,6 +1212,156 @@ function fitText(lines,width,height,maxFont=11){
   const fs=2,maxChars=Math.max(4,Math.floor((width-10)/(fs*.58))),wrapped=[];lines.forEach(line=>wrapped.push(...wrapLine(line,maxChars)));return {fontSize:fs,lineHeight:2.2,lines:wrapped};
 }
 
+function fitDecisionText(
+  lines,
+  width,
+  height,
+  maxFont=9.5,
+  minFont=5.5
+){
+  const source=
+    Array.isArray(lines) &&
+    lines.length
+      ? lines
+      : ['TEXTO PENDIENTE'];
+
+  for(
+    let fs=maxFont;
+    fs>=minFont;
+    fs-=.5
+  ){
+    const lineHeight=
+      fs*1.12;
+
+    const centerWidth=
+      width*.82;
+
+    const maxChars=
+      Math.max(
+        5,
+        Math.floor(
+          (centerWidth-10)/
+          (fs*.58)
+        )
+      );
+
+    const wrapped=[];
+
+    source.forEach(line=>
+      wrapped.push(
+        ...wrapLine(
+          line,
+          maxChars
+        )
+      )
+    );
+
+    const totalHeight=
+      Math.max(
+        lineHeight,
+        (wrapped.length-1)*
+          lineHeight+
+          fs
+      );
+
+    if(
+      totalHeight>
+      height*.72
+    ){
+      continue;
+    }
+
+    const fits=
+      wrapped.every(
+        (line,index)=>{
+          const dy=
+            (
+              index-
+              (wrapped.length-1)/2
+            )*
+            lineHeight;
+
+          /*
+           * El ancho disponible disminuye
+           * al acercarse a las puntas
+           * superior e inferior del rombo.
+           */
+          const diamondFactor=
+            Math.max(
+              .34,
+              1-
+              (
+                2*
+                Math.abs(dy)/
+                height
+              )
+            );
+
+          const allowedWidth=
+            Math.max(
+              width*.34,
+              width*
+                diamondFactor*
+                .90-
+                8
+            );
+
+          const estimatedWidth=
+            String(line).length*
+            fs*
+            .58;
+
+          return (
+            estimatedWidth<=
+            allowedWidth
+          );
+        }
+      );
+
+    if(fits){
+      return {
+        fontSize:fs,
+        lineHeight,
+        lines:wrapped
+      };
+    }
+  }
+
+  /*
+   * Piso de legibilidad.
+   * Nunca baja de 5.5 px.
+   */
+  const fs=minFont,
+        lineHeight=fs*1.05,
+        maxChars=
+          Math.max(
+            5,
+            Math.floor(
+              (
+                width*.74-
+                8
+              )/
+              (fs*.58)
+            )
+          ),
+        wrapped=[];
+
+  source.forEach(line=>
+    wrapped.push(
+      ...wrapLine(
+        line,
+        maxChars
+      )
+    )
+  );
+
+  return {
+    fontSize:fs,
+    lineHeight,
+    lines:wrapped
+  };
+}
+
 function renderNodeShape(node,b,selected){
   const stroke=selected?'#00AEEF':'#000',sw=selected?2.6:1.1,fill=node.type==='activity'?'#FBD7BB':node.type==='system_response'?'#FBD7BB':node.type==='physical_io'?'#D8D8D8':'#FFF';
   if(node.type==='decision'){
@@ -1162,28 +1379,75 @@ function renderNodeShape(node,b,selected){
   return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
 }
 
-function renderNodeText(node,b,noteMap){
-  const isDecision=node.type==='decision';
+function renderNodeText(
+  node,
+  b,
+  noteMap
+){
+  const isDecision=
+    node.type==='decision';
 
-  // El rombo conserva siempre sus dimensiones.
-  // Solo se reduce el área disponible para el texto,
-  // obligando a fitText() a reducir fuente y ajustar líneas.
-  const textWidth=isDecision?b.w*.62:b.w;
-  const textHeight=isDecision?b.h*.34:b.h;
+  const logicalLines=
+    nodeLogicalLines(
+      node,
+      noteMap
+    );
 
-  const fit=fitText(
-    nodeLogicalLines(node,noteMap),
-    textWidth,
-    textHeight,
-    isDecision?9.5:10.5
-  );
+  const fit=
+    isDecision
 
-  const total=(fit.lines.length-1)*fit.lineHeight;
-  const startY=b.y+b.h/2-total/2;
+      ? fitDecisionText(
+          logicalLines,
+          b.w,
+          b.h,
+          9.5,
+          5.5
+        )
 
-  return `<text x="${b.x+b.w/2}" y="${startY}" text-anchor="middle" dominant-baseline="middle" font-family="Segoe UI,Arial,sans-serif" font-size="${fit.fontSize}" fill="#000">${fit.lines.map((line,i)=>`<tspan x="${b.x+b.w/2}" dy="${i===0?0:fit.lineHeight}">${escapeXml(line)}</tspan>`).join('')}</text>`;
+      : fitText(
+          logicalLines,
+          b.w,
+          b.h,
+          10.5
+        );
+
+  const total=
+    (
+      fit.lines.length-1
+    )*
+    fit.lineHeight;
+
+  const startY=
+    b.y+
+    b.h/2-
+    total/2;
+
+  return `
+    <text
+      x="${b.x+b.w/2}"
+      y="${startY}"
+      text-anchor="middle"
+      dominant-baseline="middle"
+      font-family="Segoe UI,Arial,sans-serif"
+      font-size="${fit.fontSize}"
+      fill="#000"
+    >
+      ${
+        fit.lines.map(
+          (line,i)=>
+            `<tspan
+              x="${b.x+b.w/2}"
+              dy="${
+                i===0
+                  ? 0
+                  : fit.lineHeight
+              }"
+            >${escapeXml(line)}</tspan>`
+        ).join('')
+      }
+    </text>
+  `;
 }
-
 function edgeSideList(edge,nodeId,side,model){return model.edges.filter(e=>(e.source===nodeId&&e.source_side===side)||(e.target===nodeId&&e.target_side===side)).sort((a,b)=>(a.order||0)-(b.order||0)||a.id.localeCompare(b.id));}
 function documentBottomY(box,ratio){
   const r=Math.max(0,Math.min(1,Number(ratio)||0)),y2=box.y+box.h-10;
@@ -1855,9 +2119,6 @@ function deleteCatalogDocument(index){
   }
 }
   
-function attachCatalogDocumentToNode(nodeId){
-  const model=currentModel(),node=nodeById(nodeId,model),value=documentTextValue($('catalog_doc_select')?.value||'');if(!model||!node||!value)return;if((node.documents||[]).some(doc=>documentKey(doc)===documentKey(value))){gMsg('info','Ese documento ya está asociado a la caja.');return;}pushHistory();node.documents=node.documents||[];node.documents.push({id:uid('DOC'),name:value,code:''});ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
-}
 function renderLibrary(){
   const s=$('process_summary'),list=$('flow_list');
   if(!APP.master){s.innerHTML='<span class="chip">Sin proceso activo</span>';list.innerHTML='<div class="flow-empty">Todavía no existe ningún flujo. Importa desde LMP o crea un flujo en blanco.</div>';renderDocumentCatalog();return;}
@@ -1890,8 +2151,148 @@ function renderInspector(){
     $('ins_edge_apply').onclick=()=>{const ss=$('ins_source_side').value,ts=$('ins_target_side').value;if(!canUseNodeSide(edge.source,ss,model,edge.id)||!canUseNodeSide(edge.target,ts,model,edge.id)){gMsg('warn','Uno de los lados seleccionados ya alcanzó su capacidad de conexiones.');return;}pushHistory();edge.label=upper($('ins_edge_label').value);edge.source_side=ss;edge.target_side=ts;edge.waypoints=[];if(edge.mode==='connector')edge.connector_routes={source:[],target:[]};markDirty();renderStudio();};
     if($('ins_convert_connector'))$('ins_convert_connector').onclick=convertSelectedEdgeToConnector;if($('ins_revert_connector'))$('ins_revert_connector').onclick=revertSelectedConnector;$('ins_edge_delete').onclick=deleteSelection;return;
   }
-  if(sel.type==='node'){
-    const node=nodeById(sel.id,model);if(!node){APP.selection=null;renderInspector();return;}
+  
+if(sel.type==='node'){
+  const node=nodeById(sel.id,model);
+
+  if(!node){
+    APP.selection=null;
+    renderInspector();
+    return;
+  }
+
+  const lane=laneById(node.lane_id,model),
+        notes=(node.note_ids||[])
+          .map(id=>model.notes.find(note=>note.id===id))
+          .filter(Boolean);
+
+  root.innerHTML=`
+    <div class="inspector-info" aria-label="Información del elemento">
+      <span class="info-chip">
+        ${escapeHtml(SYMBOLS[node.type]?.label||node.type)}
+      </span>
+
+      <span class="info-chip">
+        ${escapeHtml(
+          lane?.kind==='actor'
+            ? (lane.label||'ACTOR SIN NOMBRE')
+            : lane?.label||''
+        )}
+      </span>
+    </div>
+
+    <div class="field">
+      <label>Texto principal</label>
+      <textarea id="ins_node_label">${escapeHtml(node.label||'')}</textarea>
+    </div>
+
+    <div class="inspector-actions">
+      <button id="ins_node_apply" class="primary">
+        Aplicar texto
+      </button>
+    </div>
+
+    <div class="inspector-section">
+      <h4>Documentos</h4>
+
+      <div id="doc_list">
+        ${renderDocRows(node.documents||[])}
+      </div>
+
+      <div class="field">
+        <label for="doc_smart_input">
+          Buscar o agregar documento
+        </label>
+
+        <div class="doc-combobox">
+          <div class="doc-search-row">
+            <input
+              id="doc_smart_input"
+              type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="doc_suggestions"
+              autocomplete="off"
+              placeholder="Escribe código o nombre del documento"
+            >
+
+            <button id="btn_add_doc" type="button">
+              Agregar
+            </button>
+          </div>
+
+          <div
+            id="doc_suggestions"
+            class="doc-suggestions hidden"
+            role="listbox"
+          ></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="inspector-section">
+      <h4>Notas aclaratorias</h4>
+
+      <div id="note_list">
+        ${renderNoteRows(notes,model)}
+      </div>
+
+      <div class="field">
+        <label>Nueva nota</label>
+        <textarea id="new_note_text"></textarea>
+      </div>
+
+      <button id="btn_add_note" type="button">
+        + Agregar nota
+      </button>
+    </div>
+  `;
+
+  $('ins_node_apply').onclick=()=>{
+    pushHistory();
+    node.label=upper($('ins_node_label').value);
+    markDirty();
+    renderStudio();
+  };
+
+  $('btn_add_doc').onclick=()=>
+    addOrAttachDocumentToNode(node.id);
+
+  bindDocumentCombobox(node.id);
+
+  $('btn_add_note').onclick=()=>
+    addNoteToNode(node.id);
+
+  root.querySelectorAll('[data-doc-remove]')
+    .forEach(btn=>
+      btn.onclick=()=>
+        removeDocumentFromNode(
+          node.id,
+          Number(btn.dataset.docRemove)
+        )
+    );
+
+  root.querySelectorAll('[data-note-save]')
+    .forEach(btn=>
+      btn.onclick=()=>
+        updateNoteOnNode(
+          node.id,
+          btn.dataset.noteSave
+        )
+    );
+
+  root.querySelectorAll('[data-note-remove]')
+    .forEach(btn=>
+      btn.onclick=()=>
+        removeNoteFromNode(
+          node.id,
+          btn.dataset.noteRemove
+        )
+    );
+
+  return;
+}   
     const lane=laneById(node.lane_id,model),notes=(node.note_ids||[]).map(id=>model.notes.find(note=>note.id===id)).filter(Boolean);
     const catalogDocs=normalizeDocumentCatalog(APP.master),catalogOptions=catalogDocs.length?catalogDocs.map(doc=>`<option value="${escapeHtml(doc)}">${escapeHtml(doc)}</option>`).join(''):'<option value="">Catálogo vacío</option>';
     root.innerHTML=`<div class="inspector-info" aria-label="Información del elemento"><span class="info-chip">${escapeHtml(SYMBOLS[node.type]?.label||node.type)}</span><span class="info-chip">${escapeHtml(lane?.kind==='actor'?(lane.label||'ACTOR SIN NOMBRE'):lane?.label||'')}</span></div><div class="field"><label>Texto principal</label><textarea id="ins_node_label">${escapeHtml(node.label||'')}</textarea></div><div class="inspector-actions"><button id="ins_node_apply" class="primary">Aplicar texto</button></div><div class="inspector-section"><h4>Documentos</h4><div id="doc_list">${renderDocRows(node.documents||[])}</div><div class="field"><label>Seleccionar del catálogo</label><select id="catalog_doc_select" ${catalogDocs.length?'':'disabled'}>${catalogOptions}</select></div><button id="btn_attach_catalog_doc" type="button" ${catalogDocs.length?'':'disabled'}>+ Asociar del catálogo</button><div class="field" style="margin-top:9px"><label>Documento nuevo · código y nombre</label><input id="new_doc_text" placeholder="Ej: AS-RG-10401-4 REGISTRO DE RECEPCIÓN"></div><button id="btn_add_doc" type="button">+ Agregar documento nuevo</button></div><div class="inspector-section"><h4>Notas aclaratorias</h4><div id="note_list">${renderNoteRows(notes,model)}</div><div class="field"><label>Nueva nota</label><textarea id="new_note_text"></textarea></div><button id="btn_add_note" type="button">+ Agregar nota</button></div>`;
@@ -1900,19 +2301,381 @@ function renderInspector(){
   }
 }
 function sideOptions(current){return ['top','right','bottom','left'].map(s=>`<option value="${s}" ${current===s?'selected':''}>${({top:'Arriba',right:'Derecha',bottom:'Abajo',left:'Izquierda'})[s]}</option>`).join('');}
+  
 function renderDocRows(docs){
-  return docs.length?docs.map((doc,index)=>{const value=[upper(doc?.name||doc),upper(doc?.code||'')].filter(Boolean).join(' ');return `<div class="editable-list-row"><input data-doc-input="${index}" value="${escapeHtml(value)}"><button data-doc-save="${index}">Aplicar</button><button data-doc-remove="${index}" class="danger">Quitar</button></div>`;}).join(''):'<div class="empty-note">Sin documentos.</div>';
+  return docs.length
+    ? docs.map((doc,index)=>{
+        const value=documentTextValue(doc);
+
+        return `
+          <div class="doc-associated">
+            <small>${escapeHtml(value)}</small>
+
+            <button
+              data-doc-remove="${index}"
+              class="danger"
+              type="button"
+            >
+              Quitar
+            </button>
+          </div>
+        `;
+      }).join('')
+    : '<div class="empty-note">Sin documentos asociados.</div>';
 }
+
+
+function renderDocumentSuggestions(nodeId){
+  const input=$('doc_smart_input'),
+        list=$('doc_suggestions'),
+        node=nodeById(nodeId);
+
+  if(!input||!list||!node)return;
+
+  const query=documentKey(input.value);
+
+  const associated=
+    new Set(
+      (node.documents||[])
+        .map(documentKey)
+    );
+
+  const matches=
+    normalizeDocumentCatalog(APP.master)
+      .filter(doc=>
+        !associated.has(
+          documentKey(doc)
+        )
+      )
+      .filter(doc=>
+        !query ||
+        documentKey(doc).includes(query)
+      )
+      .slice(0,10);
+
+  if(!matches.length){
+    list.innerHTML=query
+      ? '<div class="doc-suggestions-empty">Sin coincidencias. Puedes agregarlo como documento nuevo.</div>'
+      : '<div class="doc-suggestions-empty">Escribe para buscar en el catálogo.</div>';
+
+    list.classList.remove('hidden');
+    input.setAttribute(
+      'aria-expanded',
+      'true'
+    );
+
+    return;
+  }
+
+  list.innerHTML=
+    matches.map((doc,index)=>`
+      <button
+        type="button"
+        class="doc-suggestion"
+        role="option"
+        data-doc-suggestion="${escapeHtml(doc)}"
+        data-doc-suggestion-index="${index}"
+      >
+        ${escapeHtml(doc)}
+      </button>
+    `).join('');
+
+  list.classList.remove('hidden');
+
+  input.setAttribute(
+    'aria-expanded',
+    'true'
+  );
+}
+
+
+function hideDocumentSuggestions(){
+  const input=$('doc_smart_input'),
+        list=$('doc_suggestions');
+
+  if(list){
+    list.classList.add('hidden');
+  }
+
+  if(input){
+    input.setAttribute(
+      'aria-expanded',
+      'false'
+    );
+  }
+}
+
+
+function chooseDocumentSuggestion(value){
+  const input=$('doc_smart_input');
+
+  if(!input)return;
+
+  input.value=
+    documentTextValue(value);
+
+  hideDocumentSuggestions();
+
+  input.focus();
+}
+
+
+function bindDocumentCombobox(nodeId){
+  const input=$('doc_smart_input'),
+        list=$('doc_suggestions');
+
+  if(!input||!list)return;
+
+  let activeIndex=-1;
+
+  const refresh=()=>{
+    activeIndex=-1;
+    renderDocumentSuggestions(nodeId);
+  };
+
+  const options=()=>
+    Array.from(
+      list.querySelectorAll(
+        '[data-doc-suggestion]'
+      )
+    );
+
+  const setActive=index=>{
+    const rows=options();
+
+    rows.forEach(row=>
+      row.classList.remove('is-active')
+    );
+
+    if(!rows.length){
+      activeIndex=-1;
+      return;
+    }
+
+    activeIndex=
+      Math.max(
+        0,
+        Math.min(
+          rows.length-1,
+          index
+        )
+      );
+
+    rows[activeIndex]
+      .classList.add('is-active');
+
+    rows[activeIndex]
+      .scrollIntoView({
+        block:'nearest'
+      });
+  };
+
+  input.addEventListener(
+    'input',
+    refresh
+  );
+
+  input.addEventListener(
+    'focus',
+    refresh
+  );
+
+  input.addEventListener(
+    'blur',
+    ()=>
+      setTimeout(
+        hideDocumentSuggestions,
+        120
+      )
+  );
+
+  input.addEventListener(
+    'keydown',
+    event=>{
+      const rows=options();
+
+      if(event.key==='ArrowDown'){
+        event.preventDefault();
+
+        if(
+          list.classList.contains(
+            'hidden'
+          )
+        ){
+          refresh();
+        }
+
+        setActive(
+          activeIndex+1
+        );
+
+        return;
+      }
+
+      if(event.key==='ArrowUp'){
+        event.preventDefault();
+
+        setActive(
+          activeIndex<=0
+            ? rows.length-1
+            : activeIndex-1
+        );
+
+        return;
+      }
+
+      if(
+        event.key==='Enter' &&
+        activeIndex>=0 &&
+        rows[activeIndex]
+      ){
+        event.preventDefault();
+
+        chooseDocumentSuggestion(
+          rows[activeIndex]
+            .dataset
+            .docSuggestion
+        );
+
+        return;
+      }
+
+      if(event.key==='Escape'){
+        hideDocumentSuggestions();
+      }
+    }
+  );
+
+  list.addEventListener(
+    'mousedown',
+    event=>
+      event.preventDefault()
+  );
+
+  list.addEventListener(
+    'click',
+    event=>{
+      const option=
+        event.target.closest(
+          '[data-doc-suggestion]'
+        );
+
+      if(!option)return;
+
+      chooseDocumentSuggestion(
+        option.dataset.docSuggestion
+      );
+    }
+  );
+}
+
+
+function addOrAttachDocumentToNode(nodeId){
+  const model=currentModel(),
+        node=nodeById(nodeId,model),
+        input=$('doc_smart_input');
+
+  if(!model||!node||!input)return;
+
+  const typed=
+    documentTextValue(
+      input.value
+    );
+
+  if(!typed){
+    gMsg(
+      'warn',
+      'Escribe o selecciona un documento.'
+    );
+
+    return;
+  }
+
+  const catalog=
+    normalizeDocumentCatalog(
+      APP.master
+    );
+
+  const existing=
+    catalog.find(doc=>
+      documentKey(doc)===
+      documentKey(typed)
+    );
+
+  const value=
+    existing||typed;
+
+  node.documents=
+    node.documents||[];
+
+  if(
+    node.documents.some(doc=>
+      documentKey(doc)===
+      documentKey(value)
+    )
+  ){
+    gMsg(
+      'info',
+      'Ese documento ya está asociado a la caja.'
+    );
+
+    return;
+  }
+
+  pushHistory();
+
+  const canonical=
+    ensureCatalogDocument(value);
+
+  node.documents.push({
+    id:uid('DOC'),
+    name:canonical,
+    code:''
+  });
+
+  markDirty();
+  renderLibrary();
+  renderStudio();
+
+  gMsg(
+    'ok',
+    existing
+      ? 'Documento asociado desde el catálogo.'
+      : 'Documento creado en el catálogo y asociado a la caja.'
+  );
+}
+
+
+function removeDocumentFromNode(
+  nodeId,
+  index
+){
+  const node=
+    nodeById(nodeId);
+
+  if(
+    !node ||
+    !node.documents?.[index]
+  ){
+    return;
+  }
+
+  pushHistory();
+
+  node.documents.splice(
+    index,
+    1
+  );
+
+  markDirty();
+  renderStudio();
+}
+  
 function renderNoteRows(notes,model){
   const map=buildNoteNumberMap(model).map;
   return notes.length?notes.map(note=>`<div class="editable-list-row"><textarea data-note-input="${note.id}">${escapeHtml(upper(note.text))}</textarea><button data-note-save="${note.id}">${escapeHtml(map.get(note.id)||'Aplicar')}</button><button data-note-remove="${note.id}" class="danger">Quitar</button></div>`).join(''):'<div class="empty-note">Sin notas.</div>';
 }
-function addDocumentToNode(nodeId){
-  const model=currentModel(),node=nodeById(nodeId,model),value=documentTextValue($('new_doc_text')?.value||'');if(!node||!value){gMsg('warn','Escribe código y nombre del documento.');return;}pushHistory();node.documents=node.documents||[];if(!node.documents.some(doc=>documentKey(doc)===documentKey(value)))node.documents.push({id:uid('DOC'),name:value,code:''});ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
-}
-function updateDocumentOnNode(nodeId,index){
-  const model=currentModel(),node=nodeById(nodeId,model);if(!node||!node.documents?.[index])return;const input=document.querySelector(`[data-doc-input="${index}"]`),value=documentTextValue(input?.value||'');if(!value){gMsg('warn','El documento no puede quedar vacío.');return;}pushHistory();node.documents[index]={...(node.documents[index]||{}),name:value,code:''};ensureCatalogDocument(value);markDirty();renderStudio();renderLibrary();
-}
+
 function removeDocumentFromNode(nodeId,index){const node=nodeById(nodeId);if(!node)return;pushHistory();node.documents.splice(index,1);markDirty();renderStudio();}
 function addNoteToNode(nodeId){const model=currentModel(),node=nodeById(nodeId,model),value=upper($('new_note_text').value);if(!value){gMsg('warn','Escribe el texto de la nota.');return;}pushHistory();const note={id:uid('NOTE'),node_id:nodeId,text:value,created_at:nowIso()};model.notes.push(note);node.note_ids=node.note_ids||[];node.note_ids.push(note.id);markDirty();renderStudio();}
 function updateNoteOnNode(nodeId,noteId){
