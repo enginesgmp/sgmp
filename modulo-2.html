@@ -606,10 +606,167 @@ function deleteFlow(flowId){
   renderLibrary();if(APP.view==='studio'&&!activeFlow())switchView('library');
 }
 
+const SB_WORKSPACE_STORAGE_KEY='SGMP_SB_WORKSPACE_V1';
+
+function persistWorkspaceSnapshot(){
+  try{
+    if(!APP.master){
+      localStorage.removeItem(
+        SB_WORKSPACE_STORAGE_KEY
+      );
+      return true;
+    }
+
+    const snapshot={
+      storage_code:'SB_BROWSER_WORKSPACE',
+      storage_version:'1.0',
+      saved_at:nowIso(),
+      active_flow_id:APP.activeFlowId,
+      master:clone(APP.master)
+    };
+
+    localStorage.setItem(
+      SB_WORKSPACE_STORAGE_KEY,
+      JSON.stringify(snapshot)
+    );
+
+    return true;
+
+  }catch(error){
+    gMsg(
+      'warn',
+      `No fue posible conservar el workspace en este navegador: ${error.message}`
+    );
+
+    return false;
+  }
+}
+
+function restoreWorkspaceSnapshot(){
+  try{
+    const raw=
+      localStorage.getItem(
+        SB_WORKSPACE_STORAGE_KEY
+      );
+
+    if(!raw){
+      return false;
+    }
+
+    const data=JSON.parse(raw);
+
+    if(
+      data?.storage_code!=='SB_BROWSER_WORKSPACE' ||
+      String(data?.storage_version)!=='1.0' ||
+      !data.master ||
+      !Array.isArray(data.master.flows)
+    ){
+      throw new Error(
+        'El workspace almacenado no tiene una estructura válida.'
+      );
+    }
+
+    validateMasterBackupStructure({
+      master:data.master
+    });
+
+    APP.master=clone(
+      data.master
+    );
+
+    APP.master.document_catalog=
+      Array.isArray(
+        APP.master.document_catalog
+      )
+        ? APP.master.document_catalog
+        : [];
+
+    APP.master.flows.forEach(flow=>{
+      flow.payload=
+        flow.payload||{};
+
+      flow.payload.model=
+        normalizeLoadedModel(
+          flow.payload.model
+        );
+    });
+
+    normalizeDocumentCatalog(
+      APP.master
+    );
+
+    APP.activeFlowId=
+      data.active_flow_id &&
+      flowById(data.active_flow_id)
+        ? data.active_flow_id
+        : APP.master.flows[0]?.flow_id||null;
+
+    APP.selection=null;
+    APP.connect=freshConnectState();
+    APP.history=[];
+    APP.future=[];
+    APP.dirty=false;
+    APP.nodeClipboard=null;
+
+    APP.pointerCanvas={
+      flowId:null,
+      x:null,
+      y:null,
+      inside:false
+    };
+
+    return true;
+
+  }catch(error){
+    gMsg(
+      'warn',
+      `Existe información local de SIPOC Builder, pero no pudo restaurarse: ${error.message}`
+    );
+
+    return false;
+  }
+}
+
 function saveActiveFlow({silent=false}={}){
-  const flow=activeFlow();if(!flow)return false;
-  flow.payload.model.updated_at=nowIso();flow.updated_at=nowIso();flow.saved_at=nowIso();APP.master.updated_at=nowIso();APP.dirty=false;
-  renderLibrary();renderStudioContext();if(!silent)gMsg('ok','Flujo guardado. Guardar nunca se bloquea por alertas.');return true;
+  const flow=activeFlow();
+
+  if(!flow){
+    return false;
+  }
+
+  flow.payload.model.updated_at=
+    nowIso();
+
+  flow.updated_at=
+    nowIso();
+
+  flow.saved_at=
+    nowIso();
+
+  APP.master.updated_at=
+    nowIso();
+
+  const persisted=
+    persistWorkspaceSnapshot();
+
+  APP.dirty=
+    !persisted;
+
+  renderLibrary();
+  renderStudioContext();
+
+  if(!silent){
+    gMsg(
+      persisted
+        ? 'ok'
+        : 'warn',
+      persisted
+        ? 'Flujo guardado y conservado en este navegador.'
+        : 'El flujo permanece abierto, pero no pudo conservarse en este navegador. Genera un respaldo maestro antes de salir.'
+    );
+  }
+
+  return persisted;
 }
 
 function markDirty(){APP.dirty=true;const flow=activeFlow();if(flow)flow.updated_at=nowIso();renderStudioContext();}
@@ -5643,8 +5800,54 @@ function normalizeLoadedModel(model){
   (model.lanes||[]).forEach(lane=>{if(['supplier','input','output','customer'].includes(lane.kind))lane.width=STANDARD.peripheralLaneWidth;});
   normalizeDocumentCatalog(APP.master); normalizeDecisionPorts(model); renumberConnectors(model); return model;
 }
-function clearWorkspace(){if(!APP.master)return;if(!confirm('Limpiar cerrará el proceso actual en SB. Guarda un respaldo si deseas conservarlo.'))return;APP.master=null;APP.activeFlowId=null;APP.selection=null;APP.history=[];APP.future=[];APP.dirty=false;renderLibrary();switchView('library');gMsg('info','Workspace limpio.');}
+function clearWorkspace(){
+  if(!APP.master){
+    return;
+  }
 
+  if(
+    !confirm(
+      'Limpiar cerrará el proceso actual en SB. Guarda un respaldo si deseas conservarlo.'
+    )
+  ){
+    return;
+  }
+
+  try{
+    localStorage.removeItem(
+      SB_WORKSPACE_STORAGE_KEY
+    );
+  }catch(error){
+    gMsg(
+      'warn',
+      `No fue posible eliminar el workspace almacenado: ${error.message}`
+    );
+  }
+
+  APP.master=null;
+  APP.activeFlowId=null;
+  APP.selection=null;
+  APP.history=[];
+  APP.future=[];
+  APP.dirty=false;
+  APP.nodeClipboard=null;
+
+  APP.pointerCanvas={
+    flowId:null,
+    x:null,
+    y:null,
+    inside:false
+  };
+
+  renderLibrary();
+  switchView('library');
+
+  gMsg(
+    'info',
+    'Workspace limpio.'
+  );
+}
+  
 async function toggleStudioFullscreen(){
   const studio=$('view_studio');
 
@@ -5849,10 +6052,30 @@ function bindLmpTransferReceiver(){
 function init(){
   bindGlobalEvents();
   bindLmpTransferReceiver();
+
+  const restored=
+    restoreWorkspaceSnapshot();
+
   renderLibrary();
   renderStudioContext();
   updateHistoryButtons();
-  receiveLmpTransfer();
+
+  const received=
+    receiveLmpTransfer();
+
+  if(received){
+    persistWorkspaceSnapshot();
+    return;
+  }
+
+  if(
+    restored &&
+    APP.activeFlowId
+  ){
+    openFlow(
+      APP.activeFlowId
+    );
+  }
 }
   
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
