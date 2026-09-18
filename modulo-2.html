@@ -2660,19 +2660,214 @@ function renderEdgeLabelAtPoint(edge,p,interactive){
 function renderEdgeLabel(edge,points,interactive){
   if(!text(edge.label)||!points.length)return'';return renderEdgeLabelAtPoint(edge,pointOnPolyline(points,edge.label_position??.5),interactive);
 }
-function renderEdge(edge,geometry,model,crossing,interactive=true){
-  const selected=APP.selection?.type==='edge'&&APP.selection.id===edge.id;
-  const stroke=crossing?'#D92D20':selected?'#00AEEF':'#000',sw=crossing||selected?2.8:1.25;
-  const marker=`url(#arrow${crossing?'Red':''})`;
+function renderEdge(
+  edge,
+  geometry,
+  model,
+  crossing,
+  interactive=true
+){
+  const selected=
+    APP.selection?.type==='edge' &&
+    APP.selection.id===edge.id;
+
+  const stroke=
+          crossing
+            ? '#D92D20'
+            : selected
+              ? '#00AEEF'
+              : '#000',
+        sw=
+          crossing||selected
+            ? 2.8
+            : 1.25;
+
+  const marker=
+    `url(#arrow${crossing?'Red':''})`;
 
   if(edge.mode==='connector'){
-    const cg=connectorGeometry(edge,geometry,model);if(!cg)return'';const fill=edge.connector_kind==='input'?'#92D050':edge.connector_kind==='output'?'#FFFF00':'#FFF',lab=escapeXml(edge.connector_label||'');
-    const handles=interactive&&selected?`${renderRouteHandles(edge,cg.sourceLogical,'source')}${renderRouteHandles(edge,cg.targetLogical,'target')}`:'';
-    return `<g class="edge" data-edge-id="${edge.id}" style="cursor:pointer"><path class="edge-hit" d="${pathFromPoints(cg.sourcePoints)}" fill="none" stroke="transparent" stroke-width="14"/><path d="${pathFromPoints(cg.sourcePoints)}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="${marker}"/><path class="edge-hit" d="${pathFromPoints(cg.targetPoints)}" fill="none" stroke="transparent" stroke-width="14"/><path d="${pathFromPoints(cg.targetPoints)}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="${marker}"/><circle ${interactive?`data-connector-marker="source" data-edge-id="${edge.id}"`:''} class="connector-marker" cx="${cg.sourceMarker.x}" cy="${cg.sourceMarker.y}" r="${STANDARD.connectorRadius}" fill="${fill}" stroke="#000" stroke-width="1"/><circle ${interactive?`data-connector-marker="target" data-edge-id="${edge.id}"`:''} class="connector-marker" cx="${cg.targetMarker.x}" cy="${cg.targetMarker.y}" r="${STANDARD.connectorRadius}" fill="${fill}" stroke="#000" stroke-width="1"/><text x="${cg.sourceMarker.x}" y="${cg.sourceMarker.y}" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" pointer-events="none">${lab}</text><text x="${cg.targetMarker.x}" y="${cg.targetMarker.y}" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" pointer-events="none">${lab}</text>${renderEdgeLabelAtPoint(edge,pointOnDisconnectedConnector(cg.sourcePoints,cg.targetPoints,edge.label_position??.5),interactive)}${handles}</g>`;
+    const cg=
+      connectorGeometry(
+        edge,
+        geometry,
+        model
+      );
+
+    if(!cg)return'';
+
+    const fill=
+            edge.connector_kind==='input'
+              ? '#92D050'
+              : edge.connector_kind==='output'
+                ? '#FFFF00'
+                : '#FFF',
+          lab=
+            escapeXml(
+              edge.connector_label||''
+            );
+
+    const handles=
+      interactive&&selected
+        ? `${
+            renderRouteHandles(
+              edge,
+              cg.sourceLogical,
+              'source'
+            )
+          }${
+            renderRouteHandles(
+              edge,
+              cg.targetLogical,
+              'target'
+            )
+          }`
+        : '';
+
+    return `
+      <g
+        class="edge"
+        data-edge-id="${edge.id}"
+        style="cursor:pointer"
+      >
+        <path
+          class="edge-hit"
+          d="${pathFromPoints(cg.sourcePoints)}"
+          fill="none"
+          stroke="transparent"
+          stroke-width="14"
+        />
+
+        <path
+          d="${pathFromPoints(cg.sourcePoints)}"
+          fill="none"
+          stroke="${stroke}"
+          stroke-width="${sw}"
+          marker-end="${marker}"
+        />
+
+        <path
+          class="edge-hit"
+          d="${pathFromPoints(cg.targetPoints)}"
+          fill="none"
+          stroke="transparent"
+          stroke-width="14"
+        />
+
+        <path
+          d="${pathFromPoints(cg.targetPoints)}"
+          fill="none"
+          stroke="${stroke}"
+          stroke-width="${sw}"
+          marker-end="${marker}"
+        />
+
+        <circle
+          ${
+            interactive
+              ? `data-connector-marker="source" data-edge-id="${edge.id}"`
+              : ''
+          }
+          class="connector-marker"
+          cx="${cg.sourceMarker.x}"
+          cy="${cg.sourceMarker.y}"
+          r="${STANDARD.connectorRadius}"
+          fill="${fill}"
+          stroke="#000"
+          stroke-width="1"
+        />
+
+        <circle
+          ${
+            interactive
+              ? `data-connector-marker="target" data-edge-id="${edge.id}"`
+              : ''
+          }
+          class="connector-marker"
+          cx="${cg.targetMarker.x}"
+          cy="${cg.targetMarker.y}"
+          r="${STANDARD.connectorRadius}"
+          fill="${fill}"
+          stroke="#000"
+          stroke-width="1"
+        />
+
+        <text
+          x="${cg.sourceMarker.x}"
+          y="${cg.sourceMarker.y}"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-size="9.5"
+          font-weight="700"
+          pointer-events="none"
+        >${lab}</text>
+
+        <text
+          x="${cg.targetMarker.x}"
+          y="${cg.targetMarker.y}"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-size="9.5"
+          font-weight="700"
+          pointer-events="none"
+        >${lab}</text>
+
+        ${
+          renderEdgeLabelAtPoint(
+            edge,
+            pointOnDisconnectedConnector(
+              cg.sourcePoints,
+              cg.targetPoints,
+              edge.label_position??.5
+            ),
+            interactive
+          )
+        }
+
+        ${handles}
+      </g>
+    `;
   }
 
-  const pts=routePoints(edge,geometry,model),handles=interactive&&selected?renderRouteHandles(edge,pts):'';
-  return `<g class="edge" data-edge-id="${edge.id}" style="cursor:pointer"><path class="edge-hit" d="${pathFromPoints(pts)}" fill="none" stroke="transparent" stroke-width="14"/><path d="${pathFromPoints(pts)}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="${marker}"/>${renderEdgeLabel(edge,pts,interactive)}${handles}</g>`;
+  const pts=
+          routePoints(
+            edge,
+            geometry,
+            model
+          ),
+        handles=
+          interactive&&selected
+            ? renderRouteHandles(
+                edge,
+                pts
+              )
+            : '';
+
+  return `
+    <g
+      class="edge"
+      data-edge-id="${edge.id}"
+      style="cursor:pointer"
+    >
+      <path
+        class="edge-hit"
+        d="${pathFromPoints(pts)}"
+        fill="none"
+        stroke="transparent"
+        stroke-width="14"
+      />
+
+      <path
+        d="${pathFromPoints(pts)}"
+        fill="none"
+        stroke="${stroke}"
+        stroke-width="${sw}"
+        marker-end="${marker}"
+      />
+
+      ${renderEdgeLabel(edge,pts,interactive)}
+      ${handles}
+    </g>
+  `;
 }
 
 function renderRouteHandles(edge,points,branch=''){
