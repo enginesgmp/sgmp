@@ -1878,7 +1878,7 @@ function convertSelectedEdgeToConnector(){
   markDirty();
   renderStudio();
 }
-  
+
 function revertSelectedConnector(){
   const model=currentModel();
 
@@ -1917,6 +1917,89 @@ function revertSelectedConnector(){
 
   markDirty();
   renderStudio();
+}
+
+function buildNoteNumberMap(
+  model=currentModel(),
+  geometryLanes=null
+){
+  if(!model){
+    return {
+      map:new Map(),
+      ordered:[]
+    };
+  }
+
+  const lanes=
+    geometryLanes||
+    laneGeometry(model).lanes;
+
+  const laneX=
+    new Map(
+      lanes.map(
+        lane=>[
+          lane.id,
+          lane.x
+        ]
+      )
+    );
+
+  const nodeOrder=
+    new Map(
+      (model.nodes||[]).map(
+        node=>[
+          node.id,
+          {
+            y:Number(node.y)||0,
+            x:
+              (laneX.get(node.lane_id)||0)+
+              (Number(node.x_rel)||0)
+          }
+        ]
+      )
+    );
+
+  const ordered=
+    (model.notes||[])
+      .slice()
+      .sort((a,b)=>{
+        const pa=
+                nodeOrder.get(a.node_id)||
+                {
+                  y:999999,
+                  x:999999
+                },
+              pb=
+                nodeOrder.get(b.node_id)||
+                {
+                  y:999999,
+                  x:999999
+                };
+
+        return (
+          pa.y-pb.y ||
+          pa.x-pb.x ||
+          String(a.created_at||'')
+            .localeCompare(
+              String(b.created_at||'')
+            )
+        );
+      });
+
+  const map=new Map();
+
+  ordered.forEach(
+    (note,index)=>
+      map.set(
+        note.id,
+        `5.${index+2}`
+      )
+  );
+
+  return {
+    map,
+    ordered
+  };
 }
 
 function wrapPdfNoteText(value,maxChars){
