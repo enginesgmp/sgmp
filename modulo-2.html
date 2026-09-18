@@ -2971,42 +2971,146 @@ function renderStudio(
     return;
   }
 
-  /*
-   * 1. Construir primero el SVG.
-   */
-  canvas.innerHTML=
-    renderSvg(
-      model,
-      {
-        interactive:true,
-        fast
-      }
-    );
+  let svgMarkup='';
 
   /*
-   * 2. Aplicar dimensiones inmediatamente.
-   *
-   * El lienzo no debe depender de que
-   * Inspector, validación o bindings terminen
-   * correctamente para poder verse.
+   * Render normal.
+   * Si falla alguna lógica secundaria
+   * de rutas/cruces, intenta render seguro.
    */
-  applyCamera();
+  try{
+    svgMarkup=
+      renderSvg(
+        model,
+        {
+          interactive:true,
+          fast
+        }
+      );
+
+  }catch(primaryError){
+
+    console.error(
+      '[SB] Error de render principal:',
+      primaryError
+    );
+
+    if(!fast){
+      try{
+        svgMarkup=
+          renderSvg(
+            model,
+            {
+              interactive:true,
+              fast:true
+            }
+          );
+
+        gMsg(
+          'warn',
+          `El SIPOC se cargó en modo seguro. Error del render completo: ${primaryError.message}`
+        );
+
+      }catch(fallbackError){
+
+        console.error(
+          '[SB] Error de render seguro:',
+          fallbackError
+        );
+
+        canvas.innerHTML=
+          `<div class="empty-note">
+            No fue posible dibujar el SIPOC:
+            ${escapeHtml(fallbackError.message)}
+          </div>`;
+
+        gMsg(
+          'err',
+          `No fue posible renderizar el SIPOC: ${fallbackError.message}`
+        );
+
+        if(redrawInspector){
+          renderInspector();
+        }
+
+        return;
+      }
+
+    }else{
+      canvas.innerHTML=
+        `<div class="empty-note">
+          No fue posible dibujar el SIPOC:
+          ${escapeHtml(primaryError.message)}
+        </div>`;
+
+      gMsg(
+        'err',
+        `No fue posible renderizar el SIPOC: ${primaryError.message}`
+      );
+
+      return;
+    }
+  }
+
+  canvas.innerHTML=
+    svgMarkup;
+
+  /*
+   * La cámara no debe impedir
+   * que el SVG ya generado permanezca visible.
+   */
+  try{
+    applyCamera();
+  }catch(error){
+    console.error(
+      '[SB] Error de cámara:',
+      error
+    );
+
+    gMsg(
+      'warn',
+      `El SIPOC fue generado, pero falló el ajuste de cámara: ${error.message}`
+    );
+  }
 
   if(fast){
     return;
   }
 
-  /*
-   * 3. Vincular comportamiento después
-   * de que el SVG ya sea visible.
-   */
-  bindSvgInteractions();
-
-  if(redrawInspector){
-    renderInspector();
+  try{
+    bindSvgInteractions();
+  }catch(error){
+    console.error(
+      '[SB] Error de interacciones:',
+      error
+    );
   }
 
-  refreshValidation();
+  if(redrawInspector){
+    try{
+      renderInspector();
+    }catch(error){
+      console.error(
+        '[SB] Error de Inspector:',
+        error
+      );
+    }
+  }
+
+  try{
+    refreshValidation();
+  }catch(error){
+    console.error(
+      '[SB] Error de validación:',
+      error
+    );
+
+    gMsg(
+      'warn',
+      `El SIPOC se dibujó, pero la validación encontró un error: ${error.message}`
+    );
+  }
+
   updateInsertButton();
   updateDeleteButton();
   updateHistoryButtons();
