@@ -180,6 +180,18 @@ label{display:block;margin-bottom:5px;color:#315674;font-size:.72rem;font-weight
 .viewport{position:relative;width:100%;height:clamp(720px,78vh,980px);overflow:auto;overscroll-behavior:contain;touch-action:none;user-select:none;cursor:grab;background-color:#F5F8FC;background-image:linear-gradient(rgba(11,46,89,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(11,46,89,.05) 1px,transparent 1px);background-size:20px 20px;scrollbar-width:thin;scrollbar-gutter:stable}
 .viewport:focus{outline:2px solid rgba(14,165,233,.22);outline-offset:-2px}
 .viewport.is-panning{cursor:grabbing}
+
+.canvas svg{
+  cursor:crosshair
+}
+
+.selection-marquee{
+  position:absolute;
+  z-index:55;
+  border:1.5px solid #0284C7;
+  background:rgba(14,165,233,.10);
+  pointer-events:none;
+}
 .stage{position:relative;transform:none!important;transform-origin:0 0;margin:0 auto}
 .canvas{display:block;background:#fff;border:1px solid rgba(11,46,89,.15);box-shadow:0 12px 28px rgba(11,46,89,.11)}
 .canvas svg{display:block;width:100%;height:100%;max-width:none;max-height:none;text-rendering:geometricPrecision;shape-rendering:geometricPrecision}
@@ -556,12 +568,18 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 
       <div class="workspace">
         <section class="viewport-card">
+
 <div id="viewport" class="viewport" tabindex="0" aria-label="Lienzo SIPOC">
   <div id="stage" class="stage">
     <div id="canvas" class="canvas"></div>
   </div>
-</div>
 
+  <div
+    id="selection_marquee"
+    class="selection-marquee hidden"
+    aria-hidden="true"
+  ></div>
+</div>
 <div
   id="node_annotation_popup"
   class="node-annotation-popup hidden"
@@ -670,6 +688,7 @@ const APP = {
   labelDrag:null,
 resizeDrag:null,
 laneResize:null,
+marquee:null,
 nodeClipboard:null,
 pointerCanvas:{
   flowId:null,
@@ -1601,29 +1620,148 @@ function changeNodeType(
 }
   
 function deleteSelection(){
-  const model=currentModel();
-  if(!model||!APP.selection)return;
+  const model=
+    currentModel();
 
-  if(APP.selection.type==='lane'){
-    const lane=laneById(APP.selection.id,model);
-    if(lane?.kind==='actor')deleteActorLane(lane.id);
+  if(
+    !model ||
+    !APP.selection
+  ){
+    return;
+  }
+
+  if(
+    APP.selection.type==='lane'
+  ){
+    const lane=
+      laneById(
+        APP.selection.id,
+        model
+      );
+
+    if(
+      lane?.kind==='actor'
+    ){
+      deleteActorLane(
+        lane.id
+      );
+    }
+
+    return;
+  }
+
+  if(
+    APP.selection.type==='nodes'
+  ){
+    const ids=
+      new Set(
+        (
+          APP.selection.ids||
+          []
+        ).filter(
+          id=>
+            nodeById(
+              id,
+              model
+            )
+        )
+      );
+
+    if(!ids.size){
+      APP.selection=null;
+      renderStudio();
+      return;
+    }
+
+    pushHistory();
+
+    model.nodes=
+      model.nodes.filter(
+        node=>
+          !ids.has(
+            node.id
+          )
+      );
+
+    /*
+     * Elimina automáticamente cualquier conexión
+     * cuya caja origen o destino desaparezca.
+     */
+    model.edges=
+      model.edges.filter(
+        edge=>
+          !ids.has(
+            edge.source
+          ) &&
+          !ids.has(
+            edge.target
+          )
+      );
+
+    model.notes=
+      model.notes.filter(
+        note=>
+          !ids.has(
+            note.node_id
+          )
+      );
+
+    renumberConnectors(
+      model
+    );
+
+    APP.selection=null;
+
+    markDirty();
+    renderStudio();
+
     return;
   }
 
   pushHistory();
 
-  if(APP.selection.type==='node'){
-    const id=APP.selection.id;
-    model.nodes=model.nodes.filter(n=>n.id!==id);
-    model.edges=model.edges.filter(e=>e.source!==id&&e.target!==id);
-    model.notes=model.notes.filter(n=>n.node_id!==id);
-  }else if(APP.selection.type==='edge'){
-    model.edges=model.edges.filter(e=>e.id!==APP.selection.id);
+  if(
+    APP.selection.type==='node'
+  ){
+    const id=
+      APP.selection.id;
+
+    model.nodes=
+      model.nodes.filter(
+        node=>
+          node.id!==id
+      );
+
+    model.edges=
+      model.edges.filter(
+        edge=>
+          edge.source!==id &&
+          edge.target!==id
+      );
+
+    model.notes=
+      model.notes.filter(
+        note=>
+          note.node_id!==id
+      );
+
+  }else if(
+    APP.selection.type==='edge'
+  ){
+    model.edges=
+      model.edges.filter(
+        edge=>
+          edge.id!==
+          APP.selection.id
+      );
   }
 
-  renumberConnectors(model);
+  renumberConnectors(
+    model
+  );
 
   APP.selection=null;
+
   markDirty();
   renderStudio();
 }
@@ -4073,9 +4211,10 @@ model.nodes.forEach(node=>{
             g,
             model
           ),
-        sel=
-          APP.selection?.type==='node' &&
-          APP.selection.id===node.id;
+sel=
+  isNodeSelected(
+    node.id
+  );
 
   svg+=`
     <g
@@ -5049,8 +5188,51 @@ function renderLibrary(){
   renderDocumentCatalog();
 }
 function updateInsertButton(){return APP.selection?.type==='lane'?laneById(APP.selection.id):null;}
-function updateDeleteButton(){const s=APP.selection;let enabled=false;if(s?.type==='node'||s?.type==='edge')enabled=true;if(s?.type==='lane'){const lane=laneById(s.id),actors=currentModel()?.lanes?.filter(l=>l.kind==='actor')||[];enabled=lane?.kind==='actor'&&actors.length>2&&!currentModel().nodes.some(n=>n.lane_id===lane.id);}$('btn_delete').disabled=!enabled;}
+  
+function updateDeleteButton(){
+  const s=APP.selection;
+  let enabled=false;
 
+  if(
+    s?.type==='node' ||
+    s?.type==='edge'
+  ){
+    enabled=true;
+  }
+
+  if(
+    s?.type==='nodes' &&
+    Array.isArray(s.ids) &&
+    s.ids.length
+  ){
+    enabled=true;
+  }
+
+  if(s?.type==='lane'){
+    const lane=
+            laneById(s.id),
+          actors=
+            currentModel()
+              ?.lanes
+              ?.filter(
+                item=>item.kind==='actor'
+              )||[];
+
+    enabled=
+      lane?.kind==='actor' &&
+      actors.length>2 &&
+      !currentModel()
+        .nodes
+        .some(
+          node=>
+            node.lane_id===lane.id
+        );
+  }
+
+  $('btn_delete').disabled=
+    !enabled;
+}
+  
 function renderInspector(){
   const root=$('inspector_content'),flow=activeFlow(),model=currentModel();if(!flow||!model){root.innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';return;}
   const sel=APP.selection;
@@ -5058,6 +5240,40 @@ function renderInspector(){
     root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"><button id="ins_save_general" class="primary" type="button">Aplicar cambios</button></div>`;
     $('ins_save_general').onclick=()=>{pushHistory();APP.master.process_code=upper($('ins_process_code').value);APP.master.process_name=upper($('ins_process_name').value);APP.master.purpose=upper($('ins_purpose').value);flow.version_name=upper($('ins_flow_name').value)||flow.version_name;flow.version_type=$('ins_flow_type').value;flow.status=$('ins_flow_status').value;markDirty();renderLibrary();renderStudio();};return;
   }
+  if(sel.type==='nodes'){
+  const ids=
+    Array.isArray(sel.ids)
+      ? sel.ids.filter(
+          id=>
+            nodeById(
+              id,
+              model
+            )
+        )
+      : [];
+
+  if(!ids.length){
+    APP.selection=null;
+    renderInspector();
+    return;
+  }
+
+  root.innerHTML=`
+    <div class="inspector-info">
+      <span class="info-chip">
+        ${ids.length} CAJAS SELECCIONADAS
+      </span>
+    </div>
+
+    <div class="empty-note">
+      Arrastra cualquiera de las cajas seleccionadas
+      para mover el conjunto.
+      Pulsa Supr/Delete para eliminar toda la selección.
+    </div>
+  `;
+
+  return;
+}
 if(sel.type==='lane'){
   const lane=
     laneById(
@@ -5884,12 +6100,23 @@ svg
           return;
         }
 
-        APP.selection={
-          type:'node',
-          id:nodeId
-        };
+const keepGroupSelection=
+  APP.selection?.type==='nodes' &&
+  Array.isArray(
+    APP.selection.ids
+  ) &&
+  APP.selection.ids.includes(
+    nodeId
+  );
 
-        renderInspector();
+if(!keepGroupSelection){
+  APP.selection={
+    type:'node',
+    id:nodeId
+  };
+}
+
+renderInspector();
         updateInsertButton();
         updateDeleteButton();
 
@@ -6209,64 +6436,765 @@ function endLaneResize(event){
   renderStudio();
 }
   
-function beginNodeDrag(event,nodeId){
-  if(event.button!==0||APP.connect.active)return;
-  const model=currentModel(),node=nodeById(nodeId,model),vp=$('viewport');if(!node||!vp)return;
-  event.preventDefault();event.stopPropagation();vp.focus({preventScroll:true});
-  const p=clientToCanvas(event.clientX,event.clientY),b=nodeBox(node,laneGeometry(model),model);
-  APP.drag={nodeId,pointerId:event.pointerId,start:p,offsetX:p.x-b.x,offsetY:p.y-b.y,moved:false,snapshot:captureHistoryState()};
-  vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleNodeDrag);vp.addEventListener('pointerup',endNodeDrag,{once:true});vp.addEventListener('pointercancel',endNodeDrag,{once:true});
-}
-function handleNodeDrag(event){
-  const d=APP.drag,model=currentModel();
-  if(!d||event.pointerId!==d.pointerId||!model)return;
-  const node=nodeById(d.nodeId,model);if(!node)return;
-  const p=clientToCanvas(event.clientX,event.clientY),g=laneGeometry(model),lane=laneById(node.lane_id,model);
-  if(Math.hypot(p.x-d.start.x,p.y-d.start.y)>3)d.moved=true;
+function selectedNodeIds(){
+  const selection=
+    APP.selection;
 
-  node.y=snap(
-    Math.max(
-      STANDARD.nodeMarginY,
-      Math.min(
-        model.layout.body_height-nodeSize(node).h-STANDARD.nodeMarginY,
-        p.y-g.bodyTop-d.offsetY
-      )
+  if(
+    selection?.type==='node'
+  ){
+    return [
+      selection.id
+    ];
+  }
+
+  if(
+    selection?.type==='nodes' &&
+    Array.isArray(
+      selection.ids
+    )
+  ){
+    return selection.ids.slice();
+  }
+
+  return [];
+}
+
+function isNodeSelected(nodeId){
+  const selection=
+    APP.selection;
+
+  return (
+    selection?.type==='node' &&
+    selection.id===nodeId
+  ) || (
+    selection?.type==='nodes' &&
+    Array.isArray(
+      selection.ids
+    ) &&
+    selection.ids.includes(
+      nodeId
     )
   );
+}
 
-  if(lane?.kind==='actor'){
-    const actorGeo=g.lanes.filter(l=>l.kind==='actor');
-    const target=actorGeo.find(l=>p.x>=l.x&&p.x<=l.x+l.width);
-    if(target){
-      node.lane_id=target.id;
-      node.x_rel=snap(
-        Math.max(
-          8,
+function selectionRectFromPoints(
+  a,
+  b
+){
+  return {
+    x1:Math.min(a.x,b.x),
+    y1:Math.min(a.y,b.y),
+    x2:Math.max(a.x,b.x),
+    y2:Math.max(a.y,b.y)
+  };
+}
+
+function nodeFullyInsideSelection(
+  node,
+  rect,
+  geometry,
+  model
+){
+  const box=
+    nodeBox(
+      node,
+      geometry,
+      model
+    );
+
+  return (
+    box.x>=rect.x1 &&
+    box.y>=rect.y1 &&
+    box.x+box.w<=rect.x2 &&
+    box.y+box.h<=rect.y2
+  );
+}
+
+function viewportContentPoint(
+  clientX,
+  clientY
+){
+  const vp=$('viewport'),
+        rect=
+          vp.getBoundingClientRect();
+
+  return {
+    x:
+      clientX-
+      rect.left+
+      vp.scrollLeft,
+
+    y:
+      clientY-
+      rect.top+
+      vp.scrollTop
+  };
+}
+
+function renderSelectionMarquee(){
+  const marquee=
+          APP.marquee,
+        el=
+          $('selection_marquee');
+
+  if(
+    !marquee ||
+    !el
+  ){
+    return;
+  }
+
+  const x1=
           Math.min(
-            target.width-nodeSize(node).w-8,
-            p.x-target.x-d.offsetX
-          )
-        )
+            marquee.startViewport.x,
+            marquee.currentViewport.x
+          ),
+        y1=
+          Math.min(
+            marquee.startViewport.y,
+            marquee.currentViewport.y
+          ),
+        x2=
+          Math.max(
+            marquee.startViewport.x,
+            marquee.currentViewport.x
+          ),
+        y2=
+          Math.max(
+            marquee.startViewport.y,
+            marquee.currentViewport.y
+          );
+
+  el.style.left=
+    `${x1}px`;
+
+  el.style.top=
+    `${y1}px`;
+
+  el.style.width=
+    `${Math.max(
+      0,
+      x2-x1
+    )}px`;
+
+  el.style.height=
+    `${Math.max(
+      0,
+      y2-y1
+    )}px`;
+
+  el.classList.toggle(
+    'hidden',
+    !marquee.moved
+  );
+}
+
+function beginMarqueeSelection(event){
+  const model=
+          currentModel(),
+        vp=
+          $('viewport');
+
+  if(
+    event.button!==0 ||
+    !model ||
+    !vp ||
+    APP.connect.active
+  ){
+    return false;
+  }
+
+  event.preventDefault();
+
+  closeNodeAnnotationPopup();
+
+  const startCanvas=
+          clientToCanvas(
+            event.clientX,
+            event.clientY
+          ),
+        startViewport=
+          viewportContentPoint(
+            event.clientX,
+            event.clientY
+          );
+
+  APP.marquee={
+    pointerId:event.pointerId,
+
+    startCanvas,
+
+    currentCanvas:{
+      ...startCanvas
+    },
+
+    startViewport,
+
+    currentViewport:{
+      ...startViewport
+    },
+
+    moved:false
+  };
+
+  vp.setPointerCapture?.(
+    event.pointerId
+  );
+
+  vp.addEventListener(
+    'pointermove',
+    handleMarqueeSelection
+  );
+
+  vp.addEventListener(
+    'pointerup',
+    endMarqueeSelection,
+    {
+      once:true
+    }
+  );
+
+  vp.addEventListener(
+    'pointercancel',
+    endMarqueeSelection,
+    {
+      once:true
+    }
+  );
+
+  return true;
+}
+
+function handleMarqueeSelection(event){
+  const marquee=
+    APP.marquee;
+
+  if(
+    !marquee ||
+    event.pointerId!==
+    marquee.pointerId
+  ){
+    return;
+  }
+
+  marquee.currentCanvas=
+    clientToCanvas(
+      event.clientX,
+      event.clientY
+    );
+
+  marquee.currentViewport=
+    viewportContentPoint(
+      event.clientX,
+      event.clientY
+    );
+
+  marquee.moved=
+    Math.hypot(
+      marquee.currentCanvas.x-
+      marquee.startCanvas.x,
+
+      marquee.currentCanvas.y-
+      marquee.startCanvas.y
+    )>3;
+
+  renderSelectionMarquee();
+}
+
+function endMarqueeSelection(event){
+  const marquee=
+          APP.marquee,
+        vp=
+          $('viewport'),
+        el=
+          $('selection_marquee'),
+        model=
+          currentModel();
+
+  if(!marquee){
+    return;
+  }
+
+  vp?.removeEventListener(
+    'pointermove',
+    handleMarqueeSelection
+  );
+
+  try{
+    if(
+      vp?.hasPointerCapture?.(
+        event.pointerId
+      )
+    ){
+      vp.releasePointerCapture(
+        event.pointerId
       );
     }
+  }catch(error){}
+
+  if(el){
+    el.classList.add(
+      'hidden'
+    );
+
+    el.style.width='0px';
+    el.style.height='0px';
   }
+
+  /*
+   * Un simple clic en espacio vacío
+   * limpia la selección.
+   */
+  if(
+    !marquee.moved ||
+    !model
+  ){
+    APP.selection=null;
+    APP.marquee=null;
+    renderStudio();
+    return;
+  }
+
+  const rect=
+          selectionRectFromPoints(
+            marquee.startCanvas,
+            marquee.currentCanvas
+          ),
+        geometry=
+          laneGeometry(
+            model
+          ),
+        ids=
+          model.nodes
+            .filter(
+              node=>
+                nodeFullyInsideSelection(
+                  node,
+                  rect,
+                  geometry,
+                  model
+                )
+            )
+            .map(
+              node=>node.id
+            );
+
+  if(ids.length===1){
+    APP.selection={
+      type:'node',
+      id:ids[0]
+    };
+
+  }else if(ids.length>1){
+    APP.selection={
+      type:'nodes',
+      ids
+    };
+
+  }else{
+    APP.selection=null;
+  }
+
+  APP.marquee=null;
+
+  renderStudio();
+}
+
+function nearestActorLaneForX(
+  x,
+  actorLanes
+){
+  if(!actorLanes.length){
+    return null;
+  }
+
+  const containing=
+    actorLanes.find(
+      lane=>
+        x>=lane.x &&
+        x<=lane.x+lane.width
+    );
+
+  if(containing){
+    return containing;
+  }
+
+  return actorLanes.reduce(
+    (best,lane)=>{
+      const distance=
+        x<lane.x
+
+          ? lane.x-x
+
+          : x>
+            lane.x+
+            lane.width
+
+            ? x-
+              (
+                lane.x+
+                lane.width
+              )
+
+            : 0;
+
+      if(
+        !best ||
+        distance<
+        best.distance
+      ){
+        return {
+          lane,
+          distance
+        };
+      }
+
+      return best;
+    },
+    null
+  )?.lane||null;
+}
+
+function beginNodeDrag(
+  event,
+  nodeId
+){
+  if(
+    event.button!==0 ||
+    APP.connect.active
+  ){
+    return;
+  }
+
+  const model=
+          currentModel(),
+        node=
+          nodeById(
+            nodeId,
+            model
+          ),
+        vp=
+          $('viewport');
+
+  if(
+    !node ||
+    !vp
+  ){
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  vp.focus({
+    preventScroll:true
+  });
+
+  closeNodeAnnotationPopup();
+
+  const p=
+          clientToCanvas(
+            event.clientX,
+            event.clientY
+          ),
+        geometry=
+          laneGeometry(
+            model
+          ),
+        activeIds=
+          selectedNodeIds(),
+        nodeIds=
+          activeIds.includes(
+            nodeId
+          )
+            ? activeIds
+            : [nodeId],
+        items=
+          nodeIds
+            .map(id=>{
+              const item=
+                      nodeById(
+                        id,
+                        model
+                      ),
+                    lane=
+                      item
+                        ? laneById(
+                            item.lane_id,
+                            model
+                          )
+                        : null;
+
+              if(
+                !item ||
+                !lane
+              ){
+                return null;
+              }
+
+              const box=
+                nodeBox(
+                  item,
+                  geometry,
+                  model
+                );
+
+              return {
+                id:item.id,
+                laneId:item.lane_id,
+                laneKind:lane.kind,
+                xRel:
+                  Number(
+                    item.x_rel
+                  )||0,
+                y:
+                  Number(
+                    item.y
+                  )||0,
+                boxX:box.x,
+                w:box.w,
+                h:box.h
+              };
+            })
+            .filter(Boolean);
+
+  if(!items.length){
+    return;
+  }
+
+  APP.drag={
+    nodeId,
+    nodeIds:
+      items.map(
+        item=>item.id
+      ),
+    pointerId:
+      event.pointerId,
+    start:p,
+    items,
+    moved:false,
+    snapshot:
+      captureHistoryState()
+  };
+
+  vp.setPointerCapture?.(
+    event.pointerId
+  );
+
+  vp.addEventListener(
+    'pointermove',
+    handleNodeDrag
+  );
+
+  vp.addEventListener(
+    'pointerup',
+    endNodeDrag,
+    {
+      once:true
+    }
+  );
+
+  vp.addEventListener(
+    'pointercancel',
+    endNodeDrag,
+    {
+      once:true
+    }
+  );
+}
+
+function handleNodeDrag(event){
+  const drag=
+          APP.drag,
+        model=
+          currentModel();
+
+  if(
+    !drag ||
+    event.pointerId!==
+    drag.pointerId ||
+    !model
+  ){
+    return;
+  }
+
+  const p=
+          clientToCanvas(
+            event.clientX,
+            event.clientY
+          ),
+        geometry=
+          laneGeometry(
+            model
+          ),
+        rawDx=
+          p.x-
+          drag.start.x,
+        rawDy=
+          p.y-
+          drag.start.y,
+        dx=
+          snap(
+            rawDx
+          );
+
+  /*
+   * Calculamos un único delta vertical permitido
+   * para conservar la distancia relativa del grupo.
+   */
+  const minDy=
+          Math.max(
+            ...drag.items.map(
+              item=>
+                STANDARD.nodeMarginY-
+                item.y
+            )
+          ),
+
+        maxDy=
+          Math.min(
+            ...drag.items.map(
+              item=>
+                model.layout.body_height-
+                item.h-
+                STANDARD.nodeMarginY-
+                item.y
+            )
+          ),
+
+        dy=
+          Math.max(
+            minDy,
+            Math.min(
+              maxDy,
+              snap(rawDy)
+            )
+          ),
+
+        actorLanes=
+          geometry.lanes.filter(
+            lane=>
+              lane.kind==='actor'
+          );
+
+  drag.items.forEach(
+    item=>{
+      const node=
+        nodeById(
+          item.id,
+          model
+        );
+
+      if(!node){
+        return;
+      }
+
+      node.y=
+        item.y+
+        dy;
+
+      /*
+       * Solo cajas de actores pueden cambiar
+       * horizontalmente de carril.
+       * S/I/O/C conservan su carril metodológico.
+       */
+      if(
+        item.laneKind==='actor'
+      ){
+        const desiredLeft=
+                item.boxX+
+                dx,
+
+              centerX=
+                desiredLeft+
+                item.w/2,
+
+              target=
+                nearestActorLaneForX(
+                  centerX,
+                  actorLanes
+                );
+
+        if(target){
+          node.lane_id=
+            target.id;
+
+          node.x_rel=
+            Math.max(
+              8,
+              Math.min(
+                target.width-
+                item.w-
+                8,
+
+                snap(
+                  desiredLeft-
+                  target.x
+                )
+              )
+            );
+        }
+      }
+    }
+  );
+
+  drag.moved=
+    Math.hypot(
+      rawDx,
+      rawDy
+    )>3;
 
   renderStudio(false);
 }
+
 function endNodeDrag(event){
-  const d=APP.drag,vp=$('viewport');
-  if(!d)return;
-  vp?.removeEventListener('pointermove',handleNodeDrag);
+  const drag=
+          APP.drag,
+        vp=
+          $('viewport');
+
+  if(!drag){
+    return;
+  }
+
+  vp?.removeEventListener(
+    'pointermove',
+    handleNodeDrag
+  );
+
   try{
-    if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);
+    if(
+      vp?.hasPointerCapture?.(
+        event.pointerId
+      )
+    ){
+      vp.releasePointerCapture(
+        event.pointerId
+      );
+    }
   }catch(error){}
-  if(d.moved&&d.snapshot){
-    APP.history.push(d.snapshot);
-    if(APP.history.length>60)APP.history.shift();
+
+  if(
+    drag.moved &&
+    drag.snapshot
+  ){
+    APP.history.push(
+      drag.snapshot
+    );
+
+    if(
+      APP.history.length>60
+    ){
+      APP.history.shift();
+    }
+
     APP.future=[];
     markDirty();
   }
+
   APP.drag=null;
+
   renderStudio();
 }
 
@@ -6341,7 +7269,8 @@ function endFlowResize(event){
 }
 
 function bindViewportPan(){
-  const vp=$('viewport');
+  const vp=
+    $('viewport');
 
   if(!vp)return;
 
@@ -6362,14 +7291,11 @@ function bindViewportPan(){
   vp.addEventListener(
     'pointerdown',
     event=>{
-
       vp.focus({
         preventScroll:true
       });
 
-      if(event.button!==0)return;
-
-      if(
+      const interactiveHit=
         event.target.closest?.(
           '[data-node-id],' +
           '[data-edge-id],' +
@@ -6380,20 +7306,73 @@ function bindViewportPan(){
           '[data-edge-segment],' +
           '[data-connector-marker],' +
           '[data-edge-label],' +
-          '[data-flow-resize]'
-        )
-      )return;
+          '[data-flow-resize],' +
+          '[data-node-annotation]'
+        );
+
+      if(
+        event.button===0 &&
+        interactiveHit
+      ){
+        return;
+      }
+
+      const insideCanvas=
+        !!event.target.closest?.(
+          '#canvas'
+        );
+
+      /*
+       * Dentro del SIPOC:
+       * clic izquierdo + arrastre = selección.
+       */
+      if(
+        event.button===0 &&
+        insideCanvas
+      ){
+        beginMarqueeSelection(
+          event
+        );
+
+        return;
+      }
+
+      /*
+       * Fuera del SIPOC se conserva
+       * el paneo original.
+       *
+       * También se acepta botón central
+       * sobre espacio vacío.
+       */
+      const wantsPan=
+        event.button===1 ||
+        (
+          event.button===0 &&
+          !insideCanvas
+        );
+
+      if(!wantsPan){
+        return;
+      }
 
       event.preventDefault();
 
       APP.camera.panning=true;
-      APP.camera.pointerId=event.pointerId;
-      APP.camera.startX=event.clientX;
-      APP.camera.startY=event.clientY;
+      APP.camera.pointerId=
+        event.pointerId;
+
+      APP.camera.startX=
+        event.clientX;
+
+      APP.camera.startY=
+        event.clientY;
+
       APP.camera.startScrollLeft=
         vp.scrollLeft;
+
       APP.camera.startScrollTop=
         vp.scrollTop;
+
       APP.camera.moved=false;
 
       vp.classList.add(
@@ -6409,7 +7388,6 @@ function bindViewportPan(){
   vp.addEventListener(
     'pointermove',
     event=>{
-
       if(currentModel()){
         const p=
           clientToCanvas(
@@ -6418,7 +7396,8 @@ function bindViewportPan(){
           );
 
         APP.pointerCanvas={
-          flowId:APP.activeFlowId,
+          flowId:
+            APP.activeFlowId,
           x:p.x,
           y:p.y,
           inside:true
@@ -6429,18 +7408,23 @@ function bindViewportPan(){
         !APP.camera.panning ||
         event.pointerId!==
         APP.camera.pointerId
-      )return;
+      ){
+        return;
+      }
 
       const dx=
-        event.clientX-
-        APP.camera.startX;
+              event.clientX-
+              APP.camera.startX,
 
-      const dy=
-        event.clientY-
-        APP.camera.startY;
+            dy=
+              event.clientY-
+              APP.camera.startY;
 
       if(
-        Math.hypot(dx,dy)>3
+        Math.hypot(
+          dx,
+          dy
+        )>3
       ){
         APP.camera.moved=true;
       }
@@ -6455,40 +7439,43 @@ function bindViewportPan(){
     }
   );
 
-  const stop=event=>{
-    if(
-      !APP.camera.panning
-    )return;
-
-    const wasMoved=
-      APP.camera.moved;
-
-    APP.camera.panning=false;
-    APP.camera.pointerId=null;
-    APP.camera.moved=false;
-
-    vp.classList.remove(
-      'is-panning'
-    );
-
-    try{
+  const stop=
+    event=>{
       if(
-        event &&
-        vp.hasPointerCapture?.(
-          event.pointerId
-        )
+        !APP.camera.panning
       ){
-        vp.releasePointerCapture(
-          event.pointerId
-        );
+        return;
       }
-    }catch(error){}
 
-    if(!wasMoved){
-      APP.selection=null;
-      renderStudio();
-    }
-  };
+      const wasMoved=
+        APP.camera.moved;
+
+      APP.camera.panning=false;
+      APP.camera.pointerId=null;
+      APP.camera.moved=false;
+
+      vp.classList.remove(
+        'is-panning'
+      );
+
+      try{
+        if(
+          event &&
+          vp.hasPointerCapture?.(
+            event.pointerId
+          )
+        ){
+          vp.releasePointerCapture(
+            event.pointerId
+          );
+        }
+      }catch(error){}
+
+      if(!wasMoved){
+        APP.selection=null;
+        renderStudio();
+      }
+    };
 
   vp.addEventListener(
     'pointerup',
@@ -6503,7 +7490,6 @@ function bindViewportPan(){
   vp.addEventListener(
     'wheel',
     event=>{
-
       vp.focus({
         preventScroll:true
       });
@@ -6517,7 +7503,8 @@ function bindViewportPan(){
         const factor=
           event.deltaY<0
             ? STANDARD.zoomStep
-            : 1/STANDARD.zoomStep;
+            : 1/
+              STANDARD.zoomStep;
 
         zoomBy(
           factor,
@@ -6536,7 +7523,9 @@ function bindViewportPan(){
           event.deltaX;
       }
     },
-    {passive:false}
+    {
+      passive:false
+    }
   );
 }
 
