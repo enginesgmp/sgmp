@@ -422,7 +422,7 @@ actorLaneMaxWidth:1000,
 routeStub:24,
 routeChannelGap:10,
 extendStep:88,
-connectorRadius:13,
+connectorRadius:10,
   connectorPeripheralInset:36,
   connectorInternalOffset:42,
   connectorBoundarySafety:18,
@@ -1375,6 +1375,11 @@ function connectorKindForEdge(edge,model=currentModel()){
 function roman(n){const vals=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];let out='';for(const [v,s] of vals){while(n>=v){out+=s;n-=v;}}return out;}
 function connectorLabel(kind,seq){if(kind==='input')return String.fromCharCode(64+seq);if(kind==='output')return roman(seq+1);return String(seq);}
 
+
+
+
+
+  
 function renumberConnectors(model=currentModel()){
   if(!model)return;
 
@@ -1386,61 +1391,375 @@ function renumberConnectors(model=currentModel()){
   };
 
   ['input','internal','output'].forEach(kind=>{
-    const edges=(model.edges||[])
-      .filter(edge=>edge.mode==='connector'&&edge.connector_kind===kind)
+    const active=(model.edges||[])
+      .filter(edge=>
+        edge.mode==='connector' &&
+        edge.connector_kind===kind
+      );
+
+    /*
+     * Backward compatibility:
+     * los respaldos anteriores no tienen connector_order.
+     * Se conserva primero su secuencia vigente y, como
+     * respaldo, el order histórico del edge.
+     */
+    const legacy=active
+      .filter(edge=>
+        !(Number(edge.connector_order)>0)
+      )
       .sort((a,b)=>
+        (Number(a.connector_sequence)||Number.MAX_SAFE_INTEGER)-
+        (Number(b.connector_sequence)||Number.MAX_SAFE_INTEGER) ||
         (Number(a.order)||0)-(Number(b.order)||0) ||
         String(a.id||'').localeCompare(String(b.id||''))
       );
 
+    let maxOrder=active.reduce(
+      (max,edge)=>
+        Math.max(
+          max,
+          Number(edge.connector_order)||0
+        ),
+      0
+    );
+
+    if(maxOrder===0){
+      legacy.forEach(
+        (edge,index)=>
+          edge.connector_order=index+1
+      );
+    }else{
+      legacy.forEach(
+        edge=>
+          edge.connector_order=++maxOrder
+      );
+    }
+
+    const edges=active.sort((a,b)=>
+      (Number(a.connector_order)||0)-
+      (Number(b.connector_order)||0) ||
+      String(a.id||'').localeCompare(String(b.id||''))
+    );
+
     edges.forEach((edge,index)=>{
       const sequence=index+1;
+
       edge.connector_sequence=sequence;
-      edge.connector_label=connectorLabel(kind,sequence);
+      edge.connector_label=
+        connectorLabel(
+          kind,
+          sequence
+        );
     });
 
-    model.counters[`connector_${kind}`]=edges.length;
+    model.counters[`connector_${kind}`]=
+      edges.length;
   });
+}
+
+function nextConnectorOrder(
+  kind,
+  model=currentModel()
+){
+  const orders=(model?.edges||[])
+    .filter(edge=>
+      edge.mode==='connector' &&
+      edge.connector_kind===kind
+    )
+    .map(edge=>
+      Number(edge.connector_order)||0
+    );
+
+  return Math.max(
+    0,
+    ...orders
+  )+1;
+}
+
+function initialConnectorPoint(
+  edge,
+  markerKey,
+  geometry,
+  model
+){
+  const source=nodeById(edge.source,model),
+        target=nodeById(edge.target,model);
+
+  if(!source||!target)return null;
+
+  const sourceSide=edge.source_side||'right',
+        targetSide=edge.target_side||'left',
+        a=anchorPoint(
+          source,
+          sourceSide,
+          edge,
+          geometry,
+          model
+        ),
+        b=anchorPoint(
+          target,
+          targetSide,
+          edge,
+          geometry,
+          model
+        ),
+        defaults=defaultConnectorMarkers(
+          edge,
+          geometry,
+          model,
+          a,
+          b
+        ),
+        node=
+          markerKey==='source'
+            ? source
+            : target,
+        side=
+          markerKey==='source'
+            ? sourceSide
+            : targetSide,
+        bounds=connectorZoneBounds(
+          edge,
+          markerKey,
+          geometry,
+          model
+        ),
+        base=defaults[markerKey];
+
+  const occupied=[];
+
+  (model.edges||[])
+    .filter(other=>
+      other.mode==='connector' &&
+      other.id!==edge.id
+    )
+    .forEach(other=>{
+      ['source','target'].forEach(key=>{
+        const point=
+          rawConnectorMarker(
+            other,
+            key,
+            geometry,
+            model
+          );
+
+        if(point){
+          occupied.push(point);
+        }
+      });
+    });
+
+  /*
+   * Distribución inicial únicamente.
+   * Después el usuario puede mover el círculo
+   * y SB no vuelve a recolocarlo.
+   */
+  const step=24,
+        offsets=[
+          0,
+          -step,
+          step,
+          -step*2,
+          step*2,
+          -step*3,
+          step*3
+        ],
+        horizontalSide=
+          ['top','bottom']
+            .includes(side);
+
+  for(const offset of offsets){
+    const candidate=
+      keepConnectorMarkerOutsideNode(
+        clampPointToBounds(
+          horizontalSide
+            ? {
+                x:base.x+offset,
+                y:base.y
+              }
+            : {
+                x:base.x,
+                y:base.y+offset
+              },
+          bounds
+        ),
+        node,
+        side,
+        bounds,
+        geometry,
+        model
+      );
+
+    const collides=
+      occupied.some(point=>
+        Math.hypot(
+          candidate.x-point.x,
+          candidate.y-point.y
+        )<step
+      );
+
+    if(!collides){
+      return candidate;
+    }
+  }
+
+  return keepConnectorMarkerOutsideNode(
+    clampPointToBounds(
+      base,
+      bounds
+    ),
+    node,
+    side,
+    bounds,
+    geometry,
+    model
+  );
+}
+
+function initializeConnectorPoints(
+  edge,
+  model=currentModel()
+){
+  if(
+    !model ||
+    !edge ||
+    edge.mode!=='connector'
+  )return;
+
+  const geometry=
+    laneGeometry(model);
+
+  edge.connector_points={
+    source:initialConnectorPoint(
+      edge,
+      'source',
+      geometry,
+      model
+    ),
+    target:initialConnectorPoint(
+      edge,
+      'target',
+      geometry,
+      model
+    )
+  };
 }
 
 function convertSelectedEdgeToConnector(){
   const model=currentModel();
-  if(!model||APP.selection?.type!=='edge')return;
 
-  const edge=edgeById(APP.selection.id,model);
-  if(!edge||edge.mode==='connector')return;
+  if(
+    !model ||
+    APP.selection?.type!=='edge'
+  )return;
 
-  const kind=connectorKindForEdge(edge,model);
+  const edge=
+    edgeById(
+      APP.selection.id,
+      model
+    );
+
+  if(
+    !edge ||
+    edge.mode==='connector'
+  )return;
+
+  const kind=
+    connectorKindForEdge(
+      edge,
+      model
+    );
+
   if(!kind){
-    gMsg('warn','Esta relación no admite conector metodológico.');
+    gMsg(
+      'warn',
+      'Esta relación no admite conector metodológico.'
+    );
     return;
   }
 
   pushHistory();
 
+  /*
+   * Primero consolida el orden de los
+   * conectores ya existentes.
+   */
+  renumberConnectors(model);
+
   edge.mode='connector';
   edge.connector_kind=kind;
+
+  /*
+   * El orden nace cuando la línea se
+   * convierte en conector, no cuando
+   * originalmente se creó el edge.
+   */
+  edge.connector_order=
+    nextConnectorOrder(
+      kind,
+      model
+    );
+
   edge.connector_sequence=null;
   edge.connector_label=null;
   edge.connector_points=null;
-  edge.connector_routes={source:[],target:[]};
+
+  edge.connector_routes={
+    source:[],
+    target:[]
+  };
+
   edge.waypoints=[];
 
   renumberConnectors(model);
+
+  initializeConnectorPoints(
+    edge,
+    model
+  );
 
   markDirty();
   renderStudio();
 }
   
-function revertSelectedConnector(){   const model=currentModel();   if(!model||APP.selection?.type!=='edge')return;    const edge=edgeById(APP.selection.id,model);   if(!edge||edge.mode!=='connector')return;    pushHistory();    edge.mode='line';   edge.connector_kind=null;   edge.connector_label=null;   edge.connector_sequence=null;   edge.connector_points=null;   edge.connector_routes=null;    renumberConnectors(model);    markDirty();   renderStudio(); }
+function revertSelectedConnector(){
+  const model=currentModel();
 
-function buildNoteNumberMap(model=currentModel(),geometryLanes=null){
-  if(!model)return {map:new Map(),ordered:[]};
-  const lanes=geometryLanes||laneGeometry(model).lanes;
-  const laneX=new Map(lanes.map(l=>[l.id,l.x]));
-  const nodeOrder=new Map(model.nodes.map(n=>[n.id,{y:Number(n.y)||0,x:(laneX.get(n.lane_id)||0)+(Number(n.x_rel)||0)}]));
-  const ordered=(model.notes||[]).slice().sort((a,b)=>{const pa=nodeOrder.get(a.node_id)||{y:999999,x:999999},pb=nodeOrder.get(b.node_id)||{y:999999,x:999999};return pa.y-pb.y||pa.x-pb.x||String(a.created_at||'').localeCompare(String(b.created_at||''));});
-  const map=new Map();ordered.forEach((note,i)=>map.set(note.id,`5.${i+2}`));return {map,ordered};
+  if(
+    !model ||
+    APP.selection?.type!=='edge'
+  )return;
+
+  const edge=
+    edgeById(
+      APP.selection.id,
+      model
+    );
+
+  if(
+    !edge ||
+    edge.mode!=='connector'
+  )return;
+
+  pushHistory();
+
+  edge.mode='line';
+  edge.connector_kind=null;
+  edge.connector_order=null;
+  edge.connector_label=null;
+  edge.connector_sequence=null;
+  edge.connector_points=null;
+  edge.connector_routes=null;
+
+  /*
+   * Al desaparecer un conector,
+   * todos los restantes recuperan
+   * una secuencia continua.
+   */
+  renumberConnectors(model);
+
+  markDirty();
+  renderStudio();
 }
 
 function wrapPdfNoteText(value,maxChars){
@@ -2029,21 +2348,26 @@ function rawConnectorMarker(edge,markerKey,geometry,model){
   const sourceSide=edge.source_side||'right',targetSide=edge.target_side||'left',a=anchorPoint(source,sourceSide,edge,geometry,model),b=anchorPoint(target,targetSide,edge,geometry,model),defaults=defaultConnectorMarkers(edge,geometry,model,a,b),bounds=connectorZoneBounds(edge,markerKey,geometry,model),stored=edge.connector_points||{},node=markerKey==='source'?source:target,side=markerKey==='source'?sourceSide:targetSide;
   return keepConnectorMarkerOutsideNode(clampPointToBounds(stored[markerKey]||defaults[markerKey],bounds),node,side,bounds,geometry,model);
 }
-function separateConnectorMarker(point,edge,markerKey,geometry,model,bounds){
-  let candidate=clampPointToBounds(point,bounds);
-  if(APP.connectorDrag)return candidate;
-  const minDistance=STANDARD.connectorRadius*2,occupied=[];
-  (model.edges||[]).filter(other=>other.mode==='connector'&&other.id!==edge.id).forEach(other=>{
-    ['source','target'].forEach(key=>{const p=rawConnectorMarker(other,key,geometry,model);if(p)occupied.push(p);});
-  });
-  const collides=p=>occupied.some(o=>Math.abs(p.x-o.x)<minDistance&&Math.abs(p.y-o.y)<minDistance);
-  if(!collides(candidate))return candidate;
-  for(let step=1;step<=8;step++){
-    const d=minDistance*step,candidates=[{x:candidate.x,y:candidate.y+d},{x:candidate.x,y:candidate.y-d},{x:candidate.x+d,y:candidate.y},{x:candidate.x-d,y:candidate.y}].map(p=>clampPointToBounds(p,bounds));
-    const free=candidates.find(p=>!collides(p));if(free)return free;
-  }
-  return candidate;
+  
+function separateConnectorMarker(
+  point,
+  edge,
+  markerKey,
+  geometry,
+  model,
+  bounds
+){
+  /*
+   * No recolocar automáticamente.
+   * Después de su posición inicial,
+   * la coordenada guardada por el usuario manda.
+   */
+  return clampPointToBounds(
+    point,
+    bounds
+  );
 }
+  
 function defaultConnectorMarkers(edge,geometry,model,a,b){
   if(edge.connector_kind==='input'){
     const lane=geometry.lanes.find(item=>item.kind==='input'),x=lane?lane.x+lane.width-STANDARD.connectorPeripheralInset:a.x+STANDARD.connectorInternalOffset;
