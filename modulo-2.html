@@ -1165,7 +1165,7 @@ function insertNode(type){
   const lane=laneById(APP.selection.id,model);if(!lane)return;
   if(!ALLOWED_BY_LANE[lane.kind]?.includes(type)){gMsg('err','La metodología no permite esa figura en el carril seleccionado.');return;}
   pushHistory();const pos=nextNodePosition(lane.id);
-  model.nodes.push({id:uid('NODE'),lane_id:lane.id,type,label:'',x_rel:pos.x_rel,y:pos.y,documents:[],note_ids:[],meta:{}});
+  model.nodes.push({   id:uid('NODE'),   lane_id:lane.id,   type,   label:'',   x_rel:pos.x_rel,   y:pos.y,   documents:[],   note_ids:[],   work_comments:[],   meta:{} });
   markDirty();$('insert_dialog').close();renderStudio();
 }
 
@@ -1194,7 +1194,7 @@ function resizeActorLane(laneId,delta){
 
 function duplicateSelectedNode(){
   const model=currentModel();if(!model||APP.selection?.type!=='node')return;const node=nodeById(APP.selection.id,model);if(!node)return;
-  pushHistory();const pos=nextNodePosition(node.lane_id),copy={id:uid('NODE'),lane_id:node.lane_id,type:node.type,label:'',x_rel:pos.x_rel,y:pos.y,documents:[],note_ids:[],meta:{}};
+  pushHistory();const pos=nextNodePosition(node.lane_id),copy={   id:uid('NODE'),   lane_id:node.lane_id,   type:node.type,   label:'',   x_rel:pos.x_rel,   y:pos.y,   documents:[],   note_ids:[],   work_comments:[],   meta:{} };
   model.nodes.push(copy);APP.selection={type:'node',id:copy.id};markDirty();renderStudio();
 }
 
@@ -4847,31 +4847,22 @@ if(sel.type==='node'){
     return;
   }
 
-const lane=laneById(node.lane_id,model),
-
-      notes=(node.note_ids||[])
-        .map(id=>
-          model.notes.find(
-            note=>note.id===id
+  const lane=laneById(node.lane_id,model),
+        typeOptions=
+          (
+            ALLOWED_BY_LANE[
+              lane?.kind
+            ]||[]
           )
-        )
-        .filter(Boolean),
-
-      typeOptions=
-        (
-          ALLOWED_BY_LANE[
-            lane?.kind
-          ]||[]
-        )
-        .map(type=>
-          `<option
-            value="${type}"
-            ${node.type===type?'selected':''}
-          >${escapeHtml(
-            SYMBOLS[type]?.label||type
-          )}</option>`
-        )
-        .join('');
+            .map(type=>
+              `<option
+                value="${type}"
+                ${node.type===type?'selected':''}
+              >${escapeHtml(
+                SYMBOLS[type]?.label||type
+              )}</option>`
+            )
+            .join('');
 
   root.innerHTML=`
     <div class="inspector-info" aria-label="Información del elemento">
@@ -4888,12 +4879,12 @@ const lane=laneById(node.lane_id,model),
       </span>
     </div>
 
-<div class="field">
-  <label>Tipo de caja</label>
-  <select id="ins_node_type">
-    ${typeOptions}
-  </select>
-</div>
+    <div class="field">
+      <label>Tipo de caja</label>
+      <select id="ins_node_type">
+        ${typeOptions}
+      </select>
+    </div>
 
     <div class="field">
       <label>Texto principal</label>
@@ -4945,30 +4936,17 @@ const lane=laneById(node.lane_id,model),
       </div>
     </div>
 
-    <div class="inspector-section">
-      <h4>Notas aclaratorias</h4>
-
-      <div id="note_list">
-        ${renderNoteRows(notes,model)}
-      </div>
-
-      <div class="field">
-        <label>Nueva nota</label>
-        <textarea id="new_note_text"></textarea>
-      </div>
-
-      <button id="btn_add_note" type="button">
-        + Agregar nota
-      </button>
+    <div class="empty-note">
+      Las notas aclaratorias y observaciones se administran desde el lápiz de la caja seleccionada.
     </div>
   `;
 
-$('ins_node_type').onchange=()=>
-  changeNodeType(
-    node.id,
-    $('ins_node_type').value
-  );
-  
+  $('ins_node_type').onchange=()=>
+    changeNodeType(
+      node.id,
+      $('ins_node_type').value
+    );
+
   $('ins_node_apply').onclick=()=>{
     pushHistory();
     node.label=upper($('ins_node_label').value);
@@ -4981,10 +4959,8 @@ $('ins_node_type').onchange=()=>
 
   bindDocumentCombobox(node.id);
 
-  $('btn_add_note').onclick=()=>
-    addNoteToNode(node.id);
-
-  root.querySelectorAll('[data-doc-remove]')
+  root
+    .querySelectorAll('[data-doc-remove]')
     .forEach(btn=>
       btn.onclick=()=>
         removeDocumentFromNode(
@@ -4993,27 +4969,10 @@ $('ins_node_type').onchange=()=>
         )
     );
 
-  root.querySelectorAll('[data-note-save]')
-    .forEach(btn=>
-      btn.onclick=()=>
-        updateNoteOnNode(
-          node.id,
-          btn.dataset.noteSave
-        )
-    );
-
-  root.querySelectorAll('[data-note-remove]')
-    .forEach(btn=>
-      btn.onclick=()=>
-        removeNoteFromNode(
-          node.id,
-          btn.dataset.noteRemove
-        )
-    );
-
   return;
-}   
 }
+}
+  
 function sideOptions(current){return ['top','right','bottom','left'].map(s=>`<option value="${s}" ${current===s?'selected':''}>${({top:'Arriba',right:'Derecha',bottom:'Abajo',left:'Izquierda'})[s]}</option>`).join('');}
   
 function renderDocRows(docs){
@@ -5385,18 +5344,6 @@ function removeDocumentFromNode(
   renderStudio();
 }
   
-function renderNoteRows(notes,model){
-  const map=buildNoteNumberMap(model).map;
-  return notes.length?notes.map(note=>`<div class="editable-list-row"><textarea data-note-input="${note.id}">${escapeHtml(upper(note.text))}</textarea><button data-note-save="${note.id}">${escapeHtml(map.get(note.id)||'Aplicar')}</button><button data-note-remove="${note.id}" class="danger">Quitar</button></div>`).join(''):'<div class="empty-note">Sin notas.</div>';
-}
-
-function addNoteToNode(nodeId){const model=currentModel(),node=nodeById(nodeId,model),value=upper($('new_note_text').value);if(!value){gMsg('warn','Escribe el texto de la nota.');return;}pushHistory();const note={id:uid('NOTE'),node_id:nodeId,text:value,created_at:nowIso()};model.notes.push(note);node.note_ids=node.note_ids||[];node.note_ids.push(note.id);markDirty();renderStudio();}
-function updateNoteOnNode(nodeId,noteId){
-  const model=currentModel(),note=model?.notes?.find(item=>item.id===noteId);if(!note)return;const input=document.querySelector(`[data-note-input="${noteId}"]`),value=upper(input?.value||'');if(!value){gMsg('warn','La nota aclaratoria no puede quedar vacía.');return;}pushHistory();note.text=value;markDirty();renderStudio();
-}
-
-function removeNoteFromNode(nodeId,noteId){const model=currentModel(),node=nodeById(nodeId,model);if(!model||!node)return;pushHistory();model.notes=model.notes.filter(n=>n.id!==noteId);node.note_ids=(node.note_ids||[]).filter(id=>id!==noteId);markDirty();renderStudio();}
-
 function bindSvgInteractions(){
   const svg=
     $('canvas')?.querySelector('svg');
@@ -5490,8 +5437,9 @@ function bindSvgInteractions(){
 
     });
 
+
 /*
- * Burbuja de notas y comentarios.
+ * Lápiz de notas y observaciones.
  */
 svg
   .querySelectorAll(
@@ -5512,14 +5460,31 @@ svg
 
         openNodeAnnotationPopup(
           el.dataset.nodeAnnotation,
-          event.clientX,
-          event.clientY
+          el
+        );
+      }
+    );
+
+    el.addEventListener(
+      'keydown',
+      event=>{
+        if(
+          event.key!=='Enter' &&
+          event.key!==' '
+        )return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        openNodeAnnotationPopup(
+          el.dataset.nodeAnnotation,
+          el
         );
       }
     );
 
   });
-
+  
 /*
  * Cajas.
  */
@@ -7984,13 +7949,50 @@ function bindGlobalEvents(){
   $('btn_export_pdf_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,true) );  $('btn_export_pdf_no_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,false) );  $('btn_export_lmp').addEventListener(   'click',   ()=>exportLmp() );  $('btn_download_pdf').addEventListener(   'click',   downloadPdfPreview );  $('pdf_preview_dialog').addEventListener(   'close',   clearPdfPreview );
   document.querySelectorAll('[data-dialog-close]').forEach(btn=>btn.addEventListener('click',()=>$(btn.dataset.dialogClose)?.close()));
   window.addEventListener('resize',()=>{if(APP.view==='studio'&&currentModel())applyCamera();});
+  
   document.addEventListener(
   'fullscreenchange',
   syncStudioFullscreen
 );
+
+document.addEventListener(
+  'pointerdown',
+  event=>{
+    const popup=$('node_annotation_popup');
+
+    if(
+      !popup ||
+      popup.classList.contains('hidden')
+    ){
+      return;
+    }
+
+    const target=
+      event.target instanceof Element
+        ? event.target
+        : null;
+
+    if(
+      target?.closest('#node_annotation_popup') ||
+      target?.closest('[data-node-annotation]')
+    ){
+      return;
+    }
+
+    closeNodeAnnotationPopup();
+  },
+  true
+);
+
+$('viewport').addEventListener(
+  'scroll',
+  closeNodeAnnotationPopup,
+  {passive:true}
+);
+  
   document.addEventListener('keydown',event=>{
     const editable=['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable;
-    if(event.key==='Escape'){APP.connect=freshConnectState();APP.selection=null;document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());if(APP.view==='studio')renderStudio();return;}
+    if(event.key==='Escape'){closeNodeAnnotationPopup();APP.connect=freshConnectState();APP.selection=null;document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());if(APP.view==='studio')renderStudio();return;}
     if(editable)return;const ctrl=event.ctrlKey||event.metaKey;
     
 if(
