@@ -3100,12 +3100,202 @@ function connectorBranchLogicalPoints(edge,branch,geometryData){
   if(branch==='source')return stored.length?compactRoutePoints([geometryData.a,...stored,geometryData.sourceMarker],false):connectorStubPoints(geometryData.a,edge.source_side||'right',geometryData.sourceMarker);
   return stored.length?compactRoutePoints([geometryData.targetMarker,...stored,geometryData.b],false):connectorStubPoints(geometryData.b,edge.target_side||'left',geometryData.targetMarker).reverse();
 }
-function connectorGeometry(edge,geometry,model){
-  const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return null;
-  const sourceSide=edge.source_side||'right',targetSide=edge.target_side||'left',a=anchorPoint(source,sourceSide,edge,geometry,model),b=anchorPoint(target,targetSide,edge,geometry,model),sourceBounds=connectorZoneBounds(edge,'source',geometry,model),targetBounds=connectorZoneBounds(edge,'target',geometry,model),defaults=defaultConnectorMarkers(edge,geometry,model,a,b);
-  const stored=edge.connector_points||{},sourceRaw=keepConnectorMarkerOutsideNode(clampPointToBounds(stored.source||defaults.source,sourceBounds),source,sourceSide,sourceBounds,geometry,model),targetRaw=keepConnectorMarkerOutsideNode(clampPointToBounds(stored.target||defaults.target,targetBounds),target,targetSide,targetBounds,geometry,model),sourceMarker=separateConnectorMarker(sourceRaw,edge,'source',geometry,model,sourceBounds),targetMarker=separateConnectorMarker(targetRaw,edge,'target',geometry,model,targetBounds);
-  const bounds={source:sourceBounds,target:targetBounds},base={a,b,sourceMarker,targetMarker,bounds};const sourceLogical=avoidConnectorObstacles(connectorBranchLogicalPoints(edge,'source',base),edge,geometry,model),targetLogical=avoidConnectorObstacles(connectorBranchLogicalPoints(edge,'target',base),edge,geometry,model);
-  return{...base,sourceLogical,targetLogical,sourcePoints:trimPolylineEnd(sourceLogical,STANDARD.connectorRadius),targetPoints:trimPolylineStart(targetLogical,STANDARD.connectorRadius)};
+function connectorGeometry(
+  edge,
+  geometry,
+  model
+){
+  const source=
+          nodeById(
+            edge.source,
+            model
+          ),
+        target=
+          nodeById(
+            edge.target,
+            model
+          );
+
+  if(
+    !source ||
+    !target
+  ){
+    return null;
+  }
+
+  const sourceSide=
+          edge.source_side||
+          'right',
+
+        targetSide=
+          edge.target_side||
+          'left',
+
+        a=
+          anchorPoint(
+            source,
+            sourceSide,
+            edge,
+            geometry,
+            model
+          ),
+
+        b=
+          anchorPoint(
+            target,
+            targetSide,
+            edge,
+            geometry,
+            model
+          ),
+
+        sourceBounds=
+          connectorZoneBounds(
+            edge,
+            'source',
+            geometry,
+            model
+          ),
+
+        targetBounds=
+          connectorZoneBounds(
+            edge,
+            'target',
+            geometry,
+            model
+          ),
+
+        defaults=
+          defaultConnectorMarkers(
+            edge,
+            geometry,
+            model,
+            a,
+            b
+          ),
+
+        stored=
+          edge.connector_points||
+          {},
+
+        hasStoredSource=
+          !!stored.source,
+
+        hasStoredTarget=
+          !!stored.target,
+
+        sourceRaw=
+          keepConnectorMarkerOutsideNode(
+            clampPointToBounds(
+              stored.source||
+              defaults.source,
+              sourceBounds
+            ),
+            source,
+            sourceSide,
+            sourceBounds,
+            geometry,
+            model
+          ),
+
+        targetRaw=
+          keepConnectorMarkerOutsideNode(
+            clampPointToBounds(
+              stored.target||
+              defaults.target,
+              targetBounds
+            ),
+            target,
+            targetSide,
+            targetBounds,
+            geometry,
+            model
+          ),
+
+        /*
+         * La separación automática solamente
+         * aplica mientras el usuario todavía
+         * no haya definido una posición manual.
+         */
+        sourceMarker=
+          hasStoredSource
+            ? sourceRaw
+            : separateConnectorMarker(
+                sourceRaw,
+                edge,
+                'source',
+                geometry,
+                model,
+                sourceBounds
+              ),
+
+        targetMarker=
+          hasStoredTarget
+            ? targetRaw
+            : separateConnectorMarker(
+                targetRaw,
+                edge,
+                'target',
+                geometry,
+                model,
+                targetBounds
+              );
+
+  const bounds={
+          source:sourceBounds,
+          target:targetBounds
+        },
+
+        base={
+          a,
+          b,
+          sourceMarker,
+          targetMarker,
+          bounds
+        },
+
+        sourceLogical=
+          avoidConnectorObstacles(
+            connectorBranchLogicalPoints(
+              edge,
+              'source',
+              base
+            ),
+            edge,
+            geometry,
+            model
+          ),
+
+        targetLogical=
+          avoidConnectorObstacles(
+            connectorBranchLogicalPoints(
+              edge,
+              'target',
+              base
+            ),
+            edge,
+            geometry,
+            model
+          );
+
+  return {
+    ...base,
+
+    sourceLogical,
+    targetLogical,
+
+    sourcePoints:
+      trimPolylineEnd(
+        sourceLogical,
+        STANDARD.connectorRadius
+      ),
+
+    targetPoints:
+      trimPolylineStart(
+        targetLogical,
+        STANDARD.connectorRadius
+      )
+  };
 }
 function pointOnPolyline(points,t=.5){
   if(!points?.length)return{x:0,y:0};if(points.length===1)return{...points[0]};const lengths=[];let total=0;for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return{...points[0]};let remaining=Math.max(0,Math.min(1,Number(t)||0))*total;for(let i=0;i<lengths.length;i++){if(remaining<=lengths[i]||i===lengths.length-1){const ratio=lengths[i]?remaining/lengths[i]:0;return{x:points[i].x+(points[i+1].x-points[i].x)*ratio,y:points[i].y+(points[i+1].y-points[i].y)*ratio};}remaining-=lengths[i];}return{...points[points.length-1]};
@@ -7232,9 +7422,59 @@ function handleConnectorMarkerDrag(event){
   edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false,true);
 }
 function endConnectorMarkerDrag(event){
-  const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleConnectorMarkerDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}
-  const model=currentModel(),edge=edgeById(drag.edgeId,model);if(drag.moved&&edge&&model){const geometry=laneGeometry(model),bounds=connectorZoneBounds(edge,drag.markerKey,geometry,model),current=edge.connector_points?.[drag.markerKey];if(current)edge.connector_points[drag.markerKey]=separateConnectorMarker(current,edge,drag.markerKey,geometry,model,bounds);}
-  if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.connectorDrag=null;renderStudio();
+  const drag=
+          APP.connectorDrag,
+        vp=
+          $('viewport');
+
+  if(!drag){
+    return;
+  }
+
+  vp?.removeEventListener(
+    'pointermove',
+    handleConnectorMarkerDrag
+  );
+
+  try{
+    if(
+      vp?.hasPointerCapture?.(
+        event.pointerId
+      )
+    ){
+      vp.releasePointerCapture(
+        event.pointerId
+      );
+    }
+  }catch(error){}
+
+  /*
+   * No ejecutar separateConnectorMarker aquí.
+   * La posición definida manualmente por el
+   * usuario debe conservarse al finalizar
+   * el arrastre.
+   */
+  if(
+    drag.moved &&
+    drag.snapshot
+  ){
+    APP.history.push(
+      drag.snapshot
+    );
+
+    if(
+      APP.history.length>60
+    ){
+      APP.history.shift();
+    }
+
+    APP.future=[];
+    markDirty();
+  }
+
+  APP.connectorDrag=null;
+
+  renderStudio();
 }
 function nearestPolylinePosition(points,point){
   if(!points||points.length<2)return 0;let total=0;const lengths=[];for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return 0;let best={dist:Infinity,along:0},passed=0;
