@@ -6530,14 +6530,207 @@ function normalizeDecisionPorts(model){
 }
 
 function normalizeLoadedModel(model){
-  if(!model||typeof model!=='object')return createBlankModel();
-  model.model_version='6.1';model.layout=model.layout||{};model.layout.body_height=Math.max(STANDARD.defaultBodyHeight,Number(model.layout.body_height)||STANDARD.defaultBodyHeight);model.counters=model.counters||{edge:0,connector_input:0,connector_internal:0,connector_output:0};
-  if(Array.isArray(model.document_catalog)){model.document_catalog.forEach(doc=>ensureCatalogDocument(doc));delete model.document_catalog;}
-  (model.nodes||[]).forEach(node=>{node.documents=Array.isArray(node.documents)?node.documents:[];node.note_ids=Array.isArray(node.note_ids)?node.note_ids:[];node.documents.forEach(doc=>ensureCatalogDocument(doc));});
-  (model.edges||[]).forEach(edge=>{if(!Array.isArray(edge.waypoints))edge.waypoints=[];if(typeof edge.label_position!=='number')edge.label_position=.5;if(edge.mode==='connector'){edge.connector_routes=edge.connector_routes||{source:[],target:[]};if(!Array.isArray(edge.connector_routes.source))edge.connector_routes.source=[];if(!Array.isArray(edge.connector_routes.target))edge.connector_routes.target=[];if(edge.connector_points&&typeof edge.connector_points!=='object')edge.connector_points=null;}});
-  (model.lanes||[]).forEach(lane=>{if(['supplier','input','output','customer'].includes(lane.kind))lane.width=STANDARD.peripheralLaneWidth;});
-  normalizeDocumentCatalog(APP.master); normalizeDecisionPorts(model); renumberConnectors(model); return model;
+  if(
+    !model ||
+    typeof model!=='object'
+  ){
+    return createBlankModel();
+  }
+
+  model.model_version='6.1';
+
+  model.layout=
+    model.layout||{};
+
+  model.layout.body_height=
+    Math.max(
+      STANDARD.defaultBodyHeight,
+      Number(
+        model.layout.body_height
+      )||
+      STANDARD.defaultBodyHeight
+    );
+
+  model.counters=
+    model.counters||
+    {
+      edge:0,
+      connector_input:0,
+      connector_internal:0,
+      connector_output:0
+    };
+
+  if(
+    Array.isArray(
+      model.document_catalog
+    )
+  ){
+    model.document_catalog
+      .forEach(doc=>
+        ensureCatalogDocument(doc)
+      );
+
+    delete model.document_catalog;
+  }
+
+  (model.nodes||[])
+    .forEach(node=>{
+
+      node.documents=
+        Array.isArray(
+          node.documents
+        )
+          ? node.documents
+          : [];
+
+      node.note_ids=
+        Array.isArray(
+          node.note_ids
+        )
+          ? node.note_ids
+          : [];
+
+      /*
+       * Comentarios internos de levantamiento.
+       * No forman parte de la semántica formal
+       * del SIPOC ni de SB_TO_LMP.
+       */
+      node.work_comments=
+        Array.isArray(
+          node.work_comments
+        )
+          ? node.work_comments
+          : [];
+
+      node.work_comments=
+        node.work_comments
+          .map(comment=>{
+
+            if(
+              typeof comment==='string'
+            ){
+              return {
+                id:uid('COMMENT'),
+                text:upper(comment)
+              };
+            }
+
+            if(
+              !comment ||
+              typeof comment!=='object'
+            ){
+              return null;
+            }
+
+            return {
+              id:
+                text(comment.id)||
+                uid('COMMENT'),
+
+              text:
+                upper(
+                  comment.text||''
+                )
+            };
+          })
+          .filter(comment=>
+            comment &&
+            text(comment.text)
+          );
+
+      node.documents
+        .forEach(doc=>
+          ensureCatalogDocument(doc)
+        );
+    });
+
+  (model.edges||[])
+    .forEach(edge=>{
+
+      if(
+        !Array.isArray(
+          edge.waypoints
+        )
+      ){
+        edge.waypoints=[];
+      }
+
+      if(
+        typeof edge.label_position!==
+        'number'
+      ){
+        edge.label_position=.5;
+      }
+
+      if(
+        edge.mode==='connector'
+      ){
+        edge.connector_routes=
+          edge.connector_routes||
+          {
+            source:[],
+            target:[]
+          };
+
+        if(
+          !Array.isArray(
+            edge.connector_routes.source
+          )
+        ){
+          edge.connector_routes.source=[];
+        }
+
+        if(
+          !Array.isArray(
+            edge.connector_routes.target
+          )
+        ){
+          edge.connector_routes.target=[];
+        }
+
+        if(
+          edge.connector_points &&
+          typeof edge.connector_points!==
+          'object'
+        ){
+          edge.connector_points=null;
+        }
+      }
+    });
+
+  (model.lanes||[])
+    .forEach(lane=>{
+
+      if(
+        [
+          'supplier',
+          'input',
+          'output',
+          'customer'
+        ].includes(
+          lane.kind
+        )
+      ){
+        lane.width=
+          STANDARD.peripheralLaneWidth;
+      }
+    });
+
+  normalizeDocumentCatalog(
+    APP.master
+  );
+
+  normalizeDecisionPorts(
+    model
+  );
+
+  renumberConnectors(
+    model
+  );
+
+  return model;
 }
+  
 function clearWorkspace(){
   if(!APP.master){
     return;
