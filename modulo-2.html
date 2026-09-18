@@ -2864,13 +2864,72 @@ function renderFlowResizeHandle(model,geometry){
   return `<g data-flow-resize="1" class="flow-resize-handle"><rect x="${x}" y="${y-7}" width="${right-x}" height="14" fill="transparent"/><line x1="${x}" y1="${y}" x2="${right}" y2="${y}" stroke="#7C91A3" stroke-width="1" stroke-dasharray="5 4"/><rect x="${mid-18}" y="${y-7}" width="36" height="14" rx="7" fill="#FFFFFF" stroke="#7C91A3" stroke-width="1"/><text x="${mid}" y="${y+1}" text-anchor="middle" dominant-baseline="middle" font-size="8" fill="#526F80" pointer-events="none">↕</text></g>`;
 }
 
-function renderStudio(redrawInspector=true,fast=false){
-  const flow=activeFlow(),model=currentModel();renderStudioContext();
-  if(!flow||!model){$('canvas').innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';renderInspector();return;}
-  const g=laneGeometry(model);$('canvas').innerHTML=renderSvg(model,{interactive:true,fast});
-  if(fast){applyCamera();return;}
-  bindSvgInteractions();if(redrawInspector)renderInspector();refreshValidation();updateInsertButton();updateDeleteButton();updateHistoryButtons();updateConnectStatus();applyCamera();
+function renderStudio(
+  redrawInspector=true,
+  fast=false
+){
+  const flow=activeFlow(),
+        model=currentModel(),
+        canvas=$('canvas');
+
+  renderStudioContext();
+
+  if(
+    !flow ||
+    !model ||
+    !canvas
+  ){
+    if(canvas){
+      canvas.innerHTML=
+        '<div class="empty-note">Abre un flujo para comenzar.</div>';
+    }
+
+    renderInspector();
+    return;
+  }
+
+  /*
+   * 1. Construir primero el SVG.
+   */
+  canvas.innerHTML=
+    renderSvg(
+      model,
+      {
+        interactive:true,
+        fast
+      }
+    );
+
+  /*
+   * 2. Aplicar dimensiones inmediatamente.
+   *
+   * El lienzo no debe depender de que
+   * Inspector, validación o bindings terminen
+   * correctamente para poder verse.
+   */
+  applyCamera();
+
+  if(fast){
+    return;
+  }
+
+  /*
+   * 3. Vincular comportamiento después
+   * de que el SVG ya sea visible.
+   */
+  bindSvgInteractions();
+
+  if(redrawInspector){
+    renderInspector();
+  }
+
+  refreshValidation();
+  updateInsertButton();
+  updateDeleteButton();
+  updateHistoryButtons();
+  updateConnectStatus();
 }
+  
 function renderStudioContext(){
   const flow=activeFlow();
   if(!flow){$('active_flow_title').textContent='Ningún flujo abierto';$('active_flow_meta').textContent='Abre un flujo desde Biblioteca.';return;}
@@ -3842,54 +3901,276 @@ function updateNoteOnNode(nodeId,noteId){
 function removeNoteFromNode(nodeId,noteId){const model=currentModel(),node=nodeById(nodeId,model);if(!model||!node)return;pushHistory();model.notes=model.notes.filter(n=>n.id!==noteId);node.note_ids=(node.note_ids||[]).filter(id=>id!==noteId);markDirty();renderStudio();}
 
 function bindSvgInteractions(){
-  const svg=$('canvas').querySelector('svg');if(!svg)return;
-  svg.querySelectorAll('[data-lane-id]').forEach(el=>{
-    el.addEventListener('pointerdown',event=>event.stopPropagation());
-    el.addEventListener('click',event=>{event.stopPropagation();APP.selection={type:'lane',id:el.dataset.laneId};renderStudio();});
-  });
-  svg.querySelectorAll('[data-lane-insert]').forEach(el=>{
+  const svg=
+    $('canvas')?.querySelector('svg');
 
-svg
-  .querySelectorAll(
-    '[data-lane-resize]'
-  )
-  .forEach(el=>{
+  if(!svg){
+    return;
+  }
 
-    el.addEventListener(
-      'pointerdown',
-      event=>
-        beginLaneResize(
-          event,
-          el.dataset.laneResize
-        )
+  /*
+   * Selección de carriles.
+   */
+  svg
+    .querySelectorAll(
+      '[data-lane-id]'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          event.stopPropagation()
+      );
+
+      el.addEventListener(
+        'click',
+        event=>{
+          event.stopPropagation();
+
+          APP.selection={
+            type:'lane',
+            id:el.dataset.laneId
+          };
+
+          renderStudio();
+        }
+      );
+
+    });
+
+  /*
+   * Resize directo de carriles de actores.
+   *
+   * Debe vincularse de forma independiente,
+   * no dentro del loop de inserción.
+   */
+  svg
+    .querySelectorAll(
+      '[data-lane-resize]'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          beginLaneResize(
+            event,
+            el.dataset.laneResize
+          )
+      );
+
+    });
+
+  /*
+   * Botón + de cada carril.
+   */
+  svg
+    .querySelectorAll(
+      '[data-lane-insert]'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          event.stopPropagation()
+      );
+
+      el.addEventListener(
+        'click',
+        event=>{
+          event.stopPropagation();
+
+          APP.selection={
+            type:'lane',
+            id:el.dataset.laneInsert
+          };
+
+          renderInsertPalette();
+        }
+      );
+
+    });
+
+  /*
+   * Cajas.
+   */
+  svg
+    .querySelectorAll(
+      '[data-node-id].node'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>{
+          event.stopPropagation();
+
+          const nodeId=
+            el.dataset.nodeId;
+
+          if(APP.connect.active){
+            handleConnectNode(nodeId);
+            return;
+          }
+
+          APP.selection={
+            type:'node',
+            id:nodeId
+          };
+
+          renderInspector();
+          updateInsertButton();
+          updateDeleteButton();
+
+          beginNodeDrag(
+            event,
+            nodeId
+          );
+        }
+      );
+
+    });
+
+  /*
+   * Conexiones.
+   */
+  svg
+    .querySelectorAll(
+      '[data-edge-id].edge'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          event.stopPropagation()
+      );
+
+      el.addEventListener(
+        'click',
+        event=>{
+          event.stopPropagation();
+
+          APP.selection={
+            type:'edge',
+            id:el.dataset.edgeId
+          };
+
+          renderStudio();
+        }
+      );
+
+    });
+
+  /*
+   * Puertos de conexión.
+   */
+  svg
+    .querySelectorAll(
+      '[data-connect-port]'
+    )
+    .forEach(el=>{
+
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          event.stopPropagation()
+      );
+
+      el.addEventListener(
+        'click',
+        event=>{
+          event.stopPropagation();
+
+          handleConnectPort(
+            el.dataset.nodeId,
+            el.dataset.side
+          );
+        }
+      );
+
+    });
+
+  /*
+   * Círculos de conectores.
+   */
+  svg
+    .querySelectorAll(
+      '[data-connector-marker]'
+    )
+    .forEach(el=>
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          beginConnectorMarkerDrag(
+            event,
+            el.dataset.edgeId,
+            el.dataset.connectorMarker
+          )
+      )
     );
 
-  });
-    
-    el.addEventListener('pointerdown',event=>event.stopPropagation());
-    el.addEventListener('click',event=>{event.stopPropagation();APP.selection={type:'lane',id:el.dataset.laneInsert};renderInsertPalette();});
-  });
-  svg.querySelectorAll('[data-node-id].node').forEach(el=>{
-    el.addEventListener('pointerdown',event=>{
-      event.stopPropagation();
-      const nodeId=el.dataset.nodeId;
-      if(APP.connect.active){handleConnectNode(nodeId);return;}
-      APP.selection={type:'node',id:nodeId};renderInspector();updateInsertButton();updateDeleteButton();beginNodeDrag(event,nodeId);
-    });
-  });
-  svg.querySelectorAll('[data-edge-id].edge').forEach(el=>{
-    el.addEventListener('pointerdown',event=>event.stopPropagation());
-    el.addEventListener('click',event=>{event.stopPropagation();APP.selection={type:'edge',id:el.dataset.edgeId};renderStudio();});
-  });
-  svg.querySelectorAll('[data-connect-port]').forEach(el=>{
-    el.addEventListener('pointerdown',event=>event.stopPropagation());
-    el.addEventListener('click',event=>{event.stopPropagation();handleConnectPort(el.dataset.nodeId,el.dataset.side);});
-  });
-  svg.querySelectorAll('[data-connector-marker]').forEach(el=>el.addEventListener('pointerdown',event=>beginConnectorMarkerDrag(event,el.dataset.edgeId,el.dataset.connectorMarker)));
-  svg.querySelectorAll('[data-edge-label]').forEach(el=>el.addEventListener('pointerdown',event=>beginEdgeLabelDrag(event,el.dataset.edgeId)));
-  svg.querySelectorAll('[data-edge-segment]').forEach(el=>el.addEventListener('pointerdown',event=>beginEdgeSegmentDrag(event,el.dataset.edgeId,Number(el.dataset.edgeSegment),el.dataset.connectorBranch||null)));
-  svg.querySelectorAll('[data-flow-resize]').forEach(el=>el.addEventListener('pointerdown',beginFlowResize));
+  /*
+   * Etiquetas de líneas.
+   */
+  svg
+    .querySelectorAll(
+      '[data-edge-label]'
+    )
+    .forEach(el=>
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          beginEdgeLabelDrag(
+            event,
+            el.dataset.edgeId
+          )
+      )
+    );
+
+  /*
+   * Segmentos editables.
+   */
+  svg
+    .querySelectorAll(
+      '[data-edge-segment]'
+    )
+    .forEach(el=>
+      el.addEventListener(
+        'pointerdown',
+        event=>
+          beginEdgeSegmentDrag(
+            event,
+            el.dataset.edgeId,
+            Number(
+              el.dataset.edgeSegment
+            ),
+            el.dataset.connectorBranch||
+            null
+          )
+      )
+    );
+
+  /*
+   * Altura del flujo.
+   */
+  svg
+    .querySelectorAll(
+      '[data-flow-resize]'
+    )
+    .forEach(el=>
+      el.addEventListener(
+        'pointerdown',
+        beginFlowResize
+      )
+    );
 }
+
+
+
+  
 
 function clientToCanvas(clientX,clientY){
   const vp=$('viewport'),stage=$('stage'),rect=vp.getBoundingClientRect(),scale=APP.camera.scale||1;
