@@ -10272,6 +10272,56 @@ function renderAdminMacroprocesses(){
           Number(b.orden || 0)
       );
 
+  /*
+   * Responsables realmente existentes
+   * en el maestro de macroprocesos.
+   */
+  const ownerMap =
+    new Map();
+
+  macros.forEach(
+    m => {
+      const label =
+        String(
+          m.responsable_macro || ""
+        ).trim() ||
+        "Pendiente";
+
+      const value =
+        norm(label) ||
+        "PENDIENTE";
+
+      if(
+        !ownerMap.has(value)
+      ){
+        ownerMap.set(
+          value,
+          label
+        );
+      }
+    }
+  );
+
+  const owners =
+    Array
+      .from(
+        ownerMap.entries()
+      )
+      .sort(
+        (a,b) =>
+          String(a[1])
+            .localeCompare(
+              String(b[1]),
+              "es"
+            )
+      )
+      .map(
+        ([value,label]) => ({
+          value,
+          label
+        })
+      );
+
   return `
     <div
       class="admin-section-intro admin-section-actions"
@@ -10293,7 +10343,68 @@ function renderAdminMacroprocesses(){
       </button>
     </div>
 
+    <div class="multi-filter-bar">
+
+      <div class="search-box">
+        <input
+          id="adminMacroSearch"
+          type="search"
+          placeholder="Buscar código, macroproceso o responsable..."
+          aria-label="Buscar macroprocesos"
+          oninput="filterAdminMacroprocesses()"
+        >
+      </div>
+
+      ${multiFilter(
+        "adminMacroTypeFilter",
+        "Tipo",
+        [
+          "PRIMARIO",
+          "SOPORTE",
+          "ESTRATÉGICO",
+          "SIN CLASIFICAR"
+        ],
+        "filterAdminMacroprocesses"
+      )}
+
+      ${multiFilter(
+        "adminMacroStatusFilter",
+        "Estado",
+        [
+          "ACTIVO",
+          "INACTIVO"
+        ],
+        "filterAdminMacroprocesses"
+      )}
+
+      ${multiFilter(
+        "adminMacroOwnerFilter",
+        "Responsable",
+        owners,
+        "filterAdminMacroprocesses"
+      )}
+
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="clearAdminMacroprocessFilters()"
+      >
+        Limpiar filtros
+      </button>
+
+    </div>
+
+    <div
+      id="adminMacroCounter"
+      class="my-processes-counter"
+      role="status"
+      aria-live="polite"
+    >
+      Mostrando ${macros.length} de ${macros.length} macroprocesos
+    </div>
+
     <div class="admin-matrix-wrap">
+
       <table class="admin-matrix-table">
 
         <thead>
@@ -10313,120 +10424,325 @@ function renderAdminMacroprocesses(){
         <tbody>
 
           ${
-            macros.map(m => {
-              const processes =
-                activeProcesses()
-                  .filter(
-                    p =>
-                      String(
-                        p.macro_id || ""
-                      ) ===
-                      String(
-                        m.macro_id || ""
-                      )
+            macros.map(
+              m => {
+                const processes =
+                  activeProcesses()
+                    .filter(
+                      p =>
+                        String(
+                          p.macro_id || ""
+                        ) ===
+                        String(
+                          m.macro_id || ""
+                        )
+                    );
+
+                const advance =
+                  globalAdvance(
+                    processes
                   );
 
-              const advance =
-                globalAdvance(
-                  processes
-                );
+                const type =
+                  norm(
+                    m.tipo_macroproceso ||
+                    "SIN CLASIFICAR"
+                  ) ||
+                  "SIN CLASIFICAR";
 
-              return `
-                <tr>
+                const status =
+                  norm(
+                    m.estado ||
+                    "INACTIVO"
+                  );
 
-                  <td>
-                    ${esc(
-                      m.orden || ""
-                    )}
-                  </td>
+                const ownerLabel =
+                  String(
+                    m.responsable_macro ||
+                    ""
+                  ).trim() ||
+                  "Pendiente";
 
-                  <td class="admin-code">
-                    ${esc(
-                      m.codigo_macro ||
-                      m.macro_id
-                    )}
-                  </td>
+                const owner =
+                  norm(
+                    ownerLabel
+                  ) ||
+                  "PENDIENTE";
 
-                  <td>
-                    ${esc(
-                      macroDisplayName(m)
-                    )}
-                  </td>
+                const searchText =
+                  norm(
+                    [
+                      m.codigo_macro,
+                      m.macro_id,
+                      macroDisplayName(m),
+                      ownerLabel
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                  )
+                    .toLowerCase();
 
-                  <td>
-                    ${esc(
-                      m.tipo_macroproceso ||
-                      "Sin clasificar"
-                    )}
-                  </td>
+                return `
+                  <tr
+                    class="admin-macroprocess-filter-row"
+                    data-search="${esc(
+                      searchText
+                    )}"
+                    data-type="${esc(
+                      type
+                    )}"
+                    data-status="${esc(
+                      status
+                    )}"
+                    data-owner="${esc(
+                      owner
+                    )}"
+                  >
 
-                  <td>
-                    ${esc(
-                      m.responsable_macro ||
-                      "Pendiente"
-                    )}
-                  </td>
+                    <td>
+                      ${esc(
+                        m.orden || ""
+                      )}
+                    </td>
 
-                  <td>
-                    ${processes.length}
-                  </td>
-
-                  <td>
-                    <b>
-                      ${advance}%
-                    </b>
-                  </td>
-
-                  <td>
-                    ${esc(
-                      m.estado || ""
-                    )}
-                  </td>
-
-                  <td class="admin-action-cell">
-
-                    <button
-                      class="btn soft"
-                      type="button"
-                      onclick="adminEditMacroprocess('${esc(
+                    <td class="admin-code">
+                      ${esc(
+                        m.codigo_macro ||
                         m.macro_id
-                      )}')"
-                    >
-                      Editar
-                    </button>
+                      )}
+                    </td>
 
-                    ${
-                      String(
+                    <td>
+                      ${esc(
+                        macroDisplayName(m)
+                      )}
+                    </td>
+
+                    <td>
+                      ${esc(
+                        m.tipo_macroproceso ||
+                        "Sin clasificar"
+                      )}
+                    </td>
+
+                    <td>
+                      ${esc(
+                        ownerLabel
+                      )}
+                    </td>
+
+                    <td>
+                      ${processes.length}
+                    </td>
+
+                    <td>
+                      <b>
+                        ${advance}%
+                      </b>
+                    </td>
+
+                    <td>
+                      ${esc(
                         m.estado || ""
-                      )
-                        .toUpperCase() ===
-                      "ACTIVO"
-                        ? `
-                          <button
-                            class="btn danger"
-                            type="button"
-                            onclick="adminDeactivateMacroprocess('${esc(
-                              m.macro_id
-                            )}')"
-                          >
-                            Inactivar
-                          </button>
-                        `
-                        : ""
-                    }
+                      )}
+                    </td>
 
-                  </td>
+                    <td class="admin-action-cell">
 
-                </tr>
-              `;
-            }).join("")
+                      <button
+                        class="btn soft"
+                        type="button"
+                        onclick="adminEditMacroprocess('${esc(
+                          m.macro_id
+                        )}')"
+                      >
+                        Editar
+                      </button>
+
+                      ${
+                        status ===
+                        "ACTIVO"
+                          ? `
+                            <button
+                              class="btn danger"
+                              type="button"
+                              onclick="adminDeactivateMacroprocess('${esc(
+                                m.macro_id
+                              )}')"
+                            >
+                              Inactivar
+                            </button>
+                          `
+                          : ""
+                      }
+
+                    </td>
+
+                  </tr>
+                `;
+              }
+            ).join("")
           }
 
         </tbody>
 
       </table>
+
+    </div>
+
+    <div
+      id="adminMacroEmpty"
+      class="card hidden"
+    >
+      <b>
+        No hay macroprocesos que coincidan con los filtros aplicados.
+      </b>
     </div>
   `;
+}
+
+function filterAdminMacroprocesses(){
+  const query =
+    norm(
+      $("adminMacroSearch")
+        ?.value ||
+      ""
+    )
+      .toLowerCase();
+
+  const types =
+    getMultiFilterValues(
+      "adminMacroTypeFilter"
+    );
+
+  const statuses =
+    getMultiFilterValues(
+      "adminMacroStatusFilter"
+    );
+
+  const owners =
+    getMultiFilterValues(
+      "adminMacroOwnerFilter"
+    );
+
+  const rows =
+    [
+      ...document.querySelectorAll(
+        ".admin-macroprocess-filter-row"
+      )
+    ];
+
+  let visibleCount = 0;
+
+  rows.forEach(
+    row => {
+      const visible =
+        (
+          !query ||
+          String(
+            row.dataset.search ||
+            ""
+          ).includes(query)
+        ) &&
+
+        (
+          !types.length ||
+          types.includes(
+            String(
+              row.dataset.type ||
+              ""
+            )
+          )
+        ) &&
+
+        (
+          !statuses.length ||
+          statuses.includes(
+            String(
+              row.dataset.status ||
+              ""
+            )
+          )
+        ) &&
+
+        (
+          !owners.length ||
+          owners.includes(
+            String(
+              row.dataset.owner ||
+              ""
+            )
+          )
+        );
+
+      row.classList.toggle(
+        "hidden",
+        !visible
+      );
+
+      if(visible){
+        visibleCount++;
+      }
+    }
+  );
+
+  const counter =
+    $("adminMacroCounter");
+
+  if(counter){
+    counter.textContent =
+      `Mostrando ${visibleCount} de ${rows.length} macroprocesos`;
+  }
+
+  const empty =
+    $("adminMacroEmpty");
+
+  if(empty){
+    empty.classList.toggle(
+      "hidden",
+      visibleCount !== 0
+    );
+  }
+}
+
+
+function clearAdminMacroprocessFilters(){
+  const search =
+    $("adminMacroSearch");
+
+  if(search){
+    search.value = "";
+  }
+
+  [
+    "adminMacroTypeFilter",
+    "adminMacroStatusFilter",
+    "adminMacroOwnerFilter"
+  ].forEach(
+    id => {
+      const root =
+        $(id);
+
+      if(root){
+        root
+          .querySelectorAll(
+            'input[type="checkbox"]'
+          )
+          .forEach(
+            input => {
+              input.checked =
+                false;
+            }
+          );
+      }
+
+      updateMultiFilterCount(
+        id
+      );
+    }
+  );
+
+  filterAdminMacroprocesses();
 }
 
 function renderAdminMatrix(){
