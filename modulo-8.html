@@ -174,6 +174,59 @@ h1{margin:0;font-size:38px;letter-spacing:-.045em;line-height:1.05}
 .fill{height:100%;display:block;background:linear-gradient(90deg,var(--brand-2),#25af70);border-radius:999px;transition:width .22s ease}
 .global-progress-main{margin:0;padding:0}.global-progress-main .bar{height:13px}.global-progress-main .progress-value{font-size:46px}
 
+  /* MIS PROCESOS · DOBLE JERARQUÍA DE AVANCE */
+
+.my-progress-stack{
+  display:grid;
+  gap:16px;
+}
+
+.my-progress-primary{
+  padding:2px 0 4px;
+}
+
+.my-progress-secondary{
+  padding-top:15px;
+  border-top:1px solid var(--line);
+}
+
+.my-progress-secondary
+.global-progress-main
+.progress-value{
+  font-size:28px;
+  color:var(--ink-2);
+}
+
+.my-progress-secondary
+.global-progress-main
+.bar{
+  height:8px;
+}
+
+.my-progress-secondary
+.progress-label{
+  font-size:10px;
+  color:var(--muted);
+}
+
+.my-processes-counter{
+  display:inline-flex;
+  align-items:center;
+  min-height:32px;
+  padding:6px 10px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:#fff;
+  color:var(--ink-2);
+  font-size:10.5px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+.my-processes-filter-bar{
+  margin-bottom:14px;
+}
+
 /* DASHBOARD EJECUTIVO */
 .executive-head,.admin-section-actions,.hito-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .executive-hero{padding:26px}
@@ -746,6 +799,23 @@ let BACKGROUND_SAVE_PENDING = 0;
 let BACKGROUND_SAVE_TIMER = null;
 let QUIET_BOOTSTRAP_TIMER = null;
 let BACKGROUND_MUTATION_VERSION = 0;
+
+/*
+ * ============================================================
+ * RADAR V3 · MIS PROCESOS · ESTADO DE FILTROS
+ * ============================================================
+ *
+ * Se conserva durante la sesión aunque el usuario
+ * abra un proceso y luego regrese a "Mis procesos".
+ */
+let MY_PROCESS_FILTER_STATE = {
+  search: "",
+  macros: [],
+  states: [],
+  types: [],
+  criticalities: [],
+  progress: []
+};
 
 const RADAR_SESSION_STORAGE_KEY =
   "RADAR_SESSION_V3";
@@ -2385,6 +2455,660 @@ function progressBandForProcess(p){
   if(value < 100) return "50-99";
   return "100";
 }
+
+/*
+ * ============================================================
+ * RADAR V3 · MIS PROCESOS
+ * ============================================================
+ */
+
+function assignedProcessesForCurrentUser(){
+  const username =
+    String(
+      SESSION?.username || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if(!username){
+    return [];
+  }
+
+  return activeProcesses()
+    .filter(
+      p =>
+        String(
+          p.analista_user || ""
+        )
+          .trim()
+          .toLowerCase() ===
+        username
+    )
+    .sort(
+      processSort
+    );
+}
+
+
+function myProcessMacroFilterItems(
+  processes
+){
+  const items =
+    new Map();
+
+  (processes || []).forEach(
+    p => {
+      const macroId =
+        String(
+          p.macro_id || ""
+        ).trim();
+
+      if(!macroId){
+        return;
+      }
+
+      if(!items.has(macroId)){
+        items.set(
+          macroId,
+          processMacroName(p)
+        );
+      }
+    }
+  );
+
+  return Array
+    .from(
+      items.entries()
+    )
+    .sort(
+      (a,b) =>
+        String(a[1])
+          .localeCompare(
+            String(b[1]),
+            "es"
+          )
+    )
+    .map(
+      ([value,label]) => ({
+        value,
+        label
+      })
+    );
+}
+
+
+function myProcessFiltersAreActive(
+  state =
+    MY_PROCESS_FILTER_STATE
+){
+  return Boolean(
+    String(
+      state.search || ""
+    ).trim() ||
+
+    (state.macros || []).length ||
+    (state.states || []).length ||
+    (state.types || []).length ||
+    (state.criticalities || []).length ||
+    (state.progress || []).length
+  );
+}
+
+
+function filterMyProcessCollection(
+  processes,
+  state =
+    MY_PROCESS_FILTER_STATE
+){
+  const query =
+    norm(
+      state.search || ""
+    );
+
+  return (processes || [])
+    .filter(
+      p => {
+        if(query){
+          const searchable =
+            norm(
+              [
+                p.codigo_proceso,
+                processDisplayName(p),
+                processMacroName(p),
+                p.lider
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+
+          if(
+            !searchable.includes(
+              query
+            )
+          ){
+            return false;
+          }
+        }
+
+        if(
+          (state.macros || []).length &&
+          !state.macros.includes(
+            String(
+              p.macro_id || ""
+            )
+          )
+        ){
+          return false;
+        }
+
+        if(
+          (state.states || []).length &&
+          !state.states.includes(
+            processState(p)
+          )
+        ){
+          return false;
+        }
+
+        if(
+          (state.types || []).length &&
+          !state.types.includes(
+            processMacroType(p)
+          )
+        ){
+          return false;
+        }
+
+        if(
+          (state.criticalities || []).length &&
+          !state.criticalities.includes(
+            norm(
+              p.criticidad || ""
+            )
+          )
+        ){
+          return false;
+        }
+
+        if(
+          (state.progress || []).length &&
+          !state.progress.includes(
+            progressBandForProcess(p)
+          )
+        ){
+          return false;
+        }
+
+        return true;
+      }
+    )
+    .sort(
+      processSort
+    );
+}
+
+
+function myProcessesCounterText(
+  visibleCount,
+  totalCount
+){
+  if(!totalCount){
+    return "0 procesos asignados";
+  }
+
+  if(
+    !myProcessFiltersAreActive()
+  ){
+    return (
+      totalCount +
+      (
+        totalCount === 1
+          ? " proceso asignado"
+          : " procesos asignados"
+      )
+    );
+  }
+
+  return (
+    "Mostrando " +
+    visibleCount +
+    " de " +
+    totalCount +
+    " procesos"
+  );
+}
+
+
+function myProcessesListMarkup(
+  processes,
+  totalCount
+){
+  if(!totalCount){
+    return `
+      <div class="card">
+        <b>
+          No tienes procesos asignados.
+        </b>
+      </div>
+    `;
+  }
+
+  if(!processes.length){
+    return `
+      <div class="card">
+        <b>
+          No hay procesos que coincidan con los filtros aplicados.
+        </b>
+      </div>
+    `;
+  }
+
+  return processes
+    .map(
+      processRow
+    )
+    .join("");
+}
+
+
+function renderMyProcessesProgress(
+  processes
+){
+  const ownAdvance =
+    globalAdvance(
+      processes
+    );
+
+  const radarAdvance =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Number(
+          DATA
+            ?.kpis_radar
+            ?.avance_global ||
+          0
+        )
+      )
+    );
+
+  return `
+    <div class="my-progress-stack">
+
+      <div class="my-progress-primary">
+        ${renderProgress(
+          "Avance de mis procesos",
+          ownAdvance
+        )}
+      </div>
+
+      <div class="my-progress-secondary">
+        ${renderProgress(
+          "Avance global del RADAR",
+          radarAdvance
+        )}
+      </div>
+
+    </div>
+  `;
+}
+
+
+function renderMyProcessesFilters(
+  processes
+){
+  const state =
+    MY_PROCESS_FILTER_STATE;
+
+  const macros =
+    myProcessMacroFilterItems(
+      processes
+    );
+
+  return `
+    <div class="multi-filter-bar my-processes-filter-bar">
+
+      <div class="search-box">
+        <input
+          id="myProcessesSearch"
+          type="search"
+          value="${esc(
+            state.search || ""
+          )}"
+          placeholder="Buscar por código, proceso, macroproceso o líder..."
+          aria-label="Buscar en mis procesos"
+          oninput="filterMyProcesses()"
+        >
+      </div>
+
+      ${multiFilter(
+        "myProcessesMacroFilter",
+        "Macroproceso",
+        macros,
+        "filterMyProcesses",
+        state.macros
+      )}
+
+      ${multiFilter(
+        "myProcessesStateFilter",
+        "Estado",
+        [
+          "PLANIFICADO",
+          "EN CURSO",
+          "ATRASADO",
+          "CERRADO"
+        ],
+        "filterMyProcesses",
+        state.states
+      )}
+
+      ${multiFilter(
+        "myProcessesTypeFilter",
+        "Tipo",
+        [
+          "PRIMARIO",
+          "SOPORTE",
+          "ESTRATÉGICO"
+        ],
+        "filterMyProcesses",
+        state.types
+      )}
+
+      ${multiFilter(
+        "myProcessesCriticalityFilter",
+        "Criticidad",
+        [
+          "ALTA",
+          "MEDIO ALTO",
+          "MEDIO",
+          "MEDIO BAJO",
+          "BAJO"
+        ],
+        "filterMyProcesses",
+        state.criticalities
+      )}
+
+      ${multiFilter(
+        "myProcessesProgressFilter",
+        "Avance",
+        [
+          {
+            value:"0",
+            label:"0 %"
+          },
+          {
+            value:"1-49",
+            label:"1–49 %"
+          },
+          {
+            value:"50-99",
+            label:"50–99 %"
+          },
+          {
+            value:"100",
+            label:"100 %"
+          }
+        ],
+        "filterMyProcesses",
+        state.progress
+      )}
+
+      <button
+        class="btn ghost"
+        type="button"
+        onclick="clearMyProcessesFilters()"
+      >
+        Limpiar filtros
+      </button>
+
+    </div>
+  `;
+}
+
+
+function filterMyProcesses(){
+  const allProcesses =
+    assignedProcessesForCurrentUser();
+
+  MY_PROCESS_FILTER_STATE = {
+    search:
+      String(
+        $("myProcessesSearch")
+          ?.value || ""
+      ).trim(),
+
+    macros:
+      getMultiFilterValues(
+        "myProcessesMacroFilter"
+      ),
+
+    states:
+      getMultiFilterValues(
+        "myProcessesStateFilter"
+      ),
+
+    types:
+      getMultiFilterValues(
+        "myProcessesTypeFilter"
+      ),
+
+    criticalities:
+      getMultiFilterValues(
+        "myProcessesCriticalityFilter"
+      ),
+
+    progress:
+      getMultiFilterValues(
+        "myProcessesProgressFilter"
+      )
+  };
+
+  const filtered =
+    filterMyProcessCollection(
+      allProcesses
+    );
+
+  const list =
+    $("myProcessesList");
+
+  if(list){
+    list.innerHTML =
+      myProcessesListMarkup(
+        filtered,
+        allProcesses.length
+      );
+  }
+
+  const counter =
+    $("myProcessesCounter");
+
+  if(counter){
+    counter.textContent =
+      myProcessesCounterText(
+        filtered.length,
+        allProcesses.length
+      );
+  }
+}
+
+
+function clearMyProcessesFilters(){
+  MY_PROCESS_FILTER_STATE = {
+    search: "",
+    macros: [],
+    states: [],
+    types: [],
+    criticalities: [],
+    progress: []
+  };
+
+  const search =
+    $("myProcessesSearch");
+
+  if(search){
+    search.value = "";
+  }
+
+  [
+    "myProcessesMacroFilter",
+    "myProcessesStateFilter",
+    "myProcessesTypeFilter",
+    "myProcessesCriticalityFilter",
+    "myProcessesProgressFilter"
+  ].forEach(
+    id => {
+      const root =
+        $(id);
+
+      if(root){
+        root
+          .querySelectorAll(
+            'input[type="checkbox"]'
+          )
+          .forEach(
+            input => {
+              input.checked =
+                false;
+            }
+          );
+      }
+
+      updateMultiFilterCount(
+        id
+      );
+    }
+  );
+
+  filterMyProcesses();
+}
+
+
+function renderMyProcessesContent(){
+  const processes =
+    assignedProcessesForCurrentUser();
+
+  const filtered =
+    filterMyProcessCollection(
+      processes
+    );
+
+  const states =
+    countStates(
+      processes
+    );
+
+  return `
+    <section class="hero analyst-hero">
+
+      <div class="page-heading">
+        <div>
+          <div class="page-kicker">
+            Mi RADAR
+          </div>
+
+          <h2 class="page-title">
+            Mis procesos
+          </h2>
+
+          <p class="sub">
+            Consulta tu avance, compáralo con el avance global del RADAR y prioriza tus procesos asignados.
+          </p>
+        </div>
+      </div>
+
+      ${renderMyProcessesProgress(
+        processes
+      )}
+
+      <div class="state-summary-grid compact">
+        ${
+          [
+            "PLANIFICADO",
+            "EN CURSO",
+            "ATRASADO",
+            "CERRADO"
+          ]
+            .map(
+              state => {
+                const meta =
+                  stateMeta(
+                    state
+                  );
+
+                return `
+                  <div
+                    class="state-summary-card ${meta.cls}"
+                  >
+                    <span
+                      class="state-summary-symbol"
+                    >
+                      ${stateIconSvg(
+                        state,
+                        "lg"
+                      )}
+                    </span>
+
+                    <div>
+                      <b>
+                        ${states[state]}
+                      </b>
+
+                      <span>
+                        ${esc(
+                          meta.label
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                `;
+              }
+            )
+            .join("")
+        }
+      </div>
+
+    </section>
+
+    <div class="section-title">
+      <div>
+        <h2>
+          Procesos asignados
+        </h2>
+
+        <p class="meta">
+          Ordenados por prioridad: atrasados, en curso, planificados y cerrados.
+        </p>
+      </div>
+
+      <div
+        id="myProcessesCounter"
+        class="my-processes-counter"
+      >
+        ${esc(
+          myProcessesCounterText(
+            filtered.length,
+            processes.length
+          )
+        )}
+      </div>
+    </div>
+
+    ${renderMyProcessesFilters(
+      processes
+    )}
+
+    <div
+      class="list"
+      id="myProcessesList"
+    >
+      ${myProcessesListMarkup(
+        filtered,
+        processes.length
+      )}
+    </div>
+  `;
+}  
 
 function weekSelectOptions(selected = "", blankLabel = "Pendiente"){
   const current = Number(selected || 0);
@@ -6909,20 +7633,16 @@ async function saveAnalystPurpose(procesoId){
 }
 
 function renderAnalystHome(){
-  VIEW = {type:"analyst"};
-  const processes = activeProcesses().sort(processSort);
-  const states = countStates(processes);
-  $("subtitle").textContent = "Mis procesos asignados";
+  VIEW = {
+    type:
+      "analyst"
+  };
 
-  $("main").innerHTML = `
-    <section class="hero analyst-hero">
-      <div class="page-heading"><div><div class="page-kicker">Mi RADAR</div><h1 class="page-title">Mis procesos</h1><p class="sub">Prioriza atrasos, revisa tu siguiente actividad y actualiza únicamente el check habilitado.</p></div></div>
-      ${renderGlobalProgressBlock("Avance de mis procesos", processes)}
-      <div class="state-summary-grid compact">${["PLANIFICADO","EN CURSO","ATRASADO","CERRADO"].map(state=>{const meta=stateMeta(state);return `<div class="state-summary-card ${meta.cls}"><span class="state-summary-symbol">${stateIconSvg(state,"lg")}</span><div><b>${states[state]}</b><span>${esc(meta.label)}</span></div></div>`;}).join("")}</div>
-    </section>
-    <div class="section-title"><div><h2>Procesos asignados</h2><p class="meta">Ordenados por prioridad: atrasados, en curso, planificados y cerrados.</p></div></div>
-    <div class="list">${processes.map(processRow).join("") || `<div class="card"><b>No tienes procesos asignados.</b></div>`}</div>
-  `;
+  $("subtitle").textContent =
+    "Mis procesos asignados";
+
+  $("main").innerHTML =
+    renderMyProcessesContent();
 }
 
 function adminNavIcon(id){
@@ -7247,128 +7967,8 @@ function renderAdminDashboard(){
   `;
 }
 
-
 function renderAdminMyProcesses(){
-  const username =
-    String(
-      SESSION?.username || ""
-    )
-      .trim()
-      .toLowerCase();
-
-  const processes =
-    activeProcesses()
-      .filter(
-        p =>
-          String(
-            p.analista_user || ""
-          )
-            .trim()
-            .toLowerCase() ===
-          username
-      )
-      .sort(
-        processSort
-      );
-
-  const states =
-    countStates(
-      processes
-    );
-
-  return `
-    <section class="hero">
-      <div class="page-heading">
-        <div>
-          <div class="page-kicker">
-            Mi RADAR
-          </div>
-
-          <h2 class="page-title">
-            Mis procesos
-          </h2>
-
-          <p class="sub">
-            Procesos asignados directamente a mi usuario.
-          </p>
-        </div>
-      </div>
-
-      ${renderProgress(
-        "Avance de mis procesos",
-        globalAdvance(processes)
-      )}
-
-      <div class="state-summary-grid compact">
-        ${
-          [
-            "PLANIFICADO",
-            "EN CURSO",
-            "ATRASADO",
-            "CERRADO"
-          ]
-            .map(state => {
-              const meta =
-                stateMeta(state);
-
-              return `
-                <div
-                  class="state-summary-card ${meta.cls}"
-                >
-                  <span
-                    class="state-summary-symbol"
-                  >
-                    ${stateIconSvg(
-                      state,
-                      "lg"
-                    )}
-                  </span>
-
-                  <div>
-                    <b>
-                      ${states[state]}
-                    </b>
-
-                    <span>
-                      ${esc(meta.label)}
-                    </span>
-                  </div>
-                </div>
-              `;
-            })
-            .join("")
-        }
-      </div>
-    </section>
-
-    <div class="section-title">
-      <div>
-        <h2>Procesos asignados</h2>
-
-        <p class="meta">
-          Ordenados por prioridad operativa.
-        </p>
-      </div>
-    </div>
-
-    <div class="list">
-      ${
-        processes.length
-          ? processes
-              .map(
-                processRow
-              )
-              .join("")
-          : `
-            <div class="card">
-              <b>
-                No tienes procesos asignados.
-              </b>
-            </div>
-          `
-      }
-    </div>
-  `;
+  return renderMyProcessesContent();
 }
 
 function adminDashboardProcessRow(p){
