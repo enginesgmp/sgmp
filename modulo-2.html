@@ -1263,10 +1263,502 @@ function insertNode(type){
   markDirty();$('insert_dialog').close();renderStudio();
 }
 
+function captureActorLaneReflowState(
+  model=currentModel()
+){
+  if(!model)return null;
+
+  const geometry=
+          laneGeometry(model),
+
+        nodeBoxes=
+          new Map(
+            (model.nodes||[])
+              .map(node=>{
+                const box=
+                  nodeBox(
+                    node,
+                    geometry,
+                    model
+                  );
+
+                return [
+                  node.id,
+                  {
+                    x:box.x,
+                    y:box.y,
+                    w:box.w,
+                    h:box.h
+                  }
+                ];
+              })
+          ),
+
+        lineWaypoints=
+          (model.edges||[])
+            .filter(edge=>
+              edge.mode!=='connector' &&
+              Array.isArray(edge.waypoints) &&
+              edge.waypoints.length
+            )
+            .map(edge=>({
+              edgeId:edge.id,
+              startWaypoints:
+                clone(
+                  edge.waypoints
+                )
+            })),
+
+        connectorMarkers=[];
+
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+
+      const cg=
+        connectorGeometry(
+          edge,
+          geometry,
+          model
+        );
+
+      if(!cg)return;
+
+      [
+        {
+          markerKey:'source',
+          attachedNodeId:edge.source,
+          point:cg.sourceMarker
+        },
+        {
+          markerKey:'target',
+          attachedNodeId:edge.target,
+          point:cg.targetMarker
+        }
+      ]
+        .forEach(item=>{
+
+          connectorMarkers.push({
+            edgeId:edge.id,
+            markerKey:item.markerKey,
+            attachedNodeId:
+              item.attachedNodeId,
+
+            startPoint:
+              clone(
+                item.point
+              ),
+
+            startRoute:
+              Array.isArray(
+                edge.connector_routes?.[
+                  item.markerKey
+                ]
+              )
+                ? clone(
+                    edge.connector_routes[
+                      item.markerKey
+                    ]
+                  )
+                : []
+          });
+
+        });
+
+    });
+
+  return {
+    geometry,
+    nodeBoxes,
+    lineWaypoints,
+    connectorMarkers
+  };
+}
+
+function actorLaneReflowDeltaForPoint(
+  point,
+  startGeometry,
+  nextGeometry
+){
+  const oldLanes=
+          startGeometry?.lanes||[],
+
+        newLanes=
+          nextGeometry?.lanes||[];
+
+  if(
+    !oldLanes.length ||
+    !newLanes.length
+  ){
+    return {
+      x:0,
+      y:0
+    };
+  }
+
+  const x=
+    Number(
+      point?.x
+    )||0;
+
+  let oldLane=null;
+
+  for(
+    let index=0;
+    index<oldLanes.length;
+    index++
+  ){
+    const lane=
+            oldLanes[index],
+
+          left=
+            Number(
+              lane.x
+            )||0,
+
+          right=
+            left+
+            (
+              Number(
+                lane.width
+              )||0
+            ),
+
+          isLast=
+            index===
+            oldLanes.length-1;
+
+    if(
+      x>=left &&
+      (
+        x<right ||
+        (
+          isLast &&
+          x<=right
+        )
+      )
+    ){
+      oldLane=lane;
+      break;
+    }
+  }
+
+  if(!oldLane){
+    oldLane=
+      oldLanes
+        .slice()
+        .sort((a,b)=>{
+          const centerA=
+                  (
+                    Number(a.x)||0
+                  )+
+                  (
+                    Number(a.width)||0
+                  )/2,
+
+                centerB=
+                  (
+                    Number(b.x)||0
+                  )+
+                  (
+                    Number(b.width)||0
+                  )/2;
+
+          return (
+            Math.abs(
+              x-centerA
+            )-
+            Math.abs(
+              x-centerB
+            )
+          );
+        })[0]||
+      null;
+  }
+
+  if(!oldLane){
+    return {
+      x:0,
+      y:0
+    };
+  }
+
+  const nextLane=
+    newLanes.find(
+      lane=>
+        lane.id===
+        oldLane.id
+    );
+
+  if(!nextLane){
+    return {
+      x:0,
+      y:0
+    };
+  }
+
+  return {
+    x:
+      (
+        Number(
+          nextLane.x
+        )||0
+      )-
+      (
+        Number(
+          oldLane.x
+        )||0
+      ),
+
+    y:0
+  };
+}
+
+function restoreActorLaneReflowState(
+  state,
+  model=currentModel()
+){
+  if(
+    !state ||
+    !model
+  )return;
+
+  const nextGeometry=
+          laneGeometry(model),
+
+        nodeDeltas=
+          new Map();
+
+  (model.nodes||[])
+    .forEach(node=>{
+
+      const before=
+        state.nodeBoxes?.get(
+          node.id
+        );
+
+      if(!before)return;
+
+      const after=
+        nodeBox(
+          node,
+          nextGeometry,
+          model
+        );
+
+      nodeDeltas.set(
+        node.id,
+        {
+          x:
+            after.x-
+            before.x,
+
+          y:
+            after.y-
+            before.y
+        }
+      );
+
+    });
+
+  /*
+   * Los círculos y sus ramas manuales
+   * acompañan a la caja a la que están
+   * vinculados.
+   */
+  (state.connectorMarkers||[])
+    .forEach(marker=>{
+
+      const edge=
+        edgeById(
+          marker.edgeId,
+          model
+        );
+
+      if(
+        !edge ||
+        edge.mode!=='connector'
+      ){
+        return;
+      }
+
+      const attachedNode=
+              nodeById(
+                marker.attachedNodeId,
+                model
+              ),
+
+            nodeDelta=
+              nodeDeltas.get(
+                marker.attachedNodeId
+              )||{
+                x:0,
+                y:0
+              },
+
+            side=
+              marker.markerKey===
+              'source'
+                ? edge.source_side||
+                  'right'
+                : edge.target_side||
+                  'left',
+
+            bounds=
+              connectorZoneBounds(
+                edge,
+                marker.markerKey,
+                nextGeometry,
+                model
+              ),
+
+            desired={
+              x:
+                marker.startPoint.x+
+                nodeDelta.x,
+
+              y:
+                marker.startPoint.y+
+                nodeDelta.y
+            },
+
+            nextPoint=
+              keepConnectorMarkerOutsideNode(
+                clampPointToBounds(
+                  desired,
+                  bounds
+                ),
+                attachedNode,
+                side,
+                bounds,
+                nextGeometry,
+                model
+              );
+
+      edge.connector_points=
+        edge.connector_points||{};
+
+      edge.connector_points[
+        marker.markerKey
+      ]=nextPoint;
+
+      edge.connector_routes=
+        edge.connector_routes||{
+          source:[],
+          target:[]
+        };
+
+      edge.connector_routes[
+        marker.markerKey
+      ]=
+        (marker.startRoute||[])
+          .map(point=>({
+            x:
+              (
+                Number(
+                  point.x
+                )||0
+              )+
+              nodeDelta.x,
+
+            y:
+              (
+                Number(
+                  point.y
+                )||0
+              )+
+              nodeDelta.y
+          }));
+
+    });
+
+  /*
+   * Los quiebres manuales de líneas normales
+   * se trasladan con el carril en el que
+   * estaban ubicados antes del cambio.
+   */
+  (state.lineWaypoints||[])
+    .forEach(route=>{
+
+      const edge=
+        edgeById(
+          route.edgeId,
+          model
+        );
+
+      if(
+        !edge ||
+        edge.mode==='connector'
+      ){
+        return;
+      }
+
+      edge.waypoints=
+        (route.startWaypoints||[])
+          .map(point=>{
+
+            const delta=
+              actorLaneReflowDeltaForPoint(
+                point,
+                state.geometry,
+                nextGeometry
+              );
+
+            return {
+              x:
+                (
+                  Number(
+                    point.x
+                  )||0
+                )+
+                delta.x,
+
+              y:
+                (
+                  Number(
+                    point.y
+                  )||0
+                )+
+                delta.y
+            };
+          });
+
+    });
+}
+
 function addActorLane(){
-  const model=currentModel();if(!model)return;pushHistory();
-  const outputIndex=model.lanes.findIndex(l=>l.kind==='output');model.lanes.splice(outputIndex,0,actorLane(''));
-  markDirty();renderStudio();
+  const model=currentModel();
+
+  if(!model)return;
+
+  const reflowState=
+    captureActorLaneReflowState(
+      model
+    );
+
+  pushHistory();
+
+  const outputIndex=
+    model.lanes.findIndex(
+      lane=>
+        lane.kind==='output'
+    );
+
+  model.lanes.splice(
+    outputIndex,
+    0,
+    actorLane('')
+  );
+
+  restoreActorLaneReflowState(
+    reflowState,
+    model
+  );
+
+  markDirty();
+  renderStudio();
 }
 
 function deleteActorLane(laneId){
@@ -1276,12 +1768,77 @@ function deleteActorLane(laneId){
   pushHistory();model.lanes=model.lanes.filter(l=>l.id!==laneId);APP.selection=null;markDirty();renderStudio();
 }
 
-function moveActorLane(laneId,direction){
-  const model=currentModel();if(!model)return;const actors=model.lanes.filter(l=>l.kind==='actor');const actorIdx=actors.findIndex(l=>l.id===laneId);const target=actorIdx+direction;
-  if(actorIdx<0||target<0||target>=actors.length)return;
-  pushHistory();const currentGlobal=model.lanes.findIndex(l=>l.id===laneId);const targetGlobal=model.lanes.findIndex(l=>l.id===actors[target].id);const [lane]=model.lanes.splice(currentGlobal,1);model.lanes.splice(targetGlobal,0,lane);markDirty();renderStudio();
-}
+function moveActorLane(
+  laneId,
+  direction
+){
+  const model=currentModel();
 
+  if(!model)return;
+
+  const actors=
+          model.lanes.filter(
+            lane=>
+              lane.kind==='actor'
+          ),
+
+        actorIdx=
+          actors.findIndex(
+            lane=>
+              lane.id===laneId
+          ),
+
+        target=
+          actorIdx+
+          direction;
+
+  if(
+    actorIdx<0 ||
+    target<0 ||
+    target>=actors.length
+  )return;
+
+  const reflowState=
+    captureActorLaneReflowState(
+      model
+    );
+
+  pushHistory();
+
+  const currentGlobal=
+          model.lanes.findIndex(
+            lane=>
+              lane.id===laneId
+          ),
+
+        targetGlobal=
+          model.lanes.findIndex(
+            lane=>
+              lane.id===
+              actors[target].id
+          ),
+
+        [lane]=
+          model.lanes.splice(
+            currentGlobal,
+            1
+          );
+
+  model.lanes.splice(
+    targetGlobal,
+    0,
+    lane
+  );
+
+  restoreActorLaneReflowState(
+    reflowState,
+    model
+  );
+
+  markDirty();
+  renderStudio();
+}
+  
 function resizeActorLane(laneId,delta){
   const lane=laneById(laneId);if(!lane||lane.kind!=='actor')return;pushHistory();lane.width=Math.max(STANDARD.actorLaneMinWidth,Math.min(STANDARD.actorLaneMaxWidth,(Number(lane.width)||STANDARD.actorLaneWidth)+delta));markDirty();renderStudio();
 }
