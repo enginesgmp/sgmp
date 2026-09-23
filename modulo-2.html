@@ -6493,15 +6493,14 @@ renderInspector();
       )
     );
 }
-
-
-
   
 
 function clientToCanvas(clientX,clientY){
   const vp=$('viewport'),stage=$('stage'),rect=vp.getBoundingClientRect(),scale=APP.camera.scale||1;
   return {x:(clientX-rect.left+vp.scrollLeft-(stage?.offsetLeft||0))/scale,y:(clientY-rect.top+vp.scrollTop-(stage?.offsetTop||0))/scale};
 }
+
+
 function beginLaneResize(
   event,
   laneId
@@ -6530,18 +6529,120 @@ function beginLaneResize(
     id:laneId
   };
 
+  const startGeometry=
+          laneGeometry(model),
+
+        startNodeBoxes=
+          new Map(
+            (model.nodes||[])
+              .map(node=>{
+                const box=
+                  nodeBox(
+                    node,
+                    startGeometry,
+                    model
+                  );
+
+                return [
+                  node.id,
+                  {
+                    x:box.x,
+                    y:box.y,
+                    w:box.w,
+                    h:box.h
+                  }
+                ];
+              })
+          ),
+
+        connectorMarkers=[];
+
+  /*
+   * Captura el estado inicial de todos los
+   * extremos circulares y sus rutas manuales.
+   *
+   * Durante todo el resize se calcula desde
+   * este snapshot para evitar acumulación
+   * progresiva de errores de coordenadas.
+   */
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+
+      const cg=
+        connectorGeometry(
+          edge,
+          startGeometry,
+          model
+        );
+
+      if(!cg)return;
+
+      [
+        {
+          markerKey:'source',
+          attachedNodeId:edge.source,
+          point:cg.sourceMarker
+        },
+        {
+          markerKey:'target',
+          attachedNodeId:edge.target,
+          point:cg.targetMarker
+        }
+      ]
+        .forEach(item=>{
+
+          connectorMarkers.push({
+            edgeId:edge.id,
+            markerKey:item.markerKey,
+            attachedNodeId:
+              item.attachedNodeId,
+
+            startPoint:
+              clone(
+                item.point
+              ),
+
+            startRoute:
+              Array.isArray(
+                edge.connector_routes?.[
+                  item.markerKey
+                ]
+              )
+                ? clone(
+                    edge.connector_routes[
+                      item.markerKey
+                    ]
+                  )
+                : []
+          });
+
+        });
+
+    });
+
   APP.laneResize={
     laneId,
     pointerId:event.pointerId,
-    start:clientToCanvas(
-      event.clientX,
-      event.clientY
-    ),
+
+    start:
+      clientToCanvas(
+        event.clientX,
+        event.clientY
+      ),
+
     startWidth:
       Number(lane.width)||
       STANDARD.actorLaneWidth,
+
+    startNodeBoxes,
+    connectorMarkers,
+
     snapshot:
       captureHistoryState(),
+
     moved:false
   };
 
@@ -6557,23 +6658,30 @@ function beginLaneResize(
   vp.addEventListener(
     'pointerup',
     endLaneResize,
-    {once:true}
+    {
+      once:true
+    }
   );
 
   vp.addEventListener(
     'pointercancel',
     endLaneResize,
-    {once:true}
+    {
+      once:true
+    }
   );
 }
 
 function handleLaneResize(event){
-  const drag=APP.laneResize,
-        model=currentModel();
+  const drag=
+          APP.laneResize,
+        model=
+          currentModel();
 
   if(
     !drag ||
-    event.pointerId!==drag.pointerId ||
+    event.pointerId!==
+    drag.pointerId ||
     !model
   )return;
 
@@ -6609,6 +6717,165 @@ function handleLaneResize(event){
 
   lane.width=next;
 
+  const nextGeometry=
+          laneGeometry(model),
+
+        nodeDeltas=
+          new Map();
+
+  /*
+   * Calcula cuánto se desplazó realmente
+   * cada caja después del cambio geométrico.
+   *
+   * Esto contempla:
+   * - carriles posteriores desplazados;
+   * - Salida y Cliente desplazados;
+   * - cajas reajustadas al reducir un actor.
+   */
+  (model.nodes||[])
+    .forEach(node=>{
+
+      const before=
+        drag.startNodeBoxes?.get(
+          node.id
+        );
+
+      if(!before)return;
+
+      const after=
+        nodeBox(
+          node,
+          nextGeometry,
+          model
+        );
+
+      nodeDeltas.set(
+        node.id,
+        {
+          x:
+            after.x-
+            before.x,
+
+          y:
+            after.y-
+            before.y
+        }
+      );
+
+    });
+
+  /*
+   * Cada extremo circular acompaña
+   * únicamente el desplazamiento REAL
+   * de la caja a la que está asociado.
+   */
+  (drag.connectorMarkers||[])
+    .forEach(marker=>{
+
+      const edge=
+        edgeById(
+          marker.edgeId,
+          model
+        );
+
+      if(
+        !edge ||
+        edge.mode!=='connector'
+      ){
+        return;
+      }
+
+      const attachedNode=
+              nodeById(
+                marker.attachedNodeId,
+                model
+              ),
+
+            nodeDelta=
+              nodeDeltas.get(
+                marker.attachedNodeId
+              )||{
+                x:0,
+                y:0
+              },
+
+            side=
+              marker.markerKey===
+              'source'
+                ? edge.source_side||
+                  'right'
+                : edge.target_side||
+                  'left',
+
+            bounds=
+              connectorZoneBounds(
+                edge,
+                marker.markerKey,
+                nextGeometry,
+                model
+              ),
+
+            desired={
+              x:
+                marker.startPoint.x+
+                nodeDelta.x,
+
+              y:
+                marker.startPoint.y+
+                nodeDelta.y
+            },
+
+            nextPoint=
+              keepConnectorMarkerOutsideNode(
+                clampPointToBounds(
+                  desired,
+                  bounds
+                ),
+                attachedNode,
+                side,
+                bounds,
+                nextGeometry,
+                model
+              );
+
+      edge.connector_points=
+        edge.connector_points||{};
+
+      edge.connector_points[
+        marker.markerKey
+      ]=nextPoint;
+
+      edge.connector_routes=
+        edge.connector_routes||{
+          source:[],
+          target:[]
+        };
+
+      /*
+       * Si la rama tenía quiebres manuales,
+       * también se trasladan junto con
+       * ese extremo del conector.
+       */
+      edge.connector_routes[
+        marker.markerKey
+      ]=
+        (marker.startRoute||[])
+          .map(point=>({
+            x:
+              Number(
+                point.x||0
+              )+
+              nodeDelta.x,
+
+            y:
+              Number(
+                point.y||0
+              )+
+              nodeDelta.y
+          }));
+
+    });
+
   drag.moved=
     Math.abs(
       next-
@@ -6621,6 +6888,10 @@ function handleLaneResize(event){
   );
 }
 
+
+
+
+  
 function endLaneResize(event){
   const drag=APP.laneResize,
         vp=$('viewport');
