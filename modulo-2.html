@@ -9624,6 +9624,7 @@ function validateLmpContractStructure(contract){
   return true;
 }
 
+
 function validateMasterBackupStructure(data){
   const master=
     assertPlainObject(
@@ -9741,26 +9742,26 @@ function validateMasterBackupStructure(data){
         );
       }
 
-if(
-  lane.kind==='actor' &&
-  lane.note_ids!==undefined &&
-  !Array.isArray(lane.note_ids)
-){
-  throw new Error(
-    `El actor ${id} tiene note_ids inválido.`
-  );
-}
+      if(
+        lane.kind==='actor' &&
+        lane.note_ids!==undefined &&
+        !Array.isArray(lane.note_ids)
+      ){
+        throw new Error(
+          `El actor ${id} tiene note_ids inválido.`
+        );
+      }
 
-if(
-  lane.kind==='actor' &&
-  lane.work_comments!==undefined &&
-  !Array.isArray(lane.work_comments)
-){
-  throw new Error(
-    `El actor ${id} tiene work_comments inválido.`
-  );
-}
-      
+      if(
+        lane.kind==='actor' &&
+        lane.work_comments!==undefined &&
+        !Array.isArray(lane.work_comments)
+      ){
+        throw new Error(
+          `El actor ${id} tiene work_comments inválido.`
+        );
+      }
+
       laneMap.set(id,lane);
     });
 
@@ -9925,18 +9926,45 @@ if(
       );
 
       const id=
-        addId(
-          note.id,
-          `flow ${flowId}.notes[${index}]`
-        );
+              addId(
+                note.id,
+                `flow ${flowId}.notes[${index}]`
+              ),
 
-      if(
-        !nodeMap.has(
-          text(note.node_id)
-        )
-      ){
+            nodeOwnerId=
+              text(
+                note.node_id
+              ),
+
+            laneOwnerId=
+              text(
+                note.lane_id
+              ),
+
+            nodeOwner=
+              nodeOwnerId
+                ? nodeMap.get(
+                    nodeOwnerId
+                  )
+                : null,
+
+            laneOwner=
+              laneOwnerId
+                ? laneMap.get(
+                    laneOwnerId
+                  )
+                : null,
+
+            validLaneOwner=
+              laneOwner?.kind==='actor',
+
+            ownerCount=
+              (nodeOwner?1:0)+
+              (validLaneOwner?1:0);
+
+      if(ownerCount!==1){
         throw new Error(
-          `La nota ${id} referencia una caja inexistente.`
+          `La nota ${id} debe pertenecer exactamente a una caja o a un actor existente.`
         );
       }
 
@@ -9946,7 +9974,32 @@ if(
         );
       }
 
-      noteMap.set(id,note);
+      if(
+        nodeOwner &&
+        !(nodeOwner.note_ids||[])
+          .map(text)
+          .includes(id)
+      ){
+        throw new Error(
+          `La nota ${id} no está asociada desde la caja ${nodeOwner.id}.`
+        );
+      }
+
+      if(
+        validLaneOwner &&
+        !(laneOwner.note_ids||[])
+          .map(text)
+          .includes(id)
+      ){
+        throw new Error(
+          `La nota ${id} no está asociada desde el actor ${laneOwner.id}.`
+        );
+      }
+
+      noteMap.set(
+        id,
+        note
+      );
     });
 
     nodes.forEach(node=>{
@@ -9966,18 +10019,52 @@ if(
 
           if(
             text(note.node_id)!==
-            text(node.id)
+            text(node.id) ||
+            text(note.lane_id)
           ){
             throw new Error(
-              `La nota ${noteId} no pertenece a la caja ${node.id}.`
+              `La nota ${noteId} no pertenece exclusivamente a la caja ${node.id}.`
             );
           }
         });
     });
+
+    lanes
+      .filter(lane=>
+        lane.kind==='actor'
+      )
+      .forEach(lane=>{
+
+        (lane.note_ids||[])
+          .forEach(noteId=>{
+
+            const note=
+              noteMap.get(
+                text(noteId)
+              );
+
+            if(!note){
+              throw new Error(
+                `El actor ${lane.id} referencia una nota inexistente: ${noteId}.`
+              );
+            }
+
+            if(
+              text(note.lane_id)!==
+              text(lane.id) ||
+              text(note.node_id)
+            ){
+              throw new Error(
+                `La nota ${noteId} no pertenece exclusivamente al actor ${lane.id}.`
+              );
+            }
+          });
+      });
   });
 
   return true;
 }
+  
   
 function readFileInput(input,callback){
   const file=input?.files?.[0];
