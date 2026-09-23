@@ -1667,11 +1667,13 @@ function deleteSelection(){
         )
       );
 
-    if(!ids.size){
-      APP.selection=null;
-      renderStudio();
-      return;
-    }
+if(!ids.size){
+  gMsg(
+    'info',
+    'Los conectores circulares no se eliminan mediante multiselección.'
+  );
+  return;
+}
 
     pushHistory();
 
@@ -3349,6 +3351,17 @@ function renderEdge(
 
     if(!cg)return'';
 
+  const sourceMarkerSelected=
+        isConnectorMarkerSelected(
+          edge.id,
+          'source'
+        ),
+      targetMarkerSelected=
+        isConnectorMarkerSelected(
+          edge.id,
+          'target'
+        );
+
     const fill=
             edge.connector_kind==='input'
               ? '#92D050'
@@ -3426,8 +3439,8 @@ function renderEdge(
           cy="${cg.sourceMarker.y}"
           r="${STANDARD.connectorRadius}"
           fill="${fill}"
-          stroke="#000"
-          stroke-width="1"
+stroke="${sourceMarkerSelected?'#00AEEF':'#000'}"
+stroke-width="${sourceMarkerSelected?2.6:1}"
         />
 
         <circle
@@ -3441,8 +3454,8 @@ function renderEdge(
           cy="${cg.targetMarker.y}"
           r="${STANDARD.connectorRadius}"
           fill="${fill}"
-          stroke="#000"
-          stroke-width="1"
+stroke="${targetMarkerSelected?'#00AEEF':'#000'}"
+stroke-width="${targetMarkerSelected?2.6:1}"
         />
 
         <text
@@ -5430,19 +5443,28 @@ function renderInspector(){
     root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"><button id="ins_save_general" class="primary" type="button">Aplicar cambios</button></div>`;
     $('ins_save_general').onclick=()=>{pushHistory();APP.master.process_code=upper($('ins_process_code').value);APP.master.process_name=upper($('ins_process_name').value);APP.master.purpose=upper($('ins_purpose').value);flow.version_name=upper($('ins_flow_name').value)||flow.version_name;flow.version_type=$('ins_flow_type').value;flow.status=$('ins_flow_status').value;markDirty();renderLibrary();renderStudio();};return;
   }
-  if(sel.type==='nodes'){
-  const ids=
-    Array.isArray(sel.ids)
-      ? sel.ids.filter(
-          id=>
-            nodeById(
-              id,
-              model
-            )
-        )
-      : [];
 
-  if(!ids.length){
+if(sel.type==='nodes'){
+  const ids=
+          Array.isArray(sel.ids)
+            ? sel.ids.filter(id=>
+                nodeById(
+                  id,
+                  model
+                )
+              )
+            : [],
+        markerCount=
+          Array.isArray(
+            sel.connector_markers
+          )
+            ? sel.connector_markers.length
+            : 0;
+
+  if(
+    !ids.length &&
+    !markerCount
+  ){
     APP.selection=null;
     renderInspector();
     return;
@@ -5453,17 +5475,30 @@ function renderInspector(){
       <span class="info-chip">
         ${ids.length} CAJAS SELECCIONADAS
       </span>
+
+      <span class="info-chip">
+        ${markerCount} CONECTORES SELECCIONADOS
+      </span>
     </div>
 
     <div class="empty-note">
-      Arrastra cualquiera de las cajas seleccionadas
-      para mover el conjunto.
-      Pulsa Supr/Delete para eliminar toda la selección.
+      ${
+        ids.length
+          ? 'Arrastra cualquiera de las cajas seleccionadas para mover el conjunto. Los círculos seleccionados o asociados acompañarán el movimiento.'
+          : 'Los círculos están seleccionados, pero no se eliminan de forma independiente. Incluye al menos una caja para mover el conjunto.'
+      }
+
+      ${
+        ids.length
+          ? '<br>Pulsa Supr/Delete para eliminar únicamente las cajas seleccionadas y sus conexiones asociadas.'
+          : ''
+      }
     </div>
   `;
 
   return;
 }
+  
 if(sel.type==='lane'){
   const lane=
     laneById(
@@ -6290,16 +6325,21 @@ svg
           return;
         }
 
-const keepGroupSelection=
-  APP.selection?.type==='nodes' &&
-  Array.isArray(
-    APP.selection.ids
-  ) &&
-  APP.selection.ids.includes(
-    nodeId
+const keepExistingSelection=
+  (
+    APP.selection?.type==='nodes' &&
+    Array.isArray(
+      APP.selection.ids
+    ) &&
+    APP.selection.ids.includes(
+      nodeId
+    )
+  ) || (
+    APP.selection?.type==='node' &&
+    APP.selection.id===nodeId
   );
 
-if(!keepGroupSelection){
+if(!keepExistingSelection){
   APP.selection={
     type:'node',
     id:nodeId
@@ -6625,7 +6665,7 @@ function endLaneResize(event){
   APP.laneResize=null;
   renderStudio();
 }
-  
+
 function selectedNodeIds(){
   const selection=
     APP.selection;
@@ -6648,6 +6688,43 @@ function selectedNodeIds(){
   }
 
   return [];
+}
+
+function selectedConnectorMarkers(){
+  const markers=
+    APP.selection?.connector_markers;
+
+  if(!Array.isArray(markers)){
+    return [];
+  }
+
+  return markers
+    .filter(ref=>
+      ref &&
+      text(ref.edgeId) &&
+      ['source','target'].includes(
+        ref.markerKey
+      )
+    )
+    .map(ref=>({
+      edgeId:ref.edgeId,
+      markerKey:ref.markerKey
+    }));
+}
+
+function connectorMarkerRefKey(ref){
+  return `${ref.edgeId}::${ref.markerKey}`;
+}
+
+function isConnectorMarkerSelected(
+  edgeId,
+  markerKey
+){
+  return selectedConnectorMarkers()
+    .some(ref=>
+      ref.edgeId===edgeId &&
+      ref.markerKey===markerKey
+    );
 }
 
 function isNodeSelected(nodeId){
@@ -6699,6 +6776,86 @@ function nodeFullyInsideSelection(
     box.x+box.w<=rect.x2 &&
     box.y+box.h<=rect.y2
   );
+}
+
+function connectorMarkerFullyInsideSelection(
+  point,
+  rect
+){
+  if(!point)return false;
+
+  const radius=
+    STANDARD.connectorRadius;
+
+  return (
+    point.x-radius>=rect.x1 &&
+    point.y-radius>=rect.y1 &&
+    point.x+radius<=rect.x2 &&
+    point.y+radius<=rect.y2
+  );
+}
+
+function connectorMarkersForSelection(
+  nodeIds,
+  rect,
+  geometry,
+  model
+){
+  const selectedNodes=
+          new Set(nodeIds||[]),
+        refs=[],
+        seen=new Set();
+
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+      const cg=
+        connectorGeometry(
+          edge,
+          geometry,
+          model
+        );
+
+      if(!cg)return;
+
+      [
+        {
+          markerKey:'source',
+          point:cg.sourceMarker,
+          nodeId:edge.source
+        },
+        {
+          markerKey:'target',
+          point:cg.targetMarker,
+          nodeId:edge.target
+        }
+      ].forEach(item=>{
+        const shouldSelect=
+          selectedNodes.has(item.nodeId) ||
+          connectorMarkerFullyInsideSelection(
+            item.point,
+            rect
+          );
+
+        if(!shouldSelect)return;
+
+        const ref={
+                edgeId:edge.id,
+                markerKey:item.markerKey
+              },
+              key=
+                connectorMarkerRefKey(ref);
+
+        if(seen.has(key))return;
+
+        seen.add(key);
+        refs.push(ref);
+      });
+    });
+
+  return refs;
 }
 
 function viewportContentPoint(
@@ -6932,10 +7089,6 @@ function endMarqueeSelection(event){
     el.style.height='0px';
   }
 
-  /*
-   * Un simple clic en espacio vacío
-   * limpia la selección.
-   */
   if(
     !marquee.moved ||
     !model
@@ -6957,29 +7110,38 @@ function endMarqueeSelection(event){
           ),
         ids=
           model.nodes
-            .filter(
-              node=>
-                nodeFullyInsideSelection(
-                  node,
-                  rect,
-                  geometry,
-                  model
-                )
+            .filter(node=>
+              nodeFullyInsideSelection(
+                node,
+                rect,
+                geometry,
+                model
+              )
             )
-            .map(
-              node=>node.id
-            );
+            .map(node=>node.id),
+        connectorMarkers=
+          connectorMarkersForSelection(
+            ids,
+            rect,
+            geometry,
+            model
+          );
 
   if(ids.length===1){
     APP.selection={
       type:'node',
-      id:ids[0]
+      id:ids[0],
+      connector_markers:connectorMarkers
     };
 
-  }else if(ids.length>1){
+  }else if(
+    ids.length>1 ||
+    connectorMarkers.length
+  ){
     APP.selection={
       type:'nodes',
-      ids
+      ids,
+      connector_markers:connectorMarkers
     };
 
   }else{
@@ -7100,6 +7262,8 @@ function beginNodeDrag(
           )
             ? activeIds
             : [nodeId],
+        nodeIdSet=
+          new Set(nodeIds),
         items=
           nodeIds
             .map(id=>{
@@ -7143,6 +7307,7 @@ function beginNodeDrag(
                     item.y
                   )||0,
                 boxX:box.x,
+                boxY:box.y,
                 w:box.w,
                 h:box.h
               };
@@ -7152,6 +7317,117 @@ function beginNodeDrag(
   if(!items.length){
     return;
   }
+
+  const markerRefs=[],
+        seenMarkers=new Set();
+
+  selectedConnectorMarkers()
+    .forEach(ref=>{
+      const key=
+        connectorMarkerRefKey(ref);
+
+      if(seenMarkers.has(key))return;
+
+      seenMarkers.add(key);
+      markerRefs.push(ref);
+    });
+
+  /*
+   * Aunque el círculo quede fuera del marco,
+   * si pertenece a una caja que se está moviendo
+   * debe acompañar a esa caja.
+   */
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+      if(nodeIdSet.has(edge.source)){
+        const ref={
+          edgeId:edge.id,
+          markerKey:'source'
+        };
+
+        const key=
+          connectorMarkerRefKey(ref);
+
+        if(!seenMarkers.has(key)){
+          seenMarkers.add(key);
+          markerRefs.push(ref);
+        }
+      }
+
+      if(nodeIdSet.has(edge.target)){
+        const ref={
+          edgeId:edge.id,
+          markerKey:'target'
+        };
+
+        const key=
+          connectorMarkerRefKey(ref);
+
+        if(!seenMarkers.has(key)){
+          seenMarkers.add(key);
+          markerRefs.push(ref);
+        }
+      }
+    });
+
+  const markers=
+    markerRefs
+      .map(ref=>{
+        const edge=
+          edgeById(
+            ref.edgeId,
+            model
+          );
+
+        if(
+          !edge ||
+          edge.mode!=='connector'
+        ){
+          return null;
+        }
+
+        const cg=
+          connectorGeometry(
+            edge,
+            geometry,
+            model
+          );
+
+        if(!cg)return null;
+
+        const attachedNodeId=
+                ref.markerKey==='source'
+                  ? edge.source
+                  : edge.target,
+              startPoint=
+                ref.markerKey==='source'
+                  ? cg.sourceMarker
+                  : cg.targetMarker,
+              startRoute=
+                Array.isArray(
+                  edge.connector_routes?.[
+                    ref.markerKey
+                  ]
+                )
+                  ? clone(
+                      edge.connector_routes[
+                        ref.markerKey
+                      ]
+                    )
+                  : [];
+
+        return {
+          edgeId:edge.id,
+          markerKey:ref.markerKey,
+          attachedNodeId,
+          startPoint:clone(startPoint),
+          startRoute
+        };
+      })
+      .filter(Boolean);
 
   APP.drag={
     nodeId,
@@ -7163,6 +7439,7 @@ function beginNodeDrag(
       event.pointerId,
     start:p,
     items,
+    markers,
     moved:false,
     snapshot:
       captureHistoryState()
@@ -7229,10 +7506,6 @@ function handleNodeDrag(event){
             rawDx
           );
 
-  /*
-   * Calculamos un único delta vertical permitido
-   * para conservar la distancia relativa del grupo.
-   */
   const minDy=
           Math.max(
             ...drag.items.map(
@@ -7268,66 +7541,194 @@ function handleNodeDrag(event){
               lane.kind==='actor'
           );
 
-  drag.items.forEach(
-    item=>{
-      const node=
-        nodeById(
-          item.id,
+  drag.items.forEach(item=>{
+    const node=
+      nodeById(
+        item.id,
+        model
+      );
+
+    if(!node)return;
+
+    node.y=
+      item.y+
+      dy;
+
+    if(item.laneKind==='actor'){
+      const desiredLeft=
+              item.boxX+
+              dx,
+
+            centerX=
+              desiredLeft+
+              item.w/2,
+
+            target=
+              nearestActorLaneForX(
+                centerX,
+                actorLanes
+              );
+
+      if(target){
+        node.lane_id=
+          target.id;
+
+        node.x_rel=
+          Math.max(
+            8,
+            Math.min(
+              target.width-
+              item.w-
+              8,
+
+              snap(
+                desiredLeft-
+                target.x
+              )
+            )
+          );
+      }
+    }
+  });
+
+  /*
+   * Obtenemos el desplazamiento REAL de cada caja.
+   * Esto evita que un círculo avance más que su caja
+   * cuando existen límites de carril.
+   */
+  const nextGeometry=
+          laneGeometry(
+            model
+          ),
+        nodeDeltas=
+          new Map();
+
+  drag.items.forEach(item=>{
+    const node=
+      nodeById(
+        item.id,
+        model
+      );
+
+    if(!node)return;
+
+    const box=
+      nodeBox(
+        node,
+        nextGeometry,
+        model
+      );
+
+    nodeDeltas.set(
+      item.id,
+      {
+        x:box.x-item.boxX,
+        y:box.y-item.boxY
+      }
+    );
+  });
+
+  (drag.markers||[])
+    .forEach(marker=>{
+      const edge=
+        edgeById(
+          marker.edgeId,
           model
         );
 
-      if(!node){
+      if(
+        !edge ||
+        edge.mode!=='connector'
+      ){
         return;
       }
 
-      node.y=
-        item.y+
-        dy;
+      const attachedNode=
+              marker.markerKey==='source'
+                ? nodeById(
+                    edge.source,
+                    model
+                  )
+                : nodeById(
+                    edge.target,
+                    model
+                  ),
 
-      /*
-       * Solo cajas de actores pueden cambiar
-       * horizontalmente de carril.
-       * S/I/O/C conservan su carril metodológico.
-       */
-      if(
-        item.laneKind==='actor'
-      ){
-        const desiredLeft=
-                item.boxX+
-                dx,
+            side=
+              marker.markerKey==='source'
+                ? edge.source_side||'right'
+                : edge.target_side||'left',
 
-              centerX=
-                desiredLeft+
-                item.w/2,
+            attachedDelta=
+              nodeDeltas.get(
+                marker.attachedNodeId
+              ),
 
-              target=
-                nearestActorLaneForX(
-                  centerX,
-                  actorLanes
-                );
+            /*
+             * Si pertenece a una caja seleccionada,
+             * sigue el desplazamiento real de esa caja.
+             * Si fue seleccionado por el marco de manera
+             * independiente, sigue el gesto del grupo.
+             */
+            delta=
+              attachedDelta||{
+                x:dx,
+                y:dy
+              },
 
-        if(target){
-          node.lane_id=
-            target.id;
+            bounds=
+              connectorZoneBounds(
+                edge,
+                marker.markerKey,
+                nextGeometry,
+                model
+              ),
 
-          node.x_rel=
-            Math.max(
-              8,
-              Math.min(
-                target.width-
-                item.w-
-                8,
+            desired={
+              x:
+                marker.startPoint.x+
+                delta.x,
+              y:
+                marker.startPoint.y+
+                delta.y
+            },
 
-                snap(
-                  desiredLeft-
-                  target.x
-                )
-              )
-            );
-        }
+            next=
+              keepConnectorMarkerOutsideNode(
+                clampPointToBounds(
+                  desired,
+                  bounds
+                ),
+                attachedNode,
+                side,
+                bounds,
+                nextGeometry,
+                model
+              );
+
+      edge.connector_points=
+        edge.connector_points||{};
+
+      edge.connector_points[
+        marker.markerKey
+      ]=next;
+
+      edge.connector_routes=
+        edge.connector_routes||{
+          source:[],
+          target:[]
+        };
+
+      if(marker.startRoute.length){
+        edge.connector_routes[
+          marker.markerKey
+        ]=
+          marker.startRoute.map(point=>({
+            x:point.x+delta.x,
+            y:point.y+delta.y
+          }));
       }
-    }
-  );
+    });
 
   drag.moved=
     Math.hypot(
