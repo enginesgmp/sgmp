@@ -757,12 +757,19 @@ function createMaster(process={}){
 }
 
 function actorLane(label='',width=STANDARD.actorLaneWidth){
-  return {id:uid('LANE-ACTOR'),kind:'actor',label:upper(label),width:Number(width)||STANDARD.actorLaneWidth};
+  return {
+    id:uid('LANE-ACTOR'),
+    kind:'actor',
+    label:upper(label),
+    width:Number(width)||STANDARD.actorLaneWidth,
+    note_ids:[],
+    work_comments:[]
+  };
 }
 
 function createBlankModel(){
   return {
-    model_code:'SB_FLOW_MODEL',model_version:'6.1',created_at:nowIso(),updated_at:nowIso(),
+    model_code:'SB_FLOW_MODEL',model_version:'6.2',created_at:nowIso(),updated_at:nowIso(),
     lanes:[
       {id:'LANE-SUPPLIER',kind:'supplier',label:'PROVEEDOR',width:STANDARD.peripheralLaneWidth,fixed:true},
       {id:'LANE-INPUT',kind:'input',label:'ENTRADA',width:STANDARD.peripheralLaneWidth,fixed:true},
@@ -2302,22 +2309,44 @@ function buildNoteNumberMap(
       )
     );
 
+  const laneOrder=
+    new Map(
+      lanes.map(lane=>[
+        lane.id,
+        {
+          y:-1,
+          x:Number(lane.x)||0
+        }
+      ])
+    );
+
+  const notePosition=note=>{
+    if(
+      text(note?.lane_id) &&
+      laneOrder.has(note.lane_id)
+    ){
+      return laneOrder.get(note.lane_id);
+    }
+
+    if(
+      text(note?.node_id) &&
+      nodeOrder.has(note.node_id)
+    ){
+      return nodeOrder.get(note.node_id);
+    }
+
+    return {
+      y:999999,
+      x:999999
+    };
+  };
+
   const ordered=
     (model.notes||[])
       .slice()
       .sort((a,b)=>{
-        const pa=
-                nodeOrder.get(a.node_id)||
-                {
-                  y:999999,
-                  x:999999
-                },
-              pb=
-                nodeOrder.get(b.node_id)||
-                {
-                  y:999999,
-                  x:999999
-                };
+        const pa=notePosition(a),
+              pb=notePosition(b);
 
         return (
           pa.y-pb.y ||
@@ -3618,6 +3647,34 @@ function renderNodeAnnotationTrigger(
   `;
 }
 
+function annotationTargetById(
+  targetId,
+  model=currentModel()
+){
+  if(!model)return null;
+
+  return (
+    nodeById(
+      targetId,
+      model
+    )||
+    model.lanes?.find(
+      lane=>
+        lane.kind==='actor' &&
+        lane.id===targetId
+    )||
+    null
+  );
+}
+
+function annotationTargetIsActorLane(target){
+  return (
+    !!target &&
+    target.kind==='actor' &&
+    !target.lane_id
+  );
+}
+
 function annotationNotesForNode(
   node,
   model=currentModel()
@@ -3644,6 +3701,7 @@ function closeNodeAnnotationPopup(){
   popup.classList.add('hidden');
   popup.innerHTML='';
   popup.removeAttribute('data-node-id');
+  popup.removeAttribute('data-target-type');
   popup.removeAttribute('data-tab');
 }
 
@@ -3651,9 +3709,9 @@ function renderNodeAnnotationPopupContent(
   nodeId,
   tab='notes'
 ){
-  const model=currentModel(),
-        node=nodeById(nodeId,model),
-        popup=$('node_annotation_popup');
+const model=currentModel(),
+      node=annotationTargetById(nodeId,model),
+      popup=$('node_annotation_popup');
 
   if(!model||!node||!popup){
     closeNodeAnnotationPopup();
@@ -3680,6 +3738,12 @@ function renderNodeAnnotationPopupContent(
     buildNoteNumberMap(model).map;
 
   popup.dataset.nodeId=nodeId;
+
+  popup.dataset.targetType=
+  annotationTargetIsActorLane(node)
+    ? 'actor_lane'
+    : 'node';
+  
   popup.dataset.tab=activeTab;
 
   const notesPanel=`
@@ -3794,7 +3858,7 @@ function renderNodeAnnotationPopupContent(
 
   popup.innerHTML=`
     <div class="node-annotation-popup-head">
-      <strong>Anotaciones de la caja</strong>
+      <strong>${annotationTargetIsActorLane(node)?'Anotaciones del actor':'Anotaciones de la caja'}</strong>
 
       <button
         id="btn_close_node_annotation"
@@ -4019,8 +4083,8 @@ function bindNodeAnnotationPopupEvents(
         input.addEventListener(
           'input',
           ()=>{
-            const node=
-                    nodeById(nodeId),
+const node=
+        annotationTargetById(nodeId),
                   comment=
                     node?.work_comments?.find(
                       item=>item.id===commentId
@@ -4142,7 +4206,7 @@ function openNodeAnnotationPopup(
   tab='notes'
 ){
   const popup=$('node_annotation_popup'),
-        node=nodeById(nodeId);
+node=annotationTargetById(nodeId);
 
   if(!popup||!node){
     return;
@@ -4187,7 +4251,10 @@ function refreshNodeAnnotationPopup(
 
 function createAnnotationNote(nodeId){
   const model=currentModel(),
-        node=nodeById(nodeId,model),
+        node=annotationTargetById(
+  nodeId,
+  model
+),
         input=$('annotation_new_note'),
         value=upper(input?.value||'');
 
@@ -4201,12 +4268,25 @@ function createAnnotationNote(nodeId){
 
   pushHistory();
 
-  const note={
-    id:uid('NOTE'),
-    node_id:nodeId,
-    text:value,
-    created_at:nowIso()
-  };
+const isActorLane=
+  annotationTargetIsActorLane(node);
+
+const note={
+  id:uid('NOTE'),
+
+  node_id:
+    isActorLane
+      ? ''
+      : nodeId,
+
+  lane_id:
+    isActorLane
+      ? nodeId
+      : '',
+
+  text:value,
+  created_at:nowIso()
+};
 
   model.notes=model.notes||[];
   model.notes.push(note);
@@ -4266,7 +4346,10 @@ function deleteAnnotationNote(
   noteId
 ){
   const model=currentModel(),
-        node=nodeById(nodeId,model);
+ node=annotationTargetById(
+  nodeId,
+  model
+);
 
   if(!model||!node)return;
 
@@ -4522,14 +4605,127 @@ function renderSharedPeripheralZone(leftLane,rightLane,geometry,interactive){
   const leftSelected=APP.selection?.type==='lane'&&APP.selection.id===leftLane.id,rightSelected=APP.selection?.type==='lane'&&APP.selection.id===rightLane.id;
   return `<g class="shared-peripheral-zone"><rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#FFFFFF" stroke="#000" stroke-width="1" pointer-events="none"/><line x1="${x}" y1="${geometry.bodyTop}" x2="${x+width}" y2="${geometry.bodyTop}" stroke="#000" stroke-width="1" pointer-events="none"/><rect class="lane-header-hit" data-lane-id="${leftLane.id}" x="${leftLane.x}" y="${geometry.laneTop}" width="${leftLane.width}" height="${STANDARD.laneHeaderHeight}" fill="${leftSelected?'#E0F4FF':'transparent'}" stroke="none" pointer-events="${interactive?'all':'none'}"/><rect class="lane-header-hit" data-lane-id="${rightLane.id}" x="${rightLane.x}" y="${geometry.laneTop}" width="${rightLane.width}" height="${STANDARD.laneHeaderHeight}" fill="${rightSelected?'#E0F4FF':'transparent'}" stroke="none" pointer-events="${interactive?'all':'none'}"/><text x="${leftLane.x+leftLane.width/2}" y="${geometry.laneTop+STANDARD.laneHeaderHeight/2}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="800" pointer-events="none">${escapeXml(leftLane.label)}</text><text x="${rightLane.x+rightLane.width/2}" y="${geometry.laneTop+STANDARD.laneHeaderHeight/2}" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="800" pointer-events="none">${escapeXml(rightLane.label)}</text>${renderLaneInsertButton(leftLane,geometry,interactive,leftSelected)}${renderLaneInsertButton(rightLane,geometry,interactive,rightSelected)}</g>`;
 }
+
+function renderLaneAnnotationTrigger(
+  lane,
+  geometry,
+  interactive,
+  selected
+){
+  if(
+    !interactive||
+    !selected
+  ){
+    return '';
+  }
+
+  const hasComments=
+    Array.isArray(lane.work_comments) &&
+    lane.work_comments.some(comment=>
+      text(
+        typeof comment==='string'
+          ? comment
+          : comment?.text
+      )
+    );
+
+  const stroke=
+          hasComments
+            ? '#D92D20'
+            : '#0284C7',
+        fill=
+          hasComments
+            ? '#FEE2E2'
+            : '#FFFFFF',
+        x=
+          lane.x+
+          lane.width-
+          52,
+        y=
+          geometry.laneTop+
+          STANDARD.laneHeaderHeight-
+          19;
+
+  return `
+    <g
+      data-node-annotation="${lane.id}"
+      class="node-annotation-trigger"
+      role="button"
+      tabindex="0"
+      aria-label="Abrir notas y observaciones del actor"
+    >
+      <circle
+        cx="${x}"
+        cy="${y}"
+        r="11"
+        fill="${fill}"
+        stroke="${stroke}"
+        stroke-width="1.6"
+      />
+
+      <text
+        x="${x}"
+        y="${y+.5}"
+        text-anchor="middle"
+        dominant-baseline="middle"
+        font-size="12"
+        font-weight="900"
+        fill="${stroke}"
+        pointer-events="none"
+      >✎</text>
+    </g>
+  `;
+}
+  
 function renderActorLane(
   lane,
   geometry,
   interactive
 ){
   const selected=
-    APP.selection?.type==='lane' &&
-    APP.selection.id===lane.id;
+          APP.selection?.type==='lane' &&
+          APP.selection.id===lane.id,
+
+        hasComments=
+          interactive &&
+          Array.isArray(
+            lane.work_comments
+          ) &&
+          lane.work_comments.some(comment=>
+            text(
+              typeof comment==='string'
+                ? comment
+                : comment?.text
+            )
+          ),
+
+        noteNumbers=
+          (lane.note_ids||[])
+            .map(id=>
+              geometry.noteMap?.map?.get(id)
+            )
+            .filter(Boolean),
+
+        noteLine=
+          noteNumbers
+            .map(number=>`(${number})`)
+            .join(' '),
+
+        centerX=
+          lane.x+
+          lane.width/2,
+
+        centerY=
+          geometry.laneTop+
+          STANDARD.laneHeaderHeight/2,
+
+        labelY=
+          noteLine
+            ? centerY-6
+            : centerY,
+
+        noteY=
+          centerY+8;
 
   return `
     <g class="actor-lane">
@@ -4562,47 +4758,62 @@ function renderActorLane(
         y="${geometry.laneTop}"
         width="${lane.width}"
         height="${STANDARD.laneHeaderHeight}"
-        fill="${
-          selected
-            ? '#E0F4FF'
-            : 'transparent'
-        }"
+        fill="${selected?'#E0F4FF':'transparent'}"
         stroke="${
           selected
             ? '#00AEEF'
-            : 'none'
+            : hasComments
+              ? '#D92D20'
+              : 'none'
         }"
         stroke-width="${
           selected
             ? 2
-            : 0
+            : hasComments
+              ? 1.6
+              : 0
         }"
-        pointer-events="${
-          interactive
-            ? 'all'
-            : 'none'
-        }"
+        pointer-events="${interactive?'all':'none'}"
       />
 
       <text
-        x="${lane.x+lane.width/2}"
-        y="${
-          geometry.laneTop+
-          STANDARD.laneHeaderHeight/2
-        }"
+        x="${centerX}"
+        y="${labelY}"
         text-anchor="middle"
         dominant-baseline="middle"
         font-size="9"
         font-weight="800"
         pointer-events="none"
       >
-        ${
-          escapeXml(
-            lane.label||
-            'ACTOR SIN NOMBRE'
-          )
-        }
+        ${escapeXml(lane.label||'ACTOR SIN NOMBRE')}
       </text>
+
+      ${
+        noteLine
+          ? `
+              <text
+                x="${centerX}"
+                y="${noteY}"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                font-size="7.5"
+                font-weight="700"
+                pointer-events="none"
+              >
+                ${escapeXml(noteLine)}
+              </text>
+            `
+          : ''
+      }
+
+      ${
+        renderLaneAnnotationTrigger(
+          lane,
+          geometry,
+          interactive,
+          selected
+        )
+      }
 
       ${
         renderLaneInsertButton(
@@ -8788,7 +8999,7 @@ const orderedActorNodes=semanticActorNodeOrder(model);
 const activities=orderedActorNodes.map((node,index)=>{
     
     const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
-  const noteMap=buildNoteNumberMap(model,geom.lanes);const clarifying_notes=noteMap.ordered.map(note=>{const node=nodeById(note.node_id,model),targetKind=noteTargetKind(node,model),isActivity=targetKind==='activity'||targetKind==='decision';return{id:note.id,target_id:node?.id||'',target_kind:targetKind,target_name:upper(node?.label||''),activity_id:isActivity?(node?.id||''):'',activity_name:isActivity?upper(node?.label||''):'',text:upper(note.text),number:noteMap.map.get(note.id)};});
+  const noteMap=   buildNoteNumberMap(     model,     geom.lanes   );  const clarifying_notes=   noteMap.ordered.map(note=>{      const node=             nodeById(               note.node_id,               model             ),            lane=             !node &&             text(note.lane_id)               ? laneById(                   note.lane_id,                   model                 )               : null,            targetKind=             node               ? noteTargetKind(                   node,                   model                 )               : lane?.kind==='actor'                 ? 'actor_lane'                 : '',            isActivity=             targetKind==='activity'||             targetKind==='decision';      return {       id:note.id,        target_id:         node?.id||         lane?.id||         '',        target_kind:         targetKind,        target_name:         upper(           node?.label||           lane?.label||           ''         ),        activity_id:         isActivity           ? node?.id||''           : '',        activity_name:         isActivity           ? upper(node?.label||'')           : '',        text:upper(note.text),       number:noteMap.map.get(note.id)     };   });
   const docMap=new Map();normalizeDocumentCatalog(APP.master).forEach(value=>docMap.set(documentKey(value),documentTextValue(value)));model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const value=documentTextValue(d);if(value)docMap.set(documentKey(value),value);});
   return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(APP.master.purpose),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
 }
@@ -9530,6 +9741,26 @@ function validateMasterBackupStructure(data){
         );
       }
 
+if(
+  lane.kind==='actor' &&
+  lane.note_ids!==undefined &&
+  !Array.isArray(lane.note_ids)
+){
+  throw new Error(
+    `El actor ${id} tiene note_ids inválido.`
+  );
+}
+
+if(
+  lane.kind==='actor' &&
+  lane.work_comments!==undefined &&
+  !Array.isArray(lane.work_comments)
+){
+  throw new Error(
+    `El actor ${id} tiene work_comments inválido.`
+  );
+}
+      
       laneMap.set(id,lane);
     });
 
@@ -9908,7 +10139,7 @@ function importLmp(raw){
 function modelFromLmp(contract){
   const input=contract.sipoc_input||{},model=createBlankModel();
   (input.documents||[]).forEach(doc=>ensureCatalogDocument(doc));
-  const actorRows=Array.isArray(input?.lanes?.actors)?input.lanes.actors:[];model.lanes=model.lanes.filter(l=>l.kind!=='actor');const outIdx=model.lanes.findIndex(l=>l.kind==='output');const actors=(actorRows.length?actorRows:[{name:''},{name:''}]).map(a=>({id:text(a.id)||uid('LANE-ACTOR'),kind:'actor',label:upper(a.name||a.actor||''),width:STANDARD.actorLaneWidth}));while(actors.length<2)actors.push(actorLane(''));model.lanes.splice(outIdx,0,...actors);
+  const actorRows=Array.isArray(input?.lanes?.actors)?input.lanes.actors:[];model.lanes=model.lanes.filter(l=>l.kind!=='actor');const outIdx=model.lanes.findIndex(l=>l.kind==='output');const actors=(actorRows.length?actorRows:[{name:''},{name:''}]).map(a=>({   id:text(a.id)||uid('LANE-ACTOR'),   kind:'actor',   label:upper(a.name||a.actor||''),   width:STANDARD.actorLaneWidth,   note_ids:[],   work_comments:[] }));while(actors.length<2)actors.push(actorLane(''));model.lanes.splice(outIdx,0,...actors);
   const nodeMap=new Map();
   const registerNode=(node,kind)=>{nodeMap.set(`${kind.toUpperCase()}|${upper(node.label)}`,node);nodeMap.set(node.id,node);return node;};
   const make=(laneId,label,type='white_box',id='')=>{const lane=model.lanes.find(l=>l.id===laneId),kind=lane?.kind||'actor',pos=nextPositionForImport(model,laneId);const n={id:text(id)||uid('NODE'),lane_id:laneId,type:validNodeTypeForLane(kind,type),label:upper(label),x_rel:pos.x_rel,y:pos.y,documents:[],note_ids:[],meta:{}};model.nodes.push(n);return registerNode(n,kind);};
@@ -9921,13 +10152,126 @@ function modelFromLmp(contract){
   (input.activities||[]).forEach(a=>{const source=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!source)return;(a.next||[]).forEach(r=>{const target=(r.activity_id&&actMap.get(String(r.activity_id)))||actMap.get(`NAME|${upper(r.activity_name||r.name)}`);if(target&&!model.edges.some(e=>e.source===source.id&&e.target===target.id)){const [ss,ts]=defaultSidesForModel(source,target,model);const e=importEdge(model,source.id,target.id,ss,ts);e.label=upper(r.label);model.edges.push(e);}});(a.inputs||[]).forEach(r=>{const inp=getOrCreate('input','LANE-INPUT',r.name||r.input,r.node_type||'white_box',r.id||r.input_id||'');if(!model.edges.some(e=>e.source===inp.id&&e.target===source.id)){const e=importEdge(model,inp.id,source.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});(a.outputs||[]).forEach(r=>{const out=getOrCreate('output','LANE-OUTPUT',r.name||r.output,r.node_type||'white_box',r.id||r.output_id||'');if(!model.edges.some(e=>e.source===source.id&&e.target===out.id)){const e=importEdge(model,source.id,out.id,'right','left');e.label=upper(r.label);model.edges.push(e);}});});
   const noteLookup=new Map((input.clarifying_notes||[]).map(n=>[String(n.id),n]));
   (input.activities||[]).forEach(a=>{const node=(a.id&&actMap.get(String(a.id)))||actMap.get(`NAME|${upper(a.name)}`);if(!node)return;(a.note_ids||[]).forEach(id=>{const src=noteLookup.get(String(id));if(src&&!model.notes.some(note=>note.id===String(src.id))){const note={id:text(src.id)||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};model.notes.push(note);node.note_ids.push(note.id);}});});
-  (input.clarifying_notes||[]).forEach(src=>{
-    const srcId=text(src.id);if(srcId&&model.notes.some(note=>note.id===srcId))return;
-    let node=null;const targetId=text(src.target_id||src.activity_id);if(targetId)node=nodeMap.get(targetId)||actMap.get(targetId)||null;
-    if(!node&&src.activity_name)node=actMap.get(`NAME|${upper(src.activity_name)}`)||null;
-    if(!node&&src.target_name){const kind=text(src.target_kind).toLowerCase(),mapKind=kind==='activity'||kind==='decision'?'actor':kind;node=nodeMap.get(`${mapKind.toUpperCase()}|${upper(src.target_name)}`)||null;}
-    if(!node)return;const note={id:srcId||uid('NOTE'),node_id:node.id,text:upper(src.text),created_at:nowIso()};model.notes.push(note);node.note_ids=node.note_ids||[];node.note_ids.push(note.id);
+  
+(input.clarifying_notes||[])
+  .forEach(src=>{
+
+    const srcId=
+      text(src.id);
+
+    if(
+      srcId &&
+      model.notes.some(
+        note=>note.id===srcId
+      )
+    ){
+      return;
+    }
+
+    const targetId=
+            text(
+              src.target_id||
+              src.activity_id
+            ),
+
+          targetKind=
+            text(
+              src.target_kind
+            ).toLowerCase();
+
+    let node=null,
+        lane=null;
+
+    if(targetId){
+      node=
+        nodeMap.get(targetId)||
+        actMap.get(targetId)||
+        null;
+
+      lane=
+        model.lanes.find(
+          item=>
+            item.kind==='actor' &&
+            item.id===targetId
+        )||
+        null;
+    }
+
+    if(
+      !node &&
+      !lane &&
+      src.activity_name
+    ){
+      node=
+        actMap.get(
+          `NAME|${upper(src.activity_name)}`
+        )||
+        null;
+    }
+
+    if(
+      !node &&
+      !lane &&
+      src.target_name
+    ){
+      if(targetKind==='actor_lane'){
+        lane=
+          model.lanes.find(
+            item=>
+              item.kind==='actor' &&
+              upper(item.label)===
+              upper(src.target_name)
+          )||
+          null;
+
+      }else{
+        const mapKind=
+          targetKind==='activity'||
+          targetKind==='decision'
+            ? 'actor'
+            : targetKind;
+
+        node=
+          nodeMap.get(
+            `${mapKind.toUpperCase()}|${upper(src.target_name)}`
+          )||
+          null;
+      }
+    }
+
+    if(!node&&!lane)return;
+
+    const note={
+      id:
+        srcId||
+        uid('NOTE'),
+
+      node_id:
+        node?.id||
+        '',
+
+      lane_id:
+        lane?.id||
+        '',
+
+      text:upper(src.text),
+      created_at:nowIso()
+    };
+
+    model.notes.push(note);
+
+    const target=
+      node||
+      lane;
+
+    target.note_ids=
+      target.note_ids||[];
+
+    target.note_ids.push(
+      note.id
+    );
   });
+  
   normalizeDocumentCatalog(APP.master);normalizeDecisionPorts(model);return model;
 }
 function nextPositionForImport(model,laneId,preferredY=null){const lane=model.lanes.find(l=>l.id===laneId),same=model.nodes.filter(n=>n.lane_id===laneId);let y=preferredY!==null?preferredY:30+same.length*88;while(same.some(n=>Math.abs((n.y||0)-y)<70))y+=78;if(y+90>model.layout.body_height)model.layout.body_height=y+120;return{x_rel:lane?Math.max(10,(lane.width-STANDARD.nodeWidth)/2):20,y};}
@@ -10032,7 +10376,7 @@ function normalizeLoadedModel(model){
     return createBlankModel();
   }
 
-  model.model_version='6.1';
+  model.model_version='6.2';
 
   model.layout=
     model.layout||{};
@@ -10196,6 +10540,57 @@ function normalizeLoadedModel(model){
   (model.lanes||[])
     .forEach(lane=>{
 
+if(lane.kind==='actor'){
+  lane.note_ids=
+    Array.isArray(
+      lane.note_ids
+    )
+      ? lane.note_ids
+      : [];
+
+  lane.work_comments=
+    Array.isArray(
+      lane.work_comments
+    )
+      ? lane.work_comments
+      : [];
+
+  lane.work_comments=
+    lane.work_comments
+      .map(comment=>{
+
+        if(typeof comment==='string'){
+          return {
+            id:uid('COMMENT'),
+            text:upper(comment)
+          };
+        }
+
+        if(
+          !comment ||
+          typeof comment!=='object'
+        ){
+          return null;
+        }
+
+        return {
+          id:
+            text(comment.id)||
+            uid('COMMENT'),
+
+          text:
+            upper(
+              comment.text||''
+            )
+        };
+      })
+      .filter(comment=>
+        comment &&
+        text(comment.text)
+      );
+}
+
+      
       if(
         [
           'supplier',
