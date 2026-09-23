@@ -8104,6 +8104,128 @@ function markAdminPlanningSource(side, source){
   if(el) el.value = source;
 }
 
+function addBusinessDaysInclusiveClient(
+  isoDate,
+  totalDays = 10
+){
+  const match =
+    String(
+      isoDate || ""
+    ).match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if(!match){
+    return "";
+  }
+
+  const cursor =
+    new Date(
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3])
+      )
+    );
+
+  const firstDay =
+    cursor.getUTCDay();
+
+  if(
+    firstDay === 0 ||
+    firstDay === 6
+  ){
+    return "";
+  }
+
+  let counted = 1;
+
+  while(
+    counted < totalDays
+  ){
+    cursor.setUTCDate(
+      cursor.getUTCDate() + 1
+    );
+
+    const weekday =
+      cursor.getUTCDay();
+
+    if(
+      weekday !== 0 &&
+      weekday !== 6
+    ){
+      counted++;
+    }
+  }
+
+  return [
+    cursor.getUTCFullYear(),
+    String(
+      cursor.getUTCMonth() + 1
+    ).padStart(2,"0"),
+    String(
+      cursor.getUTCDate()
+    ).padStart(2,"0")
+  ].join("-");
+}
+
+
+function handleAdminStartDateChange(){
+  markAdminPlanningSource(
+    "start",
+    "date"
+  );
+
+  const startInput =
+    $("adminProcessStartDate");
+
+  const endInput =
+    $("adminProcessEndDate");
+
+  const start =
+    String(
+      startInput?.value || ""
+    );
+
+  if(!start){
+    return;
+  }
+
+  const end =
+    addBusinessDaysInclusiveClient(
+      start,
+      10
+    );
+
+  if(!end){
+    if(endInput){
+      endInput.value = "";
+    }
+
+    toast(
+      "La fecha de inicio debe ser un día laborable de lunes a viernes."
+    );
+
+    return;
+  }
+
+  if(endInput){
+    endInput.value =
+      end;
+  }
+
+  /*
+   * El backend sigue siendo la fuente
+   * de verdad del cálculo.
+   */
+  const endSource =
+    $("adminProcessEndSource");
+
+  if(endSource){
+    endSource.value = "";
+  }
+}
+  
 function adminProcessForm(p = {}){
   const isNew = !p.proceso_id;
   const active = String(p.activo || "SI").trim().toUpperCase() !== "NO";
@@ -8128,7 +8250,7 @@ function adminProcessForm(p = {}){
       <div class="field"><label>Origen</label><select id="adminProcessOrigin"><option value="NUEVO" ${norm(p.origen_proceso)==="NUEVO"||isNew?"selected":""}>NUEVO</option><option value="AS-IS PREVIO" ${norm(p.origen_proceso)==="AS-IS PREVIO"?"selected":""}>AS-IS PREVIO</option></select></div>
       <div class="field"><label>Semana inicio</label><select id="adminProcessStartWeek" class="week-select" onchange="markAdminPlanningSource('start','week')">${weekSelectOptions(p.semana_inicio)}</select><div class="planning-source-note">Al elegir una semana, RADAR recalcula el lunes de inicio.</div></div>
       <div class="field"><label>Semana entrega</label><select id="adminProcessEndWeek" class="week-select" onchange="markAdminPlanningSource('end','week')">${weekSelectOptions(p.semana_entrega)}</select><div class="planning-source-note">Al elegir una semana, RADAR recalcula el viernes de cierre.</div></div>
-      <div class="field"><label>Fecha inicio plan</label><input id="adminProcessStartDate" type="date" value="${esc(isoValue(p.fecha_inicio_plan))}" onchange="markAdminPlanningSource('start','date')"><div class="planning-source-note">Si cambia la fecha, RADAR recalcula la semana ISO.</div></div>
+      <div class="field"><label>Fecha inicio plan</label><input id="adminProcessStartDate" type="date" value="${esc(isoValue(p.fecha_inicio_plan))}" onchange="handleAdminStartDateChange()"><div class="planning-source-note">Si cambia la fecha, RADAR recalcula la semana ISO.</div></div>
       <div class="field"><label>Fecha fin plan</label><input id="adminProcessEndDate" type="date" value="${esc(isoValue(p.fecha_fin_plan))}" onchange="markAdminPlanningSource('end','date')"><div class="planning-source-note">Si cambia la fecha, RADAR recalcula la semana ISO.</div></div>
       <div class="field admin-grid-full"><label>Finalidad</label><textarea id="adminProcessPurpose" rows="3" placeholder="Razón de ser del proceso">${esc(p.finalidad || "")}</textarea></div>
       <div class="field admin-grid-full"><label>Observación</label><textarea id="adminProcessObservation" rows="3" placeholder="Observación interna">${esc(p.observacion || "")}</textarea></div>
