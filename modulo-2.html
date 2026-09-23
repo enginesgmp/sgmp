@@ -596,8 +596,8 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 </div>
 
 <dialog id="insert_dialog"><div class="dialog-inner"><h3 id="insert_title">Insertar</h3><p id="insert_help">Selecciona la figura permitida para el carril activo.</p><div id="insert_palette" class="palette"></div><div class="dialog-actions"><button data-dialog-close="insert_dialog" type="button">Cancelar</button></div></div></dialog>
-<dialog id="validation_dialog"><div class="dialog-inner"><h3>Validación estructural</h3><p>Guardar nunca se bloquea. Estas alertas solo impiden una salida final.</p><div id="validation_list" class="issue-list"></div><div class="dialog-actions"><button data-dialog-close="validation_dialog" type="button">Cerrar</button></div></div></dialog>
-<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>Las salidas finales comparten el mismo validador estructural.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el bloque completo de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin bloque de notas</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el bloque inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
+<dialog id="validation_dialog"><div class="dialog-inner"><h3>Validación estructural</h3><p>Guardar y exportar PDF están permitidos. Estas alertas deben resolverse antes de exportar JSON → LMP.</p><div id="validation_list" class="issue-list"></div><div class="dialog-actions"><button data-dialog-close="validation_dialog" type="button">Cerrar</button></div></div></dialog>
+<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>El PDF puede generarse con información pendiente. La exportación JSON → LMP requiere un SIPOC sin alertas estructurales.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el bloque completo de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin bloque de notas</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el bloque inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Selecciona el encabezado de un carril y pulsa el botón celeste <strong>+</strong> que aparece en ese encabezado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas solo bloquean PDF y JSON→LMP.</li></ol>
@@ -8557,7 +8557,7 @@ function refreshValidation(){
 }
 function showValidation(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);$('validation_list').innerHTML=issues.length?issues.map((msg,i)=>`<div class="issue"><strong>${i+1}.</strong> ${escapeHtml(msg)}</div>`).join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';$('validation_dialog').showModal();}
 
-function openExport(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;if(flowId===APP.activeFlowId)saveActiveFlow({silent:true});const issues=collectValidation(flow);if(issues.length){showValidation(flowId);return false;}APP.exportFlowId=flowId;$('export_dialog').showModal();return true;}
+function openExport(   flowId=APP.activeFlowId ){   const flow=     flowById(flowId);    if(!flow){     return false;   }    if(     flowId===     APP.activeFlowId   ){     saveActiveFlow({       silent:true     });   }    APP.exportFlowId=     flowId;    $('export_dialog')     .showModal();    return true; }
 
 function validNodeTypeForLane(kind,value){
   const allowed=ALLOWED_BY_LANE[kind]||[],candidate=text(value).toLowerCase();return allowed.includes(candidate)?candidate:'white_box';
@@ -8732,17 +8732,10 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
 
   return pdf.output('blob');
 }
+  
 async function exportPdf(flowId=APP.exportFlowId,includeNotesBlock=true){
   const flow=flowById(flowId);
   if(!flow)return;
-
-  const issues=collectValidation(flow);
-
-  if(issues.length){
-    $('export_dialog').close();
-    showValidation(flowId);
-    return;
-  }
 
   $('export_dialog').close();
   clearPdfPreview();
