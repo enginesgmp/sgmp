@@ -1492,12 +1492,105 @@ function actorLaneReflowDeltaForPoint(
         oldLane.id
     );
 
-  if(!nextLane){
+if(!nextLane){
+  const oldIndex=
+    oldLanes.findIndex(
+      lane=>
+        lane.id===
+        oldLane.id
+    );
+
+  /*
+   * El carril donde estaba este waypoint
+   * fue eliminado.
+   *
+   * Usamos como referencia el primer carril
+   * superviviente ubicado a su derecha,
+   * porque toda esa zona se desplaza exactamente
+   * lo mismo al cerrar el espacio eliminado.
+   */
+  const following=
+    oldLanes
+      .slice(
+        oldIndex+1
+      )
+      .map(old=>({
+        old,
+        next:
+          newLanes.find(
+            lane=>
+              lane.id===
+              old.id
+          )
+      }))
+      .find(item=>
+        !!item.next
+      );
+
+  if(following){
     return {
-      x:0,
+      x:
+        (
+          Number(
+            following.next.x
+          )||0
+        )-
+        (
+          Number(
+            following.old.x
+          )||0
+        ),
       y:0
     };
   }
+
+  /*
+   * Respaldo defensivo:
+   * si no existe ningún carril posterior,
+   * usamos el superviviente anterior.
+   */
+  const previous=
+    oldLanes
+      .slice(
+        0,
+        oldIndex
+      )
+      .reverse()
+      .map(old=>({
+        old,
+        next:
+          newLanes.find(
+            lane=>
+              lane.id===
+              old.id
+          )
+      }))
+      .find(item=>
+        !!item.next
+      );
+
+  if(previous){
+    return {
+      x:
+        (
+          Number(
+            previous.next.x
+          )||0
+        )-
+        (
+          Number(
+            previous.old.x
+          )||0
+        ),
+      y:0
+    };
+  }
+
+  return {
+    x:0,
+    y:0
+  };
+}
 
   return {
     x:
@@ -1762,10 +1855,112 @@ function addActorLane(){
 }
 
 function deleteActorLane(laneId){
-  const model=currentModel();if(!model)return;const actors=model.lanes.filter(l=>l.kind==='actor');
-  if(actors.length<=2){gMsg('warn','El SIPOC debe conservar como mínimo dos carriles de actores.');return;}
-  if(model.nodes.some(n=>n.lane_id===laneId)){gMsg('warn','Mueve o elimina primero las cajas contenidas en este carril.');return;}
-  pushHistory();model.lanes=model.lanes.filter(l=>l.id!==laneId);APP.selection=null;markDirty();renderStudio();
+  const model=
+          currentModel(),
+
+        lane=
+          laneById(
+            laneId,
+            model
+          );
+
+  if(
+    !model ||
+    !lane ||
+    lane.kind!=='actor'
+  ){
+    return;
+  }
+
+  const actors=
+    model.lanes.filter(
+      item=>
+        item.kind==='actor'
+    );
+
+  if(actors.length<=2){
+    gMsg(
+      'warn',
+      'El SIPOC debe conservar como mínimo dos carriles de actores.'
+    );
+
+    return;
+  }
+
+  if(
+    model.nodes.some(
+      node=>
+        node.lane_id===
+        laneId
+    )
+  ){
+    gMsg(
+      'warn',
+      'Mueve o elimina primero las cajas contenidas en este carril.'
+    );
+
+    return;
+  }
+
+  /*
+   * Capturamos geometría, círculos,
+   * rutas y waypoints ANTES de eliminar.
+   */
+  const reflowState=
+          captureActorLaneReflowState(
+            model
+          ),
+
+        laneNoteIds=
+          new Set(
+            lane.note_ids||
+            []
+          );
+
+  pushHistory();
+
+  closeNodeAnnotationPopup();
+
+  /*
+   * Eliminar las notas formales pertenecientes
+   * al actor. Esto evita notas 5.x huérfanas.
+   */
+  model.notes=
+    (model.notes||[])
+      .filter(note=>
+        text(note.lane_id)!==
+          text(laneId) &&
+        !laneNoteIds.has(
+          note.id
+        )
+      );
+
+  /*
+   * work_comments vive dentro del propio lane,
+   * por lo tanto las observaciones desaparecen
+   * automáticamente al eliminar el actor.
+   */
+  model.lanes=
+    model.lanes.filter(
+      item=>
+        item.id!==
+        laneId
+    );
+
+  /*
+   * Cerrar el espacio eliminado conservando
+   * la geometría relativa de cajas, círculos,
+   * conectores, rutas y quiebres.
+   */
+  restoreActorLaneReflowState(
+    reflowState,
+    model
+  );
+
+  APP.selection=null;
+
+  markDirty();
+  renderStudio();
 }
 
 function moveActorLane(
