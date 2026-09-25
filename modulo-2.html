@@ -3726,32 +3726,237 @@ function compactRoutePoints(points,removeCollinear=true){
   }
   return out;
 }
-function routePortInfo(edge,nodeId,side,model){
-  const list=edgeSideList(edge,nodeId,side,model),index=Math.max(0,list.findIndex(item=>item.id===edge.id));
-  return {list,index,count:Math.max(1,list.length)};
-}
-function autoRoutePoints(edge,geometry,model,a,b,sourceSide,targetSide){
-  const source=nodeById(edge.source,model),target=nodeById(edge.target,model);
-  const sourceInfo=routePortInfo(edge,source.id,sourceSide,model),targetInfo=routePortInfo(edge,target.id,targetSide,model);
-  const sourceHorizontal=['left','right'].includes(sourceSide),targetHorizontal=['left','right'].includes(targetSide);
-  const sourceStub=STANDARD.routeStub+sourceInfo.index*6,targetStub=STANDARD.routeStub+targetInfo.index*6;
-  const aOut=pointOffset(a,sourceSide,sourceStub),bOut=pointOffset(b,targetSide,targetStub);
-  const centered=((sourceInfo.index-(sourceInfo.count-1)/2)+(targetInfo.index-(targetInfo.count-1)/2))*STANDARD.routeChannelGap;
+  
+function routePortInfo(
+  edge,
+  nodeId,
+  side,
+  model,
+  geometry=null
+){
+  const list=
+          edgeSideList(
+            edge,
+            nodeId,
+            side,
+            model,
+            geometry
+          ),
+        index=
+          Math.max(
+            0,
+            list.findIndex(item=>item.id===edge.id)
+          );
 
-  if(sourceHorizontal&&targetHorizontal){
-    let corridorX=(aOut.x+bOut.x)/2+centered;
-    if(sourceSide==='right'&&targetSide==='left'&&aOut.x<bOut.x)corridorX=Math.max(aOut.x+12,Math.min(bOut.x-12,corridorX));
-    if(sourceSide==='left'&&targetSide==='right'&&aOut.x>bOut.x)corridorX=Math.min(aOut.x-12,Math.max(bOut.x+12,corridorX));
-    return compactRoutePoints([a,aOut,{x:corridorX,y:aOut.y},{x:corridorX,y:bOut.y},bOut,b]);
+  return {
+    list,
+    index,
+    count:Math.max(1,list.length)
+  };
+}
+  
+function autoRoutePoints(edge,geometry,model,a,b,sourceSide,targetSide){
+  const source=
+          nodeById(
+            edge.source,
+            model
+          ),
+        target=
+          nodeById(
+            edge.target,
+            model
+          );
+
+  const sourceInfo=
+          routePortInfo(
+            edge,
+            source.id,
+            sourceSide,
+            model,
+            geometry
+          ),
+        targetInfo=
+          routePortInfo(
+            edge,
+            target.id,
+            targetSide,
+            model,
+            geometry
+          );
+
+  const sourceHorizontal=
+          ['left','right'].includes(
+            sourceSide
+          ),
+        targetHorizontal=
+          ['left','right'].includes(
+            targetSide
+          );
+
+  const sourceStub=
+          STANDARD.routeStub+
+          sourceInfo.index*6,
+        targetStub=
+          STANDARD.routeStub+
+          targetInfo.index*6;
+
+  const aOut=
+          pointOffset(
+            a,
+            sourceSide,
+            sourceStub
+          ),
+        bOut=
+          pointOffset(
+            b,
+            targetSide,
+            targetStub
+          );
+
+  const centered=
+    (
+      (
+        sourceInfo.index-
+        (sourceInfo.count-1)/2
+      )+
+      (
+        targetInfo.index-
+        (targetInfo.count-1)/2
+      )
+    )*
+    STANDARD.routeChannelGap;
+
+  if(
+    sourceHorizontal &&
+    targetHorizontal
+  ){
+    let corridorX=
+      (aOut.x+bOut.x)/2+
+      centered;
+
+    if(
+      sourceSide==='right' &&
+      targetSide==='left' &&
+      aOut.x<bOut.x
+    ){
+      corridorX=
+        Math.max(
+          aOut.x+12,
+          Math.min(
+            bOut.x-12,
+            corridorX
+          )
+        );
+    }
+
+    if(
+      sourceSide==='left' &&
+      targetSide==='right' &&
+      aOut.x>bOut.x
+    ){
+      corridorX=
+        Math.min(
+          aOut.x-12,
+          Math.max(
+            bOut.x+12,
+            corridorX
+          )
+        );
+    }
+
+    return compactRoutePoints([
+      a,
+      aOut,
+      {
+        x:corridorX,
+        y:aOut.y
+      },
+      {
+        x:corridorX,
+        y:bOut.y
+      },
+      bOut,
+      b
+    ]);
   }
-  if(!sourceHorizontal&&!targetHorizontal){
-    let corridorY=(aOut.y+bOut.y)/2+centered;
-    if(sourceSide==='bottom'&&targetSide==='top'&&aOut.y<bOut.y)corridorY=Math.max(aOut.y+12,Math.min(bOut.y-12,corridorY));
-    if(sourceSide==='top'&&targetSide==='bottom'&&aOut.y>bOut.y)corridorY=Math.min(aOut.y-12,Math.max(bOut.y+12,corridorY));
-    return compactRoutePoints([a,aOut,{x:aOut.x,y:corridorY},{x:bOut.x,y:corridorY},bOut,b]);
+
+  if(
+    !sourceHorizontal &&
+    !targetHorizontal
+  ){
+    let corridorY=
+      (aOut.y+bOut.y)/2+
+      centered;
+
+    if(
+      sourceSide==='bottom' &&
+      targetSide==='top' &&
+      aOut.y<bOut.y
+    ){
+      corridorY=
+        Math.max(
+          aOut.y+12,
+          Math.min(
+            bOut.y-12,
+            corridorY
+          )
+        );
+    }
+
+    if(
+      sourceSide==='top' &&
+      targetSide==='bottom' &&
+      aOut.y>bOut.y
+    ){
+      corridorY=
+        Math.min(
+          aOut.y-12,
+          Math.max(
+            bOut.y+12,
+            corridorY
+          )
+        );
+    }
+
+    return compactRoutePoints([
+      a,
+      aOut,
+      {
+        x:aOut.x,
+        y:corridorY
+      },
+      {
+        x:bOut.x,
+        y:corridorY
+      },
+      bOut,
+      b
+    ]);
   }
-  if(sourceHorizontal)return compactRoutePoints([a,aOut,{x:aOut.x,y:bOut.y},bOut,b]);
-  return compactRoutePoints([a,aOut,{x:bOut.x,y:aOut.y},bOut,b]);
+
+  if(sourceHorizontal){
+    return compactRoutePoints([
+      a,
+      aOut,
+      {
+        x:aOut.x,
+        y:bOut.y
+      },
+      bOut,
+      b
+    ]);
+  }
+
+  return compactRoutePoints([
+    a,
+    aOut,
+    {
+      x:bOut.x,
+      y:aOut.y
+    },
+    bOut,
+    b
+  ]);
 }
 
 function connectorObstaclePoints(model,geometry,ignoreEdgeId=null){
@@ -4196,7 +4401,31 @@ function connectorGeometry(
             edge,
             geometry,
             model
-          );
+          ),
+
+        sourceTrimmed=
+          trimPolylineEnd(
+            sourceLogical,
+            STANDARD.connectorRadius
+          ),
+
+        targetTrimmed=
+          trimPolylineStart(
+            targetLogical,
+            STANDARD.connectorRadius
+          ),
+
+        sourceNeighbor=
+          sourceLogical[
+            Math.max(
+              0,
+              sourceLogical.length-2
+            )
+          ],
+
+        targetNeighbor=
+          targetLogical[1]||
+          targetLogical[0];
 
   return {
     ...base,
@@ -4205,18 +4434,23 @@ function connectorGeometry(
     targetLogical,
 
     sourcePoints:
-      trimPolylineEnd(
-        sourceLogical,
-        STANDARD.connectorRadius
+      dockConnectorPolyline(
+        sourceTrimmed,
+        sourceMarker,
+        sourceNeighbor,
+        true
       ),
 
     targetPoints:
-      trimPolylineStart(
-        targetLogical,
-        STANDARD.connectorRadius
+      dockConnectorPolyline(
+        targetTrimmed,
+        targetMarker,
+        targetNeighbor,
+        false
       )
   };
 }
+  
 function pointOnPolyline(points,t=.5){
   if(!points?.length)return{x:0,y:0};if(points.length===1)return{...points[0]};const lengths=[];let total=0;for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return{...points[0]};let remaining=Math.max(0,Math.min(1,Number(t)||0))*total;for(let i=0;i<lengths.length;i++){if(remaining<=lengths[i]||i===lengths.length-1){const ratio=lengths[i]?remaining/lengths[i]:0;return{x:points[i].x+(points[i+1].x-points[i].x)*ratio,y:points[i].y+(points[i+1].y-points[i].y)*ratio};}remaining-=lengths[i];}return{...points[points.length-1]};
 }
