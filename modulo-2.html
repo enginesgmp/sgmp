@@ -8488,8 +8488,31 @@ function selectedConnectorMarkers(){
     )
     .map(ref=>({
       edgeId:ref.edgeId,
-      markerKey:ref.markerKey
+      markerKey:ref.markerKey,
+      explicit:ref.explicit===true
     }));
+}
+
+function explicitlySelectedConnectorMarkers(){
+  const all=
+    selectedConnectorMarkers();
+
+  /*
+   * Si solamente existe selección de círculos
+   * —por ejemplo tras M01— se consideran
+   * explícitamente seleccionados aunque no
+   * tengan todavía la bandera explicit.
+   */
+  if(
+    !selectedNodeIds().length &&
+    all.length
+  ){
+    return all;
+  }
+
+  return all.filter(
+    ref=>ref.explicit===true
+  );
 }
 
 function connectorMarkerRefKey(ref){
@@ -8525,6 +8548,254 @@ function isNodeSelected(nodeId){
   );
 }
 
+function captureSelectedConnectorMarkerStates(
+  nodeIds,
+  explicitRefs,
+  geometry,
+  model
+){
+  const nodeSet=
+          new Set(nodeIds||[]),
+
+        explicitSet=
+          new Set(
+            (explicitRefs||[])
+              .map(
+                connectorMarkerRefKey
+              )
+          ),
+
+        refs=[],
+        seen=new Set();
+
+  function addRef(
+    edgeId,
+    markerKey,
+    explicit=false
+  ){
+    const ref={
+            edgeId,
+            markerKey,
+            explicit
+          },
+
+          key=
+            connectorMarkerRefKey(
+              ref
+            );
+
+    if(seen.has(key)){
+      return;
+    }
+
+    seen.add(key);
+    refs.push(ref);
+  }
+
+  (explicitRefs||[])
+    .forEach(ref=>
+      addRef(
+        ref.edgeId,
+        ref.markerKey,
+        true
+      )
+    );
+
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+
+      if(nodeSet.has(edge.source)){
+        addRef(
+          edge.id,
+          'source',
+          explicitSet.has(
+            `${edge.id}::source`
+          )
+        );
+      }
+
+      if(nodeSet.has(edge.target)){
+        addRef(
+          edge.id,
+          'target',
+          explicitSet.has(
+            `${edge.id}::target`
+          )
+        );
+      }
+
+    });
+
+  return refs
+    .map(ref=>{
+      const edge=
+        edgeById(
+          ref.edgeId,
+          model
+        );
+
+      if(
+        !edge ||
+        edge.mode!=='connector'
+      ){
+        return null;
+      }
+
+      const cg=
+        connectorGeometry(
+          edge,
+          geometry,
+          model
+        );
+
+      if(!cg){
+        return null;
+      }
+
+      const startPoint=
+              ref.markerKey==='source'
+                ?cg.sourceMarker
+                :cg.targetMarker,
+
+            startRoute=
+              Array.isArray(
+                edge.connector_routes?.[
+                  ref.markerKey
+                ]
+              )
+                ?clone(
+                    edge.connector_routes[
+                      ref.markerKey
+                    ]
+                  )
+                :[];
+
+      return {
+        edgeId:ref.edgeId,
+        markerKey:ref.markerKey,
+        explicit:ref.explicit===true,
+
+        attachedNodeId:
+          ref.markerKey==='source'
+            ?edge.source
+            :edge.target,
+
+        startPoint:
+          clone(startPoint),
+
+        startRoute
+      };
+    })
+    .filter(Boolean);
+}
+
+function applyConnectorMarkerPosition(
+  state,
+  desired,
+  geometry,
+  model
+){
+  const edge=
+    edgeById(
+      state.edgeId,
+      model
+    );
+
+  if(
+    !edge ||
+    edge.mode!=='connector'
+  ){
+    return false;
+  }
+
+  const node=
+          state.markerKey==='source'
+            ?nodeById(
+                edge.source,
+                model
+              )
+            :nodeById(
+                edge.target,
+                model
+              ),
+
+        side=
+          state.markerKey==='source'
+            ?edge.source_side||'right'
+            :edge.target_side||'left',
+
+        bounds=
+          connectorZoneBounds(
+            edge,
+            state.markerKey,
+            geometry,
+            model
+          ),
+
+        next=
+          keepConnectorMarkerOutsideNode(
+            clampPointToBounds(
+              desired,
+              bounds
+            ),
+            node,
+            side,
+            bounds,
+            geometry,
+            model
+          ),
+
+        dx=
+          next.x-
+          state.startPoint.x,
+
+        dy=
+          next.y-
+          state.startPoint.y;
+
+  edge.connector_points=
+    edge.connector_points||{};
+
+  edge.connector_points[
+    state.markerKey
+  ]=next;
+
+  edge.connector_routes=
+    edge.connector_routes||{
+      source:[],
+      target:[]
+    };
+
+  edge.connector_routes[
+    state.markerKey
+  ]=
+    state.startRoute.map(
+      point=>({
+        x:point.x+dx,
+        y:point.y+dy
+      })
+    );
+
+  return (
+    Math.abs(dx)>.001 ||
+    Math.abs(dy)>.001
+  );
+}
+
+function selectionCenter(values){
+  if(!values.length){
+    return null;
+  }
+
+  return (
+    Math.min(...values)+
+    Math.max(...values)
+  )/2;
+}
+  
 function selectionRectFromPoints(
   a,
   b
@@ -8612,23 +8883,38 @@ function connectorMarkersForSelection(
           nodeId:edge.target
         }
       ].forEach(item=>{
-        const shouldSelect=
-          selectedNodes.has(item.nodeId) ||
-          connectorMarkerFullyInsideSelection(
-            item.point,
-            rect
-          );
+        const associated=
+                selectedNodes.has(
+                  item.nodeId
+                ),
 
-        if(!shouldSelect)return;
+              explicit=
+                connectorMarkerFullyInsideSelection(
+                  item.point,
+                  rect
+                );
+
+        if(
+          !associated &&
+          !explicit
+        ){
+          return;
+        }
 
         const ref={
                 edgeId:edge.id,
-                markerKey:item.markerKey
+                markerKey:item.markerKey,
+                explicit
               },
-              key=
-                connectorMarkerRefKey(ref);
 
-        if(seen.has(key))return;
+              key=
+                connectorMarkerRefKey(
+                  ref
+                );
+
+        if(seen.has(key)){
+          return;
+        }
 
         seen.add(key);
         refs.push(ref);
@@ -8907,7 +9193,15 @@ function endMarqueeSelection(event){
             model
           );
 
-  if(ids.length===1){
+const explicitMarkerCount=
+  connectorMarkers.filter(
+    ref=>ref.explicit===true
+  ).length;
+
+if(
+  ids.length===1 &&
+  explicitMarkerCount===0
+){
     APP.selection={
       type:'node',
       id:ids[0],
