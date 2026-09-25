@@ -3634,7 +3634,7 @@ function renderNodeText(
     </text>
   `;
 }
-function edgeSideList(edge,nodeId,side,model){return model.edges.filter(e=>(e.source===nodeId&&e.source_side===side)||(e.target===nodeId&&e.target_side===side)).sort((a,b)=>(a.order||0)-(b.order||0)||a.id.localeCompare(b.id));}
+function edgeSpatialReferencePoint(edge,nodeId,model,geometry){   const isSource=edge.source===nodeId,         markerKey=isSource?'source':'target',         stored=edge.mode==='connector'           ?edge.connector_points?.[markerKey]           :null;    if(     stored &&     Number.isFinite(Number(stored.x)) &&     Number.isFinite(Number(stored.y))   ){     return {       x:Number(stored.x),       y:Number(stored.y)     };   }    const other=     nodeById(       isSource?edge.target:edge.source,       model     );    if(!other){     return {x:0,y:0};   }    const box=     nodeBox(       other,       geometry,       model     );    return {     x:box.x+box.w/2,     y:box.y+box.h/2   }; }  function edgeSideList(   edge,   nodeId,   side,   model,   geometry=null ){   const g=geometry||laneGeometry(model),         verticalSide=           side==='left' ||           side==='right';    return model.edges     .filter(item=>       (         item.source===nodeId &&         item.source_side===side       ) || (         item.target===nodeId &&         item.target_side===side       )     )     .sort((a,b)=>{       const pa=               edgeSpatialReferencePoint(                 a,                 nodeId,                 model,                 g               ),             pb=               edgeSpatialReferencePoint(                 b,                 nodeId,                 model,                 g               ),             primary=               verticalSide                 ?pa.y-pb.y                 :pa.x-pb.x,             secondary=               verticalSide                 ?pa.x-pb.x                 :pa.y-pb.y;        return primary ||         secondary ||         (a.order||0)-(b.order||0) ||         a.id.localeCompare(b.id);     }); }
 function documentBottomY(box,ratio){
   const r=Math.max(0,Math.min(1,Number(ratio)||0)),y2=box.y+box.h-10;
   if(r>=.5){const t=2*(1-r),cy=box.y+box.h+4;return (1-t)*(1-t)*y2+2*(1-t)*t*cy+t*t*y2;}
@@ -3662,9 +3662,37 @@ function shapeBoundaryPoint(node,side,ratio,box){
   return{x:box.x+box.w,y:box.y+box.h*r};
 }
 function anchorPoint(node,side,edge,geometry,model){
-  const b=nodeBox(node,geometry,model),arr=edgeSideList(edge,node.id,side,model),index=Math.max(0,arr.findIndex(item=>item.id===edge.id));
-  const ratio=node.type==='decision'?.5:(index+1)/(arr.length+1);
-  return shapeBoundaryPoint(node,side,ratio,b);
+  const b=
+          nodeBox(
+            node,
+            geometry,
+            model
+          ),
+        arr=
+          edgeSideList(
+            edge,
+            node.id,
+            side,
+            model,
+            geometry
+          ),
+        index=
+          Math.max(
+            0,
+            arr.findIndex(item=>item.id===edge.id)
+          );
+
+  const ratio=
+    node.type==='decision'
+      ?.5
+      :(index+1)/(arr.length+1);
+
+  return shapeBoundaryPoint(
+    node,
+    side,
+    ratio,
+    b
+  );
 }
 function routePoints(edge,geometry,model){
   const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return[];
@@ -3871,9 +3899,118 @@ function trimPolylineEnd(points,distance){
   while(out.length>1&&remaining>0){const end=out[out.length-1],prev=out[out.length-2],dx=end.x-prev.x,dy=end.y-prev.y,len=Math.hypot(dx,dy);if(len<=remaining+.001){remaining-=len;out.pop();continue;}end.x-=dx/len*remaining;end.y-=dy/len*remaining;remaining=0;}
   return out.length>1?out:points.slice(0,2).map(p=>({...p}));
 }
+  
 function trimPolylineStart(points,distance){
   const reversed=trimPolylineEnd(points.slice().reverse(),distance);return reversed.reverse();
 }
+
+function connectorCardinalDock(
+  marker,
+  neighbor,
+  radius=STANDARD.connectorRadius
+){
+  const dx=
+          Number(neighbor?.x||0)-
+          Number(marker?.x||0),
+        dy=
+          Number(neighbor?.y||0)-
+          Number(marker?.y||0);
+
+  if(Math.abs(dx)>=Math.abs(dy)){
+    return {
+      axis:'horizontal',
+      point:{
+        x:Number(marker.x)+(dx<0?-radius:radius),
+        y:Number(marker.y)
+      }
+    };
+  }
+
+  return {
+    axis:'vertical',
+    point:{
+      x:Number(marker.x),
+      y:Number(marker.y)+(dy<0?-radius:radius)
+    }
+  };
+}
+
+function dockConnectorPolyline(
+  points,
+  marker,
+  neighbor,
+  markerAtEnd
+){
+  const out=
+    (points||[])
+      .map(point=>({
+        x:Number(point.x)||0,
+        y:Number(point.y)||0
+      }));
+
+  if(!out.length || !marker || !neighbor){
+    return out;
+  }
+
+  const dock=
+    connectorCardinalDock(
+      marker,
+      neighbor,
+      STANDARD.connectorRadius
+    );
+
+  if(markerAtEnd){
+    out[out.length-1]=dock.point;
+
+    if(out.length>1){
+      const previous=out[out.length-2],
+            elbow=
+              dock.axis==='horizontal'
+                ?{
+                    x:previous.x,
+                    y:dock.point.y
+                  }
+                :{
+                    x:dock.point.x,
+                    y:previous.y
+                  };
+
+      out.splice(
+        out.length-1,
+        0,
+        elbow
+      );
+    }
+  }else{
+    out[0]=dock.point;
+
+    if(out.length>1){
+      const next=out[1],
+            elbow=
+              dock.axis==='horizontal'
+                ?{
+                    x:next.x,
+                    y:dock.point.y
+                  }
+                :{
+                    x:dock.point.x,
+                    y:next.y
+                  };
+
+      out.splice(
+        1,
+        0,
+        elbow
+      );
+    }
+  }
+
+  return compactRoutePoints(
+    out,
+    true
+  );
+}
+  
 function connectorStubPoints(anchor,side,marker){
   const out=pointOffset(anchor,side,18),horizontal=['left','right'].includes(side);
   return compactRoutePoints(horizontal?[anchor,out,{x:marker.x,y:out.y},marker]:[anchor,out,{x:out.x,y:marker.y},marker]);
