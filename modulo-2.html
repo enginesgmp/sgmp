@@ -681,10 +681,11 @@ const APP = {
   history:[],
   future:[],
   exportFlowId:null,
-  camera:{scale:1,panning:false,pointerId:null,startX:0,startY:0,startScrollLeft:0,startScrollTop:0,moved:false},
+  camera:{   scale:1,   panning:false,   pointerId:null,   startX:0,   startY:0,   startScrollLeft:0,   startScrollTop:0,   moved:false,   animationFrame:null },
   drag:null,
   routeDrag:null,
   connectorDrag:null,
+  connectorClick:null,
   labelDrag:null,
 resizeDrag:null,
 laneResize:null,
@@ -7802,21 +7803,35 @@ renderInspector();
   /*
    * Círculos de conectores.
    */
-  svg
-    .querySelectorAll(
-      '[data-connector-marker]'
-    )
-    .forEach(el=>
-      el.addEventListener(
-        'pointerdown',
-        event=>
-          beginConnectorMarkerDrag(
-            event,
-            el.dataset.edgeId,
-            el.dataset.connectorMarker
-          )
-      )
+  
+svg
+  .querySelectorAll(
+    '[data-connector-marker]'
+  )
+  .forEach(el=>{
+
+    el.addEventListener(
+      'pointerdown',
+      event=>
+        beginConnectorMarkerDrag(
+          event,
+          el.dataset.edgeId,
+          el.dataset.connectorMarker
+        )
     );
+
+    /*
+     * Evitar que el clic del círculo
+     * active también la selección
+     * del edge padre.
+     */
+    el.addEventListener(
+      'click',
+      event=>
+        event.stopPropagation()
+    );
+
+  });
 
   /*
    * Etiquetas de líneas.
@@ -9577,16 +9592,144 @@ function endEdgeSegmentDrag(event){
   if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}
   APP.routeDrag=null;renderStudio();
 }
-function beginConnectorMarkerDrag(event,edgeId,markerKey){
-  if(event.button!==0)return;const model=currentModel(),edge=edgeById(edgeId,model),vp=$('viewport');if(!model||!edge||edge.mode!=='connector'||!vp)return;
-  event.preventDefault();event.stopPropagation();const cg=connectorGeometry(edge,laneGeometry(model),model);if(!cg)return;const startPoint=markerKey==='source'?cg.sourceMarker:cg.targetMarker;
-  APP.selection={type:'edge',id:edgeId};APP.connectorDrag={edgeId,markerKey,pointerId:event.pointerId,start:clientToCanvas(event.clientX,event.clientY),startPoint:clone(startPoint),snapshot:captureHistoryState(),moved:false};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleConnectorMarkerDrag);vp.addEventListener('pointerup',endConnectorMarkerDrag,{once:true});vp.addEventListener('pointercancel',endConnectorMarkerDrag,{once:true});
+
+function beginConnectorMarkerDrag(
+  event,
+  edgeId,
+  markerKey
+){
+  if(event.button!==0){
+    return;
+  }
+
+  const model=currentModel(),
+        edge=edgeById(
+          edgeId,
+          model
+        ),
+        vp=$('viewport');
+
+  if(
+    !model ||
+    !edge ||
+    edge.mode!=='connector' ||
+    !vp
+  ){
+    return;
+  }
+
+  const now=
+          performance.now(),
+
+        previous=
+          APP.connectorClick,
+
+        isDoubleClick=
+          previous &&
+          previous.edgeId===edgeId &&
+          previous.markerKey===markerKey &&
+          now-previous.time<=420;
+
+  /*
+   * Segundo clic sobre el mismo círculo:
+   * navegar en lugar de iniciar otro drag.
+   */
+  if(isDoubleClick){
+    event.preventDefault();
+    event.stopPropagation();
+
+    APP.connectorClick=null;
+
+    navigateToPairedConnectorMarker(
+      edgeId,
+      markerKey
+    );
+
+    return;
+  }
+
+  /*
+   * Un clic sobre otro círculo invalida
+   * el candidato anterior.
+   */
+  APP.connectorClick=null;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const cg=
+    connectorGeometry(
+      edge,
+      laneGeometry(model),
+      model
+    );
+
+  if(!cg){
+    return;
+  }
+
+  const startPoint=
+    markerKey==='source'
+      ?cg.sourceMarker
+      :cg.targetMarker;
+
+  APP.selection={
+    type:'edge',
+    id:edgeId
+  };
+
+  APP.connectorDrag={
+    edgeId,
+    markerKey,
+    pointerId:event.pointerId,
+
+    start:
+      clientToCanvas(
+        event.clientX,
+        event.clientY
+      ),
+
+    startPoint:
+      clone(startPoint),
+
+    snapshot:
+      captureHistoryState(),
+
+    moved:false
+  };
+
+  vp.setPointerCapture?.(
+    event.pointerId
+  );
+
+  vp.addEventListener(
+    'pointermove',
+    handleConnectorMarkerDrag
+  );
+
+  vp.addEventListener(
+    'pointerup',
+    endConnectorMarkerDrag,
+    {
+      once:true
+    }
+  );
+
+  vp.addEventListener(
+    'pointercancel',
+    endConnectorMarkerDrag,
+    {
+      once:true
+    }
+  );
 }
+  
 function handleConnectorMarkerDrag(event){
   const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),cg=connectorGeometry(edge,geometry,model);if(!cg)return;
   const node=drag.markerKey==='source'?nodeById(edge.source,model):nodeById(edge.target,model),side=drag.markerKey==='source'?(edge.source_side||'right'):(edge.target_side||'left'),bounds=cg.bounds[drag.markerKey],next=keepConnectorMarkerOutsideNode(clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds),node,side,bounds,geometry,model);
   edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false,true);
 }
+  
 function endConnectorMarkerDrag(event){
   const drag=
           APP.connectorDrag,
@@ -9614,12 +9757,6 @@ function endConnectorMarkerDrag(event){
     }
   }catch(error){}
 
-  /*
-   * No ejecutar separateConnectorMarker aquí.
-   * La posición definida manualmente por el
-   * usuario debe conservarse al finalizar
-   * el arrastre.
-   */
   if(
     drag.moved &&
     drag.snapshot
@@ -9635,13 +9772,45 @@ function endConnectorMarkerDrag(event){
     }
 
     APP.future=[];
+
+    /*
+     * Un arrastre nunca cuenta
+     * como primer clic.
+     */
+    APP.connectorClick=null;
+
     markDirty();
+
+    APP.connectorDrag=null;
+
+    renderStudio();
+
+    return;
   }
+
+  /*
+   * No hubo movimiento:
+   * queda registrado como primer clic
+   * para detectar el segundo.
+   */
+  APP.connectorClick={
+    edgeId:drag.edgeId,
+    markerKey:drag.markerKey,
+    time:performance.now()
+  };
 
   APP.connectorDrag=null;
 
-  renderStudio();
+  /*
+   * Actualizar inspector sin reemplazar
+   * el SVG. Esto permite que el segundo
+   * pointerdown ocurra sobre el mismo nodo.
+   */
+  renderInspector();
+  updateInsertButton();
+  updateDeleteButton();
 }
+  
 function nearestPolylinePosition(points,point){
   if(!points||points.length<2)return 0;let total=0;const lengths=[];for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return 0;let best={dist:Infinity,along:0},passed=0;
   for(let i=0;i<points.length-1;i++){const a=points[i],b=points[i+1],dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy,t=len2?Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/len2)):0,proj={x:a.x+dx*t,y:a.y+dy*t},dist=(point.x-proj.x)**2+(point.y-proj.y)**2,along=passed+lengths[i]*t;if(dist<best.dist)best={dist,along};passed+=lengths[i];}
@@ -10021,9 +10190,292 @@ function zoomBy(factor,clientX=null,clientY=null){
   const fx=clientX??(rect.left+rect.width/2),fy=clientY??(rect.top+rect.height/2);const stageLeft=stage.offsetLeft||0,stageTop=stage.offsetTop||0;const contentX=(vp.scrollLeft+(fx-rect.left)-stageLeft)/old,contentY=(vp.scrollTop+(fy-rect.top)-stageTop)/old;
   APP.camera.scale=next;applyCamera();const newLeft=stage.offsetLeft||0,newTop=stage.offsetTop||0;vp.scrollLeft=newLeft+contentX*next-(fx-rect.left);vp.scrollTop=newTop+contentY*next-(fy-rect.top);
 }
+  
 function applyCamera(){
   const model=currentModel(),stage=$('stage'),canvas=$('canvas');if(!model||!stage||!canvas)return;const geometry=laneGeometry(model),minZoom=minimumZoomForViewport(model);APP.camera.scale=Math.max(minZoom,Math.min(STANDARD.maxZoom,APP.camera.scale||1));const scale=APP.camera.scale,width=Math.round(geometry.width*scale),height=Math.round(geometry.canvasHeight*scale);stage.style.width=`${width}px`;stage.style.height=`${height}px`;canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;const zoom=Math.round(scale*100);$('zoom_value').textContent=`${zoom} %`;$('btn_zoom_out').disabled=scale<=minZoom+.0001;$('btn_zoom_in').disabled=scale>=STANDARD.maxZoom-.0001;
 }
+
+function cancelCameraAnimation(){
+  if(
+    APP.camera.animationFrame!==null &&
+    APP.camera.animationFrame!==undefined
+  ){
+    cancelAnimationFrame(
+      APP.camera.animationFrame
+    );
+  }
+
+  APP.camera.animationFrame=null;
+}
+
+function animateCameraToCanvasPoint(
+  point,
+  targetScale=1.5,
+  duration=280
+){
+  const model=currentModel(),
+        vp=$('viewport'),
+        stage=$('stage');
+
+  if(
+    !model ||
+    !vp ||
+    !stage ||
+    !point
+  ){
+    return;
+  }
+
+  cancelCameraAnimation();
+
+  const minZoom=
+          minimumZoomForViewport(model),
+
+        endScale=
+          Math.max(
+            minZoom,
+            Math.min(
+              STANDARD.maxZoom,
+              Number(targetScale)||1.5
+            )
+          ),
+
+        startScale=
+          APP.camera.scale||1,
+
+        startStageLeft=
+          stage.offsetLeft||0,
+
+        startStageTop=
+          stage.offsetTop||0,
+
+        startCenter={
+          x:
+            (
+              vp.scrollLeft+
+              vp.clientWidth/2-
+              startStageLeft
+            )/
+            startScale,
+
+          y:
+            (
+              vp.scrollTop+
+              vp.clientHeight/2-
+              startStageTop
+            )/
+            startScale
+        },
+
+        reduceMotion=
+          window.matchMedia?.(
+            '(prefers-reduced-motion: reduce)'
+          )?.matches===true,
+
+        animationDuration=
+          reduceMotion
+            ? 0
+            : Math.max(
+                0,
+                Number(duration)||0
+              );
+
+  function placeCamera(
+    scale,
+    centerX,
+    centerY
+  ){
+    APP.camera.scale=scale;
+
+    applyCamera();
+
+    const stageLeft=
+            stage.offsetLeft||0,
+          stageTop=
+            stage.offsetTop||0;
+
+    vp.scrollLeft=
+      stageLeft+
+      centerX*scale-
+      vp.clientWidth/2;
+
+    vp.scrollTop=
+      stageTop+
+      centerY*scale-
+      vp.clientHeight/2;
+  }
+
+  if(!animationDuration){
+    placeCamera(
+      endScale,
+      point.x,
+      point.y
+    );
+
+    return;
+  }
+
+  const started=
+    performance.now();
+
+  function frame(now){
+    const raw=
+            Math.min(
+              1,
+              Math.max(
+                0,
+                (
+                  now-started
+                )/
+                animationDuration
+              )
+            ),
+
+          eased=
+            raw<.5
+              ?4*raw*raw*raw
+              :1-
+                Math.pow(
+                  -2*raw+2,
+                  3
+                )/2,
+
+          scale=
+            startScale+
+            (
+              endScale-
+              startScale
+            )*
+            eased,
+
+          centerX=
+            startCenter.x+
+            (
+              point.x-
+              startCenter.x
+            )*
+            eased,
+
+          centerY=
+            startCenter.y+
+            (
+              point.y-
+              startCenter.y
+            )*
+            eased;
+
+    placeCamera(
+      scale,
+      centerX,
+      centerY
+    );
+
+    if(raw<1){
+      APP.camera.animationFrame=
+        requestAnimationFrame(
+          frame
+        );
+    }else{
+      APP.camera.animationFrame=null;
+
+      /*
+       * Ajuste final exacto.
+       */
+      placeCamera(
+        endScale,
+        point.x,
+        point.y
+      );
+    }
+  }
+
+  APP.camera.animationFrame=
+    requestAnimationFrame(
+      frame
+    );
+}
+
+function navigateToPairedConnectorMarker(
+  edgeId,
+  markerKey
+){
+  const model=currentModel(),
+        edge=edgeById(
+          edgeId,
+          model
+        );
+
+  if(
+    !model ||
+    !edge ||
+    edge.mode!=='connector'
+  ){
+    return;
+  }
+
+  const geometry=
+          laneGeometry(model),
+
+        cg=
+          connectorGeometry(
+            edge,
+            geometry,
+            model
+          );
+
+  if(!cg){
+    gMsg(
+      'warn',
+      'No fue posible localizar el otro extremo del conector.'
+    );
+
+    return;
+  }
+
+  const targetKey=
+          markerKey==='source'
+            ?'target'
+            :'source',
+
+        targetPoint=
+          targetKey==='source'
+            ?cg.sourceMarker
+            :cg.targetMarker;
+
+  if(!targetPoint){
+    gMsg(
+      'warn',
+      'No fue posible localizar el otro extremo del conector.'
+    );
+
+    return;
+  }
+
+  /*
+   * Seleccionar únicamente el círculo destino.
+   * No modifica FlowModel ni genera historial.
+   */
+  APP.selection={
+    type:'nodes',
+    ids:[],
+    connector_markers:[
+      {
+        edgeId,
+        markerKey:targetKey
+      }
+    ]
+  };
+
+  renderStudio();
+
+  requestAnimationFrame(()=>
+    animateCameraToCanvasPoint(
+      targetPoint,
+      1.5,
+      280
+    )
+  );
+}  
 
 function renderInsertPalette(){
   const model=currentModel(),lane=APP.selection?.type==='lane'?laneById(APP.selection.id,model):null;if(!lane)return false;const allowed=ALLOWED_BY_LANE[lane.kind]||[];$('insert_title').textContent=`Insertar en ${lane.kind==='actor'?(lane.label||'ACTOR'):lane.label}`;$('insert_palette').innerHTML=allowed.map(type=>`<button data-insert-type="${type}" type="button"><strong>${escapeHtml(SYMBOLS[type].label)}</strong><small>${escapeHtml(SYMBOLS[type].help)}</small></button>`).join('');$('insert_palette').querySelectorAll('[data-insert-type]').forEach(btn=>btn.onclick=()=>insertNode(btn.dataset.insertType));$('insert_dialog').showModal();return true;
