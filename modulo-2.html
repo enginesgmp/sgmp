@@ -6835,12 +6835,38 @@ if(sel.type==='nodes'){
                 )
               )
             : [],
+
         markerCount=
           Array.isArray(
             sel.connector_markers
           )
             ? sel.connector_markers.length
-            : 0;
+            : 0,
+
+        actorCount=
+          ids.filter(id=>{
+            const node=
+              nodeById(
+                id,
+                model
+              );
+
+            return (
+              node &&
+              laneKindForNode(
+                node,
+                model
+              )==='actor'
+            );
+          }).length,
+
+        explicitMarkerCount=
+          explicitlySelectedConnectorMarkers()
+            .length,
+
+        alignableCount=
+          actorCount+
+          explicitMarkerCount;
 
   if(
     !ids.length &&
@@ -6862,11 +6888,35 @@ if(sel.type==='nodes'){
       </span>
     </div>
 
+    ${
+      alignableCount>=2
+        ?`
+          <div class="inspector-actions">
+            <button
+              id="ins_align_horizontal"
+              type="button"
+              title="Igualar el centro vertical de la selección"
+            >
+              Alinear horizontal
+            </button>
+
+            <button
+              id="ins_align_vertical"
+              type="button"
+              title="Igualar el centro horizontal de la selección"
+            >
+              Alinear vertical
+            </button>
+          </div>
+        `
+        :''
+    }
+
     <div class="empty-note">
       ${
         ids.length
           ? 'Arrastra cualquiera de las cajas seleccionadas para mover el conjunto. Los círculos seleccionados o asociados acompañarán el movimiento.'
-          : 'Los círculos están seleccionados, pero no se eliminan de forma independiente. Incluye al menos una caja para mover el conjunto.'
+          : 'Los conectores seleccionados pueden alinearse desde estos controles.'
       }
 
       ${
@@ -6874,8 +6924,35 @@ if(sel.type==='nodes'){
           ? '<br>Pulsa Supr/Delete para eliminar únicamente las cajas seleccionadas y sus conexiones asociadas.'
           : ''
       }
+
+      ${
+        alignableCount>=2
+          ? '<br>La alineación actúa sobre cajas de actores y círculos conectores. Proveedor, Entrada, Salida y Cliente no cambian de posición.'
+          : ''
+      }
     </div>
   `;
+
+  const horizontal=
+          $('ins_align_horizontal'),
+        vertical=
+          $('ins_align_vertical');
+
+  if(horizontal){
+    horizontal.onclick=
+      ()=>
+        alignSelectedElements(
+          'horizontal'
+        );
+  }
+
+  if(vertical){
+    vertical.onclick=
+      ()=>
+        alignSelectedElements(
+          'vertical'
+        );
+  }
 
   return;
 }
@@ -8795,6 +8872,449 @@ function selectionCenter(values){
     Math.max(...values)
   )/2;
 }
+
+function alignSelectedElements(axis){
+  if(
+    axis!=='horizontal' &&
+    axis!=='vertical'
+  ){
+    return;
+  }
+
+  const model=currentModel();
+
+  if(!model){
+    return;
+  }
+
+  const geometry=laneGeometry(model),
+
+        actorNodes=
+          selectedNodeIds()
+            .map(id=>
+              nodeById(
+                id,
+                model
+              )
+            )
+            .filter(node=>
+              node &&
+              laneKindForNode(
+                node,
+                model
+              )==='actor'
+            ),
+
+        actorNodeIds=
+          actorNodes.map(
+            node=>node.id
+          ),
+
+        explicitRefs=
+          explicitlySelectedConnectorMarkers(),
+
+        markerStates=
+          captureSelectedConnectorMarkerStates(
+            actorNodeIds,
+            explicitRefs,
+            geometry,
+            model
+          ),
+
+        explicitStates=
+          markerStates.filter(
+            state=>state.explicit
+          ),
+
+        nodeStarts=
+          new Map(
+            actorNodes.map(node=>[
+              node.id,
+              {
+                box:nodeBox(
+                  node,
+                  geometry,
+                  model
+                ),
+                laneId:node.lane_id
+              }
+            ])
+          );
+
+  const alignableCount=
+    actorNodes.length+
+    explicitStates.length;
+
+  if(alignableCount<2){
+    gMsg(
+      'info',
+      'Selecciona al menos dos cajas de actor o conectores para alinearlos.'
+    );
+    return;
+  }
+
+  const snapshot=
+    captureHistoryState();
+
+  let moved=false;
+
+  /*
+   * HORIZONTAL:
+   * mismo centro Y.
+   */
+  if(axis==='horizontal'){
+    const centers=[
+      ...actorNodes.map(node=>{
+        const box=
+          nodeStarts.get(node.id).box;
+
+        return box.y+box.h/2;
+      }),
+
+      ...explicitStates.map(
+        state=>state.startPoint.y
+      )
+    ];
+
+    let targetY=
+      selectionCenter(centers);
+
+    if(actorNodes.length){
+      const minY=
+              Math.max(
+                ...actorNodes.map(node=>{
+                  const box=
+                    nodeStarts.get(node.id).box;
+
+                  return (
+                    geometry.bodyTop+
+                    STANDARD.nodeMarginY+
+                    box.h/2
+                  );
+                })
+              ),
+
+            maxY=
+              Math.min(
+                ...actorNodes.map(node=>{
+                  const box=
+                    nodeStarts.get(node.id).box;
+
+                  return (
+                    geometry.bodyTop+
+                    model.layout.body_height-
+                    STANDARD.nodeMarginY-
+                    box.h/2
+                  );
+                })
+              );
+
+      targetY=
+        Math.max(
+          minY,
+          Math.min(
+            maxY,
+            targetY
+          )
+        );
+    }
+
+    actorNodes.forEach(node=>{
+      const box=
+              nodeStarts.get(node.id).box,
+
+            nextY=
+              targetY-
+              geometry.bodyTop-
+              box.h/2;
+
+      if(
+        Math.abs(
+          nextY-
+          Number(node.y||0)
+        )>.001
+      ){
+        node.y=nextY;
+        moved=true;
+      }
+    });
+
+    const nextGeometry=
+            laneGeometry(model),
+
+          nodeDeltas=
+            new Map();
+
+    actorNodes.forEach(node=>{
+      const before=
+              nodeStarts.get(node.id).box,
+
+            after=
+              nodeBox(
+                node,
+                nextGeometry,
+                model
+              );
+
+      nodeDeltas.set(
+        node.id,
+        {
+          x:after.x-before.x,
+          y:after.y-before.y
+        }
+      );
+    });
+
+    markerStates.forEach(state=>{
+      let desired;
+
+      if(state.explicit){
+        desired={
+          x:state.startPoint.x,
+          y:targetY
+        };
+      }else{
+        const delta=
+          nodeDeltas.get(
+            state.attachedNodeId
+          )||{
+            x:0,
+            y:0
+          };
+
+        desired={
+          x:state.startPoint.x+delta.x,
+          y:state.startPoint.y+delta.y
+        };
+      }
+
+      if(
+        applyConnectorMarkerPosition(
+          state,
+          desired,
+          nextGeometry,
+          model
+        )
+      ){
+        moved=true;
+      }
+    });
+  }
+
+  /*
+   * VERTICAL:
+   * mismo centro X.
+   * Las cajas nunca cambian de actor.
+   */
+  if(axis==='vertical'){
+    const laneGroups=
+      new Map();
+
+    actorNodes.forEach(node=>{
+      if(!laneGroups.has(node.lane_id)){
+        laneGroups.set(
+          node.lane_id,
+          []
+        );
+      }
+
+      laneGroups
+        .get(node.lane_id)
+        .push(node);
+    });
+
+    const laneIds=[
+      ...laneGroups.keys()
+    ];
+
+    let commonTargetX=null;
+
+    /*
+     * Si todas las cajas pertenecen
+     * al mismo actor, cajas y círculos
+     * pueden compartir exactamente X.
+     */
+    if(laneIds.length<=1){
+      commonTargetX=
+        selectionCenter([
+          ...actorNodes.map(node=>{
+            const box=
+              nodeStarts.get(node.id).box;
+
+            return box.x+box.w/2;
+          }),
+
+          ...explicitStates.map(
+            state=>state.startPoint.x
+          )
+        ]);
+    }
+
+    laneGroups.forEach(
+      (nodes,laneId)=>{
+        const lane=
+          laneById(
+            laneId,
+            model
+          );
+
+        if(!lane){
+          return;
+        }
+
+        const targetX=
+          commonTargetX!==null
+            ? commonTargetX
+            : selectionCenter(
+                nodes.map(node=>{
+                  const box=
+                    nodeStarts.get(node.id).box;
+
+                  return box.x+box.w/2;
+                })
+              );
+
+        if(targetX===null){
+          return;
+        }
+
+        nodes.forEach(node=>{
+          const box=
+                  nodeStarts.get(node.id).box,
+
+                nextXRel=
+                  Math.max(
+                    8,
+                    Math.min(
+                      lane.width-
+                      box.w-
+                      8,
+
+                      targetX-
+                      lane.x-
+                      box.w/2
+                    )
+                  );
+
+          if(
+            Math.abs(
+              nextXRel-
+              Number(node.x_rel||0)
+            )>.001
+          ){
+            node.x_rel=nextXRel;
+            moved=true;
+          }
+        });
+      }
+    );
+
+    let markerTargetX=
+      commonTargetX;
+
+    if(
+      markerTargetX===null &&
+      explicitStates.length>=2
+    ){
+      markerTargetX=
+        selectionCenter(
+          explicitStates.map(
+            state=>state.startPoint.x
+          )
+        );
+    }
+
+    const nextGeometry=
+            laneGeometry(model),
+
+          nodeDeltas=
+            new Map();
+
+    actorNodes.forEach(node=>{
+      const before=
+              nodeStarts.get(node.id).box,
+
+            after=
+              nodeBox(
+                node,
+                nextGeometry,
+                model
+              );
+
+      nodeDeltas.set(
+        node.id,
+        {
+          x:after.x-before.x,
+          y:after.y-before.y
+        }
+      );
+    });
+
+    markerStates.forEach(state=>{
+      let desired;
+
+      if(
+        state.explicit &&
+        markerTargetX!==null
+      ){
+        desired={
+          x:markerTargetX,
+          y:state.startPoint.y
+        };
+      }else{
+        const delta=
+          nodeDeltas.get(
+            state.attachedNodeId
+          )||{
+            x:0,
+            y:0
+          };
+
+        desired={
+          x:state.startPoint.x+delta.x,
+          y:state.startPoint.y+delta.y
+        };
+      }
+
+      if(
+        applyConnectorMarkerPosition(
+          state,
+          desired,
+          nextGeometry,
+          model
+        )
+      ){
+        moved=true;
+      }
+    });
+  }
+
+  /*
+   * Toda la alineación = 1 Undo.
+   */
+  if(
+    moved &&
+    snapshot
+  ){
+    APP.history.push(snapshot);
+
+    if(APP.history.length>60){
+      APP.history.shift();
+    }
+
+    APP.future=[];
+    markDirty();
+
+    gMsg(
+      'ok',
+      axis==='horizontal'
+        ? 'Selección alineada horizontalmente.'
+        : 'Selección alineada verticalmente.'
+    );
+  }
+
+  renderStudio();
+}  
   
 function selectionRectFromPoints(
   a,
