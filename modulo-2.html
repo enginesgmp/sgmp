@@ -4504,13 +4504,23 @@ function renderEdge(
 
     if(!cg)return'';
 
-  const sourceMarkerSelected=
+const sourceMarkerSelected=
         isConnectorMarkerSelected(
           edge.id,
           'source'
         ),
       targetMarkerSelected=
         isConnectorMarkerSelected(
+          edge.id,
+          'target'
+        ),
+      sourceMarkerExplicit=
+        isConnectorMarkerExplicitlySelected(
+          edge.id,
+          'source'
+        ),
+      targetMarkerExplicit=
+        isConnectorMarkerExplicitlySelected(
           edge.id,
           'target'
         );
@@ -4593,7 +4603,7 @@ function renderEdge(
           r="${STANDARD.connectorRadius}"
           fill="${fill}"
 stroke="${sourceMarkerSelected?'#00AEEF':'#000'}"
-stroke-width="${sourceMarkerSelected?2.6:1}"
+stroke-width="${sourceMarkerExplicit?3.4:sourceMarkerSelected?2.2:1}"
         />
 
         <circle
@@ -4608,7 +4618,7 @@ stroke-width="${sourceMarkerSelected?2.6:1}"
           r="${STANDARD.connectorRadius}"
           fill="${fill}"
 stroke="${targetMarkerSelected?'#00AEEF':'#000'}"
-stroke-width="${targetMarkerSelected?2.6:1}"
+stroke-width="${targetMarkerExplicit?3.4:targetMarkerSelected?2.2:1}"
         />
 
         <text
@@ -7778,12 +7788,29 @@ svg
         const nodeId=
           el.dataset.nodeId;
 
-        if(APP.connect.active){
-          handleConnectNode(nodeId);
-          return;
-        }
+if(APP.connect.active){
+  handleConnectNode(nodeId);
+  return;
+}
+
+if(
+  event.ctrlKey ||
+  event.metaKey
+){
+  event.preventDefault();
+
+  APP.connectorClick=null;
+
+  toggleNodeInSelection(
+    nodeId
+  );
+
+  renderStudio();
+  return;
+}
 
 const keepExistingSelection=
+  
   (
     APP.selection?.type==='nodes' &&
     Array.isArray(
@@ -8623,6 +8650,272 @@ function isNodeSelected(nodeId){
       nodeId
     )
   );
+}
+
+function buildCompositeSelection(
+  nodeIds=[],
+  explicitRefs=[],
+  model=currentModel()
+){
+  if(!model){
+    APP.selection=null;
+    return;
+  }
+
+  const ids=[...new Set(
+          (nodeIds||[])
+            .filter(id=>
+              !!nodeById(
+                id,
+                model
+              )
+            )
+        )],
+
+        explicitMap=
+          new Map();
+
+  (explicitRefs||[])
+    .forEach(ref=>{
+      const edge=
+        edgeById(
+          ref?.edgeId,
+          model
+        );
+
+      if(
+        !edge ||
+        edge.mode!=='connector' ||
+        !['source','target'].includes(
+          ref?.markerKey
+        )
+      ){
+        return;
+      }
+
+      const normalized={
+        edgeId:edge.id,
+        markerKey:ref.markerKey,
+        explicit:true
+      };
+
+      explicitMap.set(
+        connectorMarkerRefKey(
+          normalized
+        ),
+        normalized
+      );
+    });
+
+  const markerMap=
+          new Map(explicitMap),
+        nodeSet=
+          new Set(ids);
+
+  /*
+   * Los círculos asociados acompañan
+   * automáticamente a las cajas seleccionadas.
+   */
+  (model.edges||[])
+    .filter(edge=>
+      edge.mode==='connector'
+    )
+    .forEach(edge=>{
+
+      [
+        {
+          markerKey:'source',
+          nodeId:edge.source
+        },
+        {
+          markerKey:'target',
+          nodeId:edge.target
+        }
+      ].forEach(item=>{
+
+        if(!nodeSet.has(item.nodeId)){
+          return;
+        }
+
+        const key=
+          connectorMarkerRefKey({
+            edgeId:edge.id,
+            markerKey:item.markerKey
+          });
+
+        if(!markerMap.has(key)){
+          markerMap.set(
+            key,
+            {
+              edgeId:edge.id,
+              markerKey:item.markerKey,
+              explicit:false
+            }
+          );
+        }
+      });
+
+    });
+
+  const markers=[
+    ...markerMap.values()
+  ];
+
+  if(
+    !ids.length &&
+    !markers.length
+  ){
+    APP.selection=null;
+    return;
+  }
+
+  /*
+   * Una sola caja sin círculos explícitos
+   * conserva el inspector normal de caja.
+   */
+  if(
+    ids.length===1 &&
+    !explicitMap.size
+  ){
+    APP.selection={
+      type:'node',
+      id:ids[0],
+      connector_markers:markers
+    };
+
+    return;
+  }
+
+  APP.selection={
+    type:'nodes',
+    ids,
+    connector_markers:markers
+  };
+}
+
+function toggleNodeInSelection(
+  nodeId,
+  model=currentModel()
+){
+  if(
+    !model ||
+    !nodeById(
+      nodeId,
+      model
+    )
+  ){
+    return;
+  }
+
+  const ids=
+          selectedNodeIds()
+            .filter(id=>
+              !!nodeById(
+                id,
+                model
+              )
+            ),
+
+        explicitRefs=
+          explicitlySelectedConnectorMarkers()
+            .map(ref=>({
+              edgeId:ref.edgeId,
+              markerKey:ref.markerKey,
+              explicit:true
+            })),
+
+        index=
+          ids.indexOf(nodeId);
+
+  if(index>=0){
+    ids.splice(index,1);
+  }else{
+    ids.push(nodeId);
+  }
+
+  buildCompositeSelection(
+    ids,
+    explicitRefs,
+    model
+  );
+}
+
+function toggleConnectorMarkerInSelection(
+  edgeId,
+  markerKey,
+  model=currentModel()
+){
+  const edge=
+    edgeById(
+      edgeId,
+      model
+    );
+
+  if(
+    !model ||
+    !edge ||
+    edge.mode!=='connector' ||
+    !['source','target'].includes(
+      markerKey
+    )
+  ){
+    return;
+  }
+
+  const ids=
+          selectedNodeIds()
+            .filter(id=>
+              !!nodeById(
+                id,
+                model
+              )
+            ),
+
+        explicitRefs=
+          explicitlySelectedConnectorMarkers()
+            .map(ref=>({
+              edgeId:ref.edgeId,
+              markerKey:ref.markerKey,
+              explicit:true
+            })),
+
+        key=
+          connectorMarkerRefKey({
+            edgeId,
+            markerKey
+          }),
+
+        index=
+          explicitRefs.findIndex(ref=>
+            connectorMarkerRefKey(ref)===key
+          );
+
+  if(index>=0){
+    explicitRefs.splice(index,1);
+  }else{
+    explicitRefs.push({
+      edgeId,
+      markerKey,
+      explicit:true
+    });
+  }
+
+  buildCompositeSelection(
+    ids,
+    explicitRefs,
+    model
+  );
+}
+
+function isConnectorMarkerExplicitlySelected(
+  edgeId,
+  markerKey
+){
+  return explicitlySelectedConnectorMarkers()
+    .some(ref=>
+      ref.edgeId===edgeId &&
+      ref.markerKey===markerKey
+    );
 }
 
 function captureSelectedConnectorMarkerStates(
@@ -10431,6 +10724,25 @@ function beginConnectorMarkerDrag(
   ){
     return;
   }
+
+  if(
+  event.ctrlKey ||
+  event.metaKey
+){
+  event.preventDefault();
+  event.stopPropagation();
+
+  APP.connectorClick=null;
+
+  toggleConnectorMarkerInSelection(
+    edgeId,
+    markerKey,
+    model
+  );
+
+  renderStudio();
+  return;
+}
 
   const now=
           performance.now(),
