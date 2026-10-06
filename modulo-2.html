@@ -449,6 +449,15 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 @media(max-width:760px){.app{padding:10px}.library-imports{grid-template-columns:1fr}.nav{width:100%}.nav-tab{flex:1 1 0;min-width:0}.palette{grid-template-columns:1fr}.viewport{height:70vh;min-height:560px}.context-actions{width:100%}.hero-actions button{flex:1 1 auto}}
 
 @media print{body{background:#fff}.app{display:none!important}}
+/* Controles y capas derivados del diagrama; no forman parte del modelo. */
+.sb-align-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0}
+.sb-align-grid button{font-size:11px}
+.sb-frozen{position:absolute;z-index:12;overflow:hidden;background:white;box-shadow:0 3px 6px #0002}
+.sb-frozen svg{display:block}
+.sb-context{position:absolute;z-index:80;background:white;padding:6px;border:1px solid #CBD5E1;border-radius:8px;box-shadow:0 6px 20px #0002}
+.sb-inline{position:absolute;z-index:70;background:white;border:2px solid #00AEEF;border-radius:4px;box-sizing:border-box}
+.sb-inline-input{resize:none;padding:6px;color:#111;font-family:Arial,sans-serif;border:0;min-height:38px}
+#btn_freeze_headers[aria-pressed="true"]{background:#E0F5FF;border-color:#00AEEF}
 </style>
 <script>
 // SGMP Session Guard conservado del módulo vigente.
@@ -554,7 +563,8 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
       <div class="studio-toolbar">
         <div class="studio-tools">
           <button id="btn_add_actor" type="button">+ Actor</button>
-          <button id="btn_undo" type="button" disabled>Deshacer</button>
+          <button id="btn_freeze_headers" type="button" aria-pressed="false">Fijar encabezados</button>
+      <button id="btn_undo" type="button" disabled>Deshacer</button>
           <button id="btn_redo" type="button" disabled>Rehacer</button>
           <button id="btn_delete" class="danger" type="button" disabled>Eliminar</button>
           <span id="studio_status" class="toolbar-status">Selecciona un carril para insertar.</span>
@@ -580,6 +590,9 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
     aria-hidden="true"
   ></div>
 </div>
+<div id="sb_frozen_headers" class="sb-frozen hidden" aria-label="Encabezados fijados"></div>
+<div id="sb_inline_editor" class="sb-inline hidden"><textarea id="sb_inline_input"></textarea></div>
+<div id="sb_context_menu" class="sb-context hidden" role="menu" aria-label="Insertar en carril"><button id="sb_context_add" role="menuitem" type="button">Agregar caja</button></div>
 <div
   id="node_annotation_popup"
   class="node-annotation-popup hidden"
@@ -600,8 +613,8 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 <dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>El PDF puede generarse con información pendiente. La exportación JSON → LMP requiere un SIPOC sin alertas estructurales.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el bloque completo de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin bloque de notas</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el bloque inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
-  <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Selecciona el encabezado de un carril y pulsa el botón celeste <strong>+</strong> que aparece en ese encabezado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas solo bloquean PDF y JSON→LMP.</li></ol>
-  <h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; arrastrar fondo desplaza el lienzo.</li></ul>
+  <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Selecciona el encabezado de un carril y pulsa el botón celeste <strong>+</strong> que aparece en ese encabezado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas bloquean JSON→LMP; guardar y PDF están disponibles.</li></ol>
+  <h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; la barra espaciadora y arrastre desplazan el lienzo.</li></ul>
   <h4>Atajos</h4><ul><li>Supr/Delete: eliminar selección.</li><li>Ctrl+Z / Ctrl+Y: deshacer / rehacer.</li><li>Ctrl+D: crear una caja vacía del mismo tipo en el mismo carril.</li><li>Ctrl+S: guardar flujo.</li><li>Esc: cancelar selección o conexión.</li></ul>
 </div><div class="dialog-actions"><button data-dialog-close="manual_dialog" type="button">Cerrar</button></div></div></dialog>
 
@@ -628,7 +641,7 @@ const STANDARD = Object.freeze({
   laneHeaderHeight:58,
   defaultBodyHeight:690,
 peripheralLaneWidth:250,
-actorLaneWidth:270,
+actorLaneWidth:280,
 actorLaneMinWidth:280,
 actorLaneMaxWidth:1000,
   nodeWidth:142,
@@ -698,6 +711,7 @@ pointerCanvas:{
   inside:false
 },
 pdfPreview:{url:null,filename:null},
+  tools:{edit:null,nudge:null,portDrag:null,insertContext:null,contextPoint:null,frozen:false,frozenFrame:null,textMetrics:new Map(),measureCanvas:null,lastTextClick:null,textPointer:null,refreshFrame:null},
   validation:{issues:[],crossingEdges:new Set()}
 };
 
@@ -801,6 +815,8 @@ function flowById(id){return APP.master?.flows?.find(f=>f.flow_id===id)||null;}
 function currentModel(){return activeFlow()?.payload?.model||null;}
 
 function startBlankFlow(){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+
   const flow=createFlow({source:'blank',name:APP.master?'NUEVO FLUJO':'FLUJO 1'});
   APP.selection=null;APP.connect=freshConnectState();APP.history=[];APP.future=[];APP.dirty=false;
   renderLibrary();openFlow(flow.flow_id);
@@ -808,6 +824,8 @@ function startBlankFlow(){
 }
 
 function openFlow(flowId){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+
   const flow=flowById(flowId);if(!flow){gMsg('err','No se encontró el flujo solicitado.');return false;}
   flow.payload=flow.payload||{};flow.payload.model=normalizeLoadedModel(flow.payload.model);
   APP.activeFlowId=flowId; APP.selection=null; APP.connect=freshConnectState(); APP.history=[]; APP.future=[]; APP.dirty=false; APP.nodeClipboard=null; APP.pointerCanvas={   flowId:null,   x:null,   y:null,   inside:false };
@@ -958,6 +976,8 @@ function restoreWorkspaceSnapshot(){
 }
 
 function saveActiveFlow({silent=false}={}){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+
   const flow=activeFlow();
 
   if(!flow){
@@ -1089,6 +1109,8 @@ function pushHistory(options={}){
 }
 
 function undo(){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+
   if(!activeFlow()||!APP.history.length)return;
 
   const previous=APP.history.pop();
@@ -1112,6 +1134,8 @@ function undo(){
 }
 
 function redo(){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+
   if(!activeFlow()||!APP.future.length)return;
 
   const next=APP.future.pop();
@@ -1259,7 +1283,7 @@ function insertNode(type){
   const model=currentModel();if(!model||APP.selection?.type!=='lane')return;
   const lane=laneById(APP.selection.id,model);if(!lane)return;
   if(!ALLOWED_BY_LANE[lane.kind]?.includes(type)){gMsg('err','La metodología no permite esa figura en el carril seleccionado.');return;}
-  pushHistory();const pos=nextNodePosition(lane.id);
+  pushHistory();const context=APP.tools.insertContext;const pos=context?.flowId===APP.activeFlowId&&context.laneId===lane.id&&context.point?sbContextNodePosition(lane,type,context.point,model):nextNodePosition(lane.id);APP.tools.insertContext=null;
   model.nodes.push({   id:uid('NODE'),   lane_id:lane.id,   type,   label:'',   x_rel:pos.x_rel,   y:pos.y,   documents:[],   note_ids:[],   work_comments:[],   meta:{} });
   markDirty();$('insert_dialog').close();renderStudio();
 }
@@ -2035,9 +2059,7 @@ function moveActorLane(
   renderStudio();
 }
   
-function resizeActorLane(laneId,delta){
-  const lane=laneById(laneId);if(!lane||lane.kind!=='actor')return;pushHistory();lane.width=Math.max(STANDARD.actorLaneMinWidth,Math.min(STANDARD.actorLaneMaxWidth,(Number(lane.width)||STANDARD.actorLaneWidth)+delta));markDirty();renderStudio();
-}
+
 
 function duplicateSelectedNode(){
   const model=currentModel();if(!model||APP.selection?.type!=='node')return;const node=nodeById(APP.selection.id,model);if(!node)return;
@@ -2605,23 +2627,15 @@ function canUseNodeSide(nodeId,side,model=currentModel(),ignoreEdgeId=null){
   return sideUseCount(nodeId,side,model,ignoreEdgeId)<sideCapacityForNode(node);
 }
 function handleConnectPort(nodeId,side){
-  const model=currentModel();if(!model)return;
-  if(!APP.connect.active){
-    if(!canUseNodeSide(nodeId,side,model)){gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return;}
-    APP.connect={active:true,sourceId:nodeId,sourceSide:side,targetId:null};APP.selection={type:'node',id:nodeId};renderStudio();return;
+  const model=currentModel(),state=APP.connect;if(!model)return;
+  if(!state.active){if(!canUseNodeSide(nodeId,side,model))return;APP.connect={active:true,sourceId:nodeId,sourceSide:side,targetId:null};APP.selection={type:'node',id:nodeId};renderStudio();return;}
+  if(!state.sourceId){
+    if(!canUseNodeSide(nodeId,side,model)){gMsg('warn','Este lado alcanzó su capacidad de conexiones.');return;}
+    state.sourceId=nodeId;state.sourceSide=side;state.targetId=null;renderStudio();return;
   }
-  if(APP.connect.sourceId===nodeId&&!APP.connect.targetId){
-    if(!canUseNodeSide(nodeId,side,model)){gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return;}
-    APP.connect.sourceSide=side;APP.selection={type:'node',id:nodeId};renderStudio();return;
-  }
-  if(APP.connect.targetId===nodeId&&APP.connect.sourceSide){
-    if(!canUseNodeSide(nodeId,side,model)){gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return;}
-    const source=nodeById(APP.connect.sourceId,model),target=nodeById(APP.connect.targetId,model);
-    if(!source||!target)return;
-    pushHistory();model.counters.edge=(model.counters.edge||0)+1;
-    model.edges.push({id:uid('EDGE'),order:model.counters.edge,source:source.id,target:target.id,source_side:APP.connect.sourceSide,target_side:side,label:'',label_position:.5,mode:'line',connector_kind:null,connector_label:null,connector_sequence:null,waypoints:[]});
-    APP.connect=freshConnectState();APP.selection={type:'edge',id:model.edges[model.edges.length-1].id};markDirty();renderStudio();
-  }
+  if(!state.sourceSide){state.sourceSide=side;renderStudio();return;}
+  if(nodeId===state.sourceId){state.sourceSide=side;renderStudio();return;}
+  return sbCreateConnection(state.sourceId,state.sourceSide,nodeId,side);
 }
 
 function connectorKindForEdge(edge,model=currentModel()){
@@ -3662,58 +3676,19 @@ function shapeBoundaryPoint(node,side,ratio,box){
   if(side==='left')return{x:box.x,y:box.y+box.h*r};
   return{x:box.x+box.w,y:box.y+box.h*r};
 }
-function anchorPoint(node,side,edge,geometry,model){
-  const b=
-          nodeBox(
-            node,
-            geometry,
-            model
-          ),
-        arr=
-          edgeSideList(
-            edge,
-            node.id,
-            side,
-            model,
-            geometry
-          ),
-        index=
-          Math.max(
-            0,
-            arr.findIndex(item=>item.id===edge.id)
-          );
+function anchorPoint(node,side,edge,geometry,model){return sbPortAnchor(node,side,edge,geometry,model);}
 
-  const ratio=
-    node.type==='decision'
-      ?.5
-      :(index+1)/(arr.length+1);
-
-  return shapeBoundaryPoint(
-    node,
-    side,
-    ratio,
-    b
-  );
-}
 function routePoints(edge,geometry,model){
-  const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return[];
-  const sourceSide=edge.source_side||'right',targetSide=edge.target_side||'left';
-  const a=anchorPoint(source,sourceSide,edge,geometry,model),b=anchorPoint(target,targetSide,edge,geometry,model);
-  if(Array.isArray(edge.waypoints)&&edge.waypoints.length){
-    const waypoints=edge.waypoints.map(point=>({x:Number(point.x)||0,y:Number(point.y)||0}));
-    if(waypoints.length){
-      if(['left','right'].includes(sourceSide))waypoints[0].y=a.y;else waypoints[0].x=a.x;
-      const last=waypoints[waypoints.length-1];if(['left','right'].includes(targetSide))last.y=b.y;else last.x=b.x;
-    }
-    return avoidConnectorObstacles(compactRoutePoints([a,...waypoints,b],false),edge,geometry,model);
-  }
-  return avoidConnectorObstacles(autoRoutePoints(edge,geometry,model,a,b,sourceSide,targetSide),edge,geometry,model);
+  const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return [];
+  const ss=edge.source_side||'right',ts=edge.target_side||'left',a=anchorPoint(source,ss,edge,geometry,model),b=anchorPoint(target,ts,edge,geometry,model);
+  const points=edge.waypoints?.length?sbRepairRouteEndpoints(a,edge.waypoints,b,ss,ts):autoRoutePoints(edge,geometry,model,a,b,ss,ts);
+  return avoidConnectorObstacles(points,edge,geometry,model);
 }
 
 function compactRoutePoints(points,removeCollinear=true){
   const out=[];
   for(const point of points){
-    const p={x:Math.round(Number(point.x||0)*2)/2,y:Math.round(Number(point.y||0)*2)/2};
+    const p={x:Number(point.x)||0,y:Number(point.y)||0};
     const last=out[out.length-1];if(last&&last.x===p.x&&last.y===p.y)continue;out.push(p);
   }
   if(!removeCollinear)return out;
@@ -4221,11 +4196,12 @@ function connectorStubPoints(anchor,side,marker){
   const out=pointOffset(anchor,side,18),horizontal=['left','right'].includes(side);
   return compactRoutePoints(horizontal?[anchor,out,{x:marker.x,y:out.y},marker]:[anchor,out,{x:out.x,y:marker.y},marker]);
 }
-function connectorBranchLogicalPoints(edge,branch,geometryData){
-  const routes=edge.connector_routes||{},stored=Array.isArray(routes[branch])?routes[branch]:[];
-  if(branch==='source')return stored.length?compactRoutePoints([geometryData.a,...stored,geometryData.sourceMarker],false):connectorStubPoints(geometryData.a,edge.source_side||'right',geometryData.sourceMarker);
-  return stored.length?compactRoutePoints([geometryData.targetMarker,...stored,geometryData.b],false):connectorStubPoints(geometryData.b,edge.target_side||'left',geometryData.targetMarker).reverse();
+function connectorBranchLogicalPoints(edge,branch,data){
+  const stored=edge.connector_routes?.[branch]||[];
+  if(branch==='source')return stored.length?sbRepairRouteEndpoints(data.a,stored,data.sourceMarker,edge.source_side||'right',edge.source_side||'right'):connectorStubPoints(data.a,edge.source_side||'right',data.sourceMarker);
+  return stored.length?sbRepairRouteEndpoints(data.targetMarker,stored,data.b,edge.target_side||'left',edge.target_side||'left'):connectorStubPoints(data.b,edge.target_side||'left',data.targetMarker).reverse();
 }
+
 function connectorGeometry(
   edge,
   geometry,
@@ -4462,242 +4438,34 @@ function pointOnDisconnectedConnector(sourcePoints,targetPoints,t=.5){
   const sourceLength=polylineLength(sourcePoints),targetLength=polylineLength(targetPoints),total=sourceLength+targetLength;if(total<=0)return sourcePoints?.[0]||targetPoints?.[0]||{x:0,y:0};
   const wanted=Math.max(0,Math.min(1,Number(t)||0))*total;if(wanted<=sourceLength||targetLength<=0)return pointOnPolyline(sourcePoints,sourceLength?wanted/sourceLength:0);return pointOnPolyline(targetPoints,targetLength?(wanted-sourceLength)/targetLength:0);
 }
-function renderEdgeLabelAtPoint(edge,p,interactive){
-  if(!text(edge.label)||!p)return'';const w=Math.max(32,upper(edge.label).length*6+14);
-  return `<g ${interactive?`data-edge-label="1" data-edge-id="${edge.id}"`:''} class="edge-label-handle"><rect x="${p.x-w/2}" y="${p.y-14}" width="${w}" height="18" rx="3" fill="#fff" opacity=".94" stroke="none"/><text x="${p.x}" y="${p.y-2}" text-anchor="middle" font-size="8" font-weight="700" pointer-events="none">${escapeXml(upper(edge.label))}</text></g>`;
-}
-function renderEdgeLabel(edge,points,interactive){
-  if(!text(edge.label)||!points.length)return'';return renderEdgeLabelAtPoint(edge,pointOnPolyline(points,edge.label_position??.5),interactive);
-}
-function renderEdge(
-  edge,
-  geometry,
-  model,
-  crossing,
-  interactive=true
-){
-  const selected=
-    APP.selection?.type==='edge' &&
-    APP.selection.id===edge.id;
+function renderEdgeLabelAtPoint(edge,p,interactive=true){return sbRenderLabel(edge,laneGeometry(currentModel()),currentModel(),interactive);}
 
-  const stroke=
-          crossing
-            ? '#D92D20'
-            : selected
-              ? '#00AEEF'
-              : '#000',
-        sw=
-          crossing||selected
-            ? 2.8
-            : 1.25;
+function renderEdgeLabel(edge,points,interactive=true){return sbRenderLabel(edge,laneGeometry(currentModel()),currentModel(),interactive);}
 
-  const marker=
-    `url(#arrow${crossing?'Red':''})`;
-
+function renderEdge(edge,geometry,model,crossing,interactive=true){
+  const selected=interactive&&APP.selection?.type==='edge'&&APP.selection.id===edge.id;
+  const stroke=crossing?'#D92D20':selected?'#00AEEF':'#000',sw=crossing||selected?2.8:1.25;
+  const hit=points=>interactive?'<path class="edge-hit" d="'+pathFromPoints(points)+'" fill="none" stroke="transparent" stroke-width="14"/>':'';
+  let content='';
   if(edge.mode==='connector'){
-    const cg=
-      connectorGeometry(
-        edge,
-        geometry,
-        model
-      );
-
-    if(!cg)return'';
-
-const sourceMarkerSelected=
-        isConnectorMarkerSelected(
-          edge.id,
-          'source'
-        ),
-      targetMarkerSelected=
-        isConnectorMarkerSelected(
-          edge.id,
-          'target'
-        ),
-      sourceMarkerExplicit=
-        isConnectorMarkerExplicitlySelected(
-          edge.id,
-          'source'
-        ),
-      targetMarkerExplicit=
-        isConnectorMarkerExplicitlySelected(
-          edge.id,
-          'target'
-        );
-
-    const fill=
-            edge.connector_kind==='input'
-              ? '#92D050'
-              : edge.connector_kind==='output'
-                ? '#FFFF00'
-                : '#FFF',
-          lab=
-            escapeXml(
-              edge.connector_label||''
-            );
-
-    const handles=
-      interactive&&selected
-        ? `${
-            renderRouteHandles(
-              edge,
-              cg.sourceLogical,
-              'source'
-            )
-          }${
-            renderRouteHandles(
-              edge,
-              cg.targetLogical,
-              'target'
-            )
-          }`
-        : '';
-
-    return `
-      <g
-        class="edge"
-        data-edge-id="${edge.id}"
-        style="cursor:pointer"
-      >
-        <path
-          class="edge-hit"
-          d="${pathFromPoints(cg.sourcePoints)}"
-          fill="none"
-          stroke="transparent"
-          stroke-width="14"
-        />
-
-        <path
-          d="${pathFromPoints(cg.sourcePoints)}"
-          fill="none"
-          stroke="${stroke}"
-          stroke-width="${sw}"
-          marker-end="${marker}"
-        />
-
-        <path
-          class="edge-hit"
-          d="${pathFromPoints(cg.targetPoints)}"
-          fill="none"
-          stroke="transparent"
-          stroke-width="14"
-        />
-
-        <path
-          d="${pathFromPoints(cg.targetPoints)}"
-          fill="none"
-          stroke="${stroke}"
-          stroke-width="${sw}"
-          marker-end="${marker}"
-        />
-
-        <circle
-          ${
-            interactive
-              ? `data-connector-marker="source" data-edge-id="${edge.id}"`
-              : ''
-          }
-          class="connector-marker"
-          cx="${cg.sourceMarker.x}"
-          cy="${cg.sourceMarker.y}"
-          r="${STANDARD.connectorRadius}"
-          fill="${fill}"
-stroke="${sourceMarkerSelected?'#00AEEF':'#000'}"
-stroke-width="${sourceMarkerExplicit?3.4:sourceMarkerSelected?2.2:1}"
-        />
-
-        <circle
-          ${
-            interactive
-              ? `data-connector-marker="target" data-edge-id="${edge.id}"`
-              : ''
-          }
-          class="connector-marker"
-          cx="${cg.targetMarker.x}"
-          cy="${cg.targetMarker.y}"
-          r="${STANDARD.connectorRadius}"
-          fill="${fill}"
-stroke="${targetMarkerSelected?'#00AEEF':'#000'}"
-stroke-width="${targetMarkerExplicit?3.4:targetMarkerSelected?2.2:1}"
-        />
-
-        <text
-          x="${cg.sourceMarker.x}"
-          y="${cg.sourceMarker.y}"
-          text-anchor="middle"
-          dominant-baseline="middle"
-          font-size="9.5"
-          font-weight="700"
-          pointer-events="none"
-        >${lab}</text>
-
-        <text
-          x="${cg.targetMarker.x}"
-          y="${cg.targetMarker.y}"
-          text-anchor="middle"
-          dominant-baseline="middle"
-          font-size="9.5"
-          font-weight="700"
-          pointer-events="none"
-        >${lab}</text>
-
-        ${
-          renderEdgeLabelAtPoint(
-            edge,
-            pointOnDisconnectedConnector(
-              cg.sourcePoints,
-              cg.targetPoints,
-              edge.label_position??.5
-            ),
-            interactive
-          )
-        }
-
-        ${handles}
-      </g>
-    `;
+    const cg=connectorGeometry(edge,geometry,model);if(!cg)return '';
+    content=hit(cg.sourcePoints)+sbRenderArrowRoute(cg.sourcePoints,stroke,sw)+hit(cg.targetPoints)+sbRenderArrowRoute(cg.targetPoints,stroke,sw);
+    const fill=edge.connector_kind==='input'?'#92D050':edge.connector_kind==='output'?'#FFFF00':'#FFF',lab=String(edge.connector_label||'');
+    const metrics=sbTextMetrics(lab,9.5),baseline=(metrics.ascent-metrics.descent)/2;
+    ['source','target'].forEach(key=>{
+      const p=cg[key+'Marker'],chosen=interactive&&isConnectorMarkerSelected(edge.id,key),explicit=interactive&&isConnectorMarkerExplicitlySelected(edge.id,key);
+      const attrs=interactive?' data-connector-marker="'+key+'" data-edge-id="'+escapeXml(edge.id)+'"':'';
+      content+='<circle'+attrs+' class="connector-marker" cx="'+p.x+'" cy="'+p.y+'" r="'+STANDARD.connectorRadius+'" fill="'+fill+'" stroke="'+(chosen?'#00AEEF':'#000')+'" stroke-width="'+(explicit?3.4:chosen?2.2:1)+'"/>';
+      content+='<text x="'+p.x+'" y="'+(p.y+baseline)+'" text-anchor="middle" font-family="Arial" font-size="9.5" font-weight="bold" pointer-events="none">'+escapeXml(lab)+'</text>';
+    });
+    content+=sbRenderLabel(edge,geometry,model,interactive);
+    if(selected)content+=renderRouteHandles(edge,cg.sourceLogical,'source')+renderRouteHandles(edge,cg.targetLogical,'target');
+  }else{
+    const points=routePoints(edge,geometry,model);
+    content=hit(points)+sbRenderArrowRoute(points,stroke,sw)+sbRenderLabel(edge,geometry,model,interactive);
+    if(selected)content+=renderRouteHandles(edge,points);
   }
-
-  const pts=
-          routePoints(
-            edge,
-            geometry,
-            model
-          ),
-        handles=
-          interactive&&selected
-            ? renderRouteHandles(
-                edge,
-                pts
-              )
-            : '';
-
-  return `
-    <g
-      class="edge"
-      data-edge-id="${edge.id}"
-      style="cursor:pointer"
-    >
-      <path
-        class="edge-hit"
-        d="${pathFromPoints(pts)}"
-        fill="none"
-        stroke="transparent"
-        stroke-width="14"
-      />
-
-      <path
-        d="${pathFromPoints(pts)}"
-        fill="none"
-        stroke="${stroke}"
-        stroke-width="${sw}"
-        marker-end="${marker}"
-      />
-
-      ${renderEdgeLabel(edge,pts,interactive)}
-      ${handles}
-    </g>
-  `;
+  return '<g class="edge" data-edge-id="'+escapeXml(edge.id)+'" style="cursor:pointer">'+content+'</g>';
 }
 
 function renderRouteHandles(edge,points,branch=''){
@@ -5657,12 +5425,13 @@ const g=laneGeometry(model,{includeNotesBlock}),
         :crossingEdgeIds(model,g);
 
 if(!fast)APP.validation.crossingEdges=crossing;
-  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${g.canvasHeight}" width="${g.width}" height="${g.canvasHeight}" role="img" aria-label="Diagrama SIPOC" font-family="Segoe UI,Arial,sans-serif" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#000"/></marker><marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#D92D20"/></marker></defs>`;
+  const canvasHeight=sbCanvasHeight(model,g);
+  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.width} ${canvasHeight}" width="${g.width}" height="${canvasHeight}" role="img" aria-label="Diagrama SIPOC" font-family="Segoe UI,Arial,sans-serif" text-rendering="geometricPrecision" shape-rendering="geometricPrecision" preserveAspectRatio="xMinYMin meet">`;
   svg+=`<rect x="${STANDARD.canvasMargin}" y="0" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.titleHeight}" fill="#fff" stroke="#000" stroke-width="1"/><rect x="${STANDARD.canvasMargin}" y="${STANDARD.titleHeight}" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.purposeHeight}" fill="#fff" stroke="#000" stroke-width="1"/>`;
   const title=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' ')||'NOMBRE DEL PROCESO PENDIENTE';
-  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight/2+1}" dominant-baseline="middle" font-size="12" font-weight="800" pointer-events="none">${escapeXml(upper(title))}</text>`;
+  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight/2+1}" dominant-baseline="middle" font-size="12" font-weight="800" ${interactive?`data-sb-edit-master="process_name" style="cursor:text"`:`pointer-events="none"`}>${escapeXml(upper(title))}</text>`;
   const purpose=APP.master?.purpose||'FINALIDAD PENDIENTE';
-  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight+STANDARD.purposeHeight/2+1}" dominant-baseline="middle" font-size="9" pointer-events="none"><tspan font-weight="800">FINALIDAD: </tspan><tspan>${escapeXml(upper(purpose))}</tspan></text>`;
+  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight+STANDARD.purposeHeight/2+1}" dominant-baseline="middle" font-size="9" ${interactive?`data-sb-edit-master="purpose" style="cursor:text"`:`pointer-events="none"`}><tspan font-weight="800">FINALIDAD: </tspan><tspan>${escapeXml(upper(purpose))}</tspan></text>`;
 
   const supplier=g.lanes.find(lane=>lane.kind==='supplier'),input=g.lanes.find(lane=>lane.kind==='input'),output=g.lanes.find(lane=>lane.kind==='output'),customer=g.lanes.find(lane=>lane.kind==='customer');
   if(supplier&&input)svg+=renderSharedPeripheralZone(supplier,input,g,interactive);
@@ -6226,6 +5995,7 @@ function renderStudio(
   updateDeleteButton();
   updateHistoryButtons();
   updateConnectStatus();
+  sbUpdateFrozenHeaders(true);
 }
   
 function renderStudioContext(){
@@ -6827,12 +6597,12 @@ function updateDeleteButton(){
     !enabled;
 }
   
-function renderInspector(){
+function renderInspectorContent(){
   const root=$('inspector_content'),flow=activeFlow(),model=currentModel();if(!flow||!model){root.innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';return;}
   const sel=APP.selection;
   if(!sel){
-    root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"><button id="ins_save_general" class="primary" type="button">Aplicar cambios</button></div>`;
-    $('ins_save_general').onclick=()=>{pushHistory();APP.master.process_code=upper($('ins_process_code').value);APP.master.process_name=upper($('ins_process_name').value);APP.master.purpose=upper($('ins_purpose').value);flow.version_name=upper($('ins_flow_name').value)||flow.version_name;flow.version_type=$('ins_flow_type').value;flow.status=$('ins_flow_status').value;markDirty();renderLibrary();renderStudio();};return;
+    root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"></div>`;
+    return;
   }
 
 if(sel.type==='nodes'){
@@ -6898,29 +6668,7 @@ if(sel.type==='nodes'){
       </span>
     </div>
 
-    ${
-      alignableCount>=2
-        ?`
-          <div class="inspector-actions">
-            <button
-              id="ins_align_horizontal"
-              type="button"
-              title="Igualar el centro vertical de la selección"
-            >
-              Alinear horizontal
-            </button>
-
-            <button
-              id="ins_align_vertical"
-              type="button"
-              title="Igualar el centro horizontal de la selección"
-            >
-              Alinear vertical
-            </button>
-          </div>
-        `
-        :''
-    }
+    ${sbM03InspectorMarkup()}
 
     <div class="empty-note">
       ${
@@ -6942,27 +6690,6 @@ if(sel.type==='nodes'){
       }
     </div>
   `;
-
-  const horizontal=
-          $('ins_align_horizontal'),
-        vertical=
-          $('ins_align_vertical');
-
-  if(horizontal){
-    horizontal.onclick=
-      ()=>
-        alignSelectedElements(
-          'horizontal'
-        );
-  }
-
-  if(vertical){
-    vertical.onclick=
-      ()=>
-        alignSelectedElements(
-          'vertical'
-        );
-  }
 
   return;
 }
@@ -7044,12 +6771,7 @@ if(sel.type==='lane'){
     </div>
 
     <div class="inspector-actions">
-      <button
-        id="ins_lane_apply"
-        class="primary"
-      >
-        Aplicar nombre
-      </button>
+      
 
       <button
         data-lane-act="delete"
@@ -7069,17 +6791,7 @@ if(sel.type==='lane'){
     </div>
   `;
 
-  $('ins_lane_apply').onclick=()=>{
-    pushHistory();
 
-    lane.label=
-      upper(
-        $('ins_lane_label').value
-      );
-
-    markDirty();
-    renderStudio();
-  };
 
   root
     .querySelectorAll(
@@ -7117,8 +6829,7 @@ if(sel.type==='lane'){
 }
   if(sel.type==='edge'){
     const edge=edgeById(sel.id,model);if(!edge){APP.selection=null;renderInspector();return;}
-    root.innerHTML=`<div class="field"><label>Etiqueta de la conexión</label><input id="ins_edge_label" value="${escapeHtml(edge.label||'')}" placeholder="Ej. SÍ / NO"></div><div class="inspector-grid"><div class="field"><label>Lado de origen</label><select id="ins_source_side">${sideOptions(edge.source_side)}</select></div><div class="field"><label>Lado de destino</label><select id="ins_target_side">${sideOptions(edge.target_side)}</select></div></div>${edge.mode==='connector'?`<div class="empty-note">Conector ${escapeHtml(edge.connector_label||'')} · ${edge.connector_kind==='input'?'VERDE / ENTRADA':edge.connector_kind==='output'?'AMARILLO / SALIDA':'BLANCO / INTERNO'}</div>`:'<div class="empty-note">Selecciona la línea en el lienzo para mover sus quiebres mediante las manijas azules.</div>'}<div class="inspector-actions"><button id="ins_edge_apply" class="primary">Aplicar</button>${edge.mode==='connector'?'<button id="ins_revert_connector">Volver a línea</button>':'<button id="ins_convert_connector">Convertir en conector</button>'}<button id="ins_edge_delete" class="danger">Eliminar</button></div>`;
-    $('ins_edge_apply').onclick=()=>{const ss=$('ins_source_side').value,ts=$('ins_target_side').value;if(!canUseNodeSide(edge.source,ss,model,edge.id)||!canUseNodeSide(edge.target,ts,model,edge.id)){gMsg('warn','Uno de los lados seleccionados ya alcanzó su capacidad de conexiones.');return;}pushHistory();edge.label=upper($('ins_edge_label').value);edge.source_side=ss;edge.target_side=ts;edge.waypoints=[];if(edge.mode==='connector')edge.connector_routes={source:[],target:[]};markDirty();renderStudio();};
+    root.innerHTML=`<div class="field"><label>Etiqueta de la conexión</label><input id="ins_edge_label" value="${escapeHtml(edge.label||'')}" placeholder="Ej. SÍ / NO"></div><div class="inspector-grid"><div class="field"><label>Lado de origen</label><select id="ins_source_side">${sideOptions(edge.source_side)}</select></div><div class="field"><label>Lado de destino</label><select id="ins_target_side">${sideOptions(edge.target_side)}</select></div></div>${edge.mode==='connector'?`<div class="empty-note">Conector ${escapeHtml(edge.connector_label||'')} · ${edge.connector_kind==='input'?'VERDE / ENTRADA':edge.connector_kind==='output'?'AMARILLO / SALIDA':'BLANCO / INTERNO'}</div>`:'<div class="empty-note">Selecciona la línea en el lienzo para mover sus quiebres mediante las manijas azules.</div>'}<div class="inspector-actions">${edge.mode==='connector'?'<button id="ins_revert_connector">Volver a línea</button>':'<button id="ins_convert_connector">Convertir en conector</button>'}<button id="ins_edge_delete" class="danger">Eliminar</button></div>`;
     if($('ins_convert_connector'))$('ins_convert_connector').onclick=convertSelectedEdgeToConnector;if($('ins_revert_connector'))$('ins_revert_connector').onclick=revertSelectedConnector;$('ins_edge_delete').onclick=deleteSelection;return;
   }
   
@@ -7176,9 +6887,7 @@ if(sel.type==='node'){
     </div>
 
     <div class="inspector-actions">
-      <button id="ins_node_apply" class="primary">
-        Aplicar texto
-      </button>
+      
     </div>
 
 
@@ -7233,12 +6942,7 @@ if(sel.type==='node'){
       $('ins_node_type').value
     );
 
-  $('ins_node_apply').onclick=()=>{
-    pushHistory();
-    node.label=upper($('ins_node_label').value);
-    markDirty();
-    renderStudio();
-  };
+
 
   $('btn_add_doc').onclick=()=>
     addOrAttachDocumentToNode(node.id);
@@ -7630,9 +7334,8 @@ function removeDocumentFromNode(
   renderStudio();
 }
   
-function bindSvgInteractions(){
-  const svg=
-    $('canvas')?.querySelector('svg');
+function bindSvgInteractions(svgRoot=null){
+  const svg=svgRoot||$('canvas')?.querySelector('svg');
 
   if(!svg){
     return;
@@ -7875,34 +7578,10 @@ renderInspector();
 
     });
 
-  /*
-   * Puertos de conexión.
-   */
-  svg
-    .querySelectorAll(
-      '[data-connect-port]'
-    )
-    .forEach(el=>{
-
-      el.addEventListener(
-        'pointerdown',
-        event=>
-          event.stopPropagation()
-      );
-
-      el.addEventListener(
-        'click',
-        event=>{
-          event.stopPropagation();
-
-          handleConnectPort(
-            el.dataset.nodeId,
-            el.dataset.side
-          );
-        }
-      );
-
-    });
+  svg.querySelectorAll('[data-connect-port]').forEach(port=>{
+    port.addEventListener('pointerdown',event=>sbBeginPortDrag(event,port.dataset.nodeId,port.dataset.side));
+    port.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(event.detail===0)handleConnectPort(port.dataset.nodeId,port.dataset.side);});
+  });
 
   /*
    * Círculos de conectores.
@@ -9166,449 +8845,8 @@ function selectionCenter(values){
   )/2;
 }
 
-function alignSelectedElements(axis){
-  if(
-    axis!=='horizontal' &&
-    axis!=='vertical'
-  ){
-    return;
-  }
+function alignSelectedElements(mode){return sbM03Run(mode==='horizontal'?'middle':mode==='vertical'?'center':mode);}
 
-  const model=currentModel();
-
-  if(!model){
-    return;
-  }
-
-  const geometry=laneGeometry(model),
-
-        actorNodes=
-          selectedNodeIds()
-            .map(id=>
-              nodeById(
-                id,
-                model
-              )
-            )
-            .filter(node=>
-              node &&
-              laneKindForNode(
-                node,
-                model
-              )==='actor'
-            ),
-
-        actorNodeIds=
-          actorNodes.map(
-            node=>node.id
-          ),
-
-        explicitRefs=
-          explicitlySelectedConnectorMarkers(),
-
-        markerStates=
-          captureSelectedConnectorMarkerStates(
-            actorNodeIds,
-            explicitRefs,
-            geometry,
-            model
-          ),
-
-        explicitStates=
-          markerStates.filter(
-            state=>state.explicit
-          ),
-
-        nodeStarts=
-          new Map(
-            actorNodes.map(node=>[
-              node.id,
-              {
-                box:nodeBox(
-                  node,
-                  geometry,
-                  model
-                ),
-                laneId:node.lane_id
-              }
-            ])
-          );
-
-  const alignableCount=
-    actorNodes.length+
-    explicitStates.length;
-
-  if(alignableCount<2){
-    gMsg(
-      'info',
-      'Selecciona al menos dos cajas de actor o conectores para alinearlos.'
-    );
-    return;
-  }
-
-  const snapshot=
-    captureHistoryState();
-
-  let moved=false;
-
-  /*
-   * HORIZONTAL:
-   * mismo centro Y.
-   */
-  if(axis==='horizontal'){
-    const centers=[
-      ...actorNodes.map(node=>{
-        const box=
-          nodeStarts.get(node.id).box;
-
-        return box.y+box.h/2;
-      }),
-
-      ...explicitStates.map(
-        state=>state.startPoint.y
-      )
-    ];
-
-    let targetY=
-      selectionCenter(centers);
-
-    if(actorNodes.length){
-      const minY=
-              Math.max(
-                ...actorNodes.map(node=>{
-                  const box=
-                    nodeStarts.get(node.id).box;
-
-                  return (
-                    geometry.bodyTop+
-                    STANDARD.nodeMarginY+
-                    box.h/2
-                  );
-                })
-              ),
-
-            maxY=
-              Math.min(
-                ...actorNodes.map(node=>{
-                  const box=
-                    nodeStarts.get(node.id).box;
-
-                  return (
-                    geometry.bodyTop+
-                    model.layout.body_height-
-                    STANDARD.nodeMarginY-
-                    box.h/2
-                  );
-                })
-              );
-
-      targetY=
-        Math.max(
-          minY,
-          Math.min(
-            maxY,
-            targetY
-          )
-        );
-    }
-
-    actorNodes.forEach(node=>{
-      const box=
-              nodeStarts.get(node.id).box,
-
-            nextY=
-              targetY-
-              geometry.bodyTop-
-              box.h/2;
-
-      if(
-        Math.abs(
-          nextY-
-          Number(node.y||0)
-        )>.001
-      ){
-        node.y=nextY;
-        moved=true;
-      }
-    });
-
-    const nextGeometry=
-            laneGeometry(model),
-
-          nodeDeltas=
-            new Map();
-
-    actorNodes.forEach(node=>{
-      const before=
-              nodeStarts.get(node.id).box,
-
-            after=
-              nodeBox(
-                node,
-                nextGeometry,
-                model
-              );
-
-      nodeDeltas.set(
-        node.id,
-        {
-          x:after.x-before.x,
-          y:after.y-before.y
-        }
-      );
-    });
-
-    markerStates.forEach(state=>{
-      let desired;
-
-      if(state.explicit){
-        desired={
-          x:state.startPoint.x,
-          y:targetY
-        };
-      }else{
-        const delta=
-          nodeDeltas.get(
-            state.attachedNodeId
-          )||{
-            x:0,
-            y:0
-          };
-
-        desired={
-          x:state.startPoint.x+delta.x,
-          y:state.startPoint.y+delta.y
-        };
-      }
-
-      if(
-        applyConnectorMarkerPosition(
-          state,
-          desired,
-          nextGeometry,
-          model
-        )
-      ){
-        moved=true;
-      }
-    });
-  }
-
-  /*
-   * VERTICAL:
-   * mismo centro X.
-   * Las cajas nunca cambian de actor.
-   */
-  if(axis==='vertical'){
-    const laneGroups=
-      new Map();
-
-    actorNodes.forEach(node=>{
-      if(!laneGroups.has(node.lane_id)){
-        laneGroups.set(
-          node.lane_id,
-          []
-        );
-      }
-
-      laneGroups
-        .get(node.lane_id)
-        .push(node);
-    });
-
-    const laneIds=[
-      ...laneGroups.keys()
-    ];
-
-    let commonTargetX=null;
-
-    /*
-     * Si todas las cajas pertenecen
-     * al mismo actor, cajas y círculos
-     * pueden compartir exactamente X.
-     */
-    if(laneIds.length<=1){
-      commonTargetX=
-        selectionCenter([
-          ...actorNodes.map(node=>{
-            const box=
-              nodeStarts.get(node.id).box;
-
-            return box.x+box.w/2;
-          }),
-
-          ...explicitStates.map(
-            state=>state.startPoint.x
-          )
-        ]);
-    }
-
-    laneGroups.forEach(
-      (nodes,laneId)=>{
-        const lane=
-          laneById(
-            laneId,
-            model
-          );
-
-        if(!lane){
-          return;
-        }
-
-        const targetX=
-          commonTargetX!==null
-            ? commonTargetX
-            : selectionCenter(
-                nodes.map(node=>{
-                  const box=
-                    nodeStarts.get(node.id).box;
-
-                  return box.x+box.w/2;
-                })
-              );
-
-        if(targetX===null){
-          return;
-        }
-
-        nodes.forEach(node=>{
-          const box=
-                  nodeStarts.get(node.id).box,
-
-                nextXRel=
-                  Math.max(
-                    8,
-                    Math.min(
-                      lane.width-
-                      box.w-
-                      8,
-
-                      targetX-
-                      lane.x-
-                      box.w/2
-                    )
-                  );
-
-          if(
-            Math.abs(
-              nextXRel-
-              Number(node.x_rel||0)
-            )>.001
-          ){
-            node.x_rel=nextXRel;
-            moved=true;
-          }
-        });
-      }
-    );
-
-    let markerTargetX=
-      commonTargetX;
-
-    if(
-      markerTargetX===null &&
-      explicitStates.length>=2
-    ){
-      markerTargetX=
-        selectionCenter(
-          explicitStates.map(
-            state=>state.startPoint.x
-          )
-        );
-    }
-
-    const nextGeometry=
-            laneGeometry(model),
-
-          nodeDeltas=
-            new Map();
-
-    actorNodes.forEach(node=>{
-      const before=
-              nodeStarts.get(node.id).box,
-
-            after=
-              nodeBox(
-                node,
-                nextGeometry,
-                model
-              );
-
-      nodeDeltas.set(
-        node.id,
-        {
-          x:after.x-before.x,
-          y:after.y-before.y
-        }
-      );
-    });
-
-    markerStates.forEach(state=>{
-      let desired;
-
-      if(
-        state.explicit &&
-        markerTargetX!==null
-      ){
-        desired={
-          x:markerTargetX,
-          y:state.startPoint.y
-        };
-      }else{
-        const delta=
-          nodeDeltas.get(
-            state.attachedNodeId
-          )||{
-            x:0,
-            y:0
-          };
-
-        desired={
-          x:state.startPoint.x+delta.x,
-          y:state.startPoint.y+delta.y
-        };
-      }
-
-      if(
-        applyConnectorMarkerPosition(
-          state,
-          desired,
-          nextGeometry,
-          model
-        )
-      ){
-        moved=true;
-      }
-    });
-  }
-
-  /*
-   * Toda la alineación = 1 Undo.
-   */
-  if(
-    moved &&
-    snapshot
-  ){
-    APP.history.push(snapshot);
-
-    if(APP.history.length>60){
-      APP.history.shift();
-    }
-
-    APP.future=[];
-    markDirty();
-
-    gMsg(
-      'ok',
-      axis==='horizontal'
-        ? 'Selección alineada horizontalmente.'
-        : 'Selección alineada verticalmente.'
-    );
-  }
-
-  renderStudio();
-}  
-  
 function selectionRectFromPoints(
   a,
   b
@@ -10851,92 +10089,29 @@ function beginConnectorMarkerDrag(
 }
   
 function handleConnectorMarkerDrag(event){
-  const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),cg=connectorGeometry(edge,geometry,model);if(!cg)return;
-  const node=drag.markerKey==='source'?nodeById(edge.source,model):nodeById(edge.target,model),side=drag.markerKey==='source'?(edge.source_side||'right'):(edge.target_side||'left'),bounds=cg.bounds[drag.markerKey],next=keepConnectorMarkerOutsideNode(clampPointToBounds({x:snap(p.x),y:snap(p.y)},bounds),node,side,bounds,geometry,model);
-  edge.connector_points=edge.connector_points||{};edge.connector_points[drag.markerKey]=next;edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.markerKey]=[];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>2;renderStudio(false,true);
+  const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;
+  const edge=edgeById(drag.edgeId,model);if(!edge)return;
+  const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),original=edgeById(drag.edgeId,drag.snapshot.model);
+  if(!drag.moved&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)*APP.camera.scale<4)return;
+  applyConnectorMarkerPosition({edgeId:edge.id,markerKey:drag.markerKey,startPoint:drag.startPoint,startRoute:clone(original.connector_routes?.[drag.markerKey]||[])},{x:snap(drag.startPoint.x+p.x-drag.start.x),y:snap(drag.startPoint.y+p.y-drag.start.y)},geometry,model);
+  edge.connector_routes[drag.markerKey]=clone(original.connector_routes?.[drag.markerKey]||[]);
+  const next=edge.connector_points[drag.markerKey];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>.001;renderStudio(false,true);
 }
-  
+
 function endConnectorMarkerDrag(event){
-  const drag=
-          APP.connectorDrag,
-        vp=
-          $('viewport');
-
-  if(!drag){
-    return;
+  const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;
+  ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleConnectorMarkerDrag:endConnectorMarkerDrag));
+  try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  if(event.type==='pointercancel'||!drag.moved){
+    const edge=edgeById(drag.edgeId),original=edgeById(drag.edgeId,drag.snapshot.model);
+    if(edge&&original){if(original.connector_points===undefined)delete edge.connector_points;else edge.connector_points=clone(original.connector_points);if(original.connector_routes===undefined)delete edge.connector_routes;else edge.connector_routes=clone(original.connector_routes);}
   }
-
-  vp?.removeEventListener(
-    'pointermove',
-    handleConnectorMarkerDrag
-  );
-
-  try{
-    if(
-      vp?.hasPointerCapture?.(
-        event.pointerId
-      )
-    ){
-      vp.releasePointerCapture(
-        event.pointerId
-      );
-    }
-  }catch(error){}
-
-  if(
-    drag.moved &&
-    drag.snapshot
-  ){
-    APP.history.push(
-      drag.snapshot
-    );
-
-    if(
-      APP.history.length>60
-    ){
-      APP.history.shift();
-    }
-
-    APP.future=[];
-
-    /*
-     * Un arrastre nunca cuenta
-     * como primer clic.
-     */
-    APP.connectorClick=null;
-
-    markDirty();
-
-    APP.connectorDrag=null;
-
-    renderStudio();
-
-    return;
-  }
-
-  /*
-   * No hubo movimiento:
-   * queda registrado como primer clic
-   * para detectar el segundo.
-   */
-  APP.connectorClick={
-    edgeId:drag.edgeId,
-    markerKey:drag.markerKey,
-    time:performance.now()
-  };
-
-  APP.connectorDrag=null;
-
-  /*
-   * Actualizar inspector sin reemplazar
-   * el SVG. Esto permite que el segundo
-   * pointerdown ocurra sobre el mismo nodo.
-   */
-  renderInspector();
-  updateInsertButton();
-  updateDeleteButton();
+  if(event.type!=='pointercancel'&&drag.moved){sbRecordSnapshot(drag.snapshot);APP.connectorClick=null;markDirty();}
+  else APP.connectorClick=event.type==='pointercancel'?null:{edgeId:drag.edgeId,markerKey:drag.markerKey,time:performance.now()};
+  APP.connectorDrag=null;APP.selection=buildCompositeSelection([], [{edgeId:drag.edgeId,markerKey:drag.markerKey,explicit:true}]);
+  renderStudio();
 }
-  
+
 function nearestPolylinePosition(points,point){
   if(!points||points.length<2)return 0;let total=0;const lengths=[];for(let i=0;i<points.length-1;i++){const len=Math.hypot(points[i+1].x-points[i].x,points[i+1].y-points[i].y);lengths.push(len);total+=len;}if(total<=0)return 0;let best={dist:Infinity,along:0},passed=0;
   for(let i=0;i<points.length-1;i++){const a=points[i],b=points[i+1],dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy,t=len2?Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.y-a.y)*dy)/len2)):0,proj={x:a.x+dx*t,y:a.y+dy*t},dist=(point.x-proj.x)**2+(point.y-proj.y)**2,along=passed+lengths[i]*t;if(dist<best.dist)best={dist,along};passed+=lengths[i];}
@@ -10948,16 +10123,25 @@ function nearestDisconnectedConnectorPosition(sourcePoints,targetPoints,point){
   return sourceD<=targetD?(sourceT*sourceLength)/total:(sourceLength+targetT*targetLength)/total;
 }
 function beginEdgeLabelDrag(event,edgeId){
-  if(event.button!==0)return;const model=currentModel(),edge=edgeById(edgeId,model),vp=$('viewport');if(!model||!edge||!text(edge.label)||!vp)return;event.preventDefault();event.stopPropagation();APP.selection={type:'edge',id:edgeId};APP.labelDrag={edgeId,pointerId:event.pointerId,snapshot:captureHistoryState(),moved:false,startPos:Number(edge.label_position??.5)};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleEdgeLabelDrag);vp.addEventListener('pointerup',endEdgeLabelDrag,{once:true});vp.addEventListener('pointercancel',endEdgeLabelDrag,{once:true});
+  if(event.button!==0)return;const model=currentModel(),edge=edgeById(edgeId,model),vp=$('viewport');if(!model||!edge||!text(edge.label)||!vp)return;event.preventDefault();event.stopPropagation();APP.selection={type:'edge',id:edgeId};APP.labelDrag={edgeId,pointerId:event.pointerId,snapshot:captureHistoryState(),moved:false,startX:event.clientX,startY:event.clientY,startPos:Number(edge.label_position??.5)};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleEdgeLabelDrag);vp.addEventListener('pointerup',endEdgeLabelDrag,{once:true});vp.addEventListener('pointercancel',endEdgeLabelDrag,{once:true});
 }
 function handleEdgeLabelDrag(event){
-  const drag=APP.labelDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const edge=edgeById(drag.edgeId,model);if(!edge)return;const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY);
-  if(edge.mode==='connector'){const cg=connectorGeometry(edge,geometry,model);if(!cg)return;edge.label_position=nearestDisconnectedConnectorPosition(cg.sourcePoints,cg.targetPoints,p);}else{edge.label_position=nearestPolylinePosition(routePoints(edge,geometry,model),p);}
-  drag.moved=Math.abs(edge.label_position-drag.startPos)>.005;renderStudio(false);
+  const drag=APP.labelDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;
+  if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;
+  const edge=edgeById(drag.edgeId,model);if(!edge)return;
+  const layout=sbLabelLayout(edge,laneGeometry(model),model,clientToCanvas(event.clientX,event.clientY));
+  edge.label_position=layout.t;drag.moved=Math.abs(layout.t-drag.startPos)>.0001;renderStudio(false);
 }
+
 function endEdgeLabelDrag(event){
-  const drag=APP.labelDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleEdgeLabelDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.labelDrag=null;renderStudio();
+  const drag=APP.labelDrag,vp=$('viewport');if(!drag)return;
+  ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleEdgeLabelDrag:endEdgeLabelDrag));
+  try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  if(event.type==='pointercancel'){const edge=edgeById(drag.edgeId),original=edgeById(drag.edgeId,drag.snapshot.model);if(edge&&original){if(original.label_position===undefined)delete edge.label_position;else edge.label_position=original.label_position;}}
+  else if(drag.moved){sbRecordSnapshot(drag.snapshot);markDirty();}
+  APP.labelDrag=null;renderStudio();
 }
+
 function beginFlowResize(event){
   if(event.button!==0)return;const model=currentModel(),vp=$('viewport');if(!model||!vp)return;event.preventDefault();event.stopPropagation();APP.resizeDrag={pointerId:event.pointerId,start:clientToCanvas(event.clientX,event.clientY),startHeight:Number(model.layout.body_height)||STANDARD.defaultBodyHeight,snapshot:captureHistoryState(),moved:false};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleFlowResize);vp.addEventListener('pointerup',endFlowResize,{once:true});vp.addEventListener('pointercancel',endFlowResize,{once:true});
 }
@@ -11318,8 +10502,8 @@ function zoomBy(factor,clientX=null,clientY=null){
 }
   
 function applyCamera(){
-  const model=currentModel(),stage=$('stage'),canvas=$('canvas');if(!model||!stage||!canvas)return;const geometry=laneGeometry(model),minZoom=minimumZoomForViewport(model);APP.camera.scale=Math.max(minZoom,Math.min(STANDARD.maxZoom,APP.camera.scale||1));const scale=APP.camera.scale,width=Math.round(geometry.width*scale),height=Math.round(geometry.canvasHeight*scale);stage.style.width=`${width}px`;stage.style.height=`${height}px`;canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;const zoom=Math.round(scale*100);$('zoom_value').textContent=`${zoom} %`;$('btn_zoom_out').disabled=scale<=minZoom+.0001;$('btn_zoom_in').disabled=scale>=STANDARD.maxZoom-.0001;
-}
+  const model=currentModel(),stage=$('stage'),canvas=$('canvas');if(!model||!stage||!canvas)return;const geometry=laneGeometry(model),minZoom=minimumZoomForViewport(model);APP.camera.scale=Math.max(minZoom,Math.min(STANDARD.maxZoom,APP.camera.scale||1));const scale=APP.camera.scale,width=Math.round(geometry.width*scale),height=Math.round((Number(canvas.querySelector('svg')?.viewBox?.baseVal?.height)||geometry.canvasHeight)*scale);stage.style.width=`${width}px`;stage.style.height=`${height}px`;canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;const zoom=Math.round(scale*100);$('zoom_value').textContent=`${zoom} %`;$('btn_zoom_out').disabled=scale<=minZoom+.0001;$('btn_zoom_in').disabled=scale>=STANDARD.maxZoom-.0001;
+sbUpdateFrozenHeaders(false);}
 
 function cancelCameraAnimation(){
   if(
@@ -11621,11 +10805,11 @@ function collectValidation(flow=activeFlow()){
   cus.forEach(n=>{if(!model.edges.some(e=>e.target===n.id&&laneKindForNode(nodeById(e.source,model),model)==='output'))add(`El cliente ${upper(n.label)||n.id} no recibe ninguna salida.`);});
   actorNodes.forEach(n=>{const incoming=model.edges.filter(e=>e.target===n.id),outgoing=model.edges.filter(e=>e.source===n.id);if(!incoming.length&&!outgoing.length)add(`La actividad ${upper(n.label)||n.id} está aislada.`);if(n.type==='decision'){if(!incoming.length)add(`La decisión ${upper(n.label)||n.id} no tiene actividad previa.`);if(outgoing.length<2)add(`La decisión ${upper(n.label)||n.id} debe tener al menos dos salidas.`);if(incoming.length+outgoing.length>4)add(`La decisión ${upper(n.label)||n.id} supera sus cuatro puntos únicos de conexión.`);outgoing.forEach(e=>{if(!text(e.label))add(`Una rama de la decisión ${upper(n.label)||n.id} no tiene etiqueta.`);});}});
   const crossing=crossingEdgeIds(model,laneGeometry(model));if(crossing.size)add(`Existen ${crossing.size} conexión(es) involucradas en cruces o solapamientos de líneas. Reubica la ruta o conviértelas en conectores.`);
-  return [...new Set(issues)];
+  issues.push(...sbNoteIssues(model));sbOverlappingNodes(model,laneGeometry(model)).forEach(pair=>issues.push('Cajas superpuestas: '+pair.map(n=>n.label||n.id).join(' / ')+'.'));return [...new Set(issues)];
 }
 
 function refreshValidation(){
-  const flow=activeFlow();const issues=flow?collectValidation(flow):[];APP.validation.issues=issues;const badge=$('validation_badge');if(!flow){badge.className='validation-pill';badge.textContent='○ Validación pendiente';return;}badge.className=`validation-pill ${issues.length?'is-bad':'is-ok'}`;badge.textContent=issues.length?`⚠ ${issues.length} alerta(s)`:'✓ Listo para exportar';
+  const flow=activeFlow();const issues=flow?collectValidation(flow):[];APP.validation.issues=issues;const badge=$('validation_badge');if(!flow){badge.className='validation-pill';badge.textContent='○ Validación pendiente';return;}badge.className=`validation-pill ${issues.length?'is-bad':'is-ok'}`;badge.textContent=issues.length?`⚠ ${issues.length} alerta(s)`:'✓ Listo para JSON → LMP';
 }
 function showValidation(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);$('validation_list').innerHTML=issues.length?issues.map((msg,i)=>`<div class="issue"><strong>${i+1}.</strong> ${escapeHtml(msg)}</div>`).join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';$('validation_dialog').showModal();}
 
@@ -11752,9 +10936,15 @@ const activities=orderedActorNodes.map((node,index)=>{
 }
 function buildSBToLMP(flow){return{contract_code:'SB_TO_LMP',contract_version:'1.0',source_module:'SIPOC_BUILDER',target_module:'LMP',generated_at:nowIso(),sipoc_input:buildSipocInput(flow)};}
 function downloadText(content,filename,mime='application/json'){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function exportLmp(flowId=APP.exportFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('export_dialog').close();}
+function exportLmp(flowId=APP.exportFlowId){
+  sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
+const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('export_dialog').close();}
 
-function svgForFlow(flow,{includeNotesBlock=true}={}){   const oldActive=APP.activeFlowId,         oldSelection=APP.selection;    APP.activeFlowId=flow.flow_id;   APP.selection=null;    const svg=renderSvg(     flow.payload.model,     {       interactive:false,       includeNotesBlock     }   );    APP.activeFlowId=oldActive;   APP.selection=oldSelection;    return svg; }
+function svgForFlow(flow,{includeNotesBlock=true}={}){
+  const oldActive=APP.activeFlowId,oldSelection=APP.selection;APP.activeFlowId=flow.flow_id;APP.selection=null;
+  try{return renderSvg(flow.payload.model,{interactive:false,includeNotesBlock});}finally{APP.activeFlowId=oldActive;APP.selection=oldSelection;}
+}
+
 function clearPdfPreview(){
   if(APP.pdfPreview.url){URL.revokeObjectURL(APP.pdfPreview.url);APP.pdfPreview.url=null;}APP.pdfPreview.filename=null;const frame=$('pdf_preview_frame'),status=$('pdf_preview_status'),button=$('btn_download_pdf');if(frame){frame.src='about:blank';frame.classList.add('hidden');}if(status){status.classList.remove('hidden');status.textContent='Generando vista previa…';}if(button)button.disabled=true;
 }
@@ -11784,7 +10974,7 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
         })();
 
   const width=Math.max(1,Math.ceil(geometry.width)),
-        height=Math.max(1,Math.ceil(geometry.canvasHeight)),
+        height=Math.max(1,Math.ceil(Number(docSvg.getAttribute('viewBox').split(/\s+/)[3])||geometry.canvasHeight)),
         topMargin=STANDARD.pdfTopMargin,
         pageHeight=height+topMargin,
         pdf=new jsPDF({
@@ -11795,6 +10985,8 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
           putOnlyUsedFonts:true
         });
 
+  docSvg.setAttribute('font-family','helvetica');
+  docSvg.querySelectorAll('text,tspan').forEach(el=>{el.setAttribute('font-family','helvetica');const weight=el.getAttribute('font-weight');if(weight==='bold'||Number(weight)>=600)el.setAttribute('font-weight','bold');});
   await pdf.svg(docSvg,{
     x:0,
     y:topMargin,
@@ -12439,6 +11631,7 @@ function validateMasterBackupStructure(data){
         `flow ${flowId}.notes`
       );
 
+    const noteIssues=sbNoteIssues(model);if(noteIssues.length)throw new Error('Notas inválidas: '+noteIssues.join(' '));
     const allIds=new Set();
 
     const addId=(id,label)=>{
@@ -13550,7 +12743,14 @@ function syncStudioFullscreen(){
   });
 }
   
-function openManual(){$('manual_dialog').showModal();}
+function openManual(){
+  const dialog=$('manual_dialog');
+  if(!dialog.querySelector('.sb-manual-iteration')){
+    const content=document.createElement('div');content.className='sb-manual-iteration empty-note';
+    content.textContent='EDICIÓN: el texto se confirma al salir del campo; Enter confirma una línea y Ctrl+Enter varias. Escape cancela el borrador. Doble clic permite editar texto en el diagrama. Ctrl/Cmd mantiene la multiselección. CONEXIONES: clic en puertos o arrastre; Escape cancela. Los círculos pares se navegan con doble clic. MOVIMIENTO: flechas 1 unidad; Shift+flechas 10. Alineación y distribución requieren 2 y 3 elementos; una restricción cancela el conjunto. INSERCIÓN: clic derecho en espacio vacío del carril. ENCABEZADOS: Fijar encabezados conserva la fila al desplazarse. VALIDACIÓN: Listo para JSON → LMP indica la validación de intercambio; guardar y PDF permanecen disponibles con incidencias. Guardar flujo y Ctrl+S conservan su función.';
+    dialog.querySelector('.manual')?.prepend(content);
+  }dialog.showModal();
+}
 
 function bindGlobalEvents(){
   document.querySelectorAll('.nav-tab').forEach(btn=>btn.addEventListener('click',()=>switchView(btn.dataset.view)));
@@ -13741,7 +12941,691 @@ function bindLmpTransferReceiver(){
   );
 }
 
+// Puertos y geometría compartidos por pantalla, interacción y PDF.
+function sbPortAnchor(node,side,edge,geometry,model){
+  const box=nodeBox(node,geometry,model),list=edgeSideList(edge,node.id,side,model,geometry);
+  const index=Math.max(0,list.findIndex(item=>item.id===edge.id));
+  return shapeBoundaryPoint(node,side,node.type==='decision'?.5:(index+1)/(list.length+1),box);
+}
+function sbRectIntersects(a,b,gap=0){
+  return a.x<b.x+b.w+gap-.001 && a.x+a.w>b.x-gap+.001 &&
+    a.y<b.y+b.h+gap-.001 && a.y+a.h>b.y-gap+.001;
+}
+function sbArrowGeometry(points){
+  const p=compactRoutePoints(points||[],true);
+  if(p.length<2)return null;
+  const tip=p[p.length-1],previous=p[p.length-2];
+  const distance=Math.hypot(tip.x-previous.x,tip.y-previous.y);
+  if(distance<.001)return null;
+  const length=Math.min(10,distance),width=length,dx=(tip.x-previous.x)/distance,dy=(tip.y-previous.y)/distance;
+  const base={x:tip.x-dx*length,y:tip.y-dy*length};
+  const left={x:base.x-dy*width/2,y:base.y+dx*width/2};
+  const right={x:base.x+dy*width/2,y:base.y-dx*width/2};
+  return {points:p,tip,base,left,right,bounds:{
+    x:Math.min(tip.x,left.x,right.x),y:Math.min(tip.y,left.y,right.y),
+    w:Math.max(tip.x,left.x,right.x)-Math.min(tip.x,left.x,right.x),
+    h:Math.max(tip.y,left.y,right.y)-Math.min(tip.y,left.y,right.y)
+  }};
+}
+function sbRenderArrowRoute(points,stroke,width){
+  const arrow=sbArrowGeometry(points);
+  if(!arrow)return '';
+  const shaft=arrow.points.slice(0,-1).concat([arrow.base]);
+  return '<path d="'+pathFromPoints(shaft)+'" fill="none" stroke="'+stroke+'" stroke-width="'+width+'"/>'+
+    '<path class="sb-arrow-tip" d="'+pathFromPoints([arrow.tip,arrow.left,arrow.right])+' Z" fill="'+stroke+'" stroke="none" pointer-events="none"/>';
+}
+function sbTextMetrics(value,size=8,bold=true){
+  const key=size+'|'+bold+'|'+value,cache=APP.tools.textMetrics;
+  if(cache.has(key))return cache.get(key);
+  const canvas=APP.tools.measureCanvas||(APP.tools.measureCanvas=document.createElement('canvas'));
+  const ctx=canvas.getContext('2d');ctx.font=(bold?'700 ':'400 ')+size+'px Arial';
+  const m=ctx.measureText(value),result={width:m.width,ascent:m.actualBoundingBoxAscent||size*.75,descent:m.actualBoundingBoxDescent||size*.25};
+  if(cache.size>=256)cache.clear();cache.set(key,result);return result;
+}
+function sbLabelMetrics(edge){
+  const value=upper(edge.label),m=sbTextMetrics(value);
+  return {value,w:Math.max(32,m.width+14),h:Math.max(18,m.ascent+m.descent+8),baseline:(m.ascent-m.descent)/2};
+}
+function sbEdgeBranches(edge,geometry,model){
+  if(edge.mode==='connector'){
+    const cg=connectorGeometry(edge,geometry,model);
+    return cg?{branches:[cg.sourcePoints,cg.targetPoints],markers:[cg.sourceMarker,cg.targetMarker]}:{branches:[],markers:[]};
+  }
+  return {branches:[routePoints(edge,geometry,model)],markers:[]};
+}
+function sbLabelLayout(edge,geometry,model,wanted=null){
+  const data=sbEdgeBranches(edge,geometry,model),metrics=sbLabelMetrics(edge);
+  const lengths=data.branches.map(polylineLength),total=lengths.reduce((a,b)=>a+b,0);
+  const t=Math.max(0,Math.min(1,Number(edge.label_position??.5)));
+  let origin={x:0,y:0},remaining=t*total;
+  data.branches.some((points,i)=>{
+    if(remaining<=lengths[i]||i===data.branches.length-1){origin=pointOnPolyline(points,lengths[i]?remaining/lengths[i]:0);return true;}
+    remaining-=lengths[i];return false;
+  });
+  const requested=wanted||origin,obstacles=model.nodes.map(n=>nodeBox(n,geometry,model));
+  data.markers.forEach(p=>obstacles.push({x:p.x-STANDARD.connectorRadius,y:p.y-STANDARD.connectorRadius,w:STANDARD.connectorRadius*2,h:STANDARD.connectorRadius*2}));
+  data.branches.forEach(points=>{const arrow=sbArrowGeometry(points);if(arrow)obstacles.push(arrow.bounds);});
+  const rectAt=p=>({x:p.x-metrics.w/2,y:p.y-metrics.h/2,w:metrics.w,h:metrics.h});
+  const valid=p=>{
+    const r=rectAt(p);
+    return r.x>=STANDARD.canvasMargin && r.x+r.w<=geometry.width-STANDARD.canvasMargin &&
+      r.y>=geometry.bodyTop && r.y+r.h<=geometry.bodyTop+model.layout.body_height &&
+      !obstacles.some(box=>sbRectIntersects(r,box,4));
+  };
+  const candidates=[];let offset=0;
+  data.branches.forEach((raw,branch)=>{
+    const points=compactRoutePoints(raw,true);let walked=0;
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],len=Math.hypot(b.x-a.x,b.y-a.y);
+      if(len<.001)continue;
+      const horizontal=Math.abs(a.y-b.y)<.001,vertical=Math.abs(a.x-b.x)<.001;
+      if(!horizontal&&!vertical){walked+=len;continue;}
+      const inset=(horizontal?metrics.w:metrics.h)/2+4;
+      if(len>=inset*2){
+        const projection=Math.max(inset,Math.min(len-inset,((requested.x-a.x)*(b.x-a.x)+(requested.y-a.y)*(b.y-a.y))/len));
+        const sample=[projection,inset,len-inset,len/2];
+        for(let d=inset;d<=len-inset;d+=Math.max(4,Math.min(12,len/20)))sample.push(d);
+        sample.forEach(distance=>{
+          const p={x:a.x+(b.x-a.x)*distance/len,y:a.y+(b.y-a.y)*distance/len};
+          if(valid(p))candidates.push({p,t:total?(offset+walked+distance)/total:.5,d:Math.hypot(p.x-requested.x,p.y-requested.y),branch,segment:i});
+        });
+      }
+      walked+=len;
+    }
+    offset+=lengths[branch];
+  });
+  candidates.sort((a,b)=>a.d-b.d||a.branch-b.branch||a.segment-b.segment||a.t-b.t);
+  if(candidates.length){const best=candidates[0];return {...metrics,p:best.p,t:best.t,guide:null,external:false};}
+  // Excepción aprobada: texto completo fuera del tramo, sin alterar su ruta.
+  const anchor=wanted?sbNearestEdgePoint(data,wanted):{p:origin,t};
+  const external=[];
+  for(let ring=0;ring<32;ring++){
+    const gap=8+ring*12,dx=metrics.w/2+gap,dy=metrics.h/2+gap;
+    [{x:anchor.p.x,y:anchor.p.y-dy},{x:anchor.p.x+dx,y:anchor.p.y},
+     {x:anchor.p.x,y:anchor.p.y+dy},{x:anchor.p.x-dx,y:anchor.p.y}].forEach((p,index)=>{
+      if(valid(p))external.push({p,d:Math.hypot(p.x-requested.x,p.y-requested.y),index});
+    });
+    if(external.length)break;
+  }
+  external.sort((a,b)=>a.d-b.d||a.index-b.index);
+  if(external.length)return {...metrics,p:external[0].p,t:anchor.t??t,guide:anchor.p,external:true};
+  // Una banda derivada bajo las notas conserva incluso textos mayores que el lienzo.
+  const maxWidth=Math.max(32,geometry.width-STANDARD.canvasMargin*2-16),lines=[];
+  let line='';
+  for(const character of metrics.value){
+    if(line&&sbTextMetrics(line+character).width>maxWidth){lines.push(line);line='';}
+    line+=character;
+  }
+  if(line||!lines.length)lines.push(line);
+  const wrapped={...metrics,lines,w:Math.min(maxWidth+14,Math.max(...lines.map(value=>sbTextMetrics(value).width))+14),h:Math.max(18,lines.length*12+8)};
+  let top=geometry.canvasHeight+8;
+  for(const other of model.edges){
+    if(other.id===edge.id)break;
+    if(text(other.label))top+=Math.max(18,Math.ceil(sbLabelMetrics(other).w/maxWidth)*12+8)+8;
+  }
+  return {...wrapped,p:{x:geometry.width/2,y:top+wrapped.h/2},t:anchor.t??t,guide:anchor.p,external:true};
+}
+function sbNearestEdgePoint(data,point){
+  const branches=data.branches,lengths=branches.map(polylineLength),total=lengths.reduce((a,b)=>a+b,0);
+  let offset=0,best={p:branches[0]?.[0]||point,t:.5,d:Infinity};
+  branches.forEach((points,i)=>{
+    const local=nearestPolylinePosition(points,point),p=pointOnPolyline(points,local),d=Math.hypot(p.x-point.x,p.y-point.y);
+    if(d<best.d){best={p,t:total?(offset+local*lengths[i])/total:.5,d};}
+    offset+=lengths[i];
+  });
+  return best;
+}
+function sbRenderLabel(edge,geometry,model,interactive){
+  if(!text(edge.label))return '';
+  const layout=sbLabelLayout(edge,geometry,model),p=layout.p;
+  const attrs=interactive?' data-edge-label="1" data-edge-id="'+escapeXml(edge.id)+'"':'';
+  const guide=layout.guide?'<path class="sb-label-guide" d="'+pathFromPoints([layout.guide,p])+'" fill="none" stroke="#526F80" stroke-width=".8" pointer-events="none"/>':'';
+  return '<g class="edge-label-handle"'+attrs+'>'+guide+
+    '<rect x="'+(p.x-layout.w/2)+'" y="'+(p.y-layout.h/2)+'" width="'+layout.w+'" height="'+layout.h+'" rx="3" fill="#FFFFFF" opacity="1" stroke="none"/>'+
+    '<text x="'+p.x+'" y="'+(p.y-(layout.lines?.length-1||0)*6+layout.baseline)+'" text-anchor="middle" font-family="Arial" font-size="8" font-weight="bold" pointer-events="none">'+
+    (layout.lines?layout.lines.map((line,i)=>'<tspan x="'+p.x+'" dy="'+(i?12:0)+'">'+escapeXml(line)+'</tspan>').join(''):escapeXml(layout.value))+'</text></g>';
+}
+function sbCanvasHeight(model,geometry){
+  return model.edges.reduce((height,edge)=>{
+    if(!text(edge.label))return height;
+    const layout=sbLabelLayout(edge,geometry,model);
+    return Math.max(height,layout.p.y+layout.h/2+8);
+  },geometry.canvasHeight);
+}
+function sbRepairRouteEndpoints(a,stored,b,sourceSide,targetSide){
+  const points=[a],first=stored[0],last=stored[stored.length-1];
+  if(!first)return [a,b];
+  if(a.x!==first.x&&a.y!==first.y)points.push(['left','right'].includes(sourceSide)?{x:first.x,y:a.y}:{x:a.x,y:first.y});
+  points.push(...stored.map(p=>({x:Number(p.x),y:Number(p.y)})));
+  if(b.x!==last.x&&b.y!==last.y)points.push(['left','right'].includes(targetSide)?{x:last.x,y:b.y}:{x:b.x,y:last.y});
+  points.push(b);return compactRoutePoints(points,false);
+}
+function sbNoteIssues(model){
+  const issues=[],nodes=new Map((model.nodes||[]).map(n=>[text(n.id),n]));
+  const lanes=new Map((model.lanes||[]).filter(l=>l.kind==='actor').map(l=>[text(l.id),l]));
+  const notes=new Map();
+  (model.notes||[]).forEach(note=>{
+    if(!note||typeof note!=='object'){issues.push('Existe una nota aclaratoria con formato inválido.');return;}
+    const id=text(note.id),nodeId=text(note.node_id),laneId=text(note.lane_id);
+    if(!id||notes.has(id))issues.push('ID de nota vacío o duplicado: '+(id||'SIN ID')+'.');
+    notes.set(id,note);
+    if((nodeId?1:0)+(laneId?1:0)!==1)issues.push('La nota '+id+' debe tener un único propietario.');
+    const owner=nodeId?nodes.get(nodeId):lanes.get(laneId);
+    if(!owner)issues.push('La nota '+id+' referencia un propietario inexistente o no permitido.');
+    else if(!Array.isArray(owner.note_ids)||!owner.note_ids.map(text).includes(id))issues.push('La nota '+id+' no está asociada desde su propietario.');
+    if(!text(note.text))issues.push('La nota '+id+' no tiene texto.');
+  });
+  [...nodes.values(),...lanes.values()].forEach(owner=>{
+    if(owner.note_ids!==undefined&&!Array.isArray(owner.note_ids)){issues.push('note_ids inválido en '+owner.id+'.');return;}
+    const seen=new Set();
+    (owner.note_ids||[]).forEach(raw=>{
+      const id=text(raw),note=notes.get(id);
+      if(seen.has(id))issues.push('Referencia de nota duplicada en '+owner.id+': '+id+'.');seen.add(id);
+      if(!note)issues.push('La referencia '+id+' en '+owner.id+' no existe.');
+      else if(text(note.node_id||note.lane_id)!==text(owner.id))issues.push('La referencia '+id+' pertenece a otro propietario.');
+    });
+  });
+  return [...new Set(issues)];
+}
+function sbOverlappingNodes(model,geometry){
+  const boxes=(model.nodes||[]).map(node=>({node,box:nodeBox(node,geometry,model)})),pairs=[];
+  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){
+    if(sbRectIntersects(boxes[i].box,boxes[j].box))pairs.push([boxes[i].node,boxes[j].node]);
+  }
+  return pairs;
+}
+
+function sbSelectionEntities(includePeripheral=false){
+  const model=currentModel();if(!model)return null;
+  const geometry=laneGeometry(model),nodeIds=selectedNodeIds().filter(id=>{
+    const node=nodeById(id,model);return node&&(includePeripheral||laneKindForNode(node,model)==='actor');
+  });
+  const states=captureSelectedConnectorMarkerStates(nodeIds,explicitlySelectedConnectorMarkers(),geometry,model);
+  const entities=nodeIds.map(id=>{
+    const node=nodeById(id,model),box=nodeBox(node,geometry,model);
+    return {key:'node:'+id,kind:'node',id,laneId:node.lane_id,x:box.x,y:box.y,w:box.w,h:box.h};
+  });
+  states.filter(s=>s.explicit).forEach(state=>{
+    const node=nodeById(state.attachedNodeId,model),r=STANDARD.connectorRadius;
+    entities.push({key:connectorMarkerRefKey(state),kind:'marker',state,laneId:node?.lane_id,
+      x:state.startPoint.x-r,y:state.startPoint.y-r,w:r*2,h:r*2});
+  });
+  return {model,geometry,nodeIds,states,entities};
+}
+function sbRecordSnapshot(snapshot){
+  if(!snapshot)return;
+  APP.history.push(snapshot);if(APP.history.length>60)APP.history.shift();
+  APP.future=[];updateHistoryButtons();
+}
+function sbApplySelectionMoves(context,moves,record=true){
+  const {model,geometry,states}=context,flow=activeFlow(),before=clone(model),snapshot=captureHistoryState();
+  const deltas=new Map();let moved=false;
+  try{
+    context.entities.filter(e=>e.kind==='node').forEach(entity=>{
+      const desired=moves.get(entity.key);if(!desired)return;
+      const node=nodeById(entity.id,model),lane=geometry.lanes.find(l=>l.id===node.lane_id);
+      const dx=desired.x-entity.x,dy=desired.y-entity.y;
+      if(Math.abs(dx)<.0001&&Math.abs(dy)<.0001)return;
+      if(lane.kind!=='actor'&&Math.abs(dx)>.0001)throw new Error('Los carriles periféricos solo permiten movimiento vertical.');
+      if(desired.y<geometry.bodyTop+STANDARD.nodeMarginY-.0001 ||
+        desired.y+entity.h>geometry.bodyTop+model.layout.body_height-STANDARD.nodeMarginY+.0001 ||
+        desired.x<lane.x+8-.0001 || desired.x+entity.w>lane.x+lane.width-8+.0001)
+        throw new Error('El destino de una caja supera los límites de su carril.');
+      if(lane.kind==='actor')node.x_rel=desired.x-lane.x;
+      node.y=desired.y-geometry.bodyTop;deltas.set(node.id,{x:dx,y:dy});moved=true;
+    });
+    const nextGeometry=laneGeometry(model);
+    states.forEach(state=>{
+      const key=connectorMarkerRefKey(state),explicit=moves.get(key),delta=deltas.get(state.attachedNodeId)||{x:0,y:0};
+      const desired=explicit?{x:explicit.x+STANDARD.connectorRadius,y:explicit.y+STANDARD.connectorRadius}:
+        {x:state.startPoint.x+delta.x,y:state.startPoint.y+delta.y};
+      if(Math.hypot(desired.x-state.startPoint.x,desired.y-state.startPoint.y)<.0001)return;
+      const edge=edgeById(state.edgeId,model);
+      applyConnectorMarkerPosition(state,desired,nextGeometry,model);
+      const actual=edge.connector_points[state.markerKey];
+      if(Math.hypot(actual.x-desired.x,actual.y-desired.y)>.0001)
+        throw new Error('El destino de un círculo supera su zona permitida.');
+      const r=STANDARD.connectorRadius,rect={x:actual.x-r,y:actual.y-r,w:r*2,h:r*2};
+      if(model.nodes.some(node=>sbRectIntersects(rect,nodeBox(node,nextGeometry,model))))
+        throw new Error('Un círculo no puede invadir una caja.');
+      const markerDelta={x:desired.x-state.startPoint.x,y:desired.y-state.startPoint.y};
+      if(Math.abs(markerDelta.x-delta.x)>.0001||Math.abs(markerDelta.y-delta.y)>.0001)
+        edge.connector_routes[state.markerKey]=clone(state.startRoute);
+      moved=true;
+    });
+    model.edges.filter(edge=>edge.mode!=='connector').forEach(edge=>{
+      const a=deltas.get(edge.source),b=deltas.get(edge.target);
+      if(a&&b&&Math.abs(a.x-b.x)<.0001&&Math.abs(a.y-b.y)<.0001&&Array.isArray(edge.waypoints))
+        edge.waypoints=edge.waypoints.map(p=>({x:p.x+a.x,y:p.y+a.y}));
+    });
+  }catch(error){
+    flow.payload.model=before;return {changed:false,error:error.message};
+  }
+  if(moved){if(record)sbRecordSnapshot(snapshot);markDirty();}
+  return {changed:moved,snapshot};
+}
+function sbM03InspectorMarkup(){
+  const modes=[['left','Izquierda'],['center','Centro'],['right','Derecha'],
+    ['top','Arriba'],['middle','Medio'],['bottom','Abajo'],
+    ['distribute_x','Distribuir horizontal'],['distribute_y','Distribuir vertical']];
+  const context=sbSelectionEntities(),count=context?.entities.length||0;
+  return '<div class="sb-align-grid" aria-label="Alineación y distribución">'+modes.map(([mode,label])=>
+    '<button type="button" data-sb-align="'+mode+'" '+(count<(mode.startsWith('distribute')?3:2)?'disabled':'')+'>'+label+'</button>').join('')+'</div>';
+}
+function sbM03Run(mode){
+  sbCommitEdit();sbFinishNudge();
+  const context=sbSelectionEntities();if(!context)return false;
+  const horizontal=['left','center','right','distribute_x'].includes(mode);
+  const vertical=['top','middle','bottom','distribute_y'].includes(mode);
+  if(!horizontal&&!vertical)return false;
+  const groups=new Map(),minimum=mode.startsWith('distribute')?3:2;
+  context.entities.forEach(entity=>{
+    const key=horizontal?entity.laneId:'all';if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(entity);
+  });
+  const moves=new Map();let eligible=0;
+  for(const entities of groups.values()){
+    if(entities.length<minimum)continue;eligible++;
+    const coordinate=horizontal?'x':'y',dimension=horizontal?'w':'h';
+    const start=Math.min(...entities.map(e=>e[coordinate]));
+    const end=Math.max(...entities.map(e=>e[coordinate]+e[dimension]));
+    if(mode.startsWith('distribute')){
+      const first=entities.slice().sort((a,b)=>a[coordinate]-b[coordinate]||a.key.localeCompare(b.key))[0];
+      const last=entities.slice().sort((a,b)=>(b[coordinate]+b[dimension])-(a[coordinate]+a[dimension])||a.key.localeCompare(b.key))[0];
+      const space=end-start-entities.reduce((sum,e)=>sum+e[dimension],0);
+      if(first===last||space<-.0001){gMsg('warn','Distribución cancelada: no hay espacio suficiente entre los extremos.');return false;}
+      const middle=entities.filter(e=>e!==first&&e!==last).sort((a,b)=>
+        (a[coordinate]+a[dimension]/2)-(b[coordinate]+b[dimension]/2)||a.key.localeCompare(b.key));
+      let cursor=start;const gap=space/(entities.length-1);
+      [first,...middle,last].forEach(entity=>{
+        moves.set(entity.key,{x:entity.x,y:entity.y,[coordinate]:cursor});
+        cursor+=entity[dimension]+gap;
+      });
+    }else{
+      const center=(start+end)/2;
+      entities.forEach(entity=>{
+        const value=['left','top'].includes(mode)?start:['right','bottom'].includes(mode)?end-entity[dimension]:center-entity[dimension]/2;
+        moves.set(entity.key,{x:entity.x,y:entity.y,[coordinate]:value});
+      });
+    }
+  }
+  if(!eligible){gMsg('info','Selecciona '+minimum+' elementos compatibles'+(horizontal?' dentro del mismo carril.':'.'));return false;}
+  const result=sbApplySelectionMoves(context,moves);
+  if(result.error)gMsg('warn','Operación cancelada: '+result.error);
+  else if(result.changed)gMsg('ok','Selección organizada. Deshacer revierte toda la operación.');
+  renderStudio();return result.changed;
+}
+function distributeSelectedElements(axis){return sbM03Run(axis==='horizontal'?'distribute_x':'distribute_y');}
+function sbNudge(event){
+  if(APP.view!=='studio'||APP.connect.active||APP.tools.portDrag||APP.tools.editing||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return false;
+  if(event.ctrlKey||event.metaKey||event.altKey||document.querySelector('dialog[open]')||!$('sb_context_menu').classList.contains('hidden'))return false;
+  const context=sbSelectionEntities(true);if(!context?.entities.length)return false;
+  const step=event.shiftKey?10:1,dx=event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0;
+  const dy=event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0,moves=new Map();
+  context.entities.forEach(entity=>moves.set(entity.key,{x:entity.x+dx,y:entity.y+dy}));
+  const result=sbApplySelectionMoves(context,moves,false);
+  event.preventDefault();event.stopImmediatePropagation();
+  if(result.error){if(!event.repeat)gMsg('warn','Movimiento cancelado: '+result.error);return true;}
+  if(result.changed){
+    if(!APP.tools.nudge)APP.tools.nudge={snapshot:result.snapshot,keys:new Set(),flowId:APP.activeFlowId};
+    APP.tools.nudge.keys.add(event.key);renderStudio(false);
+  }
+  return true;
+}
+function sbFinishNudge(){
+  const gesture=APP.tools.nudge;if(!gesture)return;
+  APP.tools.nudge=null;
+  if(gesture.flowId===APP.activeFlowId)sbRecordSnapshot(gesture.snapshot);
+}
+
+function renderInspector(){renderInspectorContent();sbBindInspectorFields();}
+function sbResolveEdit(spec){
+  if(spec.flowId!==APP.activeFlowId)return null;
+  if(spec.kind==='master')return APP.master;
+  if(spec.kind==='flow')return activeFlow();
+  if(spec.kind==='lane')return laneById(spec.id);
+  if(spec.kind==='node')return nodeById(spec.id);
+  if(spec.kind==='edge')return edgeById(spec.id);
+  return null;
+}
+function sbBeginEdit(input,spec,inline=false){
+  if(APP.tools.editing?.input===input)return;
+  sbCommitEdit({render:false});
+  const owner=sbResolveEdit(spec);if(!owner)return;
+  APP.tools.editing={input,spec,inline,initial:String(owner[spec.field]??''),composing:false};
+}
+function sbCommitEdit(options={}){
+  const session=APP.tools.editing;if(!session)return true;
+  if(session.composing&&!options.cancel){session.pendingCommit=true;return false;}
+  APP.tools.editing=null;
+  const owner=sbResolveEdit(session.spec);
+  let value=session.input.value;
+  if(options.cancel){session.input.value=session.initial;}
+  else if(owner){
+    value=session.spec.numeric?Number(value):session.spec.preserveCase?text(value):upper(value);
+    if(session.spec.kind==='flow'&&session.spec.field==='version_name'&&!value)value=session.initial;
+    if(session.spec.kind==='edge'&&['source_side','target_side'].includes(session.spec.field)){
+      const nodeId=session.spec.field==='source_side'?owner.source:owner.target;
+      if(!canUseNodeSide(nodeId,value,currentModel(),owner.id)){
+        session.input.value=session.initial;
+        if(session.inline)$('sb_inline_editor').classList.add('hidden');
+        gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return false;
+      }
+    }
+    if(value!==owner[session.spec.field]){
+      pushHistory();owner[session.spec.field]=value;markDirty();
+      // Renombrar conserva geometría. El routing adapta sus extremos al cambiar de lado.
+      session.input.value=value;
+      if(options.render!==false){renderLibrary();renderStudio(false);}
+      else sbScheduleRefresh();
+    }
+  }
+  if(session.inline){$('sb_inline_editor').classList.add('hidden');$('sb_inline_input').value='';}
+  return true;
+}
+function sbScheduleRefresh(){
+  if(APP.tools.refreshFrame)return;
+  APP.tools.refreshFrame=requestAnimationFrame(()=>{
+    APP.tools.refreshFrame=null;
+    if(APP.master)renderLibrary();
+    if(APP.view==='studio'&&currentModel())renderStudio(false);
+  });
+}
+function sbBindEditInput(input,spec,inline=false){
+  if(!input||input.dataset.sbEditBound)return;
+  input.dataset.sbEditBound='1';input.lang='es';
+  input.spellcheck=spec.field!=='process_code';
+  input.addEventListener('focus',()=>sbBeginEdit(input,spec,inline));
+  input.addEventListener('compositionstart',()=>{if(APP.tools.editing?.input===input)APP.tools.editing.composing=true;});
+  input.addEventListener('compositionend',()=>{const session=APP.tools.editing;if(session?.input===input){session.composing=false;if(session.pendingCommit)sbCommitEdit({render:false});}});
+  input.addEventListener('blur',()=>{if(APP.tools.editing?.input===input)sbCommitEdit({render:false});});
+  input.addEventListener('keydown',event=>{
+    if(event.isComposing||APP.tools.editing?.composing)return;
+    if(event.key==='Escape'){
+      event.preventDefault();event.stopImmediatePropagation();
+      sbCommitEdit({cancel:true,render:false});input.blur();return;
+    }
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){
+      event.preventDefault();event.stopImmediatePropagation();if(sbCommitEdit({render:false}))saveActiveFlow();return;
+    }
+    if(event.key==='Enter'&&(input.tagName!=='TEXTAREA'||input.rows===1||event.ctrlKey||event.metaKey)){
+      event.preventDefault();event.stopImmediatePropagation();
+      sbCommitEdit({render:false});input.blur();$('viewport').focus({preventScroll:true});
+    }
+  });
+  if(input.tagName==='SELECT')input.addEventListener('change',()=>{
+    if(APP.tools.editing?.input!==input)sbBeginEdit(input,spec,inline);
+    sbCommitEdit({render:false});
+  });
+}
+function sbBindInspectorFields(){
+  const flowId=APP.activeFlowId,selection=APP.selection;
+  const fields={
+    ins_process_code:{kind:'master',field:'process_code'},
+    ins_process_name:{kind:'master',field:'process_name'},
+    ins_purpose:{kind:'master',field:'purpose'},
+    ins_flow_name:{kind:'flow',field:'version_name'},
+    ins_flow_type:{kind:'flow',field:'version_type',preserveCase:true},
+    ins_flow_status:{kind:'flow',field:'status',preserveCase:true},
+    ins_lane_label:{kind:'lane',id:selection?.id,field:'label'},
+    ins_node_label:{kind:'node',id:selection?.id,field:'label'},
+    ins_edge_label:{kind:'edge',id:selection?.id,field:'label'},
+    ins_source_side:{kind:'edge',id:selection?.id,field:'source_side',preserveCase:true},
+    ins_target_side:{kind:'edge',id:selection?.id,field:'target_side',preserveCase:true}
+  };
+  Object.entries(fields).forEach(([id,spec])=>sbBindEditInput($(id),{...spec,flowId}));
+  $('inspector_content').querySelectorAll('[data-sb-align]').forEach(button=>
+    button.onclick=()=>sbM03Run(button.dataset.sbAlign));
+  document.querySelectorAll('#node_annotation_popup input[type="text"],#node_annotation_popup textarea,[data-catalog-input]').forEach(input=>{
+    input.lang='es';input.spellcheck=input.dataset.catalogField!=='code';
+  });
+}
+function sbEditableTarget(target){
+  if(!(target instanceof Element)||target.closest('[data-connect-port],[data-connector-marker],[data-node-annotation],[data-lane-insert],[data-lane-resize],[data-edge-segment]'))return null;
+  const flowId=APP.activeFlowId,label=target.closest('[data-edge-label]');
+  if(label)return {kind:'edge',id:label.dataset.edgeId,field:'label',flowId,element:label};
+  const node=target.closest('.node[data-node-id]');
+  if(node)return {kind:'node',id:node.dataset.nodeId,field:'label',flowId,element:node};
+  const lane=target.closest('[data-lane-id]');
+  if(lane&&laneById(lane.dataset.laneId)?.kind==='actor')
+    return {kind:'lane',id:lane.dataset.laneId,field:'label',flowId,element:lane};
+  const general=target.closest('[data-sb-edit-master]');
+  if(general)return {kind:'master',field:general.dataset.sbEditMaster,flowId,element:general};
+  return null;
+}
+function sbOpenInline(spec){
+  if(!sbCommitEdit())return;
+  sbFinishNudge();
+  const owner=sbResolveEdit(spec);if(!owner)return;
+  APP.selection=spec.kind==='master'?null:{type:spec.kind,id:spec.id};
+  renderInspector();
+  const host=$('sb_inline_editor'),old=$('sb_inline_input'),input=document.createElement('textarea');
+  input.id='sb_inline_input';input.setAttribute('aria-label','Editar '+(spec.field==='label'?'texto':spec.field));
+  input.value=String(owner[spec.field]??'');input.rows=spec.kind==='node'||spec.field==='purpose'?3:1;
+  input.className='sb-inline-input';old.replaceWith(input);host.classList.remove('hidden');
+  const box=spec.element.getBoundingClientRect(),card=$('viewport').parentElement.getBoundingClientRect();
+  const width=Math.max(150,Math.min(360,box.width||240));
+  host.style.width=width+'px';host.style.left=Math.max(4,Math.min(card.width-width-4,box.left-card.left))+'px';
+  host.style.top=Math.max(4,Math.min(card.height-100,box.top-card.top))+'px';
+  sbBindEditInput(input,spec,true);input.focus({preventScroll:true});input.select();
+}
+function sbCloseContextMenu(){$('sb_context_menu')?.classList.add('hidden');}
+function sbShowContextMenu(event,laneId=null){
+  const model=currentModel();if(!model||APP.view!=='studio')return false;
+  const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY);
+  const lane=laneId?geometry.lanes.find(l=>l.id===laneId):geometry.lanes.find(l=>p.x>=l.x&&p.x<l.x+l.width);
+  if(!lane||(!laneId&&(p.y<geometry.bodyTop||p.y>geometry.bodyTop+model.layout.body_height)))return false;
+  event.preventDefault();event.stopPropagation();sbCommitEdit({render:false});sbFinishNudge();
+  APP.tools.insertContext={flowId:APP.activeFlowId,laneId:lane.id,point:laneId?null:p};
+  APP.selection={type:'lane',id:lane.id};
+  const menu=$('sb_context_menu'),card=$('viewport').parentElement.getBoundingClientRect();
+  menu.classList.remove('hidden');
+  menu.style.left=Math.max(4,Math.min(card.width-menu.offsetWidth-4,event.clientX-card.left))+'px';
+  menu.style.top=Math.max(4,Math.min(card.height-menu.offsetHeight-4,event.clientY-card.top))+'px';
+  $('sb_context_add').focus({preventScroll:true});return true;
+}
+function sbContextNodePosition(lane,type,point,model){
+  const g=laneGeometry(model),zone=g.lanes.find(l=>l.id===lane.id),size=nodeSize({type});
+  const x=lane.kind==='actor'?Math.max(8,Math.min(zone.width-size.w-8,point.x-zone.x-size.w/2)):(zone.width-size.w)/2;
+  let y=Math.max(STANDARD.nodeMarginY,point.y-g.bodyTop-size.h/2),attempts=0;
+  while(model.nodes.filter(n=>n.lane_id===lane.id).some(n=>sbRectIntersects(
+    {x:zone.x+x,y:g.bodyTop+y,w:size.w,h:size.h},nodeBox(n,g,model),8))&&attempts++<model.nodes.length+2)y+=size.h+16;
+  model.layout.body_height=Math.max(model.layout.body_height,y+size.h+STANDARD.nodeMarginY);
+  return {x_rel:x,y};
+}
+function sbBindTools(){
+  const vp=$('viewport');
+  $('btn_freeze_headers').addEventListener('click',()=>{
+    sbCommitEdit({render:false});APP.tools.freezeHeaders=!APP.tools.freezeHeaders;
+    $('btn_freeze_headers').setAttribute('aria-pressed',String(APP.tools.freezeHeaders));
+    sbUpdateFrozenHeaders(true);
+  });
+  $('sb_context_add').addEventListener('click',()=>{
+    sbCloseContextMenu();renderInsertPalette();
+  });
+  $('sb_context_menu').addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();sbCloseContextMenu();vp.focus({preventScroll:true});}
+    if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();$('sb_context_add').focus();}
+  });
+  vp.addEventListener('contextmenu',event=>{
+    if(event.target.closest('.node,.edge,[data-connect-port],[data-node-annotation],[data-flow-resize]'))return;
+    const lane=event.target.closest('[data-lane-id]');sbShowContextMenu(event,lane?.dataset.laneId||null);
+  });
+  document.addEventListener('pointerdown',event=>{
+    if(event.target.closest('#sb_inline_editor,#sb_context_menu'))return;
+    if(APP.tools.editing&&!APP.tools.editing.input.contains(event.target)){
+      if(!sbCommitEdit({render:false})){event.preventDefault();event.stopImmediatePropagation();return;}
+    }
+    sbFinishNudge();sbCloseContextMenu();
+    if(!event.target.closest('#insert_dialog'))APP.tools.insertContext=null;
+    if(event.button!==0||event.ctrlKey||event.metaKey)return;
+    const spec=sbEditableTarget(event.target);if(!spec)return;
+    const key=spec.kind+'|'+(spec.id||'')+'|'+spec.field,previous=APP.tools.lastTextClick;
+    if(previous?.key===key&&performance.now()-previous.time<=420&&Math.hypot(event.clientX-previous.x,event.clientY-previous.y)<=4){
+      event.preventDefault();event.stopImmediatePropagation();APP.tools.lastTextClick=null;APP.tools.textPointer=null;
+      sbOpenInline(spec);return;
+    }
+    APP.tools.textPointer={key,spec,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false};
+  },true);
+  document.addEventListener('pointermove',event=>{
+    const click=APP.tools.textPointer;if(click&&click.pointerId===event.pointerId&&Math.hypot(event.clientX-click.x,event.clientY-click.y)>4)click.moved=true;
+  },true);
+  document.addEventListener('pointerup',event=>{
+    const click=APP.tools.textPointer;if(!click||click.pointerId!==event.pointerId)return;
+    APP.tools.lastTextClick=click.moved?null:{...click,time:performance.now()};APP.tools.textPointer=null;
+  },true);
+  document.addEventListener('pointercancel',()=>{APP.tools.textPointer=null;APP.tools.lastTextClick=null;},true);
+  document.addEventListener('focusin',event=>{
+    const input=event.target;
+    if(input.matches?.('textarea,input[type="text"],input:not([type])')&&!input.matches('#ins_process_code,#catalog_search,[data-catalog-input="code"]')){
+      input.lang='es';input.spellcheck=true;
+    }
+  });
+  document.addEventListener('keydown',event=>{
+    const input=['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable;
+    if(input)return;
+    if(event.key==='Escape'&&(APP.tools.portDrag||!$('sb_context_menu').classList.contains('hidden'))){
+      event.preventDefault();event.stopImmediatePropagation();sbCancelPortDrag();sbCloseContextMenu();return;
+    }
+    if(event.key==='Escape')sbFinishNudge();
+    if(event.key==='F10'&&event.shiftKey&&APP.selection?.type==='lane'){
+      event.preventDefault();event.stopImmediatePropagation();
+      const r=vp.getBoundingClientRect();sbShowContextMenu({clientX:r.left+20,clientY:r.top+20,preventDefault(){},stopPropagation(){}},APP.selection.id);return;
+    }
+    if(sbNudge(event))return;
+  },true);
+  document.addEventListener('keyup',event=>{
+    const gesture=APP.tools.nudge;if(!gesture)return;
+    gesture.keys.delete(event.key);if(!gesture.keys.size)sbFinishNudge();
+  },true);
+  window.addEventListener('blur',()=>{sbFinishNudge();sbCancelPortDrag();});
+  vp.addEventListener('scroll',()=>{
+    sbCommitEdit({render:false});sbCloseContextMenu();
+    if(!APP.tools.headerFrame)APP.tools.headerFrame=requestAnimationFrame(()=>{APP.tools.headerFrame=null;sbUpdateFrozenHeaders();});
+  },{passive:true});
+  document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();if(currentModel())renderStudio(false);});
+}
+function sbUpdateFrozenHeaders(rebuild=false){
+  const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),model=currentModel(),button=$('btn_freeze_headers');
+  if(!host||!vp||!stage||!button)return;
+  button.disabled=!model||APP.view!=='studio';
+  if(!APP.tools.freezeHeaders||!model||APP.view!=='studio'){host.classList.add('hidden');return;}
+  const g=laneGeometry(model),scale=APP.camera.scale||1;
+  if(vp.scrollTop<=stage.offsetTop+g.laneTop*scale){host.classList.add('hidden');return;}
+  host.classList.remove('hidden');host.style.left=vp.offsetLeft+'px';host.style.top=vp.offsetTop+'px';
+  host.style.width=vp.clientWidth+'px';host.style.height=STANDARD.laneHeaderHeight*scale+'px';
+  if(rebuild||!host.firstElementChild){
+    const supplier=g.lanes.find(l=>l.kind==='supplier'),input=g.lanes.find(l=>l.kind==='input');
+    const output=g.lanes.find(l=>l.kind==='output'),customer=g.lanes.find(l=>l.kind==='customer');
+    let content='';
+    if(supplier&&input)content+=renderSharedPeripheralZone(supplier,input,g,true);
+    g.lanes.filter(l=>l.kind==='actor').forEach(l=>content+=renderActorLane(l,g,true));
+    if(output&&customer)content+=renderSharedPeripheralZone(output,customer,g,true);
+    content+=renderActorLaneResizeHandles(g,true);
+    host.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" font-family="Segoe UI,Arial,sans-serif" aria-label="Encabezados fijados">'+content+'</svg>';
+    bindSvgInteractions(host.firstElementChild);
+  }
+  host.firstElementChild.setAttribute('viewBox',[(vp.scrollLeft-stage.offsetLeft)/scale,g.laneTop,vp.clientWidth/scale,STANDARD.laneHeaderHeight].join(' '));
+}
+
+function sbConnectionError(sourceId,sourceSide,targetId,targetSide,model=currentModel()){
+  const source=nodeById(sourceId,model),target=nodeById(targetId,model);
+  if(!source||!target||sourceId===targetId)return 'Selecciona una caja de destino diferente.';
+  if(!['top','right','bottom','left'].includes(sourceSide)||!['top','right','bottom','left'].includes(targetSide))return 'Elige un puerto válido.';
+  if(!validateEdgeRelation(source,target,model))return 'Esa relación no está permitida por la metodología SIPOC.';
+  if(model.edges.some(edge=>edge.source===sourceId&&edge.target===targetId))return 'Esa conexión ya existe.';
+  if(!canUseNodeSide(sourceId,sourceSide,model)||!canUseNodeSide(targetId,targetSide,model))return 'Un lado alcanzó su capacidad de conexiones.';
+  return null;
+}
+function sbCreateConnection(sourceId,sourceSide,targetId,targetSide){
+  const model=currentModel();if(!model)return false;
+  const error=sbConnectionError(sourceId,sourceSide,targetId,targetSide,model);
+  if(error){gMsg('warn',error);return false;}
+  pushHistory();model.counters.edge=(model.counters.edge||0)+1;
+  const edge={id:uid('EDGE'),order:model.counters.edge,source:sourceId,target:targetId,
+    source_side:sourceSide,target_side:targetSide,label:'',label_position:.5,mode:'line',
+    connector_kind:null,connector_label:null,connector_sequence:null,waypoints:[]};
+  model.edges.push(edge);APP.connect=freshConnectState();APP.selection={type:'edge',id:edge.id};
+  markDirty();renderStudio();return true;
+}
+function sbBeginPortDrag(event,nodeId,side){
+  if(event.button!==0||!currentModel()||!canUseNodeSide(nodeId,side))return;
+  event.preventDefault();event.stopPropagation();sbCommitEdit({render:false});sbFinishNudge();
+  const vp=$('viewport');
+  APP.tools.portDrag={nodeId,side,pointerId:event.pointerId,flowId:APP.activeFlowId,
+    startX:event.clientX,startY:event.clientY,moved:false,target:null};
+  vp.setPointerCapture?.(event.pointerId);
+}
+function sbPortDragTarget(point,drag,geometry,model){
+  const scale=APP.camera.scale||1,source=nodeById(drag.nodeId,model);let best=null;
+  model.nodes.filter(node=>node.id!==drag.nodeId).forEach(node=>{
+    const box=nodeBox(node,geometry,model),near=24/scale;
+    if(point.x<box.x-near||point.x>box.x+box.w+near||point.y<box.y-near||point.y>box.y+box.h+near)return;
+    ['top','right','bottom','left'].forEach(side=>{
+      const p=pointOffset(nodeSideMidpoint(node,side,geometry,model),side,STANDARD.connectPortOffset);
+      const distance=Math.hypot(p.x-point.x,p.y-point.y)*scale;
+      const error=sbConnectionError(source.id,drag.side,node.id,side,model);
+      if(distance<=12&&(!best||distance<best.distance))best={nodeId:node.id,side,p,distance,error};
+    });
+  });
+  return best;
+}
+function sbMovePortDrag(event){
+  const drag=APP.tools.portDrag,model=currentModel();
+  if(!drag||event.pointerId!==drag.pointerId)return;
+  if(!model||drag.flowId!==APP.activeFlowId){sbCancelPortDrag();return;}
+  if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;
+  drag.moved=true;
+  const geometry=laneGeometry(model),point=clientToCanvas(event.clientX,event.clientY);
+  drag.target=sbPortDragTarget(point,drag,geometry,model);
+  const source=nodeById(drag.nodeId,model),target=drag.target?nodeById(drag.target.nodeId,model):null;
+  const edge={id:'__SB_PREVIEW__',order:Number.MAX_SAFE_INTEGER,source:source.id,target:target?.id||'',
+    source_side:drag.side,target_side:drag.target?.side||'left',mode:'line',waypoints:[]};
+  const previewModel={...model,edges:model.edges.concat([edge])};
+  const a=sbPortAnchor(source,drag.side,edge,geometry,previewModel);
+  const points=target&&!drag.target.error?autoRoutePoints(edge,geometry,previewModel,a,
+    sbPortAnchor(target,edge.target_side,edge,geometry,previewModel),drag.side,edge.target_side):
+    [a,pointOffset(a,drag.side,18),point];
+  const svg=$('canvas').querySelector('svg');if(!svg)return;
+  svg.querySelector('#sb_connect_preview')?.remove();
+  const group=document.createElementNS('http://www.w3.org/2000/svg','g');
+  group.id='sb_connect_preview';group.setAttribute('pointer-events','none');
+  let html=sbRenderArrowRoute(points,drag.target?.error?'#C0392B':'#0284C7',1.5);
+  const scale=APP.camera.scale||1;
+  model.nodes.filter(node=>node.id!==source.id).forEach(node=>{
+    const box=nodeBox(node,geometry,model),near=24/scale;
+    if(point.x>=box.x-near&&point.x<=box.x+box.w+near&&point.y>=box.y-near&&point.y<=box.y+box.h+near){
+      ['top','right','bottom','left'].forEach(side=>{
+        const p=pointOffset(nodeSideMidpoint(node,side,geometry,model),side,STANDARD.connectPortOffset);
+        const error=sbConnectionError(source.id,drag.side,node.id,side,model),active=drag.target?.nodeId===node.id&&drag.target.side===side;
+        html+='<circle cx="'+p.x+'" cy="'+p.y+'" r="'+(12/scale)+'" fill="'+(error?'#FEE2E2':active?'#7DD3FC':'#FFFFFF')+'" stroke="'+(error?'#C0392B':'#0284C7')+'" stroke-width="'+(1.5/scale)+'"/>';
+      });
+    }
+  });
+  group.innerHTML=html;svg.appendChild(group);
+}
+function sbEndPortDrag(event){
+  const drag=APP.tools.portDrag;if(!drag||drag.pointerId!==event.pointerId)return;
+  if(drag.moved)sbMovePortDrag(event);
+  const target=drag.target;sbCancelPortDrag();
+  if(event.type==='pointercancel'||drag.flowId!==APP.activeFlowId)return;
+  if(!drag.moved){handleConnectPort(drag.nodeId,drag.side);return;}
+  if(target&&!target.error)sbCreateConnection(drag.nodeId,drag.side,target.nodeId,target.side);
+  else gMsg('info',target?.error||'Conexión cancelada: suelta sobre un puerto disponible.');
+}
+function sbCancelPortDrag(){
+  const drag=APP.tools.portDrag;APP.tools.portDrag=null;
+  const vp=$('viewport');
+  if(drag)try{if(vp.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  $('canvas')?.querySelector('#sb_connect_preview')?.remove();
+}
+
+
 function init(){
+  sbBindTools();
+  document.addEventListener("pointermove",sbMovePortDrag);
+  document.addEventListener("pointerup",sbEndPortDrag);
+  document.addEventListener("pointercancel",sbEndPortDrag);
   bindGlobalEvents();
   bindLmpTransferReceiver();
 
