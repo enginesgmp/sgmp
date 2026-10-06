@@ -568,7 +568,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
       <button id="btn_undo" type="button" disabled>Deshacer</button>
           <button id="btn_redo" type="button" disabled>Rehacer</button>
           <button id="btn_delete" class="danger" type="button" disabled>Eliminar</button>
-          <span id="studio_status" class="toolbar-status">Selecciona un carril para insertar.</span>
+          <span id="studio_status" class="toolbar-status">Clic derecho en una zona vacía para agregar una caja.</span>
         </div>
         <div class="zoom-group" aria-label="Zoom">
           <button id="btn_zoom_out" type="button" aria-label="Alejar">−</button>
@@ -753,7 +753,7 @@ function setStudioStatus(message){const el=$('studio_status');if(el)el.textConte
 function updateConnectStatus(){
   if(!APP.connect.active){
     const lane=APP.selection?.type==='lane'?laneById(APP.selection.id):null;
-    setStudioStatus(lane?'Pulsa + en el encabezado seleccionado para insertar.':'Selecciona un encabezado de carril para insertar o una caja para conectar.');
+    setStudioStatus(lane?'Clic derecho en una zona vacía del carril para agregar; Menú o Shift+F10 por teclado.':'Clic derecho en una zona vacía para agregar; selecciona una caja para conectar.');
     return;
   }
   if(!APP.connect.sourceId){setStudioStatus('Conectar: selecciona la caja de origen.');return;}
@@ -5550,7 +5550,7 @@ function nodeSideMidpoint(node,side,geometry,model){
 }
 function renderPortSet(node,geometry,model,selectedSide=null,clickable=true){
   if(!node)return'';const sides=['top','right','bottom','left'];
-  return sides.map(side=>{if(selectedSide&&side!==selectedSide)return'';const p=nodeSideMidpoint(node,side,geometry,model),q=pointOffset(p,side,STANDARD.connectPortOffset),full=!canUseNodeSide(node.id,side,model),fill=selectedSide===side?'#0EA5E9':full?'#D1D5DB':'#FFFFFF';return `<circle ${clickable&&!full?`data-connect-port="1" data-node-id="${node.id}" data-side="${side}"`:''} class="connect-port" cx="${q.x}" cy="${q.y}" r="${STANDARD.connectPortRadius}" fill="${fill}" stroke="#0284C7" stroke-width="1.7" opacity="${full&&!selectedSide ? .55 : 1}"/>`;}).join('');
+  return sides.map(side=>{if(selectedSide&&side!==selectedSide)return'';const p=nodeSideMidpoint(node,side,geometry,model),q=pointOffset(p,side,STANDARD.connectPortOffset),full=!canUseNodeSide(node.id,side,model),fill=selectedSide===side?'#0EA5E9':full?'#D1D5DB':'#FFFFFF';return `<circle ${clickable&&!full?`data-connect-port="1" data-node-id="${node.id}" data-side="${side}"`:''} class="connect-port" cx="${q.x}" cy="${q.y}" r="${STANDARD.connectPortRadius}" fill="${fill}" fill-opacity="${sideUseCount(node.id,side,model)?0:1}" pointer-events="all" stroke="#0284C7" stroke-width="1.7" opacity="${full&&!selectedSide ? .55 : 1}"/>`;}).join('');
 }
 function renderConnectPorts(model,geometry){
   let html='';
@@ -12795,6 +12795,7 @@ function sbSnapMarker(point,drag,event,model,geometry){
 }
 function sbRenderAlignmentGuides(){
   const svg=$('canvas')?.querySelector('svg');if(!svg)return;
+  sbRenderPortArrowForeground(svg);
   svg.querySelector('#sb_alignment_guides')?.remove();
   if(!(APP.drag||APP.connectorDrag)||!APP.tools.alignmentGuides.length)return;
   const ns='http://www.w3.org/2000/svg',group=document.createElementNS(ns,'g');
@@ -12807,6 +12808,15 @@ function sbRenderAlignmentGuides(){
     Object.entries({...attrs,stroke:'#00AEEF','stroke-width':1.25/scale,'stroke-dasharray':4/scale+' '+3/scale}).forEach(([key,value])=>line.setAttribute(key,String(value)));
     group.appendChild(line);
   });
+  svg.appendChild(group);
+}
+function sbRenderPortArrowForeground(svg){
+  svg.querySelector('#sb_port_arrow_foreground')?.remove();
+  if(!svg.querySelector('.connect-port'))return;
+  const group=document.createElementNS('http://www.w3.org/2000/svg','g');
+  group.id='sb_port_arrow_foreground';group.setAttribute('pointer-events','none');
+  group.setAttribute('aria-hidden','true');
+  svg.querySelectorAll('.edge .sb-arrow-tip').forEach(tip=>group.appendChild(tip.cloneNode(true)));
   svg.appendChild(group);
 }
 function sbTranslateDraggedRoutes(drag,nodeDeltas,model){
