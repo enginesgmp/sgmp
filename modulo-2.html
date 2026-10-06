@@ -592,7 +592,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 </div>
 <div id="sb_frozen_headers" class="sb-frozen hidden" aria-label="Encabezados fijados"></div>
 <div id="sb_inline_editor" class="sb-inline hidden"><textarea id="sb_inline_input"></textarea></div>
-<div id="sb_context_menu" class="sb-context hidden" role="menu" aria-label="Insertar en carril"><button id="sb_context_add" role="menuitem" type="button">Agregar caja</button></div>
+<div id="sb_context_menu" class="sb-context hidden" role="menu" aria-label="Insertar en carril"><button id="sb_context_add" role="menuitem" tabindex="-1" aria-haspopup="dialog" type="button">Agregar caja</button></div>
 <div
   id="node_annotation_popup"
   class="node-annotation-popup hidden"
@@ -614,7 +614,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 <dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Selecciona el encabezado de un carril y pulsa el botón celeste <strong>+</strong> que aparece en ese encabezado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas bloquean JSON→LMP; guardar y PDF están disponibles.</li></ol>
-  <h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; la barra espaciadora y arrastre desplazan el lienzo.</li></ul>
+  <h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; el botón central o arrastrar el fondo exterior desplaza el lienzo; el arrastre dentro del diagrama selecciona.</li></ul>
   <h4>Atajos</h4><ul><li>Supr/Delete: eliminar selección.</li><li>Ctrl+Z / Ctrl+Y: deshacer / rehacer.</li><li>Ctrl+D: crear una caja vacía del mismo tipo en el mismo carril.</li><li>Ctrl+S: guardar flujo.</li><li>Esc: cancelar selección o conexión.</li></ul>
 </div><div class="dialog-actions"><button data-dialog-close="manual_dialog" type="button">Cerrar</button></div></div></dialog>
 
@@ -711,7 +711,7 @@ pointerCanvas:{
   inside:false
 },
 pdfPreview:{url:null,filename:null},
-  tools:{edit:null,nudge:null,portDrag:null,insertContext:null,contextPoint:null,frozen:false,frozenFrame:null,textMetrics:new Map(),measureCanvas:null,lastTextClick:null,textPointer:null,refreshFrame:null},
+  tools:{editing:null,nudge:null,portDrag:null,insertContext:null,freezeHeaders:false,headerFrame:null,textMetrics:new Map(),measureCanvas:null,lastTextClick:null,textPointer:null,refreshFrame:null},
   validation:{issues:[],crossingEdges:new Set()}
 };
 
@@ -3681,7 +3681,7 @@ function anchorPoint(node,side,edge,geometry,model){return sbPortAnchor(node,sid
 function routePoints(edge,geometry,model){
   const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return [];
   const ss=edge.source_side||'right',ts=edge.target_side||'left',a=anchorPoint(source,ss,edge,geometry,model),b=anchorPoint(target,ts,edge,geometry,model);
-  const points=edge.waypoints?.length?sbRepairRouteEndpoints(a,edge.waypoints,b,ss,ts):autoRoutePoints(edge,geometry,model,a,b,ss,ts);
+  const points=edge.waypoints?.length?sbRepairRouteEndpoints(a,edge.waypoints,b,ss,ts,nodeBox(source,geometry,model),nodeBox(target,geometry,model)):autoRoutePoints(edge,geometry,model,a,b,ss,ts);
   return avoidConnectorObstacles(points,edge,geometry,model);
 }
 
@@ -4198,8 +4198,8 @@ function connectorStubPoints(anchor,side,marker){
 }
 function connectorBranchLogicalPoints(edge,branch,data){
   const stored=edge.connector_routes?.[branch]||[];
-  if(branch==='source')return stored.length?sbRepairRouteEndpoints(data.a,stored,data.sourceMarker,edge.source_side||'right',edge.source_side||'right'):connectorStubPoints(data.a,edge.source_side||'right',data.sourceMarker);
-  return stored.length?sbRepairRouteEndpoints(data.targetMarker,stored,data.b,edge.target_side||'left',edge.target_side||'left'):connectorStubPoints(data.b,edge.target_side||'left',data.targetMarker).reverse();
+  if(branch==='source')return stored.length?sbRepairRouteEndpoints(data.a,stored,data.sourceMarker,edge.source_side||'right',sbCircleRouteSide(data.sourceMarker,stored.at(-1),edge.source_side||'right'),data.sourceBox,sbCircleBounds(data.sourceMarker)):connectorStubPoints(data.a,edge.source_side||'right',data.sourceMarker);
+  return stored.length?sbRepairRouteEndpoints(data.targetMarker,stored,data.b,sbCircleRouteSide(data.targetMarker,stored[0],edge.target_side||'left'),edge.target_side||'left',sbCircleBounds(data.targetMarker),data.targetBox):connectorStubPoints(data.b,edge.target_side||'left',data.targetMarker).reverse();
 }
 
 function connectorGeometry(
@@ -4351,6 +4351,8 @@ function connectorGeometry(
         base={
           a,
           b,
+          sourceBox:nodeBox(source,geometry,model),
+          targetBox:nodeBox(target,geometry,model),
           sourceMarker,
           targetMarker,
           bounds
@@ -5954,6 +5956,7 @@ function renderStudio(
   }
 
   if(fast){
+    sbUpdateFrozenHeaders(true);
     return;
   }
 
@@ -6693,7 +6696,7 @@ if(sel.type==='nodes'){
 
   return;
 }
-  
+
 if(sel.type==='lane'){
   const lane=
     laneById(
@@ -6771,7 +6774,7 @@ if(sel.type==='lane'){
     </div>
 
     <div class="inspector-actions">
-      
+
 
       <button
         data-lane-act="delete"
@@ -6832,7 +6835,7 @@ if(sel.type==='lane'){
     root.innerHTML=`<div class="field"><label>Etiqueta de la conexión</label><input id="ins_edge_label" value="${escapeHtml(edge.label||'')}" placeholder="Ej. SÍ / NO"></div><div class="inspector-grid"><div class="field"><label>Lado de origen</label><select id="ins_source_side">${sideOptions(edge.source_side)}</select></div><div class="field"><label>Lado de destino</label><select id="ins_target_side">${sideOptions(edge.target_side)}</select></div></div>${edge.mode==='connector'?`<div class="empty-note">Conector ${escapeHtml(edge.connector_label||'')} · ${edge.connector_kind==='input'?'VERDE / ENTRADA':edge.connector_kind==='output'?'AMARILLO / SALIDA':'BLANCO / INTERNO'}</div>`:'<div class="empty-note">Selecciona la línea en el lienzo para mover sus quiebres mediante las manijas azules.</div>'}<div class="inspector-actions">${edge.mode==='connector'?'<button id="ins_revert_connector">Volver a línea</button>':'<button id="ins_convert_connector">Convertir en conector</button>'}<button id="ins_edge_delete" class="danger">Eliminar</button></div>`;
     if($('ins_convert_connector'))$('ins_convert_connector').onclick=convertSelectedEdgeToConnector;if($('ins_revert_connector'))$('ins_revert_connector').onclick=revertSelectedConnector;$('ins_edge_delete').onclick=deleteSelection;return;
   }
-  
+
 if(sel.type==='node'){
   const node=nodeById(sel.id,model);
 
@@ -6887,7 +6890,7 @@ if(sel.type==='node'){
     </div>
 
     <div class="inspector-actions">
-      
+
     </div>
 
 
@@ -6962,7 +6965,7 @@ if(sel.type==='node'){
   return;
 }
 }
-  
+
 function sideOptions(current){return ['top','right','bottom','left'].map(s=>`<option value="${s}" ${current===s?'selected':''}>${({top:'Arriba',right:'Derecha',bottom:'Abajo',left:'Izquierda'})[s]}</option>`).join('');}
   
 function renderDocRows(docs){
@@ -10092,7 +10095,7 @@ function handleConnectorMarkerDrag(event){
   const drag=APP.connectorDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;
   const edge=edgeById(drag.edgeId,model);if(!edge)return;
   const geometry=laneGeometry(model),p=clientToCanvas(event.clientX,event.clientY),original=edgeById(drag.edgeId,drag.snapshot.model);
-  if(!drag.moved&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)*APP.camera.scale<4)return;
+  if(!drag.didDrag&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)*APP.camera.scale<4)return;drag.didDrag=true;
   applyConnectorMarkerPosition({edgeId:edge.id,markerKey:drag.markerKey,startPoint:drag.startPoint,startRoute:clone(original.connector_routes?.[drag.markerKey]||[])},{x:snap(drag.startPoint.x+p.x-drag.start.x),y:snap(drag.startPoint.y+p.y-drag.start.y)},geometry,model);
   edge.connector_routes[drag.markerKey]=clone(original.connector_routes?.[drag.markerKey]||[]);
   const next=edge.connector_points[drag.markerKey];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>.001;renderStudio(false,true);
@@ -10107,8 +10110,8 @@ function endConnectorMarkerDrag(event){
     if(edge&&original){if(original.connector_points===undefined)delete edge.connector_points;else edge.connector_points=clone(original.connector_points);if(original.connector_routes===undefined)delete edge.connector_routes;else edge.connector_routes=clone(original.connector_routes);}
   }
   if(event.type!=='pointercancel'&&drag.moved){sbRecordSnapshot(drag.snapshot);APP.connectorClick=null;markDirty();}
-  else APP.connectorClick=event.type==='pointercancel'?null:{edgeId:drag.edgeId,markerKey:drag.markerKey,time:performance.now()};
-  APP.connectorDrag=null;APP.selection=buildCompositeSelection([], [{edgeId:drag.edgeId,markerKey:drag.markerKey,explicit:true}]);
+  else APP.connectorClick=event.type==='pointercancel'||drag.didDrag?null:{edgeId:drag.edgeId,markerKey:drag.markerKey,time:performance.now()};
+  APP.connectorDrag=null;buildCompositeSelection([], [{edgeId:drag.edgeId,markerKey:drag.markerKey,explicit:true}]);
   renderStudio();
 }
 
@@ -10127,7 +10130,7 @@ function beginEdgeLabelDrag(event,edgeId){
 }
 function handleEdgeLabelDrag(event){
   const drag=APP.labelDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;
-  if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;
+  if(!drag.didDrag&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;drag.didDrag=true;
   const edge=edgeById(drag.edgeId,model);if(!edge)return;
   const layout=sbLabelLayout(edge,laneGeometry(model),model,clientToCanvas(event.clientX,event.clientY));
   edge.label_position=layout.t;drag.moved=Math.abs(layout.t-drag.startPos)>.0001;renderStudio(false);
@@ -10137,7 +10140,7 @@ function endEdgeLabelDrag(event){
   const drag=APP.labelDrag,vp=$('viewport');if(!drag)return;
   ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleEdgeLabelDrag:endEdgeLabelDrag));
   try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
-  if(event.type==='pointercancel'){const edge=edgeById(drag.edgeId),original=edgeById(drag.edgeId,drag.snapshot.model);if(edge&&original){if(original.label_position===undefined)delete edge.label_position;else edge.label_position=original.label_position;}}
+  if(event.type==='pointercancel'||!drag.moved){const edge=edgeById(drag.edgeId),original=edgeById(drag.edgeId,drag.snapshot.model);if(edge&&original){if(original.label_position===undefined)delete edge.label_position;else edge.label_position=original.label_position;}}
   else if(drag.moved){sbRecordSnapshot(drag.snapshot);markDirty();}
   APP.labelDrag=null;renderStudio();
 }
@@ -12979,12 +12982,21 @@ function sbTextMetrics(value,size=8,bold=true){
   if(cache.has(key))return cache.get(key);
   const canvas=APP.tools.measureCanvas||(APP.tools.measureCanvas=document.createElement('canvas'));
   const ctx=canvas.getContext('2d');ctx.font=(bold?'700 ':'400 ')+size+'px Arial';
-  const m=ctx.measureText(value),result={width:m.width,ascent:m.actualBoundingBoxAscent||size*.75,descent:m.actualBoundingBoxDescent||size*.25};
+  const m=ctx.measureText(value),result={width:m.width,ascent:m.actualBoundingBoxAscent??size*.75,descent:m.actualBoundingBoxDescent??size*.25};
   if(cache.size>=256)cache.clear();cache.set(key,result);return result;
 }
 function sbLabelMetrics(edge){
   const value=upper(edge.label),m=sbTextMetrics(value);
   return {value,w:Math.max(32,m.width+14),h:Math.max(18,m.ascent+m.descent+8),baseline:(m.ascent-m.descent)/2};
+}
+function sbWrappedLabelMetrics(metrics,maxWidth){
+  const lines=[];let line='';
+  for(const character of metrics.value){
+    if(line&&sbTextMetrics(line+character).width>maxWidth){lines.push(line);line='';}
+    line+=character;
+  }
+  if(line||!lines.length)lines.push(line);
+  return {...metrics,lines,w:Math.min(maxWidth+14,Math.max(...lines.map(value=>sbTextMetrics(value).width))+14),h:Math.max(18,lines.length*12+8)};
 }
 function sbEdgeBranches(edge,geometry,model){
   if(edge.mode==='connector'){
@@ -13005,6 +13017,11 @@ function sbLabelLayout(edge,geometry,model,wanted=null){
   const requested=wanted||origin,obstacles=model.nodes.map(n=>nodeBox(n,geometry,model));
   data.markers.forEach(p=>obstacles.push({x:p.x-STANDARD.connectorRadius,y:p.y-STANDARD.connectorRadius,w:STANDARD.connectorRadius*2,h:STANDARD.connectorRadius*2}));
   data.branches.forEach(points=>{const arrow=sbArrowGeometry(points);if(arrow)obstacles.push(arrow.bounds);});
+  model.edges.filter(other=>other.id!==edge.id).forEach(other=>{
+    const otherData=sbEdgeBranches(other,geometry,model);
+    otherData.markers.forEach(p=>obstacles.push({x:p.x-STANDARD.connectorRadius,y:p.y-STANDARD.connectorRadius,w:STANDARD.connectorRadius*2,h:STANDARD.connectorRadius*2}));
+    otherData.branches.forEach(points=>{const arrow=sbArrowGeometry(points);if(arrow)obstacles.push(arrow.bounds);});
+  });
   const rectAt=p=>({x:p.x-metrics.w/2,y:p.y-metrics.h/2,w:metrics.w,h:metrics.h});
   const valid=p=>{
     const r=rectAt(p);
@@ -13050,18 +13067,11 @@ function sbLabelLayout(edge,geometry,model,wanted=null){
   external.sort((a,b)=>a.d-b.d||a.index-b.index);
   if(external.length)return {...metrics,p:external[0].p,t:anchor.t??t,guide:anchor.p,external:true};
   // Una banda derivada bajo las notas conserva incluso textos mayores que el lienzo.
-  const maxWidth=Math.max(32,geometry.width-STANDARD.canvasMargin*2-16),lines=[];
-  let line='';
-  for(const character of metrics.value){
-    if(line&&sbTextMetrics(line+character).width>maxWidth){lines.push(line);line='';}
-    line+=character;
-  }
-  if(line||!lines.length)lines.push(line);
-  const wrapped={...metrics,lines,w:Math.min(maxWidth+14,Math.max(...lines.map(value=>sbTextMetrics(value).width))+14),h:Math.max(18,lines.length*12+8)};
+  const maxWidth=Math.max(32,geometry.width-STANDARD.canvasMargin*2-16),wrapped=sbWrappedLabelMetrics(metrics,maxWidth);
   let top=geometry.canvasHeight+8;
   for(const other of model.edges){
     if(other.id===edge.id)break;
-    if(text(other.label))top+=Math.max(18,Math.ceil(sbLabelMetrics(other).w/maxWidth)*12+8)+8;
+    if(text(other.label))top+=sbWrappedLabelMetrics(sbLabelMetrics(other),maxWidth).h+8;
   }
   return {...wrapped,p:{x:geometry.width/2,y:top+wrapped.h/2},t:anchor.t??t,guide:anchor.p,external:true};
 }
@@ -13092,13 +13102,31 @@ function sbCanvasHeight(model,geometry){
     return Math.max(height,layout.p.y+layout.h/2+8);
   },geometry.canvasHeight);
 }
-function sbRepairRouteEndpoints(a,stored,b,sourceSide,targetSide){
-  const points=[a],first=stored[0],last=stored[stored.length-1];
+function sbRepairRouteEndpoints(a,stored,b,sourceSide,targetSide,sourceBox=null,targetBox=null){
+  const first=stored[0],last=stored[stored.length-1];
   if(!first)return [a,b];
-  if(a.x!==first.x&&a.y!==first.y)points.push(['left','right'].includes(sourceSide)?{x:first.x,y:a.y}:{x:a.x,y:first.y});
-  points.push(...stored.map(p=>({x:Number(p.x),y:Number(p.y)})));
-  if(b.x!==last.x&&b.y!==last.y)points.push(['left','right'].includes(targetSide)?{x:last.x,y:b.y}:{x:b.x,y:last.y});
-  points.push(b);return compactRoutePoints(points,false);
+  const bridge=(anchor,neighbor,side,box)=>{
+    const horizontal=['left','right'].includes(side),coordinate=horizontal?'x':'y',sign=['left','top'].includes(side)?-1:1;
+    const outward=(neighbor[coordinate]-anchor[coordinate])*sign;
+    if(outward>=18)return horizontal?[anchor,{x:neighbor.x,y:anchor.y}]:[anchor,{x:anchor.x,y:neighbor.y}];
+    const stub=pointOffset(anchor,side,18);
+    if(box&&outward<=0){
+      if(horizontal){
+        const rail=neighbor.y<box.y||neighbor.y>box.y+box.h?neighbor.y:neighbor.y>anchor.y?box.y+box.h+18:box.y-18;
+        return [anchor,stub,{x:stub.x,y:rail},{x:neighbor.x,y:rail}];
+      }
+      const rail=neighbor.x<box.x||neighbor.x>box.x+box.w?neighbor.x:neighbor.x>anchor.x?box.x+box.w+18:box.x-18;
+      return [anchor,stub,{x:rail,y:stub.y},{x:rail,y:neighbor.y}];
+    }
+    return horizontal?[anchor,stub,{x:stub.x,y:neighbor.y}]:[anchor,stub,{x:neighbor.x,y:stub.y}];
+  };
+  return compactRoutePoints([...bridge(a,first,sourceSide,sourceBox),...stored.map(p=>({x:Number(p.x),y:Number(p.y)})),...bridge(b,last,targetSide,targetBox).reverse()],false);
+}
+function sbCircleBounds(p){const r=STANDARD.connectorRadius;return {x:p.x-r,y:p.y-r,w:r*2,h:r*2};}
+function sbCircleRouteSide(marker,neighbor,fallback){
+  if(!neighbor)return fallback;
+  const dx=neighbor.x-marker.x,dy=neighbor.y-marker.y;
+  return Math.abs(dx)>=Math.abs(dy)?dx<0?'left':'right':dy<0?'top':'bottom';
 }
 function sbNoteIssues(model){
   const issues=[],nodes=new Map((model.nodes||[]).map(n=>[text(n.id),n]));
@@ -13275,7 +13303,7 @@ function sbNudge(event){
 function sbFinishNudge(){
   const gesture=APP.tools.nudge;if(!gesture)return;
   APP.tools.nudge=null;
-  if(gesture.flowId===APP.activeFlowId)sbRecordSnapshot(gesture.snapshot);
+  if(gesture.flowId===APP.activeFlowId&&JSON.stringify(currentModel())!==JSON.stringify(gesture.snapshot.model))sbRecordSnapshot(gesture.snapshot);
 }
 
 function renderInspector(){renderInspectorContent();sbBindInspectorFields();}
@@ -13312,7 +13340,7 @@ function sbCommitEdit(options={}){
         gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return false;
       }
     }
-    if(value!==owner[session.spec.field]){
+    if(value!==(session.spec.numeric?owner[session.spec.field]:String(owner[session.spec.field]??''))){
       pushHistory();owner[session.spec.field]=value;markDirty();
       // Renombrar conserva geometría. El routing adapta sus extremos al cambiar de lado.
       session.input.value=value;
@@ -13336,6 +13364,7 @@ function sbBindEditInput(input,spec,inline=false){
   input.dataset.sbEditBound='1';input.lang='es';
   input.spellcheck=spec.field!=='process_code';
   input.addEventListener('focus',()=>sbBeginEdit(input,spec,inline));
+  input.addEventListener('input',()=>{if(APP.tools.editing?.input!==input)sbBeginEdit(input,spec,inline);});
   input.addEventListener('compositionstart',()=>{if(APP.tools.editing?.input===input)APP.tools.editing.composing=true;});
   input.addEventListener('compositionend',()=>{const session=APP.tools.editing;if(session?.input===input){session.composing=false;if(session.pendingCommit)sbCommitEdit({render:false});}});
   input.addEventListener('blur',()=>{if(APP.tools.editing?.input===input)sbCommitEdit({render:false});});
@@ -13403,11 +13432,17 @@ function sbOpenInline(spec){
   input.id='sb_inline_input';input.setAttribute('aria-label','Editar '+(spec.field==='label'?'texto':spec.field));
   input.value=String(owner[spec.field]??'');input.rows=spec.kind==='node'||spec.field==='purpose'?3:1;
   input.className='sb-inline-input';old.replaceWith(input);host.classList.remove('hidden');
-  const box=spec.element.getBoundingClientRect(),card=$('viewport').parentElement.getBoundingClientRect();
-  const width=Math.max(150,Math.min(360,box.width||240));
-  host.style.width=width+'px';host.style.left=Math.max(4,Math.min(card.width-width-4,box.left-card.left))+'px';
-  host.style.top=Math.max(4,Math.min(card.height-100,box.top-card.top))+'px';
+  const box=spec.element.getBoundingClientRect();
+  const width=Math.min(window.innerWidth-8,Math.max(150,Math.min(360,box.width||240)));
+  host.style.width=width+'px';sbPlaceOverlay(host,box.left,box.top);
   sbBindEditInput(input,spec,true);input.focus({preventScroll:true});input.select();
+}
+function sbPlaceOverlay(host,clientX,clientY){
+  const card=$('viewport').parentElement.getBoundingClientRect(),w=host.offsetWidth,h=host.offsetHeight;
+  const left=Math.max(4,card.left+4),right=Math.min(window.innerWidth-4,card.right-4);
+  const top=Math.max(4,card.top+4),bottom=Math.min(window.innerHeight-4,card.bottom-4);
+  host.style.left=Math.max(left,Math.min(right-w,clientX))-card.left+'px';
+  host.style.top=Math.max(top,Math.min(bottom-h,clientY))-card.top+'px';
 }
 function sbCloseContextMenu(){$('sb_context_menu')?.classList.add('hidden');}
 function sbShowContextMenu(event,laneId=null){
@@ -13418,10 +13453,9 @@ function sbShowContextMenu(event,laneId=null){
   event.preventDefault();event.stopPropagation();sbCommitEdit({render:false});sbFinishNudge();
   APP.tools.insertContext={flowId:APP.activeFlowId,laneId:lane.id,point:laneId?null:p};
   APP.selection={type:'lane',id:lane.id};
-  const menu=$('sb_context_menu'),card=$('viewport').parentElement.getBoundingClientRect();
+  const menu=$('sb_context_menu');
   menu.classList.remove('hidden');
-  menu.style.left=Math.max(4,Math.min(card.width-menu.offsetWidth-4,event.clientX-card.left))+'px';
-  menu.style.top=Math.max(4,Math.min(card.height-menu.offsetHeight-4,event.clientY-card.top))+'px';
+  sbPlaceOverlay(menu,event.clientX,event.clientY);
   $('sb_context_add').focus({preventScroll:true});return true;
 }
 function sbContextNodePosition(lane,type,point,model){
@@ -13446,6 +13480,7 @@ function sbBindTools(){
   $('sb_context_menu').addEventListener('keydown',event=>{
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();sbCloseContextMenu();vp.focus({preventScroll:true});}
     if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();$('sb_context_add').focus();}
+    if(event.key==='Tab')sbCloseContextMenu();
   });
   vp.addEventListener('contextmenu',event=>{
     if(event.target.closest('.node,.edge,[data-connect-port],[data-node-annotation],[data-flow-resize]'))return;
@@ -13485,7 +13520,7 @@ function sbBindTools(){
     const input=['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable;
     if(input)return;
     if(event.key==='Escape'&&(APP.tools.portDrag||!$('sb_context_menu').classList.contains('hidden'))){
-      event.preventDefault();event.stopImmediatePropagation();sbCancelPortDrag();sbCloseContextMenu();return;
+      event.preventDefault();event.stopImmediatePropagation();sbCancelPortDrag();sbCloseContextMenu();vp.focus({preventScroll:true});return;
     }
     if(event.key==='Escape')sbFinishNudge();
     if(event.key==='F10'&&event.shiftKey&&APP.selection?.type==='lane'){
@@ -13559,7 +13594,7 @@ function sbBeginPortDrag(event,nodeId,side){
 function sbPortDragTarget(point,drag,geometry,model){
   const scale=APP.camera.scale||1,source=nodeById(drag.nodeId,model);let best=null;
   model.nodes.filter(node=>node.id!==drag.nodeId).forEach(node=>{
-    const box=nodeBox(node,geometry,model),near=24/scale;
+    const box=nodeBox(node,geometry,model),near=STANDARD.connectPortOffset+12/scale;
     if(point.x<box.x-near||point.x>box.x+box.w+near||point.y<box.y-near||point.y>box.y+box.h+near)return;
     ['top','right','bottom','left'].forEach(side=>{
       const p=pointOffset(nodeSideMidpoint(node,side,geometry,model),side,STANDARD.connectPortOffset);
@@ -13574,6 +13609,7 @@ function sbMovePortDrag(event){
   const drag=APP.tools.portDrag,model=currentModel();
   if(!drag||event.pointerId!==drag.pointerId)return;
   if(!model||drag.flowId!==APP.activeFlowId){sbCancelPortDrag();return;}
+  if(!nodeById(drag.nodeId,model)){sbCancelPortDrag();return;}
   if(!drag.moved&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;
   drag.moved=true;
   const geometry=laneGeometry(model),point=clientToCanvas(event.clientX,event.clientY);
@@ -13593,7 +13629,7 @@ function sbMovePortDrag(event){
   let html=sbRenderArrowRoute(points,drag.target?.error?'#C0392B':'#0284C7',1.5);
   const scale=APP.camera.scale||1;
   model.nodes.filter(node=>node.id!==source.id).forEach(node=>{
-    const box=nodeBox(node,geometry,model),near=24/scale;
+    const box=nodeBox(node,geometry,model),near=STANDARD.connectPortOffset+24/scale;
     if(point.x>=box.x-near&&point.x<=box.x+box.w+near&&point.y>=box.y-near&&point.y<=box.y+box.h+near){
       ['top','right','bottom','left'].forEach(side=>{
         const p=pointOffset(nodeSideMidpoint(node,side,geometry,model),side,STANDARD.connectPortOffset);
