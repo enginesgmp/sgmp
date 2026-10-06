@@ -771,8 +771,8 @@ button:disabled{opacity:.5;cursor:not-allowed}input[type=checkbox]{width:auto}
 <main class="workspace">
 <section id="step_source" class="card">
  <div class="section-title"><div><h2>Cargar SIPOC</h2><p>PDF completo o imagen del cuerpo. El encabezado y las notas quedan separados del diagrama.</p></div><span class="pill">PDF / imagen</span></div>
- <div class="field"><label for="sourceFileInput">Archivo SIPOC</label><input id="sourceFileInput" type="file" accept=".pdf,application/pdf,image/*"></div>
- <p id="sourceStatus" role="status" class="sx-note">Sin archivo cargado. El PDF se lee en tu navegador.</p>
+ <div class="field"><label for="sourceFileInput">Archivo SIPOC: PDF o imagen</label><input id="sourceFileInput" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,image/*"><p class="sx-note">Puedes elegir un PDF o una imagen, por ejemplo JPG o PNG. Carga un archivo a la vez.</p></div>
+ <p id="sourceStatus" role="status" class="sx-note">Sin archivo cargado. Selecciona un PDF o una imagen.</p>
  <div class="sx-inputs">
   <div class="field"><label for="processCode">Código del proceso</label><input id="processCode" placeholder="AS-PR-10401"></div>
   <div class="field"><label for="processName">Nombre del proceso</label><input id="processName" placeholder="EMBALAJE Y PALETIZADO"></div>
@@ -780,7 +780,7 @@ button:disabled{opacity:.5;cursor:not-allowed}input[type=checkbox]{width:auto}
   <div class="field wide"><label for="plainTextNotes">Notas aclaratorias</label><textarea id="plainTextNotes" placeholder="Pega las notas respetando su numeración. En PDF con texto se recuperan automáticamente." style="min-height:145px"></textarea></div>
  </div>
  <div id="pageList" class="sx-pages"></div>
- <details class="sx-details"><summary>Ajustar el cuerpo del diagrama</summary><p class="sx-note">Comprueba que el cuerpo incluya los títulos de carril y todas las cajas. Excluye encabezado y notas. Ajusta estos límites si la detección automática no corresponde.</p><div class="sx-row"><label>Desde arriba (%) <input id="bodyTop" type="number" min="0" max="99" step=".1" value="0" style="width:100px"></label><label>Hasta abajo (%) <input id="bodyBottom" type="number" min="1" max="100" step=".1" value="100" style="width:100px"></label><button class="btn-ghost" id="applyBodyBtn">Aplicar límites</button></div></details>
+ <details class="sx-details"><summary>Ajustar recorte del diagrama (opcional)</summary><p class="sx-note">Si la vista previa muestra todo el diagrama, no necesitas cambiar nada. Usa este ajuste solo para quitar encabezado o notas, o para recuperar una parte del diagrama que quedó fuera. Conserva todos los carriles y cajas.</p><p class="sx-note">Los porcentajes se miden desde arriba del archivo: 0 % es el borde superior y 100 % el inferior.</p><div class="sx-row"><label>Inicio del diagrama (%) <input id="bodyTop" type="number" min="0" max="99" step=".1" value="0" style="width:100px"></label><label>Fin del diagrama (%) <input id="bodyBottom" type="number" min="1" max="100" step=".1" value="100" style="width:100px"></label><button class="btn-ghost" id="applyBodyBtn">Actualizar recorte</button></div></details>
  <div class="sx-preview" id="sourceImageStage">Sin vista previa.</div>
  <div class="actions"><button class="btn-ok" id="startBtn">Preparar para el chat externo</button></div>
 </section>
@@ -790,7 +790,7 @@ button:disabled{opacity:.5;cursor:not-allowed}input[type=checkbox]{width:auto}
  <div id="workflowStatus" role="status" aria-live="polite">Prepara los recortes para comenzar.</div>
  <progress id="runProgress" class="sx-progress" max="1" value="0" aria-label="Recortes guardados"></progress>
  <div id="runStats" class="sx-kpis"></div>
- <div class="sx-row"><div class="field"><label for="manualStage">Paso</label><select id="manualStage"><option value="segmentation">1. Mapa y carriles</option><option value="extraction">2. Extraer recortes</option><option value="consolidation">3. Consolidar conexiones</option></select></div><div class="field"><label for="manualPage">Página</label><select id="manualPage"></select></div></div>
+ <div class="sx-row"><div class="field"><label for="manualStage">Paso</label><select id="manualStage"><option value="segmentation">1. Mapa y carriles</option><option value="extraction">2. Extraer recortes</option><option value="consolidation">3. Consolidar conexiones</option></select></div><div class="field hidden" id="manualPageField"><label for="manualPage">Página del PDF</label><select id="manualPage"></select></div></div>
  <div id="manualSegmentControls" class="sx-row hidden"><div class="field"><label for="manualSegment">Desde el recorte</label><select id="manualSegment"></select></div><div class="field"><label for="batchSize">Imágenes por envío</label><select id="batchSize"><option value="3" selected>3 recortes</option><option value="2">2 recortes</option><option value="1">1 recorte</option></select></div><button id="splitSelectedBtn" class="btn-ghost">Dividir este recorte para ampliarlo</button></div>
  <div class="actions"><button class="btn-ghost" id="manualPrepareBtn">Preparar este paso</button><button class="btn-ghost" id="resumeBtn">Reanudar trabajo</button><button class="btn-ghost" id="reviewBtn">Revisar y descargar lo extraído</button></div>
  <div class="sx-manual-instructions"><strong>1. Copiar prompt</strong><span>2. Copiar cada imagen y pegarla en el mismo mensaje del chat</span><span>3. Pegar el JSON y guardar</span></div>
@@ -902,7 +902,7 @@ async function handleSourceFile(event){
    if(nextPdf.numPages>40)throw new Error('Este PDF tiene más de 40 páginas. Carga solo las páginas que contienen el SIPOC.');
    for(let n=1;n<=nextPdf.numPages;n++){$('sourceStatus').textContent='Leyendo página '+n+' de '+nextPdf.numPages+'…';const p=await nextPdf.getPage(n),vp=p.getViewport({scale:1}),text=await p.getTextContent();pages.push(detectPage(nativeText(text,vp,lib,n),vp.width,vp.height,n));}
   }else{
-   if(!file.type.startsWith('image/'))throw new Error('Selecciona un PDF o una imagen.');
+   if(!file.type.startsWith('image/')&&!/\.(?:png|jpe?g|jfif|webp|bmp|gif|avif|svg)$/i.test(file.name))throw new Error('Selecciona un PDF o una imagen, por ejemplo JPG o PNG.');
    const url=URL.createObjectURL(file);try{image=new Image();image.src=url;await image.decode();}finally{URL.revokeObjectURL(url);}
    pages.push({number:1,width:image.naturalWidth,height:image.naturalHeight,native:[],body:{x:0,y:0,width:image.naturalWidth,height:image.naturalHeight},minFont:0,included:true,lanes:[],mapApplied:false,mapIssues:[],noteText:'',header:{}});
   }
@@ -913,8 +913,8 @@ async function handleSourceFile(event){
   state.source={name:file.name,kind:pdf?'pdf':'image',size:file.size,sha256:digest,pages:pages.length};
   if(!same){const h=pages.find(p=>p.header.process_code)?.header||{};for(const key of ['process_code','process_name','purpose'])if(!state.process[key]&&h[key])state.process[key]=h[key];if(!state.notesRaw)state.notesRaw=pages.map(p=>p.noteText).filter(Boolean).join('\n');}
   state.selectedPage=state.pages.some(p=>p.number===state.selectedPage)?state.selectedPage:1;fillFields();renderPages();await renderSource();
-  $('sourceStatus').textContent=file.name+' · '+pages.length+' página(s) · '+pages.reduce((n,p)=>n+p.native.length,0)+' fragmentos de texto recuperados'+(same?' · avance anterior conservado.':'.');
-  if(!pdf)$('sourceStatus').textContent+=' Revisa los límites del cuerpo y pega las notas.';
+  $('sourceStatus').textContent=file.name+' · '+(pdf?'PDF de '+pages.length+' '+(pages.length===1?'página':'páginas'):'Imagen cargada')+(same?' · avance anterior conservado.':'.');
+  if(!pdf)$('sourceStatus').textContent+=' Completa los datos del proceso y pega las notas. Si la vista previa está bien, continúa sin ajustar el recorte.';
   renderAll();saveSession(false);
  }catch(error){if(nextPdf)await nextPdf.destroy();uiError(error,'sourceStatus');}finally{runtime.loading=false;renderControls();event.target.value='';}
 }
@@ -1259,10 +1259,11 @@ function renderControls(){
  for(const checkbox of document.querySelectorAll('[data-page-include]'))checkbox.disabled=locked;
 }
 function renderPages(){
+ const multiple=state.pages.length>1,needsSelection=multiple||state.pages.some(p=>!p.included);$('pageList').classList.toggle('hidden',!needsSelection);$('manualPageField').classList.toggle('hidden',state.pages.filter(p=>p.included).length<2);
  $('manualPage').innerHTML=state.pages.filter(p=>p.included).map(p=>'<option value="'+p.number+'">Página '+p.number+'</option>').join('');$('manualPage').value=String(state.selectedPage);
- $('pageList').innerHTML=state.pages.map(p=>'<span class="sx-page"><input aria-label="Incluir página '+p.number+'" type="checkbox" data-page-include="'+p.number+'" '+(p.included?'checked':'')+'><button type="button" class="btn-ghost" data-page-show="'+p.number+'">Página '+p.number+'</button></span>').join('');
- $('pageList').querySelectorAll('[data-page-include]').forEach(el=>el.addEventListener('change',()=>{if(runtime.busy)return;pageById(el.dataset.pageInclude).included=el.checked;invalidateAudit();renderAll();saveSession(false);}));
- $('pageList').querySelectorAll('[data-page-show]').forEach(el=>el.addEventListener('click',async()=>{state.selectedPage=Number(el.dataset.pageShow);await renderSource();}));
+ $('pageList').innerHTML=needsSelection?state.pages.map(p=>'<span class="sx-page"><input aria-label="Incluir página '+p.number+'" type="checkbox" data-page-include="'+p.number+'" '+(p.included?'checked':'')+'><button type="button" class="btn-ghost" data-page-show="'+p.number+'">Página '+p.number+'</button></span>').join(''):'';
+ $('pageList').querySelectorAll('[data-page-include]').forEach(el=>el.addEventListener('change',async()=>{if(runtime.busy||runtime.loading||runtime.preparing)return;const previousPage=state.selectedPage;pageById(el.dataset.pageInclude).included=el.checked;const included=state.pages.filter(p=>p.included);if(included.length&&!included.some(p=>p.number===state.selectedPage))state.selectedPage=included[0].number;invalidateAudit();renderPages();renderAll();saveSession(false);if(previousPage!==state.selectedPage)await renderSource();}));
+ $('pageList').querySelectorAll('[data-page-show]').forEach(el=>el.addEventListener('click',async()=>{state.selectedPage=Number(el.dataset.pageShow);renderPages();await renderSource();}));
  const page=selectedPage();if(page){$('bodyTop').value=(page.body.y/page.height*100).toFixed(1);$('bodyBottom').value=((page.body.y+page.body.height)/page.height*100).toFixed(1);}
  renderControls();
 }
@@ -1296,8 +1297,8 @@ function renderReview(){
 function renderAll(){renderSegments();renderControls();if(!$('step_review').classList.contains('hidden'))renderReview();}
 async function applyBody(){
  if(runtime.busy||runtime.loading)return;const page=selectedPage();if(!page)return;
- const top=Number($('bodyTop').value),bottom=Number($('bodyBottom').value);if(!finite(top)||!finite(bottom)||top<0||bottom>100||bottom<=top){uiError(new Error('Los límites del cuerpo deben estar entre 0 y 100, con el final después del inicio.'),'sourceStatus');return;}
- if(state.segments.some(s=>s.page===page.number)&&!confirm('Cambiar los límites reiniciará únicamente la extracción de esta página. ¿Continuar?'))return;
+ const top=Number($('bodyTop').value),bottom=Number($('bodyBottom').value);if(!finite(top)||!finite(bottom)||top<0||bottom>100||bottom<=top){uiError(new Error('El inicio y el fin del diagrama deben estar entre 0 % y 100 %. El fin debe estar después del inicio.'),'sourceStatus');return;}
+ if(state.segments.some(s=>s.page===page.number)&&!confirm('Actualizar el recorte reiniciará únicamente los resultados de esta página. ¿Continuar?'))return;
  runtime.revision++;page.body={x:0,y:top*page.height/100,width:page.width,height:(bottom-top)*page.height/100};page.mapApplied=false;page.lanes=[];page.mapIssues=[];state.segments=state.segments.filter(s=>s.page!==page.number);invalidateAudit();renderAll();await renderSource();saveSession(false);
 }
 function bind(id,event,handler){$(id).addEventListener(event,handler);}
