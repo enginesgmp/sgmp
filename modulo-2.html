@@ -13582,6 +13582,7 @@ function sbConnectionError(sourceId,sourceSide,targetId,targetSide,model=current
   return null;
 }
 function sbCreateConnection(sourceId,sourceSide,targetId,targetSide){
+  if(sbIsSx())return sbSxCreateConnection(sourceId,sourceSide,targetId,targetSide);
   const model=currentModel();if(!model)return false;
   const error=sbConnectionError(sourceId,sourceSide,targetId,targetSide,model);
   if(error){sbCancelConnection();gMsg('warn',error);renderStudio();return false;}
@@ -13859,6 +13860,7 @@ function sbRenderSx(model,options={}){
   for(const f of model.connection_fragments){const pts=sbSxArray(f.path).every(sbSxPoint)?sbSxArray(f.path).map(p=>sbSxAbsolute(p,g)):[],sel=interactive&&APP.selection?.type==='sx_fragment'&&APP.selection.id===f.id;svg+=sbSxLine(pts,f.label,null,g,interactive?'data-sx-fragment="'+escapeXml(f.id)+'"':'',sel,interactive,['in','out'].includes(f.direction));if(f.label&&pts.length)svg+='<text x="'+pts[Math.floor(pts.length/2)].x+'" y="'+(pts[Math.floor(pts.length/2)].y-6)+'" font-size="8">'+escapeXml(f.label)+'</text>';if(sel)svg+=sbSxHandles(f.path,g,'sx_fragment',f.id,'path');}
   for(const c of model.connectors){const sel=interactive&&APP.selection?.type==='sx_connector'&&APP.selection.id===c.id;svg+=sbSxLine(sbSxBranch(c.attachment_point,c.route,c.point,c,c.direction,g),'',null,g,interactive?'data-sx-circle-route="'+escapeXml(c.id)+'"':'',sel,interactive,['in','out'].includes(c.direction));svg+=sbSxCircle(c,g,interactive?'data-sx-circle="'+escapeXml(c.id)+'"':'',sel);if(sel)svg+=sbSxHandles(c.route,g,'sx_connector',c.id,'route');}
   for(const node of model.nodes){if(!sbSxVisibleNode(node))continue;const b=sbSxBox(node,g),sel=interactive&&isNodeSelected(node.id);svg+='<g class="node" data-node-id="'+escapeXml(node.id)+'" style="cursor:'+ (interactive?'move':'default')+'">'+(node.type?renderNodeShape(node,b,sel,interactive):'')+sbSxNodeText(node,b,g.noteMap)+renderNodeAnnotationTrigger(node,b,interactive)+'</g>';}
+  if(interactive)svg+=renderConnectPorts({...model,nodes:model.nodes.filter(sbSxVisibleNode)},g);
   if(options.includeNotesBlock!==false&&g.notesLayout?.items.length){const y=g.bodyBottom,l=g.notesLayout;svg+='<text x="'+o.x+'" y="'+(y+24)+'" font-size="11" font-weight="bold">NOTAS ACLARATORIAS</text>';for(const n of l.items){svg+='<text x="'+o.x+'" y="'+(y+n.y)+'" font-size="11" font-weight="bold">'+escapeXml(n.number)+'</text>';for(let i=0;i<n.lines.length;i++)svg+='<text x="'+l.textX+'" y="'+(y+n.y+i*l.lineHeight)+'" font-size="11">'+escapeXml(n.lines[i])+'</text>';}}
   return svg+'</svg>';
 }
@@ -13893,7 +13895,8 @@ function sbSxEndDrag(event){
   APP.tools.sxDrag=null;if(event.type==='pointercancel')restoreHistoryState(d.snapshot);else if(d.moved&&JSON.stringify(currentModel())!==JSON.stringify(d.snapshot.model)){sbRecordSnapshot(d.snapshot);markDirty();}renderStudio();
 }
 function bindSxInteractions(svg){
-  svg.querySelectorAll('.node').forEach(el=>el.addEventListener('pointerdown',e=>{if(e.target.closest('[data-node-annotation]'))return;if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();toggleNodeInSelection(el.dataset.nodeId);renderStudio();}else sbSxBeginDrag(e,'node',el.dataset.nodeId);}));
+  svg.querySelectorAll('.node').forEach(el=>el.addEventListener('pointerdown',e=>{if(e.target.closest('[data-node-annotation]'))return;if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();toggleNodeInSelection(el.dataset.nodeId);renderStudio();}else if(APP.connect.active){e.preventDefault();e.stopPropagation();handleConnectNode(el.dataset.nodeId);}else sbSxBeginDrag(e,'node',el.dataset.nodeId);}));
+  svg.querySelectorAll('[data-connect-port]').forEach(port=>{port.addEventListener('pointerdown',e=>sbBeginPortDrag(e,port.dataset.nodeId,port.dataset.side));port.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(e.detail===0)handleConnectPort(port.dataset.nodeId,port.dataset.side);});});
   svg.querySelectorAll('[data-lane-id]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();APP.selection={type:'lane',id:el.dataset.laneId};renderStudio();}));
   svg.querySelectorAll('.edge').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'edge',id:el.dataset.edgeId};renderStudio();}));
   svg.querySelectorAll('[data-sx-circle]').forEach(el=>el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,'sx_connector',el.dataset.sxCircle)));
@@ -14049,6 +14052,16 @@ function sbSxRestoreHistory(state){
   if(!APP.master)return false;if(Array.isArray(state.all_flows))APP.master.flows=clone(state.all_flows);
   const flow=activeFlow();if(!flow)return false;if(!Array.isArray(state.all_flows))flow.payload.model=clone(state.model);
   Object.assign(APP.master,clone(state.process));Object.assign(flow,clone(state.flow));return true;
+}
+function sbSxCreateConnection(sourceId,sourceSide,targetId,targetSide){
+  const model=currentModel(),error=sbConnectionError(sourceId,sourceSide,targetId,targetSide,model),source=nodeById(sourceId),target=nodeById(targetId);
+  if(error||!sbSxVisibleNode(source)||!sbSxVisibleNode(target)){sbCancelConnection();gMsg('warn',error||'Confirma primero la geometría de ambas cajas.');renderStudio();return false;}
+  const g=laneGeometry(model),edge={id:uid('EDGE'),order:(Number(model.counters?.edge)||0)+1,source:sourceId,target:targetId,source_side:sourceSide,target_side:targetSide,label:'',mode:'line',waypoints:[],label_position:null,label_point:null,connector_kind:null,connector_label:null,connector_sequence:null};
+  const candidate={...model,layout:{...model.layout,body_height:g.bodyHeight},edges:model.edges.concat([edge])},a=sbPortAnchor(source,sourceSide,edge,g,candidate),b=sbPortAnchor(target,targetSide,edge,g,candidate);
+  const points=autoRoutePoints(edge,g,candidate,a,b,sourceSide,targetSide),relative=p=>({x:p.x-g.origin.x,y:p.y-g.origin.y});
+  edge.source_point=relative(a);edge.target_point=relative(b);edge.waypoints=points.slice(1,-1).map(relative);
+  let longest=-1;for(let i=1;i<points.length;i++){const len=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);if(len>longest){longest=len;edge.label_point=relative({x:(points[i].x+points[i-1].x)/2,y:(points[i].y+points[i-1].y)/2});}}
+  pushHistory();model.edges.push(edge);model.counters={...model.counters,edge:edge.order};APP.connect=freshConnectState();APP.selection={type:'edge',id:edge.id};markDirty();renderStudio();return true;
 }
 
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
