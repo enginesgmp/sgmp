@@ -526,6 +526,12 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
           <button class="ok" id="btn_import_lmp" type="button">Importar flujo</button>
         </article>
         <article class="import-card">
+          <h3>Importar desde SX</h3>
+          <p>Carga SX_TO_SB 2.0 como flujo nuevo. Conserva el diagrama extraído, sus tamaños, trazados y numeración original.</p>
+          <div class="field"><label for="sx_file">Contrato JSON de SX</label><input type="file" id="sx_file" accept=".json,application/json"></div>
+          <button class="ok" id="btn_import_sx" type="button">Importar desde SX</button>
+        </article>
+        <article class="import-card">
           <h3>Restaurar respaldo maestro</h3>
           <p>Restaura el proceso completo con todos sus flujos, geometría, notas, documentos y trazabilidad.</p>
           <div class="field"><label for="backup_file">SB_MASTER_BACKUP.json</label><input type="file" id="backup_file" accept=".json,application/json"></div>
@@ -986,7 +992,7 @@ function saveActiveFlow({silent=false}={}){
     return false;
   }
 
-  flow.payload.model.updated_at=
+  if(!sbIsSx(flow.payload.model))flow.payload.model.updated_at=
     nowIso();
 
   flow.updated_at=
@@ -1263,8 +1269,9 @@ function laneKindForNode(node,model=currentModel()){return laneById(node?.lane_i
 function nodeById(id,model=currentModel()){return model?.nodes?.find(n=>n.id===id)||null;}
 function edgeById(id,model=currentModel()){return model?.edges?.find(e=>e.id===id)||null;}
 
-function nodeSize(node){return node?.type==='decision'?{w:STANDARD.decisionWidth,h:STANDARD.decisionHeight}:{w:STANDARD.nodeWidth,h:STANDARD.nodeHeight};}
+function nodeSize(node){if(sbIsSx()&&sbSxNumber(node?.width)&&sbSxNumber(node?.height))return {w:node.width,h:node.height};return node?.type==='decision'?{w:STANDARD.decisionWidth,h:STANDARD.decisionHeight}:{w:STANDARD.nodeWidth,h:STANDARD.nodeHeight};}
 function nodeBox(node,geometry=laneGeometry(),model=currentModel()){
+  if(sbIsSx(model))return sbSxBox(node,geometry);
   const lane=geometry.lanes.find(l=>l.id===node.lane_id);if(!lane)return {x:0,y:0,w:STANDARD.nodeWidth,h:STANDARD.nodeHeight};
   const {w,h}=nodeSize(node);
   const x=lane.kind==='actor'?lane.x+Math.max(8,Math.min(Number(node.x_rel)||((lane.width-w)/2),lane.width-w-8)):lane.x+(lane.width-w)/2;
@@ -2404,6 +2411,7 @@ function changeNodeType(
 }
   
 function deleteSelection(){
+  if(sbIsSx()&&sbSxDelete())return;
   const model=
     currentModel();
 
@@ -2657,6 +2665,7 @@ function connectorLabel(kind,seq){if(kind==='input')return sbAlphabeticLabel(seq
 
   
 function renumberConnectors(model=currentModel()){
+  if(sbIsSx(model))return;
   if(!model)return;
 
   model.counters=model.counters||{
@@ -3039,6 +3048,7 @@ function buildNoteNumberMap(
   model=currentModel(),
   geometryLanes=null
 ){
+  if(sbIsSx(model))return {map:new Map(model.notes.map(n=>[n.id,n.number])),ordered:model.notes.slice()};
   if(!model){
     return {
       map:new Map(),
@@ -6306,6 +6316,7 @@ function updateDeleteButton(){
 function renderInspectorContent(){
   const root=$('inspector_content'),flow=activeFlow(),model=currentModel();if(!flow||!model){root.innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';return;}
   const sel=APP.selection;
+  if(sbSxInspector())return;
   if(!sel){
     root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"></div>`;
     return;
@@ -7041,6 +7052,7 @@ function removeDocumentFromNode(
 }
   
 function bindSvgInteractions(svgRoot=null){
+  if(sbIsSx()){const svg=svgRoot||$('canvas')?.querySelector('svg');if(svg)bindSxInteractions(svg);return;}
   const svg=svgRoot||$('canvas')?.querySelector('svg');
 
   if(!svg){
@@ -10336,6 +10348,7 @@ function renderInsertPalette(){
 }
 
 function collectValidation(flow=activeFlow()){
+  if(flow&&sbIsSx(flow.payload.model))return sbSxValidation(flow);
   if(!flow)return ['No existe un flujo activo.'];const model=flow.payload.model,issues=[];const add=msg=>issues.push(msg);const lanes=model.lanes||[],actors=lanes.filter(l=>l.kind==='actor');
   if(!text(APP.master?.process_name))add('Falta el nombre del proceso.');if(!text(APP.master?.purpose))add('Falta la finalidad del proceso.');if(actors.length<2)add('El proceso debe conservar al menos dos carriles de actores.');actors.forEach((l,i)=>{if(!text(l.label))add(`El actor ${i+1} no tiene nombre.`);});
   const ids=[...lanes.map(l=>l.id),...model.nodes.map(n=>n.id),...model.edges.map(e=>e.id),...model.notes.map(n=>n.id)];if(new Set(ids).size!==ids.length)add('Existen IDs duplicados en el modelo.');
@@ -11150,6 +11163,7 @@ function validateMasterBackupStructure(data){
         `master.flows[${flowIndex}].payload.model`
       );
 
+    if(sbIsSx(model)){validateSxModel(model);return;}
     const lanes=
       assertArrayValue(
         model.lanes,
@@ -11940,6 +11954,7 @@ function normalizeDecisionPorts(model){
 }
 
 function normalizeLoadedModel(model){
+  if(sbIsSx(model)){validateSxModel(model);return model;}
   if(
     !model ||
     typeof model!=='object'
@@ -12299,6 +12314,7 @@ function openManual(){
 function bindGlobalEvents(){
   document.querySelectorAll('.nav-tab').forEach(btn=>btn.addEventListener('click',()=>switchView(btn.dataset.view)));
   $('btn_new_blank_flow').addEventListener('click',startBlankFlow);$('btn_backup_master').addEventListener('click',saveBackup);$('btn_clear_workspace').addEventListener('click',clearWorkspace);$('btn_manual').addEventListener('click',openManual);
+  $('btn_import_sx').addEventListener('click',()=>readFileInput($('sx_file'),importSx));
   $('btn_import_lmp').addEventListener('click',()=>readFileInput($('lmp_file'),importLmp));$('btn_restore_backup').addEventListener('click',()=>readFileInput($('backup_file'),restoreBackup));
   $('flow_list').addEventListener('click',event=>{const btn=event.target.closest('[data-flow-action]');if(!btn)return;const id=btn.dataset.flowId,act=btn.dataset.flowAction;if(act==='open')openFlow(id);if(act==='duplicate')duplicateFlow(id);if(act==='rename')renameFlow(id);if(act==='export')openExport(id);if(act==='delete')deleteFlow(id);});
   $('document_catalog_content').addEventListener(   'click',   event=>{     const add=       event.target.closest(         '#catalog_add_document'       );      if(add){       addCatalogDocument();       return;     }      const save=       event.target.closest(         '#catalog_save_all'       );      if(save){       saveDocumentCatalog();       return;     }      const del=       event.target.closest(         '[data-catalog-delete]'       );      if(del){       if(catalogHasPendingChanges()){         gMsg(           'warn',           'Guarda primero los cambios pendientes del catálogo antes de eliminar.'         );         return;       }        deleteCatalogDocument(         Number(           del.dataset.catalogDelete         )       );     }   } );  $('document_catalog_content').addEventListener(   'input',   event=>{      if(       event.target.matches(         '#catalog_search'       )     ){       filterDocumentCatalog();       return;     }      if(       event.target.matches(         '[data-catalog-input]'       )     ){       updateCatalogSaveButton();       filterDocumentCatalog();     }   } );
@@ -12543,17 +12559,20 @@ function sbRenderMemo(kind,model,geometry){
   return group.get(geometry);
 }
 function laneGeometry(model=currentModel(),{includeNotesBlock=true}={}){
+  if(sbIsSx(model))return sbSxGeometry(model,{includeNotesBlock});
   const cache=APP.tools.renderCache;
   if(!cache||cache.model!==model)return sbComputeLaneGeometry(model,{includeNotesBlock});
   if(!cache.geometries.has(includeNotesBlock))cache.geometries.set(includeNotesBlock,sbComputeLaneGeometry(model,{includeNotesBlock}));
   return cache.geometries.get(includeNotesBlock);
 }
 function routePoints(edge,geometry,model){
+  if(sbIsSx(model))return sbSxRoute(edge,geometry);
   const memo=sbRenderMemo('routes',model,geometry);
   if(memo?.has(edge))return memo.get(edge);
   const points=sbComputeRoutePoints(edge,geometry,model);memo?.set(edge,points);return points;
 }
 function connectorGeometry(edge,geometry,model){
+  if(sbIsSx(model))return sbSxConnectorGeometry(edge,geometry);
   const memo=sbRenderMemo('connectors',model,geometry);
   if(memo?.has(edge))return memo.get(edge);
   const data=sbComputeConnectorGeometry(edge,geometry,model);memo?.set(edge,data);return data;
@@ -12564,6 +12583,7 @@ function sbLabelLayout(edge,geometry,model,wanted=null){
   const layout=sbComputeLabelLayout(edge,geometry,model,wanted);memo?.set(edge,layout);return layout;
 }
 function renderSvg(model=currentModel(),options={}){
+  if(sbIsSx(model))return sbRenderSx(model,options);
   const previous=APP.tools.renderCache;
   APP.tools.renderCache={model,geometries:new Map(),routes:new Map(),connectors:new Map(),labels:new Map()};
   try{return sbRenderSvgBody(model,options);}finally{APP.tools.renderCache=previous;}
@@ -12580,6 +12600,7 @@ function sbCancelDragRender(){
   if(APP.tools.dragFrame!==null){cancelAnimationFrame(APP.tools.dragFrame);APP.tools.dragFrame=null;}
 }
 function sbCancelActiveGesture(){
+  if(APP.tools.sxDrag){sbSxEndDrag({type:'pointercancel',pointerId:APP.tools.sxDrag.pointerId});return true;}
   const actions=[['drag',endNodeDrag],['routeDrag',endEdgeSegmentDrag],['labelDrag',endEdgeLabelDrag],
     ['resizeDrag',endFlowResize],['laneResize',endLaneResize],['connectorDrag',endConnectorMarkerDrag]];
   const action=actions.find(([key])=>APP[key]);
@@ -13254,6 +13275,7 @@ function sbM03Run(mode){
 }
 function distributeSelectedElements(axis){return sbM03Run(axis==='horizontal'?'distribute_x':'distribute_y');}
 function sbNudge(event){
+  if(sbIsSx())return sbSxNudge(event);
   if(APP.view!=='studio'||APP.connect.active||APP.tools.portDrag||APP.tools.editing||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return false;
   if(event.ctrlKey||event.metaKey||event.altKey||document.querySelector('dialog[open]')||!$('sb_context_menu').classList.contains('hidden'))return false;
   const context=sbSelectionEntities(true);if(!context?.entities.length)return false;
@@ -13275,9 +13297,10 @@ function sbFinishNudge(){
   if(gesture.flowId===APP.activeFlowId&&JSON.stringify(currentModel())!==JSON.stringify(gesture.snapshot.model))sbRecordSnapshot(gesture.snapshot);
 }
 
-function renderInspector(){renderInspectorContent();sbBindInspectorFields();}
+function renderInspector(){renderInspectorContent();sbBindInspectorFields();sbSxInspectorExtra();}
 function sbResolveEdit(spec){
   if(spec.flowId!==APP.activeFlowId)return null;
+  if(spec.kind==='sx_connector'||spec.kind==='sx_fragment')return sbSxOwner(spec.kind,spec.id);
   if(spec.kind==='master')return APP.master;
   if(spec.kind==='flow')return activeFlow();
   if(spec.kind==='lane')return laneById(spec.id);
@@ -13517,6 +13540,8 @@ function sbBindTools(){
   document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();if(currentModel())renderStudio(false);});
 }
 function sbUpdateFrozenHeaders(rebuild=false){
+  $('btn_freeze_headers').disabled=sbIsSx();
+  if(sbIsSx()){$('sb_frozen_headers').classList.add('hidden');return;}
   const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),model=currentModel(),button=$('btn_freeze_headers');
   if(!host||!vp||!stage||!button)return;
   button.disabled=!model||APP.view!=='studio';
@@ -13635,6 +13660,8 @@ function sbCancelPortDrag(){
 
 
 function init(){
+  // Adaptador SX independiente de LMP; el modelo original permanece en payload.model.
+
   sbBindTools();
   document.addEventListener("pointermove",sbMovePortDrag);
   document.addEventListener("pointerup",sbEndPortDrag);
@@ -13667,6 +13694,259 @@ function init(){
   }
 }
   
+// SX_TO_SB 2.0: el modelo recibido es autoritativo; las medidas derivadas no se guardan.
+function sbIsSx(model=currentModel()){
+  return model?.layout?.coordinate_system==='sipoc_body'&&model.layout.preserve_geometry===true;
+}
+function sbSxNumber(value){return typeof value==='number'&&Number.isFinite(value);}
+function sbSxPoint(value){return value&&sbSxNumber(value.x)&&sbSxNumber(value.y)?value:null;}
+function sbSxArray(value){return Array.isArray(value)?value:[];}
+function validateSxModel(model){
+  assertPlainObject(model,'flow.payload.model');
+  if(model.model_code!=='SB_FLOW_MODEL'||String(model.model_version)!=='6.2'||!sbIsSx(model))throw Error('Se requiere el modelo autoritativo sipoc_body de SX_TO_SB 2.0.');
+  const ids=new Set(),groups=['lanes','nodes','edges','connectors','connection_fragments','notes'];
+  for(const group of groups){
+    assertArrayValue(model[group],group);
+    for(const row of model[group]){
+      assertPlainObject(row,group);
+      if(typeof row.id!=='string'||!row.id||ids.has(row.id))throw Error('ID vacío o duplicado en '+group+'.');
+      ids.add(row.id);
+    }
+  }
+  const lanes=new Set(model.lanes.map(n=>n.id)),nodes=new Set(model.nodes.map(n=>n.id)),notes=new Set(model.notes.map(n=>n.id));
+  const ref=(value,set,name)=>{if(value!==null&&value!==undefined&&value!==''&&!set.has(value))throw Error(name+' referencia un ID inexistente.');};
+  const number=(v,name)=>{if(v!==null&&v!==undefined&&v!==''&&!sbSxNumber(v))throw Error(name+' no es una medida válida.');};
+  const point=(p,name)=>{if(p===null||p===undefined||p==='')return;assertPlainObject(p,name);number(p.x,name+'.x');number(p.y,name+'.y');};
+  const route=(p,name)=>{if(p===null||p===undefined||p==='')return;assertArrayValue(p,name);p.forEach(v=>point(v,name));};
+  for(const l of model.lanes){number(l.x,'lane.x');number(l.width,'lane.width');if(l.label_bounds)for(const k of ['x','y','width','height'])number(l.label_bounds[k],'label_bounds.'+k);}
+  for(const n of model.nodes){ref(n.lane_id,lanes,'Caja');for(const id of sbSxArray(n.note_ids))ref(id,notes,'Nota');for(const k of ['x','x_rel','y','width','height','font_size'])number(n[k],'node.'+k);}
+  for(const e of model.edges){ref(e.source,nodes,'Origen');ref(e.target,nodes,'Destino');point(e.source_point,'source_point');point(e.target_point,'target_point');point(e.label_point,'label_point');route(e.waypoints,'waypoints');for(const key of ['source','target']){point(e.connector_points?.[key],'connector_points');route(e.connector_routes?.[key],'connector_routes');}}
+  for(const c of model.connectors){ref(c.element_id,nodes,'Círculo');point(c.point,'circle.point');point(c.attachment_point,'attachment_point');route(c.route,'circle.route');number(c.width,'circle.width');number(c.height,'circle.height');}
+  for(const f of model.connection_fragments){ref(f.element_id,nodes,'Fragmento');point(f.point,'fragment.point');point(f.attachment_point,'fragment.attachment_point');route(f.path,'fragment.path');}
+  for(const n of model.notes){ref(n.node_id,nodes,'Propietario de nota');ref(n.lane_id,lanes,'Propietario de nota');}
+  for(const k of ['width','body_height','lane_header_height'])number(model.layout[k],'layout.'+k);
+  return model;
+}
+function importSx(raw){
+  const previous={master:APP.master?clone(APP.master):null,activeFlowId:APP.activeFlowId,selection:APP.selection,history:APP.history,future:APP.future,dirty:APP.dirty,view:APP.view,connect:APP.connect,camera:{...APP.camera}};
+  let installed=false;
+  try{
+    const c=typeof raw==='string'?JSON.parse(raw):raw;
+    if(c?.contract_code!=='SX_TO_SB'||String(c.contract_version)!=='2.0'||c.source_module!=='SX'||c.target_module!=='SIPOC_BUILDER')throw Error('SB admite SX_TO_SB 2.0 desde esta importación.');
+    assertPlainObject(c.sipoc_input,'sipoc_input');assertPlainObject(c.flow,'flow');validateSxModel(c.flow?.payload?.model);
+    const input=c.sipoc_input,oldCode=upper(APP.master?.process_code),newCode=upper(input.process_code),oldName=upper(APP.master?.process_name),newName=upper(input.process_name);
+    if(APP.master&&((oldCode&&newCode&&oldCode!==newCode)||(!oldCode&&!newCode&&oldName&&newName&&oldName!==newName)))throw Error('Existe otro proceso activo. Guarda un respaldo y usa Limpiar antes de importar un proceso diferente.');
+    const model=clone(c.flow.payload.model);
+    // Probar representación antes de modificar el proceso activo.
+    sbRenderSx(model,{interactive:false});
+    if(!sbCommitEdit({render:false}))throw Error('Termina la edición actual antes de importar.');
+    sbFinishNudge();sbCancelPortDrag();
+    const master=APP.master?clone(APP.master):createMaster();
+    for(const key of ['process_code','process_name','purpose'])if(!APP.master||!master[key]){if(Object.hasOwn(input,key))master[key]=clone(input[key]);}
+    const n=master.flows.reduce((a,f)=>Math.max(a,Number(f.version_number)||0),0)+1;
+    const flow={...clone(c.flow),flow_id:uid('SBF'),version_number:n,status:'draft',source_origin:'sx',parent_flow_id:null,created_at:nowIso(),updated_at:nowIso(),saved_at:null,payload:{...clone(c.flow.payload),model,sipoc_input:clone(input),source_contract:{code:'SX_TO_SB',version:'2.0'}}};
+    master.flows.push(flow);master.updated_at=nowIso();APP.master=master;installed=true;
+    if(!openFlow(flow.flow_id))throw Error('No se pudo abrir el flujo SX.');
+    APP.dirty=true;renderStudioContext();
+    gMsg('ok','SX_TO_SB 2.0 importado como flujo nuevo, conservando geometría, círculos y numeración.');
+    return true;
+  }catch(error){
+    if(installed){Object.assign(APP,previous);renderLibrary();switchView(previous.view);if(previous.activeFlowId)renderStudio();}
+    gMsg('err','No fue posible importar desde SX: '+error.message);return false;
+  }
+}
+function sbSxGeometry(model,{includeNotesBlock=true}={}){
+  let maxX=1,maxY=1;
+  for(const n of model.nodes){if([n.x,n.y,n.width,n.height].every(sbSxNumber)){maxX=Math.max(maxX,n.x+n.width);maxY=Math.max(maxY,n.y+n.height);}}
+  for(const l of model.lanes)if(sbSxNumber(l.x)&&sbSxNumber(l.width))maxX=Math.max(maxX,l.x+l.width);
+  const add=p=>{if(sbSxPoint(p)){maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);}};
+  for(const e of model.edges){[e.source_point,e.target_point,e.label_point,...sbSxArray(e.waypoints),...Object.values(e.connector_points||{}),...sbSxArray(e.connector_routes?.source),...sbSxArray(e.connector_routes?.target)].forEach(add);}
+  for(const c of model.connectors){add(c.point);add(c.attachment_point);sbSxArray(c.route).forEach(add);if(sbSxPoint(c.point)&&sbSxNumber(c.width))maxX=Math.max(maxX,c.point.x+c.width/2);if(sbSxPoint(c.point)&&sbSxNumber(c.height))maxY=Math.max(maxY,c.point.y+c.height/2);}
+  for(const f of model.connection_fragments)sbSxArray(f.path).forEach(add);
+  const bodyWidth=sbSxNumber(model.layout.width)&&model.layout.width>0?model.layout.width:maxX;
+  const bodyHeight=sbSxNumber(model.layout.body_height)&&model.layout.body_height>0?model.layout.body_height:maxY;
+  const origin={x:STANDARD.canvasMargin,y:STANDARD.titleHeight+STANDARD.purposeHeight};
+  const noteMap=buildNoteNumberMap(model),width=bodyWidth+origin.x*2,notesLayout=includeNotesBlock?sbSxNotesLayout(noteMap,width):null;
+  return {sx:true,origin,bodyWidth,bodyHeight,width,bodyTop:origin.y,laneTop:origin.y,laneHeaderHeight:sbSxNumber(model.layout.lane_header_height)?model.layout.lane_header_height:0,bodyBottom:origin.y+bodyHeight,lanes:model.lanes.map(l=>({...l,x:sbSxNumber(l.x)?origin.x+l.x:origin.x,width:sbSxNumber(l.width)?l.width:0,height:bodyHeight})),noteMap,notesLayout,canvasHeight:origin.y+bodyHeight+(notesLayout?.height||0)+12};
+}
+function sbSxBox(node,g){return {x:g.origin.x+(sbSxNumber(node?.x)?node.x:0),y:g.origin.y+(sbSxNumber(node?.y)?node.y:0),w:sbSxNumber(node?.width)?node.width:0,h:sbSxNumber(node?.height)?node.height:0,lane:g.lanes.find(l=>l.id===node?.lane_id)};}
+function sbSxVisibleNode(n){return [n?.x,n?.y,n?.width,n?.height].every(sbSxNumber)&&n.width>0&&n.height>0;}
+function sbSxAbsolute(p,g){return sbSxPoint(p)?{x:p.x+g.origin.x,y:p.y+g.origin.y}:null;}
+function sbSxRoute(e,g){
+  if(!Array.isArray(e.waypoints)||!sbSxPoint(e.source_point)||!sbSxPoint(e.target_point))return [];
+  return [e.source_point,...e.waypoints,e.target_point].map(p=>sbSxAbsolute(p,g)).filter(Boolean);
+}
+function sbSxCircleEnd(center,size,neighbor){
+  if(!sbSxPoint(center)||!sbSxPoint(neighbor)||!sbSxNumber(size?.width)||!sbSxNumber(size?.height)||size.width<=0||size.height<=0)return center;
+  const dx=neighbor.x-center.x,dy=neighbor.y-center.y,d=Math.sqrt(dx*dx/(size.width/2)**2+dy*dy/(size.height/2)**2);
+  return d?{x:center.x+dx/d,y:center.y+dy/d}:center;
+}
+function sbSxBranch(attachment,route,center,size,direction,g){
+  if(!sbSxPoint(attachment)||!sbSxPoint(center)||!Array.isArray(route))return [];
+  const pts=route.filter(sbSxPoint).map(p=>({...p}));
+  if(pts.length>1){const dist=(a,b)=>(a.x-b.x)**2+(a.y-b.y)**2;if(dist(attachment,pts[0])+dist(center,pts.at(-1))>dist(attachment,pts.at(-1))+dist(center,pts[0]))pts.reverse();}
+  const end=sbSxCircleEnd(center,size,pts.at(-1)||attachment),full=[attachment,...pts,end];
+  if(direction==='in')full.reverse();return full.map(p=>sbSxAbsolute(p,g));
+}
+function sbSxConnectorGeometry(e,g){
+  const a=e.connector_points?.source,b=e.connector_points?.target;
+  if(!sbSxPoint(a)||!sbSxPoint(b))return null;
+  const sourcePoints=sbSxBranch(e.source_point,e.connector_routes?.source,a,e.connector_sizes?.source,'out',g),targetPoints=sbSxBranch(e.target_point,e.connector_routes?.target,b,e.connector_sizes?.target,'in',g);
+  return {sourceMarker:sbSxAbsolute(a,g),targetMarker:sbSxAbsolute(b,g),sourcePoints,targetPoints};
+}
+function sbSxText(value){return value===null||value===undefined?'':String(value);}
+function sbSxNotesLayout(noteMap,width){
+  const fontSize=11,lineHeight=15,items=[],numberWidth=Math.max(0,...noteMap.ordered.map(n=>sbTextMetrics(sbSxText(n.number),fontSize,true).width))+10;
+  const textX=STANDARD.canvasMargin+numberWidth,right=width-STANDARD.canvasMargin-12;let y=45;
+  for(const note of noteMap.ordered){const lines=sbSxText(note.text).split(/\r?\n/).flatMap(t=>sbWrapMeasuredText(t,Math.max(8,right-textX),fontSize));items.push({note,number:sbSxText(note.number),lines,y});y+=lines.length*lineHeight+5;}
+  return {fontSize,lineHeight,textX,items,height:items.length?y+12:0};
+}
+function sbSxNodeText(n,b,noteMap){
+  if(!sbSxVisibleNode(n))return '';
+  const size=sbSxNumber(n.font_size)&&n.font_size>0?n.font_size:10.5;
+  const references=sbSxArray(n.note_refs).length?sbSxArray(n.note_refs):sbSxArray(n.note_ids).map(id=>noteMap.map.get(id)).filter(v=>v!==undefined&&v!==null&&v!=='');
+  const label=sbSxText(n.label),lines=label?label.split(/\r?\n/).flatMap(s=>sbWrapMeasuredText(s,Math.max(8,b.w-(n.type==='related_process'?28:n.type==='system_response'?44:n.type==='decision'?b.w*.3:14)),size)):[];
+  for(const ref of references)if(ref!==null&&ref!==''&&!label.includes('('+ref+')'))lines.push('('+ref+')');
+  const lh=size*1.12,start=b.y+b.h/2-(lines.length-1)*lh/2;
+  return '<text x="'+(b.x+b.w/2)+'" y="'+start+'" text-anchor="middle" dominant-baseline="middle" font-family="'+escapeXml(n.font_family||'Arial')+'" font-size="'+size+'" font-weight="'+escapeXml(n.font_weight||'normal')+'" fill="#000">'+lines.map((s,i)=>'<tspan x="'+(b.x+b.w/2)+'" dy="'+(i?lh:0)+'">'+escapeXml(s)+'</tspan>').join('')+'</text>';
+}
+function sbSxCircle(c,g,attributes='',selected=false){
+  const p=sbSxAbsolute(c.point,g);if(!p)return '';
+  const known=sbSxNumber(c.width)&&sbSxNumber(c.height)&&c.width>0&&c.height>0;
+  const fill=c.kind==='input'?'#93C47D':c.kind==='output'?'#FFFF00':'#FFFFFF';
+  return '<g '+attributes+'>'+ (known?'<ellipse cx="'+p.x+'" cy="'+p.y+'" rx="'+c.width/2+'" ry="'+c.height/2+'" fill="'+fill+'" stroke="'+(selected?'#00AEEF':'#000')+'" stroke-width="'+(selected?2:1)+'"/>':'')+'<text x="'+p.x+'" y="'+p.y+'" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="'+(known?Math.min(10,c.height*.45):10)+'" pointer-events="none">'+escapeXml(sbSxText(c.label))+'</text></g>';
+}
+function sbSxLine(points,label,labelPoint,g,attrs='',selected=false,interactive=false){
+  let svg='';const color=selected?'#00AEEF':'#000',path=points.map((p,i)=>(i?'L':'M')+p.x+' '+p.y).join(' ');
+  if(points.length>1){svg='<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="'+(selected?2:1)+'"/>'+sbSxArrow(points,color);}
+  if(labelPoint&&sbSxText(label)){const p=sbSxAbsolute(labelPoint,g);svg+='<text x="'+p.x+'" y="'+p.y+'" font-size="8" font-family="Arial" text-anchor="middle" dominant-baseline="middle">'+escapeXml(sbSxText(label))+'</text>';}
+  return '<g '+attrs+'>'+ (interactive&&points.length>1?'<path d="'+path+'" fill="none" stroke="transparent" stroke-width="10"/>':'')+svg+'</g>';
+}
+function sbRenderSx(model,options={}){
+  const interactive=options.interactive!==false,g=sbSxGeometry(model,options),o=g.origin;
+  let svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+g.width+' '+g.canvasHeight+'" width="'+g.width+'" height="'+g.canvasHeight+'" font-family="Arial" role="img" aria-label="SIPOC importado desde SX"><rect width="100%" height="100%" fill="#fff"/>';
+  svg+='<rect x="'+o.x+'" y="0" width="'+g.bodyWidth+'" height="'+o.y+'" fill="#fff" stroke="#000"/><text x="'+(o.x+6)+'" y="'+(STANDARD.titleHeight/2+1)+'" font-size="12" font-weight="bold" dominant-baseline="middle">'+escapeXml([APP.master?.process_code,APP.master?.process_name].filter(v=>v!==null&&v!==undefined&&v!=='').join(' '))+'</text><text x="'+(o.x+6)+'" y="'+(STANDARD.titleHeight+STANDARD.purposeHeight/2+1)+'" font-size="9" dominant-baseline="middle"><tspan font-weight="bold">FINALIDAD: </tspan>'+escapeXml(sbSxText(APP.master?.purpose))+'</text>';
+  svg+='<line x1="'+o.x+'" y1="'+o.y+'" x2="'+(o.x+g.bodyWidth)+'" y2="'+o.y+'" stroke="#000"/><line x1="'+o.x+'" y1="'+(o.y+g.bodyHeight)+'" x2="'+(o.x+g.bodyWidth)+'" y2="'+(o.y+g.bodyHeight)+'" stroke="#000"/>';
+  for(const lane of model.lanes){
+    if(!sbSxNumber(lane.x)||!sbSxNumber(lane.width))continue;
+    const x=o.x+lane.x;
+    if(lane.left_border_visible===true)svg+='<line x1="'+x+'" y1="'+o.y+'" x2="'+x+'" y2="'+(o.y+g.bodyHeight)+'" stroke="#000"/>';
+    if(lane.right_border_visible===true)svg+='<line x1="'+(x+lane.width)+'" y1="'+o.y+'" x2="'+(x+lane.width)+'" y2="'+(o.y+g.bodyHeight)+'" stroke="#000"/>';
+    if(g.laneHeaderHeight>0)svg+='<g '+(interactive?'data-lane-id="'+escapeXml(lane.id)+'"':'')+'><rect x="'+x+'" y="'+o.y+'" width="'+lane.width+'" height="'+g.laneHeaderHeight+'" fill="'+(interactive&&APP.selection?.id===lane.id?'#E0F4FF':'transparent')+'"/><line x1="'+x+'" y1="'+(o.y+g.laneHeaderHeight)+'" x2="'+(x+lane.width)+'" y2="'+(o.y+g.laneHeaderHeight)+'" stroke="#000"/></g>';
+    const b=lane.label_bounds;
+    if(b&&[b.x,b.y,b.width,b.height].every(sbSxNumber)){const fs=sbSxNumber(lane.font_size)?lane.font_size:9,refs=sbSxArray(lane.note_ids).map(id=>g.noteMap.map.get(id)).filter(v=>v!==null&&v!==undefined&&v!==''),lines=sbSxText(lane.label).split(/\r?\n/).flatMap(s=>sbWrapMeasuredText(s,Math.max(8,b.width),fs,true));if(refs.length)lines.push(refs.map(v=>'('+v+')').join(' '));const y=o.y+b.y+b.height/2-(lines.length-1)*fs*1.12/2;svg+='<text '+(interactive?'data-lane-id="'+escapeXml(lane.id)+'"':'')+' x="'+(o.x+b.x+b.width/2)+'" y="'+y+'" text-anchor="middle" dominant-baseline="middle" font-size="'+fs+'" font-weight="bold">'+lines.map((s,i)=>'<tspan x="'+(o.x+b.x+b.width/2)+'" dy="'+(i?fs*1.12:0)+'">'+escapeXml(s)+'</tspan>').join('')+'</text>';}
+  }
+  for(const e of model.edges){
+    const sel=interactive&&APP.selection?.type==='edge'&&APP.selection.id===e.id,attrs=interactive?'class="edge" data-edge-id="'+escapeXml(e.id)+'"':'';
+    if(e.mode==='connector'){
+      for(const key of ['source','target']){
+        const p=e.connector_points?.[key],size=e.connector_sizes?.[key],points=sbSxBranch(key==='source'?e.source_point:e.target_point,e.connector_routes?.[key],p,size,key==='source'?'out':'in',g);
+        svg+=sbSxLine(points,key==='source'?e.label:'',e.label_point,g,attrs,sel,interactive);
+        svg+=sbSxCircle({point:p,width:size?.width,height:size?.height,kind:e.connector_kind,label:e.connector_label},g,interactive?'data-sx-paired="'+key+'" data-edge-id="'+escapeXml(e.id)+'"':'',sel);
+        if(sel)svg+=sbSxHandles(e.connector_routes?.[key],g,'edge',e.id,'connector_routes.'+key);
+      }
+    }else{svg+=sbSxLine(sbSxRoute(e,g),e.label,e.label_point,g,attrs,sel,interactive);if(sel)svg+=sbSxHandles(e.waypoints,g,'edge',e.id,'waypoints');}
+  }
+  for(const f of model.connection_fragments){const pts=sbSxArray(f.path).map(p=>sbSxAbsolute(p,g)).filter(Boolean),sel=interactive&&APP.selection?.type==='sx_fragment'&&APP.selection.id===f.id;svg+=sbSxLine(pts,f.label,null,g,interactive?'data-sx-fragment="'+escapeXml(f.id)+'"':'',sel,interactive);if(f.label&&pts.length)svg+='<text x="'+pts[Math.floor(pts.length/2)].x+'" y="'+(pts[Math.floor(pts.length/2)].y-6)+'" font-size="8">'+escapeXml(f.label)+'</text>';if(sel)svg+=sbSxHandles(f.path,g,'sx_fragment',f.id,'path');}
+  for(const c of model.connectors){const sel=interactive&&APP.selection?.type==='sx_connector'&&APP.selection.id===c.id;svg+=sbSxLine(sbSxBranch(c.attachment_point,c.route,c.point,c,c.direction,g),'',null,g,interactive?'data-sx-circle-route="'+escapeXml(c.id)+'"':'',sel,interactive);svg+=sbSxCircle(c,g,interactive?'data-sx-circle="'+escapeXml(c.id)+'"':'',sel);if(sel)svg+=sbSxHandles(c.route,g,'sx_connector',c.id,'route');}
+  for(const node of model.nodes){if(!sbSxVisibleNode(node))continue;const b=sbSxBox(node,g),sel=interactive&&isNodeSelected(node.id);svg+='<g class="node" data-node-id="'+escapeXml(node.id)+'" style="cursor:'+ (interactive?'move':'default')+'">'+(node.type?renderNodeShape(node,b,sel,interactive):'')+sbSxNodeText(node,b,g.noteMap)+renderNodeAnnotationTrigger(node,b,interactive)+'</g>';}
+  if(options.includeNotesBlock!==false&&g.notesLayout?.items.length){const y=g.bodyBottom,l=g.notesLayout;svg+='<text x="'+o.x+'" y="'+(y+24)+'" font-size="11" font-weight="bold">NOTAS ACLARATORIAS</text>';for(const n of l.items){svg+='<text x="'+o.x+'" y="'+(y+n.y)+'" font-size="11" font-weight="bold">'+escapeXml(n.number)+'</text>';for(let i=0;i<n.lines.length;i++)svg+='<text x="'+l.textX+'" y="'+(y+n.y+i*l.lineHeight)+'" font-size="11">'+escapeXml(n.lines[i])+'</text>';}}
+  return svg+'</svg>';
+}
+function sbSxHandles(points,g,kind,id,field){return sbSxArray(points).map((p,i)=>{const q=sbSxAbsolute(p,g);return q?'<rect data-sx-handle="'+escapeXml(kind)+'" data-sx-id="'+escapeXml(id)+'" data-sx-field="'+escapeXml(field)+'" data-sx-index="'+i+'" x="'+(q.x-4)+'" y="'+(q.y-4)+'" width="8" height="8" fill="#fff" stroke="#00AEEF"/>':'';}).join('');}
+function sbSxOwner(kind,id){const m=currentModel();return kind==='sx_connector'?m.connectors.find(c=>c.id===id):kind==='sx_fragment'?m.connection_fragments.find(c=>c.id===id):kind==='node'?nodeById(id):kind==='lane'?laneById(id):edgeById(id);}
+function sbSxBeginDrag(event,kind,id,field=null,index=null){
+  if(event.button!==0)return;event.preventDefault();event.stopPropagation();sbCommitEdit({render:false});sbFinishNudge();
+  APP.selection={type:kind,id};const vp=$('viewport'),owner=sbSxOwner(kind,id);if(!owner)return;
+  APP.tools.sxDrag={kind,id,field,index,pointerId:event.pointerId,start:clientToCanvas(event.clientX,event.clientY),snapshot:captureHistoryState(),moved:false};
+  renderInspector();vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',sbSxMoveDrag);vp.addEventListener('pointerup',sbSxEndDrag);vp.addEventListener('pointercancel',sbSxEndDrag);
+}
+function sbSxMoveNode(model,id,dx,dy){
+  const n=model.nodes.find(n=>n.id===id);if(!n||!sbSxVisibleNode(n))return;n.x+=dx;n.y+=dy;if(sbSxNumber(n.x_rel))n.x_rel+=dx;
+  const move=p=>{if(sbSxPoint(p)){p.x+=dx;p.y+=dy;}};
+  for(const e of model.edges){if(e.source===id)move(e.source_point);if(e.target===id)move(e.target_point);if(e.source===id&&e.target===id){sbSxArray(e.waypoints).forEach(move);move(e.label_point);}if(e.mode==='connector')for(const key of ['source','target'])if((key==='source'?e.source:e.target)===id){move(e.connector_points?.[key]);sbSxArray(e.connector_routes?.[key]).forEach(move);}}
+  for(const c of model.connectors)if(c.element_id===id){move(c.attachment_point);move(c.point);sbSxArray(c.route).forEach(move);}
+  for(const f of model.connection_fragments)if(f.element_id===id){const pts=sbSxArray(f.path);move(f.attachment_point);if(pts.length)move(f.direction==='in'?pts.at(-1):pts[0]);}
+}
+function sbSxMoveDrag(event){
+  const d=APP.tools.sxDrag;if(!d||event.pointerId!==d.pointerId)return;const p=clientToCanvas(event.clientX,event.clientY),dx=p.x-d.start.x,dy=p.y-d.start.y;
+  if(!d.moved&&Math.hypot(dx,dy)*(APP.camera.scale||1)<4)return;d.moved=true;
+  activeFlow().payload.model=clone(d.snapshot.model);const owner=sbSxOwner(d.kind,d.id);
+  if(d.field){let target=owner;for(const key of d.field.split('.'))target=target?.[key];if(sbSxPoint(target?.[d.index])){target[d.index].x+=dx;target[d.index].y+=dy;}}
+  else if(d.kind==='node')sbSxMoveNode(currentModel(),d.id,dx,dy);
+  else if(d.kind==='sx_connector'&&sbSxPoint(owner.point)){owner.point.x+=dx;owner.point.y+=dy;}
+  else if(d.kind==='edge'&&['source','target'].includes(d.index)){const point=owner.connector_points?.[d.index];if(sbSxPoint(point)){point.x+=dx;point.y+=dy;}}
+  sbQueueDragRender();
+}
+function sbSxEndDrag(event){
+  const d=APP.tools.sxDrag,vp=$('viewport');if(!d||event.pointerId!==d.pointerId)return;
+  vp.removeEventListener('pointermove',sbSxMoveDrag);vp.removeEventListener('pointerup',sbSxEndDrag);vp.removeEventListener('pointercancel',sbSxEndDrag);try{if(vp.hasPointerCapture?.(d.pointerId))vp.releasePointerCapture(d.pointerId);}catch(error){}
+  APP.tools.sxDrag=null;if(event.type==='pointercancel')restoreHistoryState(d.snapshot);else if(d.moved&&JSON.stringify(currentModel())!==JSON.stringify(d.snapshot.model)){sbRecordSnapshot(d.snapshot);markDirty();}renderStudio();
+}
+function bindSxInteractions(svg){
+  svg.querySelectorAll('.node').forEach(el=>el.addEventListener('pointerdown',e=>{if(e.target.closest('[data-node-annotation]'))return;if(e.ctrlKey||e.metaKey){e.preventDefault();e.stopPropagation();toggleNodeInSelection(el.dataset.nodeId);renderStudio();}else sbSxBeginDrag(e,'node',el.dataset.nodeId);}));
+  svg.querySelectorAll('[data-lane-id]').forEach(el=>el.addEventListener('click',e=>{e.stopPropagation();APP.selection={type:'lane',id:el.dataset.laneId};renderStudio();}));
+  svg.querySelectorAll('.edge').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'edge',id:el.dataset.edgeId};renderStudio();}));
+  svg.querySelectorAll('[data-sx-circle]').forEach(el=>el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,'sx_connector',el.dataset.sxCircle)));
+  svg.querySelectorAll('[data-sx-circle-route]').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'sx_connector',id:el.dataset.sxCircleRoute};renderStudio();}));
+  svg.querySelectorAll('[data-sx-fragment]').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'sx_fragment',id:el.dataset.sxFragment};renderStudio();}));
+  svg.querySelectorAll('[data-sx-handle]').forEach(el=>el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,el.dataset.sxHandle,el.dataset.sxId,el.dataset.sxField,Number(el.dataset.sxIndex))));
+  svg.querySelectorAll('[data-sx-paired]').forEach(el=>{el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,'edge',el.dataset.edgeId,null,el.dataset.sxPaired));el.addEventListener('dblclick',e=>{e.preventDefault();e.stopPropagation();const edge=edgeById(el.dataset.edgeId),other=edge.connector_points?.[el.dataset.sxPaired==='source'?'target':'source'],g=laneGeometry();if(sbSxPoint(other)){const vp=$('viewport');vp.scrollLeft=other.x*(APP.camera.scale||1)-vp.clientWidth/2+g.origin.x;vp.scrollTop=(other.y+g.origin.y)*(APP.camera.scale||1)-vp.clientHeight/2;}});});
+  svg.querySelectorAll('[data-node-annotation]').forEach(el=>{el.addEventListener('pointerdown',e=>e.stopPropagation());el.addEventListener('click',e=>{e.stopPropagation();openNodeAnnotationPopup(el.dataset.nodeAnnotation,el);});});
+}
+function sbSxField(owner,key,label,json=false){const value=owner[key];return '<div class="field"><label>'+escapeHtml(label)+'</label><'+(json?'textarea':'input')+' data-sx-property="'+escapeHtml(key)+'" data-sx-json="'+(json?'1':'0')+'" '+(!json?'value="'+escapeHtml(value===null||value===undefined?'':value)+'"':'')+'>'+(json?escapeHtml(value===undefined?'null':JSON.stringify(value)): '')+(json?'</textarea>':'')+'</div>';}
+function sbSxInspector(){
+  if(!sbIsSx())return false;const sel=APP.selection;if(!sel)return false;
+  const root=$('inspector_content'),owner=sbSxOwner(sel.type,sel.id);
+  if(!owner){root.innerHTML='<div class="empty-note">Selecciona una caja, círculo o tramo para editar su geometría original.</div>';return true;}
+  if(sel.type==='node'||sel.type==='lane')return false;
+  const fields=sel.type==='edge'?['source_point','target_point','waypoints','label_point','connector_points','connector_sizes','connector_routes']:sel.type==='sx_connector'?['point','width','height','attachment_side','attachment_point','route']:['point','attachment_side','attachment_point','path'];
+  root.innerHTML='<div class="empty-note">Diagrama SX · se conservan las medidas y rutas originales. Un campo vacío no se completa automáticamente.</div><div class="field"><label>Etiqueta</label><input id="'+(sel.type==='edge'?'ins_edge_label':'ins_sx_label')+'" value="'+escapeHtml(sbSxText(owner.label))+'"></div>'+ (sel.type==='edge'?sbSxField(owner,'source_side','Lado de origen',true)+sbSxField(owner,'target_side','Lado de destino',true):'')+fields.map(k=>sbSxField(owner,k,k,!['width','height'].includes(k))).join('')+'<button type="button" data-sx-delete>Eliminar</button>';
+  root.querySelector('[data-sx-delete]').onclick=deleteSelection;return true;
+}
+function sbSxInspectorExtra(){
+  if(!sbIsSx())return;const sel=APP.selection,owner=sel&&sbSxOwner(sel.type,sel.id);if(!owner)return;const root=$('inspector_content');
+  if(sel.type==='node'){root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría original SX</h4>'+['x','x_rel','y','width','height','font_size'].map(k=>sbSxField(owner,k,k)).join('')+'</div>');}
+  if(sel.type==='lane'){root.querySelectorAll('[data-lane-act]').forEach(b=>b.remove());root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría del carril SX</h4>'+sbSxField(owner,'x','Posición X')+sbSxField(owner,'width','Ancho')+['label_bounds','left_border_visible','right_border_visible'].map(k=>sbSxField(owner,k,k,true)).join('')+'</div>');}
+  if($('ins_sx_label'))sbBindEditInput($('ins_sx_label'),{kind:sel.type,id:sel.id,field:'label',flowId:APP.activeFlowId});
+  root.querySelectorAll('[data-sx-property]').forEach(input=>{
+    const key=input.dataset.sxProperty,initial=input.value;
+    input.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();input.value=initial;input.blur();}});
+    input.addEventListener('blur',()=>{if(input.value===initial)return;try{let value=input.value.trim()===''?null:input.dataset.sxJson==='1'?JSON.parse(input.value):Number(input.value);if(input.dataset.sxJson!=='1'&&value!==null&&!Number.isFinite(value))throw Error('Medida inválida');const candidate=clone(currentModel()),next=sel.type==='node'?candidate.nodes.find(v=>v.id===sel.id):sel.type==='lane'?candidate.lanes.find(v=>v.id===sel.id):sel.type==='edge'?candidate.edges.find(v=>v.id===sel.id):sel.type==='sx_connector'?candidate.connectors.find(v=>v.id===sel.id):candidate.connection_fragments.find(v=>v.id===sel.id);next[key]=value;validateSxModel(candidate);if(JSON.stringify(owner[key])!==JSON.stringify(value)){pushHistory();owner[key]=value;markDirty();sbScheduleRefresh();}}catch(error){input.value=initial;gMsg('warn',error.message);}});
+  });
+}
+function sbSxValidation(flow){
+  const issues=[],m=flow.payload.model;try{validateSxModel(m);}catch(e){issues.push(e.message);}
+  if(!text(APP.master?.process_name))issues.push('Falta el nombre del proceso para JSON → LMP.');
+  if(!text(APP.master?.purpose))issues.push('Falta la finalidad para JSON → LMP.');
+  if(m.connectors.length||m.connection_fragments.length)issues.push('El diagrama conserva círculos sueltos o tramos visibles sin relación completa; revisar antes de JSON → LMP.');
+  if(m.nodes.some(n=>!n.lane_id||!n.type||!text(n.label)))issues.push('Hay cajas con contenido o clasificación sin confirmar; importación, guardado y PDF siguen disponibles.');
+  return issues;
+}
+function sbSxDelete(){
+  const sel=APP.selection,m=currentModel();if(!sel||!sbIsSx(m))return false;pushHistory();
+  if(sel.type==='sx_connector')m.connectors=m.connectors.filter(v=>v.id!==sel.id);
+  else if(sel.type==='sx_fragment')m.connection_fragments=m.connection_fragments.filter(v=>v.id!==sel.id);
+  else if(sel.type==='edge')m.edges=m.edges.filter(v=>v.id!==sel.id);
+  else if(sel.type==='node'||sel.type==='nodes'){const ids=new Set(sel.type==='node'?[sel.id]:sel.ids);m.nodes=m.nodes.filter(v=>!ids.has(v.id));m.edges=m.edges.filter(v=>!ids.has(v.source)&&!ids.has(v.target));m.connectors=m.connectors.filter(v=>!ids.has(v.element_id));m.connection_fragments=m.connection_fragments.filter(v=>!ids.has(v.element_id));m.notes=m.notes.filter(v=>!ids.has(v.node_id));}
+  else{APP.history.pop();return true;}
+  APP.selection=null;markDirty();renderStudio();return true;
+}
+function sbSxArrow(points,color){
+  const tip=points.at(-1);let previous=null;for(let i=points.length-2;i>=0;i--)if(Math.hypot(points[i].x-tip.x,points[i].y-tip.y)>.001){previous=points[i];break;}
+  if(!previous)return '';const a=sbArrowGeometry([previous,tip]);if(!a)return '';
+  return '<polygon points="'+[a.tip,a.left,a.right].map(p=>p.x+','+p.y).join(' ')+'" fill="'+color+'"/>';
+}
+function sbSxNudge(event){
+  if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)||event.ctrlKey||event.metaKey||event.altKey)return false;
+  const sel=APP.selection;if(!sel||!['node','nodes','sx_connector'].includes(sel.type))return false;event.preventDefault();event.stopImmediatePropagation();
+  if(!APP.tools.nudge)APP.tools.nudge={flowId:APP.activeFlowId,snapshot:captureHistoryState(),keys:new Set()};
+  APP.tools.nudge.keys.add(event.key);const step=event.shiftKey?10:1,dx=event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0,dy=event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0;
+  if(sel.type==='sx_connector'){const c=sbSxOwner(sel.type,sel.id);if(sbSxPoint(c?.point)){c.point.x+=dx;c.point.y+=dy;}}
+  else for(const id of sel.type==='node'?[sel.id]:sel.ids)sbSxMoveNode(currentModel(),id,dx,dy);
+  markDirty();renderStudio(false);return true;
+}
+
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
 </script>
 
