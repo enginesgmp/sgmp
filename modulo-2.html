@@ -1035,6 +1035,7 @@ function captureHistoryState(options={}){
         model=currentModel();
 
   if(!flow||!model||!APP.master)return null;
+  if(sbIsSx(model))return sbSxHistoryState(options);
 
   return {
     model:clone(model),
@@ -1061,6 +1062,7 @@ function captureHistoryState(options={}){
 }
 
 function restoreHistoryState(state){
+  if(sbIsSx(state?.model))return sbSxRestoreHistory(state);
   if(!state||!APP.master)return false;
 
   if(Array.isArray(state.all_flows)){
@@ -13324,6 +13326,7 @@ function sbCommitEdit(options={}){
   const session=APP.tools.editing;if(!session)return true;
   if(session.composing&&!options.cancel){session.pendingCommit=true;return false;}
   APP.tools.editing=null;
+  if(sbIsSx()&&!options.cancel&&session.input.value===session.initial){if(session.inline){$('sb_inline_editor').classList.add('hidden');$('sb_inline_input').value='';}return true;}
   const owner=sbResolveEdit(session.spec);
   let value=session.input.value;
   if(options.cancel){session.input.value=session.initial;}
@@ -13723,9 +13726,9 @@ function validateSxModel(model){
   const number=(v,name)=>{if(v!==null&&v!==undefined&&v!==''&&!sbSxNumber(v))throw Error(name+' no es una medida válida.');};
   const point=(p,name)=>{if(p===null||p===undefined||p==='')return;assertPlainObject(p,name);number(p.x,name+'.x');number(p.y,name+'.y');};
   const route=(p,name)=>{if(p===null||p===undefined||p==='')return;assertArrayValue(p,name);p.forEach(v=>point(v,name));};
-  for(const l of model.lanes){number(l.x,'lane.x');number(l.width,'lane.width');if(l.label_bounds)for(const k of ['x','y','width','height'])number(l.label_bounds[k],'label_bounds.'+k);}
+  for(const l of model.lanes){number(l.x,'lane.x');number(l.width,'lane.width');for(const id of sbSxArray(l.note_ids))ref(id,notes,'Nota del carril');if(l.label_bounds){assertPlainObject(l.label_bounds,'label_bounds');for(const k of ['x','y','width','height'])number(l.label_bounds[k],'label_bounds.'+k);}}
   for(const n of model.nodes){ref(n.lane_id,lanes,'Caja');for(const id of sbSxArray(n.note_ids))ref(id,notes,'Nota');for(const k of ['x','x_rel','y','width','height','font_size'])number(n[k],'node.'+k);}
-  for(const e of model.edges){ref(e.source,nodes,'Origen');ref(e.target,nodes,'Destino');point(e.source_point,'source_point');point(e.target_point,'target_point');point(e.label_point,'label_point');route(e.waypoints,'waypoints');for(const key of ['source','target']){point(e.connector_points?.[key],'connector_points');route(e.connector_routes?.[key],'connector_routes');}}
+  for(const e of model.edges){ref(e.source,nodes,'Origen');ref(e.target,nodes,'Destino');point(e.source_point,'source_point');point(e.target_point,'target_point');point(e.label_point,'label_point');route(e.waypoints,'waypoints');for(const key of ['source','target']){point(e.connector_points?.[key],'connector_points');route(e.connector_routes?.[key],'connector_routes');const size=e.connector_sizes?.[key];if(size){assertPlainObject(size,'connector_sizes');number(size.width,'connector_sizes.width');number(size.height,'connector_sizes.height');}}}
   for(const c of model.connectors){ref(c.element_id,nodes,'Círculo');point(c.point,'circle.point');point(c.attachment_point,'attachment_point');route(c.route,'circle.route');number(c.width,'circle.width');number(c.height,'circle.height');}
   for(const f of model.connection_fragments){ref(f.element_id,nodes,'Fragmento');point(f.point,'fragment.point');point(f.attachment_point,'fragment.attachment_point');route(f.path,'fragment.path');}
   for(const n of model.notes){ref(n.node_id,nodes,'Propietario de nota');ref(n.lane_id,lanes,'Propietario de nota');}
@@ -13733,7 +13736,7 @@ function validateSxModel(model){
   return model;
 }
 function importSx(raw){
-  const previous={master:APP.master?clone(APP.master):null,activeFlowId:APP.activeFlowId,selection:APP.selection,history:APP.history,future:APP.future,dirty:APP.dirty,view:APP.view,connect:APP.connect,camera:{...APP.camera}};
+  const previous={master:APP.master?clone(APP.master):null,activeFlowId:APP.activeFlowId,selection:clone(APP.selection),history:clone(APP.history),future:clone(APP.future),dirty:APP.dirty,view:APP.view,connect:clone(APP.connect),camera:{...APP.camera}};
   let installed=false;
   try{
     const c=typeof raw==='string'?JSON.parse(raw):raw;
@@ -13788,10 +13791,10 @@ function sbSxCircleEnd(center,size,neighbor){
 }
 function sbSxBranch(attachment,route,center,size,direction,g){
   if(!sbSxPoint(attachment)||!sbSxPoint(center)||!Array.isArray(route)||!route.every(sbSxPoint))return [];
-  const pts=route.filter(sbSxPoint).map(p=>({...p}));
-  if(pts.length>1){const dist=(a,b)=>(a.x-b.x)**2+(a.y-b.y)**2;if(dist(attachment,pts[0])+dist(center,pts.at(-1))>dist(attachment,pts.at(-1))+dist(center,pts[0]))pts.reverse();}
-  const end=sbSxCircleEnd(center,size,pts.at(-1)||attachment),full=[attachment,...pts,end];
-  if(direction==='in')full.reverse();return full.map(p=>sbSxAbsolute(p,g));
+  const pts=route.map(p=>({...p})),incoming=direction==='in';
+  const end=sbSxCircleEnd(center,size,(incoming?pts[0]:pts.at(-1))||attachment);
+  const full=incoming?[end,...pts,attachment]:[attachment,...pts,end];
+  return full.map(p=>sbSxAbsolute(p,g));
 }
 function sbSxConnectorGeometry(e,g){
   const a=e.connector_points?.source,b=e.connector_points?.target;
@@ -14023,7 +14026,9 @@ function sbSxNextNoteNumber(model){
 }
 function sbSxAddActor(){
   const model=currentModel(),g=laneGeometry(model),output=model.lanes.find(l=>l.kind==='output'&&sbSxNumber(l.x)),x=output?.x??g.bodyWidth,width=STANDARD.actorLaneWidth;
-  pushHistory();for(const lane of model.lanes)if(sbSxNumber(lane.x)&&lane.x>=x)sbSxTranslateLane(model,lane,width);
+  pushHistory();const moved=new Set();for(const lane of model.lanes)if(sbSxNumber(lane.x)&&lane.x>=x){lane.x+=width;if(sbSxNumber(lane.label_bounds?.x))lane.label_bounds.x+=width;moved.add(lane.id);}
+  const deltas=new Map(model.nodes.filter(n=>moved.has(n.lane_id)).map(n=>[n.id,{x:width,y:0}]));sbSxMoveNodes(model,deltas);
+  for(const n of model.nodes)if(moved.has(n.lane_id)&&sbSxNumber(n.x_rel))n.x_rel-=width;
   const lane={...actorLane(''),x,width,label_bounds:{x:x+6,y:g.laneHeaderHeight*.15,width:width-12,height:g.laneHeaderHeight*.7},left_border_visible:true,right_border_visible:true,fixed:false};
   const index=output?model.lanes.indexOf(output):model.lanes.length;model.lanes.splice(index,0,lane);
   if(sbSxNumber(model.layout.width))model.layout.width+=width;
@@ -14036,6 +14041,14 @@ function sbSxFrozenHeaders(rebuild){
   host.classList.remove('hidden');host.style.left=vp.offsetLeft+'px';host.style.top=vp.offsetTop+'px';host.style.width=vp.clientWidth+'px';host.style.height=g.laneHeaderHeight*scale+'px';
   if(rebuild||!host.firstElementChild){host.innerHTML=sbRenderSx(currentModel(),{headersOnly:true,interactive:true,includeNotesBlock:false});bindSxInteractions(host.firstElementChild);}
   host.firstElementChild.setAttribute('width','100%');host.firstElementChild.setAttribute('height','100%');host.firstElementChild.setAttribute('viewBox',[(vp.scrollLeft-stage.offsetLeft)/scale,g.laneTop,vp.clientWidth/scale,g.laneHeaderHeight].join(' '));
+}
+function sbSxHistoryState(options){
+  const flow=activeFlow();return {model:clone(flow.payload.model),all_flows:options.includeAllFlows?clone(APP.master.flows):null,process:clone({process_code:APP.master.process_code,process_name:APP.master.process_name,purpose:APP.master.purpose,document_catalog:APP.master.document_catalog}),flow:clone({version_name:flow.version_name,version_type:flow.version_type,status:flow.status})};
+}
+function sbSxRestoreHistory(state){
+  if(!APP.master)return false;if(Array.isArray(state.all_flows))APP.master.flows=clone(state.all_flows);
+  const flow=activeFlow();if(!flow)return false;if(!Array.isArray(state.all_flows))flow.payload.model=clone(state.model);
+  Object.assign(APP.master,clone(state.process));Object.assign(flow,clone(state.flow));return true;
 }
 
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
