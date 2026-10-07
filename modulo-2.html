@@ -458,6 +458,17 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 .sb-inline{position:absolute;z-index:70;background:white;border:2px solid #00AEEF;border-radius:4px;box-sizing:border-box}
 .sb-inline-input{resize:none;padding:6px;color:#111;font-family:Arial,sans-serif;border:0;min-height:38px}
 #btn_freeze_headers[aria-pressed="true"],#btn_alignment_guides[aria-pressed="true"]{background:#E0F5FF;border-color:#00AEEF}
+.sb-icon-popup{position:absolute;z-index:65;width:300px;max-width:calc(100vw - 24px);padding:10px;background:#fff;border:1px solid #C8D8E5;border-radius:12px;box-shadow:0 12px 32px rgba(10,31,68,.18);font-size:12px}
+.sb-icon-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.sb-icon-heading button{min-height:26px;padding:0 7px;font-size:18px}
+.sb-icon-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;max-height:210px;overflow:auto;margin-bottom:8px}
+.sb-icon-grid button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:66px;padding:6px;font-size:11px;font-weight:600;overflow-wrap:anywhere}
+.sb-icon-grid button[aria-pressed="true"]{border-color:#0284C7;background:#F0F9FF}
+.sb-icon-grid img,.sb-icon-placeholder{width:24px;height:24px;object-fit:contain}
+.sb-icon-placeholder{display:grid;place-items:center;background:#F1F5F9;border-radius:4px;color:#64748B}
+.sb-icon-status{padding:8px 0 12px;color:#5B6F8A}
+#sb_icon_remove{width:100%;min-height:30px;padding:5px 8px;font-size:12px}
+.sb-system-icon{cursor:pointer;outline:none}.sb-system-icon:focus .sb-icon-hit{stroke:#0284C7;stroke-width:1.2}
 </style>
 <script>
 // SGMP Session Guard conservado del módulo vigente.
@@ -599,6 +610,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 </div>
 <div id="sb_frozen_headers" class="sb-frozen hidden" aria-label="Encabezados fijados"></div>
 <div id="sb_inline_editor" class="sb-inline hidden"><textarea id="sb_inline_input"></textarea></div>
+<div id="sb_icon_popup" class="sb-icon-popup hidden" role="dialog" aria-label="Icono de sistema"></div>
 <div id="sb_context_menu" class="sb-context hidden" role="menu" aria-label="Insertar en carril"><button id="sb_context_add" role="menuitem" tabindex="-1" aria-haspopup="dialog" type="button">Agregar caja</button></div>
 <div
   id="node_annotation_popup"
@@ -1027,7 +1039,7 @@ function saveActiveFlow({silent=false}={}){
   return persisted;
 }
 
-function markDirty(){renumberConnectors(currentModel());APP.dirty=true;const flow=activeFlow();if(flow)flow.updated_at=nowIso();renderStudioContext();}
+function markDirty(){sbNormalizeSystemIcons(currentModel());renumberConnectors(currentModel());APP.dirty=true;const flow=activeFlow();if(flow)flow.updated_at=nowIso();renderStudioContext();}
 
 function captureHistoryState(options={}){
   const flow=activeFlow(),
@@ -2402,6 +2414,7 @@ function changeNodeType(
   pushHistory();
 
   node.type=next;
+  sbNormalizeSystemIcon(node,model);
 
   markDirty();
   renderStudio();
@@ -3569,8 +3582,10 @@ function renderNodeShape(
 function renderNodeText(
   node,
   b,
-  noteMap
+  noteMap,
+  model=currentModel()
 ){
+  b=sbSystemIconTextBox(node,b,model);
   const isDecision=
     node.type==='decision';
 
@@ -5213,7 +5228,8 @@ sel=
       style="cursor:${interactive?'move':'default'}"
     >
       ${renderNodeShape(node,b,sel,interactive)}
-      ${renderNodeText(node,b,noteMap)}
+      ${renderNodeText(node,b,noteMap,model)}
+      ${renderSystemIcon(node,b,model,interactive)}
       ${renderNodeAnnotationTrigger(node,b,interactive)}
     </g>
   `;
@@ -7052,6 +7068,7 @@ function bindSvgInteractions(svgRoot=null){
   if(!svg){
     return;
   }
+  sbBindSystemIconControls(svg);
 
   /*
    * Selección de carriles.
@@ -10479,7 +10496,7 @@ const orderedActorNodes=semanticActorNodeOrder(model);
 
 const activities=orderedActorNodes.map((node,index)=>{
     
-    const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...clone(node.meta||{}),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
+    const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...sbIconContractMeta(node.meta),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
   const noteMap=   buildNoteNumberMap(     model,     geom.lanes   );  const clarifying_notes=   noteMap.ordered.map(note=>{      const node=             nodeById(               note.node_id,               model             ),            lane=             !node &&             text(note.lane_id)               ? laneById(                   note.lane_id,                   model                 )               : null,            targetKind=             node               ? noteTargetKind(                   node,                   model                 )               : lane?.kind==='actor'                 ? 'actor_lane'                 : '',            isActivity=             targetKind==='activity'||             targetKind==='decision';      return {       id:note.id,        target_id:         node?.id||         lane?.id||         '',        target_kind:         targetKind,        target_name:         upper(           node?.label||           lane?.label||           ''         ),        activity_id:         isActivity           ? node?.id||''           : '',        activity_name:         isActivity           ? upper(node?.label||'')           : '',        text:upper(note.text),       number:noteMap.map.get(note.id)     };   });
   const docMap=new Map();normalizeDocumentCatalog(APP.master).forEach(value=>docMap.set(documentKey(value),documentTextValue(value)));model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const value=documentTextValue(d);if(value)docMap.set(documentKey(value),value);});
   return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(APP.master.purpose),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
@@ -10507,6 +10524,7 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
     );
   }
 
+  await sbPrepareSystemIconsForPdf(flow.payload.model);
   const svgString=svgForFlow(flow,{includeNotesBlock}),
         parser=new DOMParser(),
         docSvg=parser
@@ -11955,6 +11973,7 @@ function normalizeLoadedModel(model){
     return createBlankModel();
   }
 
+  sbNormalizeSystemIcons(model);
   model.model_version='6.2';
 
   model.layout=
@@ -13388,7 +13407,7 @@ function sbBindInspectorFields(){
   });
 }
 function sbEditableTarget(target){
-  if(!(target instanceof Element)||target.closest('[data-connect-port],[data-connector-marker],[data-node-annotation],[data-lane-insert],[data-lane-resize],[data-edge-segment]'))return null;
+  if(!(target instanceof Element)||target.closest('[data-system-icon],[data-connect-port],[data-connector-marker],[data-node-annotation],[data-lane-insert],[data-lane-resize],[data-edge-segment]'))return null;
   const flowId=APP.activeFlowId,label=target.closest('[data-edge-label]');
   if(label)return {kind:'edge',id:label.dataset.edgeId,field:'label',flowId,element:label};
   const node=target.closest('.node[data-node-id]');
@@ -13645,6 +13664,7 @@ function sbCancelPortDrag(){
 
 function init(){
   sbBindTools();
+  sbBindSystemIcons();
   document.addEventListener("pointermove",sbMovePortDrag);
   document.addEventListener("pointerup",sbEndPortDrag);
   document.addEventListener("pointercancel",sbEndPortDrag);
@@ -13814,7 +13834,164 @@ function importSx(raw){
     gMsg('err','No fue posible importar desde SX: '+error.message);return false;
   }
 }
-  
+
+// Catálogo de activos públicos; ningún dato de imagen se guarda en FlowModel.
+const SB_ICONS_ENDPOINT='https://api.github.com/repos/enginesgmp/sgmp/contents/assets/icons?ref=main';
+const SB_ICONS_ASSETS='https://raw.githubusercontent.com/enginesgmp/sgmp/main/assets/icons/';
+function sbSystemIconState(){
+  return APP.tools.systemIcons||(APP.tools.systemIcons={status:'idle',catalog:new Map(),promise:null,popup:null,frame:null});
+}
+function sbIconEligible(node,model=currentModel()){
+  const kind=laneKindForNode(node,model);
+  return kind==='actor'&&node?.type==='activity'||['input','output'].includes(kind)&&node?.type==='system_response';
+}
+function sbIconFileValid(file){return typeof file==='string'&&/^[^/\\\u0000-\u001f]+\.png$/i.test(file);}
+function sbNormalizeSystemIcon(node,model){
+  // Los JSON anteriores sin propiedad siguen representando «sin icono».
+  if(Object.hasOwn(node,'icon_file')&&(!sbIconEligible(node,model)||!sbIconFileValid(node.icon_file)))node.icon_file=null;
+}
+function sbNormalizeSystemIcons(model){(model?.nodes||[]).forEach(node=>sbNormalizeSystemIcon(node,model));}
+function sbIconContractMeta(meta){const copy=clone(meta||{});delete copy.icon_file;return copy;}
+async function sbIconFetch(url,timeout=8000){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+  try{const response=await fetch(url,{signal:controller.signal,cache:'no-cache'});if(!response.ok)throw Error('Activo no disponible');return await response.arrayBuffer();}
+  finally{clearTimeout(timer);}
+}
+function sbLoadSystemIconCatalog(){
+  const state=sbSystemIconState();if(state.promise)return state.promise;
+  state.status='loading';
+  state.promise=(async()=>{
+    try{
+      const bytes=await sbIconFetch(SB_ICONS_ENDPOINT),rows=JSON.parse(new TextDecoder().decode(bytes));
+      if(!Array.isArray(rows))throw Error('Catálogo no disponible');
+      rows.filter(row=>row.type==='file'&&sbIconFileValid(row.name)).sort((a,b)=>a.name.localeCompare(b.name,'es',{numeric:true})||a.name.localeCompare(b.name)).forEach(row=>{
+        state.catalog.set(row.name,{file:row.name,label:row.name.replace(/\.png$/i,''),sha:String(row.sha||''),url:SB_ICONS_ASSETS+encodeURIComponent(row.name)+'?v='+encodeURIComponent(row.sha||''),status:'idle',data:null,promise:null});
+      });
+      state.status='ready';
+      (currentModel()?.nodes||[]).filter(n=>sbIconEligible(n)&&n.icon_file).forEach(n=>sbLoadSystemIcon(n.icon_file));
+    }catch(error){state.status='error';state.catalog.clear();}
+    sbRenderSystemIconPopup();return state.catalog;
+  })();
+  return state.promise;
+}
+function sbLoadSystemIcon(file){
+  const entry=sbSystemIconState().catalog.get(file);if(!entry)return Promise.resolve(null);
+  if(entry.promise)return entry.promise;
+  entry.status='loading';
+  entry.promise=(async()=>{
+    try{
+      const bytes=await sbIconFetch(entry.url),signature=new Uint8Array(bytes,0,Math.min(8,bytes.byteLength));
+      if(signature.length!==8||![137,80,78,71,13,10,26,10].every((v,i)=>signature[i]===v))throw Error('PNG inválido');
+      const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('PNG no disponible'));reader.readAsDataURL(new Blob([bytes],{type:'image/png'}));});
+      await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>image.naturalWidth&&image.naturalHeight?resolve():reject(Error('PNG vacío'));image.onerror=()=>reject(Error('PNG inválido'));image.src=data;});
+      entry.data=data;entry.status='ready';
+    }catch(error){entry.data=null;entry.status='error';}
+    sbRenderSystemIconPopup();
+    if((currentModel()?.nodes||[]).some(n=>n.icon_file===file&&sbIconEligible(n)))sbQueueSystemIconRefresh();
+    return entry.data;
+  })();
+  return entry.promise;
+}
+function sbQueueSystemIconRefresh(){
+  const state=sbSystemIconState();if(state.frame!==null)return;
+  state.frame=requestAnimationFrame(()=>{
+    state.frame=null;
+    if(APP.view==='studio'&&currentModel()&&!APP.tools.editing&&!APP.tools.nudge&&!APP.tools.portDrag&&!APP.drag&&!APP.routeDrag&&!APP.labelDrag&&!APP.resizeDrag&&!APP.laneResize&&!APP.connectorDrag&&!APP.marquee)renderStudio(false);
+  });
+}
+function sbSystemIconEntry(node,model=currentModel()){
+  if(!sbIconEligible(node,model)||!sbIconFileValid(node.icon_file))return null;
+  const entry=sbSystemIconState().catalog.get(node.icon_file);
+  if(entry?.status==='idle')sbLoadSystemIcon(node.icon_file);
+  return entry?.status==='ready'?entry:null;
+}
+function sbSystemIconBounds(node,box){
+  const size=18,margin=4,y=box.y+box.h-margin-size,
+    inset=node.type==='system_response'?16*(box.h-margin)/box.h:0;
+  return {x:box.x+box.w-inset-margin-size,y,w:size,h:size};
+}
+function sbSystemIconTextBox(node,box,model=currentModel()){
+  return sbSystemIconEntry(node,model)?{...box,h:box.h-24}:box;
+}
+function renderSystemIcon(node,box,model,interactive){
+  if(!sbIconEligible(node,model))return '';
+  const entry=sbSystemIconEntry(node,model),selected=APP.selection?.type==='node'&&APP.selection.id===node.id;
+  if(!entry&&(!interactive||!selected))return '';
+  const b=sbSystemIconBounds(node,box),label=entry?'Cambiar icono de sistema: '+entry.label:node.icon_file?'Icono no disponible. Cambiar icono de sistema':'Agregar icono de sistema',
+    image=entry?`<image data-system-icon-image="${escapeXml(entry.file)}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" href="${escapeXml(entry.data)}" preserveAspectRatio="xMidYMid meet" pointer-events="none"/>`:
+      `<rect x="${b.x}" y="${b.y}" width="18" height="18" rx="3" fill="#fff" stroke="#0284C7" stroke-width=".8"/><text x="${b.x+9}" y="${b.y+9}" dominant-baseline="middle" text-anchor="middle" font-size="14" fill="#0284C7" pointer-events="none">+</text>`;
+  return `<g ${interactive?`data-system-icon="${escapeXml(node.id)}" class="sb-system-icon" role="button" tabindex="0" aria-label="${escapeXml(label)}"`:'pointer-events="none"'}><title>${escapeXml(entry?.label||label)}</title>${image}${interactive?`<rect class="sb-icon-hit" x="${b.x}" y="${b.y}" width="18" height="18" rx="2" fill="transparent" stroke="transparent"/>`:''}</g>`;
+}
+function sbCloseSystemIconPopup(returnFocus=false){
+  const state=sbSystemIconState(),popup=$('sb_icon_popup'),open=state.popup;
+  state.popup=null;popup?.classList.add('hidden');
+  if(returnFocus&&open){const control=[...($('canvas')?.querySelectorAll('[data-system-icon]')||[])].find(el=>el.dataset.systemIcon===open.nodeId);(control||$('viewport'))?.focus({preventScroll:true});}
+}
+function sbSetSystemIcon(nodeId,file){
+  const model=currentModel(),node=nodeById(nodeId,model);if(!node||!sbIconEligible(node,model))return false;
+  if(file!==null&&!sbSystemIconState().catalog.has(file))return false;
+  sbCloseSystemIconPopup();
+  if((node.icon_file??null)===file)return true;
+  if(!sbCommitEdit({render:false}))return false;
+  pushHistory();node.icon_file=file;markDirty();renderStudio();return true;
+}
+function sbRenderSystemIconPopup(){
+  const state=sbSystemIconState(),popup=$('sb_icon_popup'),context=state.popup;if(!popup||!context)return;
+  const node=nodeById(context.nodeId);
+  if(context.flowId!==APP.activeFlowId||!node||!sbIconEligible(node)){sbCloseSystemIconPopup();return;}
+  const active=document.activeElement,focused=active?.closest('[data-icon-choice]')?.dataset.iconChoice,focusId=popup.contains(active)?active.id:null;
+  let choices='';
+  if(state.status==='loading'||state.status==='idle')choices='<p class="sb-icon-status" role="status">Cargando iconos…</p>';
+  else if(state.status==='error')choices='<p class="sb-icon-status" role="status">Iconos temporalmente no disponibles.</p>';
+  else if(!state.catalog.size)choices='<p class="sb-icon-status" role="status">No hay iconos publicados.</p>';
+  else choices='<div class="sb-icon-grid">'+[...state.catalog.values()].map(entry=>`<button type="button" data-icon-choice="${escapeHtml(entry.file)}" title="${escapeHtml(entry.label)}" ${entry.status==='error'?'disabled':''} aria-pressed="${node.icon_file===entry.file}">${entry.data?`<img src="${escapeHtml(entry.data)}" alt="">`:'<span class="sb-icon-placeholder" aria-hidden="true">·</span>'}<span>${escapeHtml(entry.label)}</span></button>`).join('')+'</div>';
+  popup.innerHTML='<div class="sb-icon-heading"><strong>Icono de sistema</strong><button type="button" id="sb_icon_close" aria-label="Cerrar selector">×</button></div>'+choices+`<button type="button" id="sb_icon_remove" ${node.icon_file?'':'disabled'}>Sin icono</button>`;
+  $('sb_icon_close').onclick=()=>sbCloseSystemIconPopup(true);
+  $('sb_icon_remove').onclick=()=>sbSetSystemIcon(context.nodeId,null);
+  popup.querySelectorAll('[data-icon-choice]').forEach(button=>button.onclick=()=>sbSetSystemIcon(context.nodeId,button.dataset.iconChoice));
+  if(focused)[...popup.querySelectorAll('[data-icon-choice]')].find(button=>button.dataset.iconChoice===focused)?.focus({preventScroll:true});
+  else if(focusId)$(focusId)?.focus({preventScroll:true});
+  // Cargar una vez por archivo; los previews no dependen de la caché HTTP del navegador.
+  if(state.status==='ready')state.catalog.forEach(entry=>{if(entry.status==='idle')sbLoadSystemIcon(entry.file);});
+}
+function sbOpenSystemIconPopup(nodeId,control){
+  const node=nodeById(nodeId);if(!node||!sbIconEligible(node)||!sbCommitEdit({render:false}))return;
+  sbFinishNudge();closeNodeAnnotationPopup();sbCloseContextMenu();APP.tools.lastTextClick=null;APP.tools.textPointer=null;
+  const state=sbSystemIconState(),popup=$('sb_icon_popup');state.popup={nodeId,flowId:APP.activeFlowId,file:node.icon_file??null};
+  sbRenderSystemIconPopup();popup.classList.remove('hidden');
+  const rect=control.getBoundingClientRect();sbPlaceOverlay(popup,rect.right+5,rect.bottom+5);
+  (popup.querySelector('[data-icon-choice]:not(:disabled)')||$('sb_icon_close')).focus({preventScroll:true});
+}
+function sbBindSystemIconControls(svg){
+  svg.querySelectorAll('[data-system-icon]').forEach(control=>{
+    control.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();});
+    control.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();sbOpenSystemIconPopup(control.dataset.systemIcon,control);});
+    control.addEventListener('dblclick',event=>{event.preventDefault();event.stopPropagation();});
+    control.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
+    control.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();sbOpenSystemIconPopup(control.dataset.systemIcon,control);}});
+  });
+  const context=sbSystemIconState().popup;
+  if(context&&(context.flowId!==APP.activeFlowId||!sbIconEligible(nodeById(context.nodeId))||(nodeById(context.nodeId)?.icon_file??null)!==context.file))sbCloseSystemIconPopup();
+}
+function sbBindSystemIcons(){
+  const popup=$('sb_icon_popup');
+  popup.addEventListener('pointerdown',event=>event.stopPropagation());
+  popup.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();});
+  popup.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();sbCloseSystemIconPopup(true);}
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Delete','Backspace'].includes(event.key))event.stopPropagation();
+  });
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest?.('#sb_icon_popup,[data-system-icon]'))sbCloseSystemIconPopup();},true);
+  $('viewport').addEventListener('scroll',()=>sbCloseSystemIconPopup(),{passive:true});
+  window.addEventListener('resize',()=>sbCloseSystemIconPopup());
+  document.addEventListener('fullscreenchange',()=>sbCloseSystemIconPopup());
+  sbLoadSystemIconCatalog();
+}
+async function sbPrepareSystemIconsForPdf(model){
+  await sbLoadSystemIconCatalog();
+  const files=new Set((model?.nodes||[]).filter(node=>sbIconEligible(node,model)&&sbIconFileValid(node.icon_file)).map(node=>node.icon_file));
+  await Promise.allSettled([...files].map(file=>sbLoadSystemIcon(file)));
+}
 
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
 </script>
