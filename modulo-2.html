@@ -843,6 +843,7 @@ function openFlow(flowId){
 function duplicateFlow(flowId=APP.activeFlowId){
   const src=flowById(flowId);if(!src)return false;
   const copy=createFlow({name:`${src.version_name} - COPIA`,type:src.version_type,status:'draft',source:'duplicate',parentFlowId:src.flow_id,model:clone(src.payload.model)});
+  if(sbIsSx(src.payload.model))copy.payload=clone(src.payload);
   copy.saved_at=nowIso();renderLibrary();openFlow(copy.flow_id);gMsg('ok','Flujo duplicado.');return true;
 }
 
@@ -1289,6 +1290,7 @@ function nextNodePosition(laneId){
 }
 
 function insertNode(type){
+  if(sbIsSx())return sbSxInsertNode(type);
   const model=currentModel();if(!model||APP.selection?.type!=='lane')return;
   const lane=laneById(APP.selection.id,model);if(!lane)return;
   if(!ALLOWED_BY_LANE[lane.kind]?.includes(type)){gMsg('err','La metodología no permite esa figura en el carril seleccionado.');return;}
@@ -1856,6 +1858,7 @@ function restoreActorLaneReflowState(
 }
 
 function addActorLane(){
+  if(sbIsSx())return sbSxAddActor();
   const model=currentModel();
 
   if(!model)return;
@@ -2148,6 +2151,7 @@ function copiedNodeMeta(meta){
 }
 
 function pasteCopiedNode(){
+  if(sbIsSx())return sbSxPasteNode();
   const model=currentModel(),
         clip=APP.nodeClipboard,
         pointer=APP.pointerCanvas;
@@ -4956,6 +4960,7 @@ const note={
       ? node.note_ids
       : [];
 
+  if(sbIsSx(model))note.number=sbSxNextNoteNumber(model);
   node.note_ids.push(note.id);
 
   markDirty();
@@ -12593,7 +12598,7 @@ function sbQueueDragRender(){
   APP.tools.dragFrame=requestAnimationFrame(()=>{
     APP.tools.dragFrame=null;
     if(APP.view==='studio'&&currentModel()&&
-       (APP.drag||APP.routeDrag||APP.labelDrag||APP.resizeDrag||APP.laneResize||APP.connectorDrag))renderStudio(false,true);
+       (APP.drag||APP.routeDrag||APP.labelDrag||APP.resizeDrag||APP.laneResize||APP.connectorDrag||APP.tools.sxDrag))renderStudio(false,true);
   });
 }
 function sbCancelDragRender(){
@@ -13176,6 +13181,7 @@ function sbRecordSnapshot(snapshot){
   APP.future=[];updateHistoryButtons();
 }
 function sbApplySelectionMoves(context,moves,record=true){
+  if(sbIsSx(context.model))return sbSxSelectionMoves(context,moves,record);
   const {model,geometry,states}=context,flow=activeFlow(),before=clone(model),snapshot=captureHistoryState();
   const deltas=new Map();let moved=false;
   try{
@@ -13540,8 +13546,7 @@ function sbBindTools(){
   document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();if(currentModel())renderStudio(false);});
 }
 function sbUpdateFrozenHeaders(rebuild=false){
-  $('btn_freeze_headers').disabled=sbIsSx();
-  if(sbIsSx()){$('sb_frozen_headers').classList.add('hidden');return;}
+  if(sbIsSx())return sbSxFrozenHeaders(rebuild);
   const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),model=currentModel(),button=$('btn_freeze_headers');
   if(!host||!vp||!stage||!button)return;
   button.disabled=!model||APP.view!=='studio';
@@ -13773,7 +13778,7 @@ function sbSxBox(node,g){return {x:g.origin.x+(sbSxNumber(node?.x)?node.x:0),y:g
 function sbSxVisibleNode(n){return [n?.x,n?.y,n?.width,n?.height].every(sbSxNumber)&&n.width>0&&n.height>0;}
 function sbSxAbsolute(p,g){return sbSxPoint(p)?{x:p.x+g.origin.x,y:p.y+g.origin.y}:null;}
 function sbSxRoute(e,g){
-  if(!Array.isArray(e.waypoints)||!sbSxPoint(e.source_point)||!sbSxPoint(e.target_point))return [];
+  if(!Array.isArray(e.waypoints)||!e.waypoints.every(sbSxPoint)||!sbSxPoint(e.source_point)||!sbSxPoint(e.target_point))return [];
   return [e.source_point,...e.waypoints,e.target_point].map(p=>sbSxAbsolute(p,g)).filter(Boolean);
 }
 function sbSxCircleEnd(center,size,neighbor){
@@ -13782,7 +13787,7 @@ function sbSxCircleEnd(center,size,neighbor){
   return d?{x:center.x+dx/d,y:center.y+dy/d}:center;
 }
 function sbSxBranch(attachment,route,center,size,direction,g){
-  if(!sbSxPoint(attachment)||!sbSxPoint(center)||!Array.isArray(route))return [];
+  if(!sbSxPoint(attachment)||!sbSxPoint(center)||!Array.isArray(route)||!route.every(sbSxPoint))return [];
   const pts=route.filter(sbSxPoint).map(p=>({...p}));
   if(pts.length>1){const dist=(a,b)=>(a.x-b.x)**2+(a.y-b.y)**2;if(dist(attachment,pts[0])+dist(center,pts.at(-1))>dist(attachment,pts.at(-1))+dist(center,pts[0]))pts.reverse();}
   const end=sbSxCircleEnd(center,size,pts.at(-1)||attachment),full=[attachment,...pts,end];
@@ -13804,7 +13809,7 @@ function sbSxNotesLayout(noteMap,width){
 function sbSxNodeText(n,b,noteMap){
   if(!sbSxVisibleNode(n))return '';
   const size=sbSxNumber(n.font_size)&&n.font_size>0?n.font_size:10.5;
-  const references=sbSxArray(n.note_refs).length?sbSxArray(n.note_refs):sbSxArray(n.note_ids).map(id=>noteMap.map.get(id)).filter(v=>v!==undefined&&v!==null&&v!=='');
+  const references=[...new Set([...sbSxArray(n.note_refs),...sbSxArray(n.note_ids).map(id=>noteMap.map.get(id))])].filter(v=>v!==undefined&&v!==null&&v!=='');
   const label=sbSxText(n.label),lines=label?label.split(/\r?\n/).flatMap(s=>sbWrapMeasuredText(s,Math.max(8,b.w-(n.type==='related_process'?28:n.type==='system_response'?44:n.type==='decision'?b.w*.3:14)),size)):[];
   for(const ref of references)if(ref!==null&&ref!==''&&!label.includes('('+ref+')'))lines.push('('+ref+')');
   const lh=size*1.12,start=b.y+b.h/2-(lines.length-1)*lh/2;
@@ -13816,9 +13821,9 @@ function sbSxCircle(c,g,attributes='',selected=false){
   const fill=c.kind==='input'?'#93C47D':c.kind==='output'?'#FFFF00':'#FFFFFF';
   return '<g '+attributes+'>'+ (known?'<ellipse cx="'+p.x+'" cy="'+p.y+'" rx="'+c.width/2+'" ry="'+c.height/2+'" fill="'+fill+'" stroke="'+(selected?'#00AEEF':'#000')+'" stroke-width="'+(selected?2:1)+'"/>':'')+'<text x="'+p.x+'" y="'+p.y+'" text-anchor="middle" dominant-baseline="middle" font-family="Arial" font-size="'+(known?Math.min(10,c.height*.45):10)+'" pointer-events="none">'+escapeXml(sbSxText(c.label))+'</text></g>';
 }
-function sbSxLine(points,label,labelPoint,g,attrs='',selected=false,interactive=false){
+function sbSxLine(points,label,labelPoint,g,attrs='',selected=false,interactive=false,arrow=true){
   let svg='';const color=selected?'#00AEEF':'#000',path=points.map((p,i)=>(i?'L':'M')+p.x+' '+p.y).join(' ');
-  if(points.length>1){svg='<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="'+(selected?2:1)+'"/>'+sbSxArrow(points,color);}
+  if(points.length>1){svg='<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="'+(selected?2:1)+'"/>'+(arrow?sbSxArrow(points,color):'');}
   if(labelPoint&&sbSxText(label)){const p=sbSxAbsolute(labelPoint,g);svg+='<text x="'+p.x+'" y="'+p.y+'" font-size="8" font-family="Arial" text-anchor="middle" dominant-baseline="middle">'+escapeXml(sbSxText(label))+'</text>';}
   return '<g '+attrs+'>'+ (interactive&&points.length>1?'<path d="'+path+'" fill="none" stroke="transparent" stroke-width="10"/>':'')+svg+'</g>';
 }
@@ -13836,6 +13841,7 @@ function sbRenderSx(model,options={}){
     const b=lane.label_bounds;
     if(b&&[b.x,b.y,b.width,b.height].every(sbSxNumber)){const fs=sbSxNumber(lane.font_size)?lane.font_size:9,refs=sbSxArray(lane.note_ids).map(id=>g.noteMap.map.get(id)).filter(v=>v!==null&&v!==undefined&&v!==''),lines=sbSxText(lane.label).split(/\r?\n/).flatMap(s=>sbWrapMeasuredText(s,Math.max(8,b.width),fs,true));if(refs.length)lines.push(refs.map(v=>'('+v+')').join(' '));const y=o.y+b.y+b.height/2-(lines.length-1)*fs*1.12/2;svg+='<text '+(interactive?'data-lane-id="'+escapeXml(lane.id)+'"':'')+' x="'+(o.x+b.x+b.width/2)+'" y="'+y+'" text-anchor="middle" dominant-baseline="middle" font-size="'+fs+'" font-weight="bold">'+lines.map((s,i)=>'<tspan x="'+(o.x+b.x+b.width/2)+'" dy="'+(i?fs*1.12:0)+'">'+escapeXml(s)+'</tspan>').join('')+'</text>';}
   }
+  if(options.headersOnly)return svg+'</svg>';
   for(const e of model.edges){
     const sel=interactive&&APP.selection?.type==='edge'&&APP.selection.id===e.id,attrs=interactive?'class="edge" data-edge-id="'+escapeXml(e.id)+'"':'';
     if(e.mode==='connector'){
@@ -13847,8 +13853,8 @@ function sbRenderSx(model,options={}){
       }
     }else{svg+=sbSxLine(sbSxRoute(e,g),e.label,e.label_point,g,attrs,sel,interactive);if(sel)svg+=sbSxHandles(e.waypoints,g,'edge',e.id,'waypoints');}
   }
-  for(const f of model.connection_fragments){const pts=sbSxArray(f.path).map(p=>sbSxAbsolute(p,g)).filter(Boolean),sel=interactive&&APP.selection?.type==='sx_fragment'&&APP.selection.id===f.id;svg+=sbSxLine(pts,f.label,null,g,interactive?'data-sx-fragment="'+escapeXml(f.id)+'"':'',sel,interactive);if(f.label&&pts.length)svg+='<text x="'+pts[Math.floor(pts.length/2)].x+'" y="'+(pts[Math.floor(pts.length/2)].y-6)+'" font-size="8">'+escapeXml(f.label)+'</text>';if(sel)svg+=sbSxHandles(f.path,g,'sx_fragment',f.id,'path');}
-  for(const c of model.connectors){const sel=interactive&&APP.selection?.type==='sx_connector'&&APP.selection.id===c.id;svg+=sbSxLine(sbSxBranch(c.attachment_point,c.route,c.point,c,c.direction,g),'',null,g,interactive?'data-sx-circle-route="'+escapeXml(c.id)+'"':'',sel,interactive);svg+=sbSxCircle(c,g,interactive?'data-sx-circle="'+escapeXml(c.id)+'"':'',sel);if(sel)svg+=sbSxHandles(c.route,g,'sx_connector',c.id,'route');}
+  for(const f of model.connection_fragments){const pts=sbSxArray(f.path).every(sbSxPoint)?sbSxArray(f.path).map(p=>sbSxAbsolute(p,g)):[],sel=interactive&&APP.selection?.type==='sx_fragment'&&APP.selection.id===f.id;svg+=sbSxLine(pts,f.label,null,g,interactive?'data-sx-fragment="'+escapeXml(f.id)+'"':'',sel,interactive,['in','out'].includes(f.direction));if(f.label&&pts.length)svg+='<text x="'+pts[Math.floor(pts.length/2)].x+'" y="'+(pts[Math.floor(pts.length/2)].y-6)+'" font-size="8">'+escapeXml(f.label)+'</text>';if(sel)svg+=sbSxHandles(f.path,g,'sx_fragment',f.id,'path');}
+  for(const c of model.connectors){const sel=interactive&&APP.selection?.type==='sx_connector'&&APP.selection.id===c.id;svg+=sbSxLine(sbSxBranch(c.attachment_point,c.route,c.point,c,c.direction,g),'',null,g,interactive?'data-sx-circle-route="'+escapeXml(c.id)+'"':'',sel,interactive,['in','out'].includes(c.direction));svg+=sbSxCircle(c,g,interactive?'data-sx-circle="'+escapeXml(c.id)+'"':'',sel);if(sel)svg+=sbSxHandles(c.route,g,'sx_connector',c.id,'route');}
   for(const node of model.nodes){if(!sbSxVisibleNode(node))continue;const b=sbSxBox(node,g),sel=interactive&&isNodeSelected(node.id);svg+='<g class="node" data-node-id="'+escapeXml(node.id)+'" style="cursor:'+ (interactive?'move':'default')+'">'+(node.type?renderNodeShape(node,b,sel,interactive):'')+sbSxNodeText(node,b,g.noteMap)+renderNodeAnnotationTrigger(node,b,interactive)+'</g>';}
   if(options.includeNotesBlock!==false&&g.notesLayout?.items.length){const y=g.bodyBottom,l=g.notesLayout;svg+='<text x="'+o.x+'" y="'+(y+24)+'" font-size="11" font-weight="bold">NOTAS ACLARATORIAS</text>';for(const n of l.items){svg+='<text x="'+o.x+'" y="'+(y+n.y)+'" font-size="11" font-weight="bold">'+escapeXml(n.number)+'</text>';for(let i=0;i<n.lines.length;i++)svg+='<text x="'+l.textX+'" y="'+(y+n.y+i*l.lineHeight)+'" font-size="11">'+escapeXml(n.lines[i])+'</text>';}}
   return svg+'</svg>';
@@ -13864,7 +13870,7 @@ function sbSxBeginDrag(event,kind,id,field=null,index=null){
 function sbSxMoveNode(model,id,dx,dy){
   const n=model.nodes.find(n=>n.id===id);if(!n||!sbSxVisibleNode(n))return;n.x+=dx;n.y+=dy;if(sbSxNumber(n.x_rel))n.x_rel+=dx;
   const move=p=>{if(sbSxPoint(p)){p.x+=dx;p.y+=dy;}};
-  for(const e of model.edges){if(e.source===id)move(e.source_point);if(e.target===id)move(e.target_point);if(e.source===id&&e.target===id){sbSxArray(e.waypoints).forEach(move);move(e.label_point);}if(e.mode==='connector')for(const key of ['source','target'])if((key==='source'?e.source:e.target)===id){move(e.connector_points?.[key]);sbSxArray(e.connector_routes?.[key]).forEach(move);}}
+  for(const e of model.edges){if(e.source===id)move(e.source_point);if(e.target===id)move(e.target_point);if(e.mode==='connector')for(const key of ['source','target'])if((key==='source'?e.source:e.target)===id){move(e.connector_points?.[key]);sbSxArray(e.connector_routes?.[key]).forEach(move);}}
   for(const c of model.connectors)if(c.element_id===id){move(c.attachment_point);move(c.point);sbSxArray(c.route).forEach(move);}
   for(const f of model.connection_fragments)if(f.element_id===id){const pts=sbSxArray(f.path);move(f.attachment_point);if(pts.length)move(f.direction==='in'?pts.at(-1):pts[0]);}
 }
@@ -13873,7 +13879,7 @@ function sbSxMoveDrag(event){
   if(!d.moved&&Math.hypot(dx,dy)*(APP.camera.scale||1)<4)return;d.moved=true;
   activeFlow().payload.model=clone(d.snapshot.model);const owner=sbSxOwner(d.kind,d.id);
   if(d.field){let target=owner;for(const key of d.field.split('.'))target=target?.[key];if(sbSxPoint(target?.[d.index])){target[d.index].x+=dx;target[d.index].y+=dy;}}
-  else if(d.kind==='node')sbSxMoveNode(currentModel(),d.id,dx,dy);
+  else if(d.kind==='node')sbSxMoveNodes(currentModel(),new Map([[d.id,{x:dx,y:dy}]]));
   else if(d.kind==='sx_connector'&&sbSxPoint(owner.point)){owner.point.x+=dx;owner.point.y+=dy;}
   else if(d.kind==='edge'&&['source','target'].includes(d.index)){const point=owner.connector_points?.[d.index];if(sbSxPoint(point)){point.x+=dx;point.y+=dy;}}
   sbQueueDragRender();
@@ -13891,14 +13897,14 @@ function bindSxInteractions(svg){
   svg.querySelectorAll('[data-sx-circle-route]').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'sx_connector',id:el.dataset.sxCircleRoute};renderStudio();}));
   svg.querySelectorAll('[data-sx-fragment]').forEach(el=>el.addEventListener('pointerdown',e=>{e.stopPropagation();APP.selection={type:'sx_fragment',id:el.dataset.sxFragment};renderStudio();}));
   svg.querySelectorAll('[data-sx-handle]').forEach(el=>el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,el.dataset.sxHandle,el.dataset.sxId,el.dataset.sxField,Number(el.dataset.sxIndex))));
-  svg.querySelectorAll('[data-sx-paired]').forEach(el=>{el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,'edge',el.dataset.edgeId,null,el.dataset.sxPaired));el.addEventListener('dblclick',e=>{e.preventDefault();e.stopPropagation();const edge=edgeById(el.dataset.edgeId),other=edge.connector_points?.[el.dataset.sxPaired==='source'?'target':'source'],g=laneGeometry();if(sbSxPoint(other)){const vp=$('viewport');vp.scrollLeft=other.x*(APP.camera.scale||1)-vp.clientWidth/2+g.origin.x;vp.scrollTop=(other.y+g.origin.y)*(APP.camera.scale||1)-vp.clientHeight/2;}});});
+  svg.querySelectorAll('[data-sx-paired]').forEach(el=>{el.addEventListener('pointerdown',e=>sbSxBeginDrag(e,'edge',el.dataset.edgeId,null,el.dataset.sxPaired));el.addEventListener('dblclick',e=>{e.preventDefault();e.stopPropagation();const edge=edgeById(el.dataset.edgeId),other=edge.connector_points?.[el.dataset.sxPaired==='source'?'target':'source'],g=laneGeometry();if(sbSxPoint(other)){const vp=$('viewport');vp.scrollLeft=(other.x+g.origin.x)*(APP.camera.scale||1)-vp.clientWidth/2+$('stage').offsetLeft;vp.scrollTop=(other.y+g.origin.y)*(APP.camera.scale||1)-vp.clientHeight/2+$('stage').offsetTop;}});});
   svg.querySelectorAll('[data-node-annotation]').forEach(el=>{el.addEventListener('pointerdown',e=>e.stopPropagation());el.addEventListener('click',e=>{e.stopPropagation();openNodeAnnotationPopup(el.dataset.nodeAnnotation,el);});});
 }
 function sbSxField(owner,key,label,json=false){const value=owner[key];return '<div class="field"><label>'+escapeHtml(label)+'</label><'+(json?'textarea':'input')+' data-sx-property="'+escapeHtml(key)+'" data-sx-json="'+(json?'1':'0')+'" '+(!json?'value="'+escapeHtml(value===null||value===undefined?'':value)+'"':'')+'>'+(json?escapeHtml(value===undefined?'null':JSON.stringify(value)): '')+(json?'</textarea>':'')+'</div>';}
 function sbSxInspector(){
   if(!sbIsSx())return false;const sel=APP.selection;if(!sel)return false;
   const root=$('inspector_content'),owner=sbSxOwner(sel.type,sel.id);
-  if(!owner){root.innerHTML='<div class="empty-note">Selecciona una caja, círculo o tramo para editar su geometría original.</div>';return true;}
+  if(sel.type==='nodes')return false;if(!owner){root.innerHTML='<div class="empty-note">Selecciona una caja, círculo o tramo para editar su geometría original.</div>';return true;}
   if(sel.type==='node'||sel.type==='lane')return false;
   const fields=sel.type==='edge'?['source_point','target_point','waypoints','label_point','connector_points','connector_sizes','connector_routes']:sel.type==='sx_connector'?['point','width','height','attachment_side','attachment_point','route']:['point','attachment_side','attachment_point','path'];
   root.innerHTML='<div class="empty-note">Diagrama SX · se conservan las medidas y rutas originales. Un campo vacío no se completa automáticamente.</div><div class="field"><label>Etiqueta</label><input id="'+(sel.type==='edge'?'ins_edge_label':'ins_sx_label')+'" value="'+escapeHtml(sbSxText(owner.label))+'"></div>'+ (sel.type==='edge'?sbSxField(owner,'source_side','Lado de origen',true)+sbSxField(owner,'target_side','Lado de destino',true):'')+fields.map(k=>sbSxField(owner,k,k,!['width','height'].includes(k))).join('')+'<button type="button" data-sx-delete>Eliminar</button>';
@@ -13907,12 +13913,12 @@ function sbSxInspector(){
 function sbSxInspectorExtra(){
   if(!sbIsSx())return;const sel=APP.selection,owner=sel&&sbSxOwner(sel.type,sel.id);if(!owner)return;const root=$('inspector_content');
   if(sel.type==='node'){root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría original SX</h4>'+['x','x_rel','y','width','height','font_size'].map(k=>sbSxField(owner,k,k)).join('')+'</div>');}
-  if(sel.type==='lane'){root.querySelectorAll('[data-lane-act]').forEach(b=>b.remove());root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría del carril SX</h4>'+sbSxField(owner,'x','Posición X')+sbSxField(owner,'width','Ancho')+['label_bounds','left_border_visible','right_border_visible'].map(k=>sbSxField(owner,k,k,true)).join('')+'</div>');}
+  if(sel.type==='lane'){root.querySelectorAll('[data-lane-act]').forEach(b=>b.remove());const hint=root.querySelector('.empty-note');if(hint)hint.textContent='Las posiciones y anchos recibidos de SX se editan aquí sin redistribuir automáticamente los demás carriles.';root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría del carril SX</h4>'+sbSxField(owner,'x','Posición X')+sbSxField(owner,'width','Ancho')+['label_bounds','left_border_visible','right_border_visible'].map(k=>sbSxField(owner,k,k,true)).join('')+'</div>');}
   if($('ins_sx_label'))sbBindEditInput($('ins_sx_label'),{kind:sel.type,id:sel.id,field:'label',flowId:APP.activeFlowId});
   root.querySelectorAll('[data-sx-property]').forEach(input=>{
     const key=input.dataset.sxProperty,initial=input.value;
     input.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();input.value=initial;input.blur();}});
-    input.addEventListener('blur',()=>{if(input.value===initial)return;try{let value=input.value.trim()===''?null:input.dataset.sxJson==='1'?JSON.parse(input.value):Number(input.value);if(input.dataset.sxJson!=='1'&&value!==null&&!Number.isFinite(value))throw Error('Medida inválida');const candidate=clone(currentModel()),next=sel.type==='node'?candidate.nodes.find(v=>v.id===sel.id):sel.type==='lane'?candidate.lanes.find(v=>v.id===sel.id):sel.type==='edge'?candidate.edges.find(v=>v.id===sel.id):sel.type==='sx_connector'?candidate.connectors.find(v=>v.id===sel.id):candidate.connection_fragments.find(v=>v.id===sel.id);next[key]=value;validateSxModel(candidate);if(JSON.stringify(owner[key])!==JSON.stringify(value)){pushHistory();owner[key]=value;markDirty();sbScheduleRefresh();}}catch(error){input.value=initial;gMsg('warn',error.message);}});
+    input.addEventListener('blur',()=>{if(input.value===initial)return;try{let value=input.value.trim()===''?null:input.dataset.sxJson==='1'?JSON.parse(input.value):Number(input.value);if(input.dataset.sxJson!=='1'&&value!==null&&!Number.isFinite(value))throw Error('Medida inválida');const candidate=clone(currentModel()),next=sel.type==='node'?candidate.nodes.find(v=>v.id===sel.id):sel.type==='lane'?candidate.lanes.find(v=>v.id===sel.id):sel.type==='edge'?candidate.edges.find(v=>v.id===sel.id):sel.type==='sx_connector'?candidate.connectors.find(v=>v.id===sel.id):candidate.connection_fragments.find(v=>v.id===sel.id);if(sel.type==='node'&&['x','y','x_rel'].includes(key)&&sbSxNumber(value)&&sbSxNumber(next[key])){const delta=value-next[key];sbSxMoveNodes(candidate,new Map([[next.id,{x:key==='y'?0:delta,y:key==='y'?delta:0}]]));}if(sel.type==='lane'&&key==='x'&&sbSxNumber(value)&&sbSxNumber(next.x))sbSxTranslateLane(candidate,next,value-next.x);next[key]=value;validateSxModel(candidate);if(JSON.stringify(owner[key])!==JSON.stringify(value)){pushHistory();activeFlow().payload.model=candidate;markDirty();sbScheduleRefresh();}}catch(error){input.value=initial;gMsg('warn',error.message);}});
   });
 }
 function sbSxValidation(flow){
@@ -13943,8 +13949,93 @@ function sbSxNudge(event){
   if(!APP.tools.nudge)APP.tools.nudge={flowId:APP.activeFlowId,snapshot:captureHistoryState(),keys:new Set()};
   APP.tools.nudge.keys.add(event.key);const step=event.shiftKey?10:1,dx=event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0,dy=event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0;
   if(sel.type==='sx_connector'){const c=sbSxOwner(sel.type,sel.id);if(sbSxPoint(c?.point)){c.point.x+=dx;c.point.y+=dy;}}
-  else for(const id of sel.type==='node'?[sel.id]:sel.ids)sbSxMoveNode(currentModel(),id,dx,dy);
+  else sbSxMoveNodes(currentModel(),new Map((sel.type==='node'?[sel.id]:sel.ids).map(id=>[id,{x:dx,y:dy}])));
   markDirty();renderStudio(false);return true;
+}
+function sbSxMoveNodes(model,deltas){
+  for(const [id,d] of deltas)sbSxMoveNode(model,id,d.x,d.y);
+  for(const edge of model.edges){
+    const a=deltas.get(edge.source),b=deltas.get(edge.target);
+    if(a&&b&&Math.abs(a.x-b.x)<.0001&&Math.abs(a.y-b.y)<.0001){
+      const move=p=>{if(sbSxPoint(p)){p.x+=a.x;p.y+=a.y;}};
+      sbSxArray(edge.waypoints).forEach(move);move(edge.label_point);
+    }
+  }
+}
+function sbSxTranslateLane(model,lane,dx){
+  lane.x+=dx;if(sbSxNumber(lane.label_bounds?.x))lane.label_bounds.x+=dx;
+  const deltas=new Map(model.nodes.filter(n=>n.lane_id===lane.id).map(n=>[n.id,{x:dx,y:0}]));
+  sbSxMoveNodes(model,deltas);
+  for(const n of model.nodes)if(n.lane_id===lane.id&&sbSxNumber(n.x_rel))n.x_rel-=dx;
+}
+function sbSxSelectionMoves(context,moves,record){
+  const model=clone(context.model),deltas=new Map(),snapshot=captureHistoryState();let changed=false;
+  try{
+    for(const entity of context.entities){
+      const next=moves.get(entity.key);if(!next)continue;
+      const dx=next.x-entity.x,dy=next.y-entity.y;if(Math.hypot(dx,dy)<.0001)continue;
+      if(entity.kind==='node'){
+        const n=model.nodes.find(n=>n.id===entity.id),lane=model.lanes.find(l=>l.id===n.lane_id),g=context.geometry;
+        if(!sbSxVisibleNode(n)||!sbSxNumber(lane?.x)||!sbSxNumber(lane.width))throw Error('La caja no tiene límites confirmados en SX.');
+        const x=n.x+dx,y=n.y+dy;
+        if(x<lane.x-.0001||x+n.width>lane.x+lane.width+.0001||y<g.laneHeaderHeight-.0001||y+n.height>g.bodyHeight+.0001)throw Error('El destino supera los límites del carril.');
+        deltas.set(n.id,{x:dx,y:dy});
+      }
+      changed=true;
+    }
+    sbSxMoveNodes(model,deltas);
+    for(const entity of context.entities.filter(e=>e.kind==='marker')){
+      const next=moves.get(entity.key);if(!next)continue;
+      const edge=model.edges.find(e=>e.id===entity.state.edgeId),key=entity.state.markerKey,p=edge?.connector_points?.[key];
+      if(sbSxPoint(p)){p.x=next.x+STANDARD.connectorRadius-context.geometry.origin.x;p.y=next.y+STANDARD.connectorRadius-context.geometry.origin.y;}
+    }
+    validateSxModel(model);
+  }catch(error){return {changed:false,error:error.message};}
+  if(changed){if(record)sbRecordSnapshot(snapshot);activeFlow().payload.model=model;markDirty();}
+  return {changed,snapshot};
+}
+function sbSxNewNode(lane,type,point,template=null){
+  const model=currentModel(),g=laneGeometry(model),baseSize=nodeSize({type}),width=template?.width??Math.min(baseSize.w,Math.max(20,(lane.width||baseSize.w)-16)),height=template?.height??baseSize.h;
+  const x=point?point.x-g.origin.x-width/2:(lane.x||0)+8;
+  let y=point?point.y-g.origin.y-height/2:g.laneHeaderHeight+16;
+  while(model.nodes.filter(n=>n.lane_id===lane.id&&sbSxVisibleNode(n)).some(n=>sbRectIntersects({x,y,w:width,h:height},{x:n.x,y:n.y,w:n.width,h:n.height},8)))y+=height+16;
+  return {...clone(template||{}),id:uid('NODE'),lane_id:lane.id,type,label:template?.label??'',x,x_rel:sbSxNumber(lane.x)?x-lane.x:null,y,width,height,font_size:template?.font_size??10.5,documents:clone(template?.documents||[]),note_ids:[],note_refs:[],work_comments:clone(template?.work_comments||[]),meta:clone(template?.meta||{})};
+}
+function sbSxInsertNode(type){
+  const model=currentModel(),lane=APP.selection?.type==='lane'?laneById(APP.selection.id):null;
+  if(!lane||!ALLOWED_BY_LANE[lane.kind]?.includes(type))return false;
+  const context=APP.tools.insertContext,point=context?.flowId===APP.activeFlowId&&context.laneId===lane.id?context.point:null,node=sbSxNewNode(lane,type,point);
+  pushHistory();model.nodes.push(node);if(sbSxNumber(model.layout.body_height))model.layout.body_height=Math.max(model.layout.body_height,node.y+node.height+16);
+  APP.tools.insertContext=null;APP.selection={type:'node',id:node.id};markDirty();$('insert_dialog').close();renderStudio();return true;
+}
+function sbSxPasteNode(){
+  const model=currentModel(),clip=APP.nodeClipboard,pointer=APP.pointerCanvas;
+  if(!clip||clip.flowId!==APP.activeFlowId||!pointer.inside){gMsg('warn','Copia una caja de este flujo y sitúa el cursor en el carril de destino.');return false;}
+  const g=laneGeometry(model),lane=model.lanes.find(l=>sbSxNumber(l.x)&&sbSxNumber(l.width)&&pointer.x-g.origin.x>=l.x&&pointer.x-g.origin.x<l.x+l.width);
+  if(!lane||!ALLOWED_BY_LANE[lane.kind]?.includes(clip.node.type)){gMsg('warn','El tipo de caja no está permitido en ese carril.');return false;}
+  pushHistory();const node=sbSxNewNode(lane,clip.node.type,pointer,clip.node);model.nodes.push(node);
+  for(const original of clip.notes||[]){const note={...clone(original),id:uid('NOTE'),node_id:node.id,lane_id:'',number:sbSxNextNoteNumber(model)};model.notes.push(note);node.note_ids.push(note.id);}
+  if(sbSxNumber(model.layout.body_height))model.layout.body_height=Math.max(model.layout.body_height,node.y+node.height+16);
+  APP.selection={type:'node',id:node.id};markDirty();renderStudio();return true;
+}
+function sbSxNextNoteNumber(model){
+  let next=2;for(const note of model.notes){const match=/^5\.(\d+)$/.exec(sbSxText(note.number));if(match)next=Math.max(next,Number(match[1])+1);}return '5.'+next;
+}
+function sbSxAddActor(){
+  const model=currentModel(),g=laneGeometry(model),output=model.lanes.find(l=>l.kind==='output'&&sbSxNumber(l.x)),x=output?.x??g.bodyWidth,width=STANDARD.actorLaneWidth;
+  pushHistory();for(const lane of model.lanes)if(sbSxNumber(lane.x)&&lane.x>=x)sbSxTranslateLane(model,lane,width);
+  const lane={...actorLane(''),x,width,label_bounds:{x:x+6,y:g.laneHeaderHeight*.15,width:width-12,height:g.laneHeaderHeight*.7},left_border_visible:true,right_border_visible:true,fixed:false};
+  const index=output?model.lanes.indexOf(output):model.lanes.length;model.lanes.splice(index,0,lane);
+  if(sbSxNumber(model.layout.width))model.layout.width+=width;
+  APP.selection={type:'lane',id:lane.id};markDirty();renderStudio();return true;
+}
+function sbSxFrozenHeaders(rebuild){
+  const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),g=laneGeometry(),button=$('btn_freeze_headers'),scale=APP.camera.scale||1;
+  button.disabled=g.laneHeaderHeight<=0;
+  if(button.disabled||!APP.tools.freezeHeaders||APP.view!=='studio'||vp.scrollTop<=stage.offsetTop+g.laneTop*scale){host.classList.add('hidden');return;}
+  host.classList.remove('hidden');host.style.left=vp.offsetLeft+'px';host.style.top=vp.offsetTop+'px';host.style.width=vp.clientWidth+'px';host.style.height=g.laneHeaderHeight*scale+'px';
+  if(rebuild||!host.firstElementChild){host.innerHTML=sbRenderSx(currentModel(),{headersOnly:true,interactive:true,includeNotesBlock:false});bindSxInteractions(host.firstElementChild);}
+  host.firstElementChild.setAttribute('width','100%');host.firstElementChild.setAttribute('height','100%');host.firstElementChild.setAttribute('viewBox',[(vp.scrollLeft-stage.offsetLeft)/scale,g.laneTop,vp.clientWidth/scale,g.laneHeaderHeight].join(' '));
 }
 
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
