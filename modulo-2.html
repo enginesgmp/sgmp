@@ -13828,7 +13828,8 @@ function sbSxCircle(c,g,attributes='',selected=false){
 function sbSxLine(points,label,labelPoint,g,attrs='',selected=false,interactive=false,arrow=true){
   let svg='';const color=selected?'#00AEEF':'#000',path=points.map((p,i)=>(i?'L':'M')+p.x+' '+p.y).join(' ');
   if(points.length>1){svg='<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="'+(selected?2:1)+'"/>'+(arrow?sbSxArrow(points,color):'');}
-  if(labelPoint&&sbSxText(label)){const p=sbSxAbsolute(labelPoint,g);svg+='<text x="'+p.x+'" y="'+p.y+'" font-size="8" font-family="Arial" text-anchor="middle" dominant-baseline="middle">'+escapeXml(sbSxText(label))+'</text>';}
+  const position=sbSxAbsolute(labelPoint,g);
+  if(position&&sbSxText(label))svg+='<text x="'+position.x+'" y="'+position.y+'" font-size="8" font-family="Arial" text-anchor="middle" dominant-baseline="middle">'+escapeXml(sbSxText(label))+'</text>';
   return '<g '+attrs+'>'+ (interactive&&points.length>1?'<path d="'+path+'" fill="none" stroke="transparent" stroke-width="10"/>':'')+svg+'</g>';
 }
 function sbRenderSx(model,options={}){
@@ -13917,8 +13918,14 @@ function sbSxInspector(){
   root.querySelector('[data-sx-delete]').onclick=deleteSelection;return true;
 }
 function sbSxInspectorExtra(){
-  if(!sbIsSx())return;const sel=APP.selection,owner=sel&&sbSxOwner(sel.type,sel.id);if(!owner)return;const root=$('inspector_content');
+  if(!sbIsSx())return;const sel=APP.selection,owner=sel&&sbSxOwner(sel.type,sel.id),root=$('inspector_content');
+  if(!sel){
+    const m=currentModel(),pending=[...m.lanes.filter(l=>!sbSxNumber(l.x)||!sbSxNumber(l.width)).map(l=>({kind:'lane',row:l,name:'Carril'})),...m.nodes.filter(n=>!sbSxVisibleNode(n)).map(n=>({kind:'node',row:n,name:'Caja'})),...m.connectors.filter(c=>!sbSxPoint(c.point)||!sbSxNumber(c.width)||!sbSxNumber(c.height)).map(c=>({kind:'sx_connector',row:c,name:'Círculo'})),...m.edges.filter(e=>e.mode==='connector'?!sbSxPoint(e.connector_points?.source)||!sbSxPoint(e.connector_points?.target):!sbSxRoute(e,laneGeometry(m)).length).map(e=>({kind:'edge',row:e,name:'Conexión'})),...m.connection_fragments.filter(f=>!Array.isArray(f.path)||!f.path.every(sbSxPoint)).map(f=>({kind:'sx_fragment',row:f,name:'Tramo'}))];
+    if(pending.length){root.insertAdjacentHTML('beforeend','<details class="inspector-section"><summary>Datos sin geometría confirmada ('+pending.length+')</summary><p>Se conservan sin asignar posiciones. Selecciona un elemento para completar sus datos.</p>'+pending.map(p=>'<button type="button" data-sx-pending="'+p.kind+'" data-sx-id="'+escapeHtml(p.row.id)+'">'+escapeHtml(p.name+' · '+(sbSxText(p.row.label)||p.row.id))+'</button>').join('')+'</details>');root.querySelectorAll('[data-sx-pending]').forEach(b=>b.onclick=()=>{sbCommitEdit({render:false});APP.selection={type:b.dataset.sxPending,id:b.dataset.sxId};renderStudio();});}return;
+  }
+  if(!owner)return;
   if(sel.type==='node'){root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría original SX</h4>'+['x','x_rel','y','width','height','font_size'].map(k=>sbSxField(owner,k,k)).join('')+'</div>');}
+  if(sel.type==='node'){root.insertAdjacentHTML('beforeend','<div class="field"><label>Carril</label><select data-sx-lane><option value="">Sin confirmar</option>'+currentModel().lanes.map(l=>'<option value="'+escapeHtml(l.id)+'" '+(l.id===owner.lane_id?'selected':'')+'>'+escapeHtml(sbSxText(l.label)||l.id)+'</option>').join('')+'</select></div>');root.querySelector('[data-sx-lane]').onchange=e=>{if(owner.lane_id!==e.target.value){pushHistory();owner.lane_id=e.target.value;if(sbSxNumber(owner.x)&&sbSxNumber(laneById(owner.lane_id)?.x))owner.x_rel=owner.x-laneById(owner.lane_id).x;markDirty();renderStudio();}};}
   if(sel.type==='lane'){root.querySelectorAll('[data-lane-act]').forEach(b=>b.remove());const hint=root.querySelector('.empty-note');if(hint)hint.textContent='Las posiciones y anchos recibidos de SX se editan aquí sin redistribuir automáticamente los demás carriles.';root.insertAdjacentHTML('beforeend','<div class="inspector-section"><h4>Geometría del carril SX</h4>'+sbSxField(owner,'x','Posición X')+sbSxField(owner,'width','Ancho')+['label_bounds','left_border_visible','right_border_visible'].map(k=>sbSxField(owner,k,k,true)).join('')+'</div>');}
   if($('ins_sx_label'))sbBindEditInput($('ins_sx_label'),{kind:sel.type,id:sel.id,field:'label',flowId:APP.activeFlowId});
   root.querySelectorAll('[data-sx-property]').forEach(input=>{
