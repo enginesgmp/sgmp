@@ -713,7 +713,7 @@ pointerCanvas:{
   inside:false
 },
 pdfPreview:{url:null,filename:null},
-  tools:{editing:null,nudge:null,portDrag:null,insertContext:null,freezeHeaders:false,guideSnap:true,alignmentGuides:[],headerFrame:null,textMetrics:new Map(),measureCanvas:null,lastTextClick:null,textPointer:null,refreshFrame:null},
+  tools:{editing:null,nudge:null,portDrag:null,insertContext:null,freezeHeaders:false,guideSnap:true,alignmentGuides:[],dragFrame:null,renderCache:null,headerFrame:null,textMetrics:new Map(),measureCanvas:null,lastTextClick:null,textPointer:null,refreshFrame:null},
   validation:{issues:[],crossingEdges:new Set()}
 };
 
@@ -1161,7 +1161,7 @@ function redo(){
 }
 function updateHistoryButtons(){$('btn_undo').disabled=!APP.history.length;$('btn_redo').disabled=!APP.future.length;}
 
-function laneGeometry(
+function sbComputeLaneGeometry(
   model=currentModel(),
   {includeNotesBlock=true}={}
 ){
@@ -3660,32 +3660,37 @@ function shapeBoundaryPoint(node,side,ratio,box){
 }
 function anchorPoint(node,side,edge,geometry,model){return sbPortAnchor(node,side,edge,geometry,model);}
 
-function routePoints(edge,geometry,model){
+function sbComputeRoutePoints(edge,geometry,model){
   const source=nodeById(edge.source,model),target=nodeById(edge.target,model);if(!source||!target)return [];
   const ss=edge.source_side||'right',ts=edge.target_side||'left',a=anchorPoint(source,ss,edge,geometry,model),b=anchorPoint(target,ts,edge,geometry,model);
-  const points=edge.waypoints?.length?sbRepairRouteEndpoints(a,edge.waypoints,b,ss,ts,nodeBox(source,geometry,model),nodeBox(target,geometry,model)):autoRoutePoints(edge,geometry,model,a,b,ss,ts);
+  const obstacles=edge.waypoints?.length?model.nodes.filter(n=>n.id!==source.id&&n.id!==target.id).map(n=>nodeBox(n,geometry,model)):[];
+  const points=edge.waypoints?.length?sbRepairRouteEndpoints(a,edge.waypoints,b,ss,ts,nodeBox(source,geometry,model),nodeBox(target,geometry,model),obstacles):autoRoutePoints(edge,geometry,model,a,b,ss,ts);
   return avoidConnectorObstacles(points,edge,geometry,model);
 }
 
 function compactRoutePoints(points,removeCollinear=true){
-  const out=[];
+  const out=[],same=(a,b)=>Math.abs(a.x-b.x)<.001&&Math.abs(a.y-b.y)<.001;
   for(const point of points){
     const p={x:Number(point.x)||0,y:Number(point.y)||0};
-    const last=out[out.length-1];if(last&&last.x===p.x&&last.y===p.y)continue;out.push(p);
+    if(out.length&&same(out.at(-1),p))continue;out.push(p);
   }
   if(!removeCollinear)return out;
   let changed=true;
-  while(changed&&out.length>2){
+  while(changed&&out.length>1){
     changed=false;
-    for(let i=1;i<out.length-1;i++){
+    for(let i=1;i<out.length;i++){
+      if(same(out[i-1],out[i])){out.splice(i,1);changed=true;break;}
+      if(i===out.length-1)continue;
       const a=out[i-1],b=out[i],c=out[i+1];
-      if(((a.x===b.x&&b.x===c.x)||(a.y===b.y&&b.y===c.y))&&
-          (b.x-a.x)*(c.x-b.x)+(b.y-a.y)*(c.y-b.y)>0){out.splice(i,1);changed=true;break;}
+      if((Math.abs(a.x-b.x)<.001&&Math.abs(b.x-c.x)<.001)||
+         (Math.abs(a.y-b.y)<.001&&Math.abs(b.y-c.y)<.001)){
+        out.splice(i,1);changed=true;break;
+      }
     }
   }
   return out;
 }
-  
+
 function routePortInfo(
   edge,
   nodeId,
@@ -3738,7 +3743,7 @@ function segmentHitsConnectorObstacle(a,b,obstacle,radius){
   const min=Math.min(a.y,b.y),max=Math.max(a.y,b.y);return a.x>x1&&a.x<x2&&max>y1&&min<y2;
 }
 function avoidConnectorObstacles(points,edge,geometry,model){
-  let route=compactRoutePoints(points,false);
+  let route=compactRoutePoints(points);
   if(APP.connectorDrag)return route;
   const obstacles=connectorObstaclePoints(model,geometry,edge?.id),radius=STANDARD.connectorRadius;
   if(route.length<2||!obstacles.length)return route;
@@ -3760,7 +3765,7 @@ function avoidConnectorObstacles(points,edge,geometry,model){
     }
     route=compactRoutePoints(next);if(!changed)break;
   }
-  return route;
+  return sbEraseRouteLoops(route);
 }
 function pathFromPoints(points){return points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');}
 function pointOffset(p,side,d){if(side==='left')return{x:p.x-d,y:p.y};if(side==='right')return{x:p.x+d,y:p.y};if(side==='top')return{x:p.x,y:p.y-d};return{x:p.x,y:p.y+d};}
@@ -3942,16 +3947,16 @@ function connectorBranchLogicalPoints(edge,branch,data,geometry,model){
   const stored=edge.connector_routes?.[branch]||[],source=branch==='source';
   const attached=source?edge.source:edge.target,side=(source?edge.source_side:edge.target_side)||(source?'right':'left');
   const anchor=source?data.a:data.b,marker=source?data.sourceMarker:data.targetMarker,box=source?data.sourceBox:data.targetBox;
-  if(stored.length)return source?
-    sbRepairRouteEndpoints(anchor,stored,marker,side,sbCircleRouteSide(marker,stored.at(-1),side),box,sbCircleBounds(marker)):
-    sbRepairRouteEndpoints(marker,stored,anchor,sbCircleRouteSide(marker,stored[0],side),side,sbCircleBounds(marker),box);
   const obstacles=model.nodes.filter(n=>n.id!==attached).map(n=>nodeBox(n,geometry,model));
+  if(stored.length)return source?
+    sbRepairRouteEndpoints(anchor,stored,marker,side,sbCircleRouteSide(marker,stored.at(-1),side),box,sbCircleBounds(marker),obstacles):
+    sbRepairRouteEndpoints(marker,stored,anchor,sbCircleRouteSide(marker,stored[0],side),side,sbCircleBounds(marker),box,obstacles);
   const info=routePortInfo(edge,attached,side,model,geometry);
   const points=connectorStubPoints(anchor,side,marker,box,obstacles,sbFanStub(info,side,marker,anchor));
   return source?points:points.reverse();
 }
 
-function connectorGeometry(
+function sbComputeConnectorGeometry(
   edge,
   geometry,
   model
@@ -5160,10 +5165,10 @@ function deleteWorkComment(
   );
 }
   
-function renderSvg(model=currentModel(),{interactive=true,fast=false,includeNotesBlock=true}={}){
+function sbRenderSvgBody(model=currentModel(),{interactive=true,fast=false,includeNotesBlock=true}={}){
 const g=laneGeometry(model,{includeNotesBlock}),
       noteMap=g.noteMap,
-      connectorLabels=interactive&&(APP.drag||APP.connectorDrag)?null:sbConnectorLabelMap(model,g),
+      connectorLabels=interactive&&(fast||APP.drag||APP.connectorDrag)?null:sbConnectorLabelMap(model,g),
       crossing=fast
         ?(APP.validation.crossingEdges||new Set())
         :crossingEdgeIds(model,g);
@@ -5263,10 +5268,10 @@ if(includeNotesBlock){
             `y="${y}" `+
             `font-size="${layout.fontSize}" `+
             `pointer-events="none">`+
-            `<tspan font-weight="800">`+
+            `<tspan font-family="Arial" font-weight="bold">`+
             `${escapeXml(item.number)} `+
             `</tspan>`+
-            `<tspan>`+
+            `<tspan font-family="Arial" font-weight="normal">`+
             `${escapeXml(line)}`+
             `</tspan>`+
             `</text>`;
@@ -5400,23 +5405,7 @@ function renderActorLane(
         noteLine=
           noteNumbers
             .map(number=>`(${number})`)
-            .join(' '),
-
-        centerX=
-          lane.x+
-          lane.width/2,
-
-        centerY=
-          geometry.laneTop+
-          STANDARD.laneHeaderHeight/2,
-
-        labelY=
-          noteLine
-            ? centerY-6
-            : centerY,
-
-        noteY=
-          centerY+8;
+            .join(' ');
 
   return `
     <g class="actor-lane">
@@ -5467,35 +5456,7 @@ function renderActorLane(
         pointer-events="${interactive?'all':'none'}"
       />
 
-      <text
-        x="${centerX}"
-        y="${labelY}"
-        text-anchor="middle"
-        dominant-baseline="middle"
-        font-size="9"
-        font-weight="800"
-        pointer-events="none"
-      >
-        ${escapeXml(lane.label||'ACTOR SIN NOMBRE')}
-      </text>
-
-      ${
-        noteLine
-          ? `
-              <text
-                x="${centerX}"
-                y="${noteY}"
-                text-anchor="middle"
-                dominant-baseline="middle"
-                font-size="7.5"
-                font-weight="700"
-                pointer-events="none"
-              >
-                ${escapeXml(noteLine)}
-              </text>
-            `
-          : ''
-      }
+      ${sbRenderActorHeaderText(lane,geometry,noteLine)}
 
       ${
         renderLaneAnnotationTrigger(
@@ -5573,6 +5534,7 @@ function renderStudio(
   redrawInspector=true,
   fast=false
 ){
+  if(!fast)sbCancelDragRender();
   const flow=activeFlow(),
         model=currentModel(),
         canvas=$('canvas');
@@ -7922,55 +7884,16 @@ function handleLaneResize(event){
       drag.startWidth
     )>=5;
 
-  renderStudio(
-    false,
-    true
-  );
+  sbQueueDragRender();
 }
   
 function endLaneResize(event){
-  const drag=APP.laneResize,
-        vp=$('viewport');
-
-  if(!drag)return;
-
-  vp?.removeEventListener(
-    'pointermove',
-    handleLaneResize
-  );
-
-  try{
-    if(
-      vp?.hasPointerCapture?.(
-        event.pointerId
-      )
-    ){
-      vp.releasePointerCapture(
-        event.pointerId
-      );
-    }
-  }catch(error){}
-
-  if(
-    drag.moved &&
-    drag.snapshot
-  ){
-    APP.history.push(
-      drag.snapshot
-    );
-
-    if(
-      APP.history.length>60
-    ){
-      APP.history.shift();
-    }
-
-    APP.future=[];
-    markDirty();
-  }
-
-  APP.laneResize=null;
-  renderStudio();
+  const drag=APP.laneResize,vp=$('viewport');if(!drag||event.pointerId!==drag.pointerId)return;
+  ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleLaneResize:endLaneResize));
+  try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  if(event.type==='pointercancel'&&drag.snapshot)restoreHistoryState(drag.snapshot);
+  else if(drag.moved&&drag.snapshot){sbRecordSnapshot(drag.snapshot);markDirty();}
+  APP.laneResize=null;renderStudio();
 }
 
 function selectedNodeIds(){
@@ -9513,7 +9436,7 @@ function handleNodeDrag(event){
 
   drag.moved=[...nodeDeltas.values()].some(d=>Math.hypot(d.x,d.y)>.001);
 
-  renderStudio(false);
+  sbQueueDragRender();
 }
 
 function endNodeDrag(event){
@@ -9540,11 +9463,14 @@ function handleEdgeSegmentDrag(event){
   const p=clientToCanvas(event.clientX,event.clientY),dx=p.x-drag.start.x,dy=p.y-drag.start.y,points=clone(drag.points),i=drag.segmentIndex;
   if(drag.orientation==='vertical'){const x=snap(points[i].x+dx);if(i>0)points[i].x=x;if(i+1<points.length-1)points[i+1].x=x;}else{const y=snap(points[i].y+dy);if(i>0)points[i].y=y;if(i+1<points.length-1)points[i+1].y=y;}
   if(edge.mode==='connector'&&drag.branch){edge.connector_routes=edge.connector_routes||{source:[],target:[]};edge.connector_routes[drag.branch]=points.slice(1,-1).map(point=>({x:point.x,y:point.y}));}else edge.waypoints=points.slice(1,-1).map(point=>({x:point.x,y:point.y}));
-  drag.moved=Math.hypot(dx,dy)>2;renderStudio(false);
+  drag.moved=Math.hypot(dx,dy)>2;sbQueueDragRender();
 }
 function endEdgeSegmentDrag(event){
-  const drag=APP.routeDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleEdgeSegmentDrag);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}
-  if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}
+  const drag=APP.routeDrag,vp=$('viewport');if(!drag||event.pointerId!==drag.pointerId)return;
+  ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleEdgeSegmentDrag:endEdgeSegmentDrag));
+  try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  if((event.type==='pointercancel'||!drag.moved)&&drag.snapshot)restoreHistoryState(drag.snapshot);
+  else if(drag.moved&&drag.snapshot){sbRecordSnapshot(drag.snapshot);markDirty();}
   APP.routeDrag=null;renderStudio();
 }
 
@@ -9705,7 +9631,7 @@ function handleConnectorMarkerDrag(event){
   if(!drag.didDrag&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)*APP.camera.scale<4)return;drag.didDrag=true;
   applyConnectorMarkerPosition({edgeId:edge.id,markerKey:drag.markerKey,startPoint:drag.startPoint,startRoute:clone(original.connector_routes?.[drag.markerKey]||[])},sbSnapMarker({x:drag.startPoint.x+p.x-drag.start.x,y:drag.startPoint.y+p.y-drag.start.y},drag,event,model,geometry),geometry,model);
   edge.connector_routes[drag.markerKey]=clone(original.connector_routes?.[drag.markerKey]||[]);
-  const next=edge.connector_points[drag.markerKey];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>.001;renderStudio(false,true);
+  const next=edge.connector_points[drag.markerKey];drag.moved=Math.hypot(next.x-drag.startPoint.x,next.y-drag.startPoint.y)>.001;sbQueueDragRender();
 }
 
 function endConnectorMarkerDrag(event){
@@ -9740,7 +9666,7 @@ function handleEdgeLabelDrag(event){
   if(!drag.didDrag&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<4)return;drag.didDrag=true;
   const edge=edgeById(drag.edgeId,model);if(!edge)return;
   const layout=sbLabelLayout(edge,laneGeometry(model),model,clientToCanvas(event.clientX,event.clientY));
-  edge.label_position=layout.t;drag.moved=Math.abs(layout.t-drag.startPos)>.0001;renderStudio(false);
+  edge.label_position=layout.t;drag.moved=Math.abs(layout.t-drag.startPos)>.0001;sbQueueDragRender();
 }
 
 function endEdgeLabelDrag(event){
@@ -9756,11 +9682,15 @@ function beginFlowResize(event){
   if(event.button!==0)return;const model=currentModel(),vp=$('viewport');if(!model||!vp)return;event.preventDefault();event.stopPropagation();APP.resizeDrag={pointerId:event.pointerId,start:clientToCanvas(event.clientX,event.clientY),startHeight:Number(model.layout.body_height)||STANDARD.defaultBodyHeight,snapshot:captureHistoryState(),moved:false};vp.setPointerCapture?.(event.pointerId);vp.addEventListener('pointermove',handleFlowResize);vp.addEventListener('pointerup',endFlowResize,{once:true});vp.addEventListener('pointercancel',endFlowResize,{once:true});
 }
 function handleFlowResize(event){
-  const drag=APP.resizeDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const p=clientToCanvas(event.clientX,event.clientY),delta=p.y-drag.start.y,min=minimumBodyHeight(model),next=Math.max(min,snap(drag.startHeight+delta));model.layout.body_height=next;drag.moved=Math.abs(delta)>2;renderStudio(false);
+  const drag=APP.resizeDrag,model=currentModel();if(!drag||event.pointerId!==drag.pointerId||!model)return;const p=clientToCanvas(event.clientX,event.clientY),delta=p.y-drag.start.y,min=minimumBodyHeight(model),next=Math.max(min,snap(drag.startHeight+delta));model.layout.body_height=next;drag.moved=Math.abs(delta)>2;sbQueueDragRender();
 }
 function endFlowResize(event){
-  const drag=APP.resizeDrag,vp=$('viewport');if(!drag)return;vp?.removeEventListener('pointermove',handleFlowResize);try{if(vp?.hasPointerCapture?.(event.pointerId))vp.releasePointerCapture(event.pointerId);}catch(error){}
-  if(drag.moved&&drag.snapshot){APP.history.push(drag.snapshot);if(APP.history.length>60)APP.history.shift();APP.future=[];markDirty();}APP.resizeDrag=null;renderStudio();
+  const drag=APP.resizeDrag,vp=$('viewport');if(!drag||event.pointerId!==drag.pointerId)return;
+  ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleFlowResize:endFlowResize));
+  try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
+  if(event.type==='pointercancel'&&drag.snapshot)restoreHistoryState(drag.snapshot);
+  else if(drag.moved&&drag.snapshot){sbRecordSnapshot(drag.snapshot);markDirty();}
+  APP.resizeDrag=null;renderStudio();
 }
 
 function bindViewportPan(){
@@ -9810,6 +9740,10 @@ function bindViewportPan(){
         interactiveHit
       ){
         return;
+      }
+
+      if(event.button===0&&(APP.connect.active||APP.selection?.type==='edge'||APP.selection?.type==='connector_marker')){
+        event.preventDefault();sbCancelConnection();APP.selection=null;renderStudio();return;
       }
 
       const insideCanvas=
@@ -10595,8 +10529,7 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
           putOnlyUsedFonts:true
         });
 
-  docSvg.setAttribute('font-family','helvetica');
-  docSvg.querySelectorAll('text,tspan').forEach(el=>{el.setAttribute('font-family','helvetica');const weight=el.getAttribute('font-weight');if(weight==='bold'||Number(weight)>=600)el.setAttribute('font-weight','bold');});
+  sbNormalizePdfFonts(docSvg);
   await pdf.svg(docSvg,{
     x:0,
     y:topMargin,
@@ -12417,7 +12350,7 @@ $('viewport').addEventListener(
   
   document.addEventListener('keydown',event=>{
     const editable=['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable;
-    if(event.key==='Escape'){closeNodeAnnotationPopup();APP.connect=freshConnectState();APP.selection=null;document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());if(APP.view==='studio')renderStudio();return;}
+    if(event.key==='Escape'){event.preventDefault();if(sbCancelActiveGesture())return;closeNodeAnnotationPopup();sbCancelConnection();APP.selection=null;document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());if(APP.view==='studio')renderStudio();return;}
     if(editable)return;const ctrl=event.ctrlKey||event.metaKey;
     
 if(
@@ -12554,6 +12487,149 @@ function bindLmpTransferReceiver(){
 
 // Puertos y geometría compartidos por pantalla, interacción y PDF.
 // R01/R02: terminal exterior compartido por rutas normales y círculos.
+// Iteración 2026-10-07: geometría derivada; los puntos persistidos no se reescriben.
+function sbRouteIntersection(a,b,c,d){
+  const e=.001,h=Math.abs(a.y-b.y)<e,k=Math.abs(c.y-d.y)<e;
+  const between=(v,p,q)=>v>=Math.min(p,q)-e&&v<=Math.max(p,q)+e;
+  if(h!==k){
+    const p=h?{x:c.x,y:a.y}:{x:a.x,y:c.y};
+    return between(p.x,a.x,b.x)&&between(p.y,a.y,b.y)&&between(p.x,c.x,d.x)&&between(p.y,c.y,d.y)?p:null;
+  }
+  const axis=h?'x':'y',fixed=h?'y':'x';
+  if(Math.abs(a[fixed]-c[fixed])>=e)return null;
+  const low=Math.max(Math.min(a[axis],b[axis]),Math.min(c[axis],d[axis]));
+  const high=Math.min(Math.max(a[axis],b[axis]),Math.max(c[axis],d[axis]));
+  return low<=high+e?{[axis]:Math.max(low,Math.min(high,c[axis])),[fixed]:a[fixed]}:null;
+}
+function sbEraseRouteLoops(points){
+  let route=compactRoutePoints(points),changed=true;
+  while(changed&&route.length>3){
+    changed=false;
+    outer:for(let i=0;i<route.length-3;i++)for(let j=i+2;j<route.length-1;j++){
+      const p=sbRouteIntersection(route[i],route[i+1],route[j],route[j+1]);
+      if(!p)continue;
+      route=compactRoutePoints([...route.slice(0,i+1),p,...route.slice(j+1)]);
+      changed=true;break outer;
+    }
+  }
+  return route;
+}
+function sbOrthogonalRoute(points,boxes=[]){
+  const input=compactRoutePoints(points,false);if(input.length<2)return input;
+  const out=[input[0]];
+  for(let i=1;i<input.length;i++){
+    const a=out.at(-1),b=input[i];
+    if(Math.abs(a.x-b.x)<.001){out.push({x:a.x,y:b.y});continue;}
+    if(Math.abs(a.y-b.y)<.001){out.push({x:b.x,y:a.y});continue;}
+    const pivots=[{x:b.x,y:a.y},{x:a.x,y:b.y}];
+    const score=p=>boxes.reduce((n,box)=>n+Number(sbSegmentEntersBox(a,p,box))+Number(sbSegmentEntersBox(p,b,box)),0);
+    if(score(pivots[1])<score(pivots[0]))pivots.reverse();
+    out.push(pivots[0],b);
+  }
+  return compactRoutePoints(out);
+}
+function sbRouteEntersEndpoint(points,sourceBox,targetBox){
+  for(let i=0;i<points.length-1;i++){
+    if(sourceBox&&i>0&&sbSegmentEntersBox(points[i],points[i+1],sourceBox))return true;
+    if(targetBox&&i<points.length-2&&sbSegmentEntersBox(points[i],points[i+1],targetBox))return true;
+  }
+  return false;
+}
+
+// Caché limitada a una llamada de renderSvg; nunca se reutiliza con otro movimiento.
+function sbRenderMemo(kind,model,geometry){
+  const cache=APP.tools.renderCache;if(!cache||cache.model!==model)return null;
+  const group=cache[kind];if(!group.has(geometry))group.set(geometry,new Map());
+  return group.get(geometry);
+}
+function laneGeometry(model=currentModel(),{includeNotesBlock=true}={}){
+  const cache=APP.tools.renderCache;
+  if(!cache||cache.model!==model)return sbComputeLaneGeometry(model,{includeNotesBlock});
+  if(!cache.geometries.has(includeNotesBlock))cache.geometries.set(includeNotesBlock,sbComputeLaneGeometry(model,{includeNotesBlock}));
+  return cache.geometries.get(includeNotesBlock);
+}
+function routePoints(edge,geometry,model){
+  const memo=sbRenderMemo('routes',model,geometry);
+  if(memo?.has(edge))return memo.get(edge);
+  const points=sbComputeRoutePoints(edge,geometry,model);memo?.set(edge,points);return points;
+}
+function connectorGeometry(edge,geometry,model){
+  const memo=sbRenderMemo('connectors',model,geometry);
+  if(memo?.has(edge))return memo.get(edge);
+  const data=sbComputeConnectorGeometry(edge,geometry,model);memo?.set(edge,data);return data;
+}
+function sbLabelLayout(edge,geometry,model,wanted=null){
+  const memo=wanted?null:sbRenderMemo('labels',model,geometry);
+  if(memo?.has(edge))return memo.get(edge);
+  const layout=sbComputeLabelLayout(edge,geometry,model,wanted);memo?.set(edge,layout);return layout;
+}
+function renderSvg(model=currentModel(),options={}){
+  const previous=APP.tools.renderCache;
+  APP.tools.renderCache={model,geometries:new Map(),routes:new Map(),connectors:new Map(),labels:new Map()};
+  try{return sbRenderSvgBody(model,options);}finally{APP.tools.renderCache=previous;}
+}
+function sbQueueDragRender(){
+  if(APP.tools.dragFrame!==null)return;
+  APP.tools.dragFrame=requestAnimationFrame(()=>{
+    APP.tools.dragFrame=null;
+    if(APP.view==='studio'&&currentModel()&&
+       (APP.drag||APP.routeDrag||APP.labelDrag||APP.resizeDrag||APP.laneResize||APP.connectorDrag))renderStudio(false,true);
+  });
+}
+function sbCancelDragRender(){
+  if(APP.tools.dragFrame!==null){cancelAnimationFrame(APP.tools.dragFrame);APP.tools.dragFrame=null;}
+}
+function sbCancelActiveGesture(){
+  const actions=[['drag',endNodeDrag],['routeDrag',endEdgeSegmentDrag],['labelDrag',endEdgeLabelDrag],
+    ['resizeDrag',endFlowResize],['laneResize',endLaneResize],['connectorDrag',endConnectorMarkerDrag]];
+  const action=actions.find(([key])=>APP[key]);
+  if(!action)return false;
+  action[1]({type:'pointercancel',pointerId:APP[action[0]].pointerId});return true;
+}
+function sbCancelConnection(){
+  const active=APP.connect.active||!!APP.tools.portDrag;
+  sbCancelPortDrag();APP.connect=freshConnectState();return active;
+}
+
+function sbActorHeaderLayout(label,width,noteLine){
+  const available=Math.max(16,width-20),noteHeight=noteLine?11:0;
+  let fit;
+  for(let size=9;size>=2;size-=.5){
+    const lines=sbWrapMeasuredText(label,available,size,true),lineHeight=size*1.2;
+    const ink=sbTextMetrics('ÁÉÍÓÚÑgj',size,true);
+    const height=(lines.length-1)*lineHeight+ink.ascent+ink.descent+noteHeight;
+    fit={lines,size,lineHeight,height,baseline:(ink.ascent-ink.descent)/2};
+    if(height<=STANDARD.laneHeaderHeight-14)break;
+  }
+  return fit;
+}
+function sbRenderActorHeaderText(lane,geometry,noteLine){
+  const label=upper(lane.label||'ACTOR SIN NOMBRE'),fit=sbActorHeaderLayout(label,lane.width,noteLine);
+  const x=lane.x+lane.width/2,center=geometry.laneTop+STANDARD.laneHeaderHeight/2;
+  const y=center-(fit.lines.length-1)*fit.lineHeight/2-(noteLine?5.5:0)+fit.baseline;
+  const lines=fit.lines.map((line,i)=>'<tspan x="'+x+'" dy="'+(i?fit.lineHeight:0)+'">'+escapeXml(line)+'</tspan>').join('');
+  let svg='<text x="'+x+'" y="'+y+'" text-anchor="middle" font-family="Arial" font-size="'+fit.size+'" font-weight="bold" pointer-events="none">'+lines+'</text>';
+  if(noteLine){
+    const noteY=y+(fit.lines.length-1)*fit.lineHeight+11;
+    svg+='<text x="'+x+'" y="'+noteY+'" text-anchor="middle" font-family="Arial" font-size="7.5" font-weight="bold" pointer-events="none">'+escapeXml(noteLine)+'</text>';
+  }
+  return svg;
+}
+function sbNormalizePdfFonts(svg){
+  // Materializar la herencia evita que text y tspan elijan fuentes distintas.
+  const visit=(node,inherited='normal')=>{
+    const own=node.style?.fontWeight||node.getAttribute('font-weight');
+    const weight=own==='inherit'||!own?inherited:(own==='bold'||own==='bolder'||Number(own)>=600?'bold':'normal');
+    if(node.tagName==='text'||node.tagName==='tspan'){
+      node.setAttribute('font-family','helvetica');node.setAttribute('font-weight',weight);
+      node.setAttribute('font-style','normal');node.style.fontFamily='helvetica';node.style.fontWeight=weight;
+    }
+    Array.from(node.children).forEach(child=>visit(child,weight));
+  };
+  svg.setAttribute('font-family','helvetica');visit(svg);
+}
+
+
 function sbTerminalBridge(anchor,neighbor,side,box=null){
   const horizontal=side==='left'||side==='right',axis=horizontal?'x':'y';
   const sign=side==='left'||side==='top'?-1:1,outward=(neighbor[axis]-anchor[axis])*sign;
@@ -12646,17 +12722,8 @@ function sbAutoRoute(a,b,sourceSide,targetSide,sourceBox,targetBox,obstacles=[],
   return best||compactRoutePoints([a,...sbTerminalBridge(a,bOut,sourceSide,sourceBox).slice(1),
     ...sbTerminalBridge(b,bOut,targetSide,targetBox).reverse()]);
 }
-function sbArrowStyle(edge,branch,geometry,model){
-  if(edge.mode==='connector'&&branch==='source')return {length:10,width:10};
-  const node=nodeById(edge.target,model);
-  if(!node)return {length:10,width:10};
-  const side=edge.target_side||'left',box=nodeBox(node,geometry,model);
-  const count=edgeSideList(edge,node.id,side,model,geometry).length;
-  const horizontal=side==='top'||side==='bottom';
-  const span=horizontal&&node.type==='system_response'?box.w-16:horizontal?box.w:box.h;
-  const width=Math.min(10,span/(Math.max(1,count)+1)*.75);
-  return {width,length:Math.min(10,Math.max(6,width*1.5))};
-}
+function sbArrowStyle(){return {width:4.9,length:7.35};}
+
 function sbPortCapacityIssues(model){
   const counts=new Map(),issues=[];
   (model.edges||[]).forEach(edge=>['source','target'].forEach(key=>{
@@ -12670,15 +12737,15 @@ function sbPortCapacityIssues(model){
   }));
   return issues;
 }
-function sbWrapMeasuredText(value,width,size){
+function sbWrapMeasuredText(value,width,size,bold=false){
   const lines=[];let line='';
   for(const word of String(value).split(/\s+/)){
     if(!word)continue;
     const candidate=line?line+' '+word:word;
-    if(sbTextMetrics(candidate,size,false).width<=width){line=candidate;continue;}
+    if(sbTextMetrics(candidate,size,bold).width<=width){line=candidate;continue;}
     if(line){lines.push(line);line='';}
     for(const character of word){
-      if(line&&sbTextMetrics(line+character,size,false).width>width){lines.push(line);line='';}
+      if(line&&sbTextMetrics(line+character,size,bold).width>width){lines.push(line);line='';}
       line+=character;
     }
   }
@@ -12870,7 +12937,7 @@ function sbArrowGeometry(points,style={}){
   const tip=p[p.length-1],previous=p[p.length-2];
   const distance=Math.hypot(tip.x-previous.x,tip.y-previous.y);
   if(distance<.001)return null;
-  const length=Math.min(style.length||10,distance),width=Math.min(style.width||10,length),dx=(tip.x-previous.x)/distance,dy=(tip.y-previous.y)/distance;
+  const defaults=sbArrowStyle(),length=Math.min(style.length||defaults.length,distance),width=Math.min(style.width||defaults.width,length),dx=(tip.x-previous.x)/distance,dy=(tip.y-previous.y)/distance;
   const base={x:tip.x-dx*length,y:tip.y-dy*length};
   const left={x:base.x-dy*width/2,y:base.y+dx*width/2};
   const right={x:base.x+dy*width/2,y:base.y-dx*width/2};
@@ -12915,7 +12982,7 @@ function sbEdgeBranches(edge,geometry,model){
   }
   return {branches:[routePoints(edge,geometry,model)],markers:[]};
 }
-function sbLabelLayout(edge,geometry,model,wanted=null){
+function sbComputeLabelLayout(edge,geometry,model,wanted=null){
   const data=sbEdgeBranches(edge,geometry,model),metrics=sbLabelMetrics(edge);
   const lengths=data.branches.map(polylineLength),total=lengths.reduce((a,b)=>a+b,0);
   const t=Math.max(0,Math.min(1,Number(edge.label_position??.5)));
@@ -13012,11 +13079,16 @@ function sbCanvasHeight(model,geometry){
     return Math.max(height,layout.p.y+layout.h/2+8);
   },geometry.canvasHeight);
 }
-function sbRepairRouteEndpoints(a,stored,b,sourceSide,targetSide,sourceBox=null,targetBox=null){
-  const interior=(stored||[]).map(p=>({x:Number(p.x),y:Number(p.y)}));
-  if(!interior.length)return sbAutoRoute(a,b,sourceSide,targetSide,sourceBox,targetBox);
-  return compactRoutePoints([...sbTerminalBridge(a,interior[0],sourceSide,sourceBox),
-    ...interior,...sbTerminalBridge(b,interior.at(-1),targetSide,targetBox).reverse()],false);
+function sbRepairRouteEndpoints(a,stored,b,sourceSide,targetSide,sourceBox=null,targetBox=null,obstacles=[]){
+  const boxes=[sourceBox,targetBox,...obstacles].filter(Boolean);
+  const interior=sbEraseRouteLoops(sbOrthogonalRoute(stored||[],boxes));
+  if(!interior.length)return sbAutoRoute(a,b,sourceSide,targetSide,sourceBox,targetBox,obstacles);
+  const points=sbEraseRouteLoops([...sbTerminalBridge(a,interior[0],sourceSide,sourceBox),
+    ...interior,...sbTerminalBridge(b,interior.at(-1),targetSide,targetBox).reverse()]);
+  // Si el movimiento vuelve imposible el quiebre antiguo, derivar una ruta segura.
+  if(!sbRouteFollowsSides(points,sourceSide,targetSide)||sbRouteEntersEndpoint(points,sourceBox,targetBox))
+    return sbAutoRoute(a,b,sourceSide,targetSide,sourceBox,targetBox,obstacles);
+  return points;
 }
 
 function sbCircleBounds(p){const r=STANDARD.connectorRadius;return {x:p.x-r,y:p.y-r,w:r*2,h:r*2};}
@@ -13420,8 +13492,8 @@ function sbBindTools(){
   document.addEventListener('keydown',event=>{
     const input=['INPUT','TEXTAREA','SELECT'].includes(event.target?.tagName)||event.target?.isContentEditable;
     if(input)return;
-    if(event.key==='Escape'&&(APP.tools.portDrag||!$('sb_context_menu').classList.contains('hidden'))){
-      event.preventDefault();event.stopImmediatePropagation();sbCancelPortDrag();sbCloseContextMenu();vp.focus({preventScroll:true});return;
+    if(event.key==='Escape'&&(APP.tools.portDrag||APP.connect.active||!$('sb_context_menu').classList.contains('hidden'))){
+      event.preventDefault();event.stopImmediatePropagation();sbCancelConnection();sbCloseContextMenu();renderStudio();vp.focus({preventScroll:true});return;
     }
     if(event.key==='Escape')sbFinishNudge();
     if((event.key==='ContextMenu'||event.key==='F10'&&event.shiftKey)&&APP.selection?.type==='lane'){
@@ -13476,7 +13548,7 @@ function sbConnectionError(sourceId,sourceSide,targetId,targetSide,model=current
 function sbCreateConnection(sourceId,sourceSide,targetId,targetSide){
   const model=currentModel();if(!model)return false;
   const error=sbConnectionError(sourceId,sourceSide,targetId,targetSide,model);
-  if(error){gMsg('warn',error);return false;}
+  if(error){sbCancelConnection();gMsg('warn',error);renderStudio();return false;}
   pushHistory();model.counters.edge=(model.counters.edge||0)+1;
   const edge={id:uid('EDGE'),order:model.counters.edge,source:sourceId,target:targetId,
     source_side:sourceSide,target_side:targetSide,label:'',label_position:.5,mode:'line',
