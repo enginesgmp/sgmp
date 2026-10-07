@@ -616,7 +616,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Haz clic derecho en una zona vacía del carril y elige Agregar caja. Con un carril seleccionado, usa Menú o Shift+F10 para abrir el mismo menú por teclado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas bloquean JSON→LMP; guardar y PDF están disponibles.</li></ol>
   <h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; el botón central o arrastrar el fondo exterior desplaza el lienzo; el arrastre dentro del diagrama selecciona.</li></ul>
-  <h4>Alineación y conexiones</h4><p>Las guías de alineación están activadas inicialmente: acercan suavemente bordes o centros durante el arrastre. Desactívalas con Guías de alineación o mantén Alt para mover libremente. Las cajas admiten diez conexiones por lado; las decisiones conservan sus puertos únicos. Las parejas de círculos comparten etiqueta y se ordenan por su primera aparición, de izquierda a derecha y después de arriba abajo. Las notas conservan la serie 5.2, 5.3… y el mismo orden espacial de sus propietarios.</p>
+  <h4>Alineación y conexiones</h4><p>Las guías de alineación están activadas inicialmente: acercan suavemente bordes o centros durante el arrastre. Desactívalas con Guías de alineación o mantén Alt para mover libremente. Las cajas admiten diez conexiones por lado; las decisiones conservan sus puertos únicos. Las puntas mantienen el mismo tamaño en cualquier conexión. Un clic en espacio vacío cancela una conexión pendiente o limpia su selección; en pantalla completa nativa, Esc puede salir por acción del navegador. Las parejas de círculos comparten etiqueta y se ordenan por su primera aparición, de izquierda a derecha y después de arriba abajo. Las notas conservan la serie 5.2, 5.3… y el mismo orden espacial de sus propietarios.</p>
   <h4>Atajos</h4><ul><li>Supr/Delete: eliminar selección.</li><li>Ctrl+Z / Ctrl+Y: deshacer / rehacer.</li><li>Ctrl+D: crear una caja vacía del mismo tipo en el mismo carril.</li><li>Ctrl+S: guardar flujo.</li><li>Esc: cancelar selección o conexión.</li></ul>
 </div><div class="dialog-actions"><button data-dialog-close="manual_dialog" type="button">Cerrar</button></div></div></dialog>
 
@@ -756,10 +756,10 @@ function updateConnectStatus(){
     setStudioStatus(lane?'Clic derecho en una zona vacía del carril para agregar; Menú o Shift+F10 por teclado.':'Clic derecho en una zona vacía para agregar; selecciona una caja para conectar.');
     return;
   }
-  if(!APP.connect.sourceId){setStudioStatus('Conectar: selecciona la caja de origen.');return;}
-  if(!APP.connect.sourceSide){setStudioStatus('Conectar: elige el lado de salida de la caja origen.');return;}
-  if(!APP.connect.targetId){setStudioStatus('Conectar: selecciona la caja de destino.');return;}
-  setStudioStatus('Conectar: elige el lado de entrada de la caja destino.');
+  if(!APP.connect.sourceId){setStudioStatus('Conectar: selecciona la caja de origen. Clic en espacio vacío para cancelar.');return;}
+  if(!APP.connect.sourceSide){setStudioStatus('Conectar: elige el lado de salida de la caja origen. Clic en espacio vacío para cancelar.');return;}
+  if(!APP.connect.targetId){setStudioStatus('Conectar: selecciona la caja de destino. Clic en espacio vacío para cancelar.');return;}
+  setStudioStatus('Conectar: elige el lado de entrada de la caja destino. Clic en espacio vacío para cancelar.');
 }
 
 function createMaster(process={}){
@@ -2605,11 +2605,11 @@ function handleConnectNode(nodeId){
 
   const source=nodeById(APP.connect.sourceId,model);
   if(!source||!validateEdgeRelation(source,node,model)){
-    gMsg('err','Esa relación no está permitida por la metodología SIPOC.');
+    sbCancelConnection();gMsg('err','Esa relación no está permitida por la metodología SIPOC.');renderStudio();
     return;
   }
   if(model.edges.some(edge=>edge.source===source.id&&edge.target===node.id)){
-    gMsg('warn','Esa conexión ya existe.');
+    sbCancelConnection();gMsg('warn','Esa conexión ya existe.');renderStudio();
     return;
   }
 
@@ -9635,7 +9635,7 @@ function handleConnectorMarkerDrag(event){
 }
 
 function endConnectorMarkerDrag(event){
-  const drag=APP.connectorDrag,vp=$('viewport');if(!drag)return;
+  const drag=APP.connectorDrag,vp=$('viewport');if(!drag||event.pointerId!==drag.pointerId)return;
   ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleConnectorMarkerDrag:endConnectorMarkerDrag));
   try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
   if(event.type==='pointercancel'||!drag.moved){
@@ -9670,7 +9670,7 @@ function handleEdgeLabelDrag(event){
 }
 
 function endEdgeLabelDrag(event){
-  const drag=APP.labelDrag,vp=$('viewport');if(!drag)return;
+  const drag=APP.labelDrag,vp=$('viewport');if(!drag||event.pointerId!==drag.pointerId)return;
   ['pointermove','pointerup','pointercancel'].forEach(type=>vp?.removeEventListener(type,type==='pointermove'?handleEdgeLabelDrag:endEdgeLabelDrag));
   try{if(vp?.hasPointerCapture?.(drag.pointerId))vp.releasePointerCapture(drag.pointerId);}catch(error){}
   if(event.type==='pointercancel'||!drag.moved){const edge=edgeById(drag.edgeId),original=edgeById(drag.edgeId,drag.snapshot.model);if(edge&&original){if(original.label_position===undefined)delete edge.label_position;else edge.label_position=original.label_position;}}
@@ -9742,7 +9742,7 @@ function bindViewportPan(){
         return;
       }
 
-      if(event.button===0&&(APP.connect.active||APP.selection?.type==='edge'||APP.selection?.type==='connector_marker')){
+      if(event.button===0&&APP.connect.active){
         event.preventDefault();sbCancelConnection();APP.selection=null;renderStudio();return;
       }
 
@@ -13495,7 +13495,10 @@ function sbBindTools(){
     if(event.key==='Escape'&&(APP.tools.portDrag||APP.connect.active||!$('sb_context_menu').classList.contains('hidden'))){
       event.preventDefault();event.stopImmediatePropagation();sbCancelConnection();sbCloseContextMenu();renderStudio();vp.focus({preventScroll:true});return;
     }
-    if(event.key==='Escape')sbFinishNudge();
+    if(event.key==='Escape'){
+      if(sbCancelActiveGesture()){event.preventDefault();event.stopImmediatePropagation();return;}
+      sbFinishNudge();
+    }
     if((event.key==='ContextMenu'||event.key==='F10'&&event.shiftKey)&&APP.selection?.type==='lane'){
       event.preventDefault();event.stopImmediatePropagation();
       const r=vp.getBoundingClientRect();sbShowContextMenu({clientX:r.left+20,clientY:r.top+20,preventDefault(){},stopPropagation(){}},APP.selection.id);return;
@@ -13618,10 +13621,10 @@ function sbEndPortDrag(event){
   const drag=APP.tools.portDrag;if(!drag||drag.pointerId!==event.pointerId)return;
   if(drag.moved)sbMovePortDrag(event);
   const target=drag.target;sbCancelPortDrag();
-  if(event.type==='pointercancel'||drag.flowId!==APP.activeFlowId)return;
+  if(event.type==='pointercancel'||drag.flowId!==APP.activeFlowId){sbCancelConnection();renderStudio();return;}
   if(!drag.moved){handleConnectPort(drag.nodeId,drag.side);return;}
   if(target&&!target.error)sbCreateConnection(drag.nodeId,drag.side,target.nodeId,target.side);
-  else gMsg('info',target?.error||'Conexión cancelada: suelta sobre un puerto disponible.');
+  else{sbCancelConnection();gMsg('info',target?.error||'Conexión cancelada: suelta sobre un puerto disponible.');renderStudio();}
 }
 function sbCancelPortDrag(){
   const drag=APP.tools.portDrag;APP.tools.portDrag=null;
