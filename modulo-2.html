@@ -545,7 +545,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
         <article class="import-card">
           <h3>Restaurar respaldo maestro</h3>
           <p>Restaura el proceso completo con todos sus flujos, geometría, notas, documentos y trazabilidad.</p>
-          <div class="field"><label for="backup_file">SB_MASTER_BACKUP.json</label><input type="file" id="backup_file" accept=".json,application/json"></div>
+          <div class="field"><label for="backup_file">Respaldo maestro (.json)</label><input type="file" id="backup_file" accept=".json,application/json"></div>
           <button id="btn_restore_backup" type="button">Restaurar respaldo</button>
         </article>
       </section>
@@ -629,7 +629,7 @@ dialog::backdrop{background:rgba(10,34,55,.45)}
 
 <dialog id="insert_dialog"><div class="dialog-inner"><h3 id="insert_title">Insertar</h3><p id="insert_help">Selecciona la figura permitida para el carril activo.</p><div id="insert_palette" class="palette"></div><div class="dialog-actions"><button data-dialog-close="insert_dialog" type="button">Cancelar</button></div></div></dialog>
 <dialog id="validation_dialog"><div class="dialog-inner"><h3>Validación estructural</h3><p>Guardar y exportar PDF están permitidos. Estas alertas deben resolverse antes de exportar JSON → LMP.</p><div id="validation_list" class="issue-list"></div><div class="dialog-actions"><button data-dialog-close="validation_dialog" type="button">Cerrar</button></div></div></dialog>
-<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>El PDF puede generarse con información pendiente. La exportación JSON → LMP requiere un SIPOC sin alertas estructurales.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el bloque completo de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin bloque de notas</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el bloque inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
+<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>El PDF puede generarse con información pendiente. La exportación JSON → LMP requiere un SIPOC sin alertas estructurales.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el listado de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin listado de notas aclaratorias</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el listado inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Haz clic derecho en una zona vacía del carril y elige Agregar caja. Con un carril seleccionado, usa Menú o Shift+F10 para abrir el mismo menú por teclado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas bloquean JSON→LMP; guardar y PDF están disponibles.</li></ol>
@@ -791,6 +791,16 @@ function createMaster(process={}){
   };
 }
 
+// master.purpose se conserva únicamente como origen compatible para respaldos anteriores.
+function sbFlowPurpose(flow=activeFlow(),master=APP.master){
+  return text(flow&&Object.hasOwn(flow,'purpose')?flow.purpose:master?.purpose);
+}
+function sbNormalizeFlowPurposes(master=APP.master){
+  (master?.flows||[]).forEach(flow=>{
+    if(!Object.hasOwn(flow,'purpose'))flow.purpose=master.purpose??'';
+  });
+}
+
 function actorLane(label='',width=STANDARD.actorLaneWidth){
   return {
     id:uid('LANE-ACTOR'),
@@ -818,12 +828,14 @@ function createBlankModel(){
   };
 }
 
-function createFlow({name='',type='as_is',status='draft',source='blank',parentFlowId=null,model=null}={}){
+function createFlow({name='',type='as_is',status='draft',source='blank',parentFlowId=null,model=null,purpose}={}){
   if(!APP.master)APP.master=createMaster();
+  sbNormalizeFlowPurposes();
+  const versionPurpose=purpose===undefined?sbFlowPurpose():upper(purpose);
   const n=(APP.master.flows.reduce((m,f)=>Math.max(m,Number(f.version_number)||0),0)+1);
   const flow={
     flow_id:uid('SBF'),version_number:n,version_name:upper(name)||`FLUJO ${n}`,version_type:type==='to_be'?'to_be':'as_is',
-    status:['draft','validated','frozen'].includes(status)?status:'draft',source_origin:source,parent_flow_id:parentFlowId||null,
+    status:['draft','validated','frozen'].includes(status)?status:'draft',purpose:versionPurpose,source_origin:source,parent_flow_id:parentFlowId||null,
     created_at:nowIso(),updated_at:nowIso(),saved_at:null,payload:{model:clone(model||createBlankModel())}
   };
   APP.master.flows.push(flow);APP.master.updated_at=nowIso();APP.activeFlowId=flow.flow_id;
@@ -846,6 +858,7 @@ function startBlankFlow(){
 function openFlow(flowId){
   sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
 
+  sbNormalizeFlowPurposes();
   const flow=flowById(flowId);if(!flow){gMsg('err','No se encontró el flujo solicitado.');return false;}
   flow.payload=flow.payload||{};flow.payload.model=normalizeLoadedModel(flow.payload.model);
   APP.activeFlowId=flowId; APP.selection=null; APP.connect=freshConnectState(); APP.history=[]; APP.future=[]; APP.dirty=false; APP.nodeClipboard=null; APP.pointerCanvas={   flowId:null,   x:null,   y:null,   inside:false };
@@ -854,7 +867,7 @@ function openFlow(flowId){
 
 function duplicateFlow(flowId=APP.activeFlowId){
   const src=flowById(flowId);if(!src)return false;
-  const copy=createFlow({name:`${src.version_name} - COPIA`,type:src.version_type,status:'draft',source:'duplicate',parentFlowId:src.flow_id,model:clone(src.payload.model)});
+  const copy=createFlow({name:`${src.version_name} - COPIA`,type:src.version_type,status:'draft',source:'duplicate',parentFlowId:src.flow_id,model:clone(src.payload.model),purpose:sbFlowPurpose(src)});
   copy.saved_at=nowIso();renderLibrary();openFlow(copy.flow_id);gMsg('ok','Flujo duplicado.');return true;
 }
 
@@ -885,6 +898,7 @@ function persistWorkspaceSnapshot(){
       return true;
     }
 
+    sbNormalizeFlowPurposes();
     const snapshot={
       storage_code:'SB_BROWSER_WORKSPACE',
       storage_version:'1.0',
@@ -949,6 +963,7 @@ function restoreWorkspaceSnapshot(){
         ? APP.master.document_catalog
         : [];
 
+    sbNormalizeFlowPurposes();
     APP.master.flows.forEach(flow=>{
       flow.payload=
         flow.payload||{};
@@ -1064,6 +1079,7 @@ function captureHistoryState(options={}){
     },
 
     flow:{
+      purpose:sbFlowPurpose(flow),
       version_name:flow.version_name||'',
       version_type:flow.version_type||'as_is',
       status:flow.status||'draft'
@@ -1098,6 +1114,8 @@ function restoreHistoryState(state){
     Array.isArray(state.process?.document_catalog)
       ? clone(state.process.document_catalog)
       : [];
+
+  if(Object.hasOwn(state.flow||{},'purpose'))flow.purpose=state.flow.purpose;
 
   flow.version_name=
     state.flow?.version_name||
@@ -3140,137 +3158,82 @@ function buildNoteNumberMap(
   };
 }
 
-function wrapPdfNoteText(value,maxChars){
-  const chunks=[];
-
-  String(value||'')
-    .split(/\s+/)
-    .filter(Boolean)
-    .forEach(word=>{
-
-      if(word.length<=maxChars){
-        chunks.push(word);
-        return;
-      }
-
-      /*
-       * También parte palabras extremadamente
-       * largas para impedir desbordamiento.
-       */
-      for(
-        let i=0;
-        i<word.length;
-        i+=maxChars
-      ){
-        chunks.push(
-          word.slice(
-            i,
-            i+maxChars
-          )
-        );
-      }
-    });
-
-  if(!chunks.length){
-    return [''];
+// Medir con la fuente del lienzo y Helvetica evita desbordar al convertir a PDF.
+function sbPrintTextMetrics(value,size=11,bold=false,fontFamily='Arial'){
+  const key='print|'+size+'|'+bold+'|'+fontFamily+'|'+value,cache=APP.tools.textMetrics;
+  if(cache.has(key))return cache.get(key);
+  const screen=sbTextMetrics(value,size,bold,fontFamily),arial=sbTextMetrics(value,size,bold);
+  let width=Math.max(screen.width,arial.width);
+  const Pdf=window.jspdf?.jsPDF;
+  if(Pdf){
+    const pdf=APP.tools.pdfTextMeasure||(APP.tools.pdfTextMeasure=new Pdf({unit:'pt'}));
+    pdf.setFont('helvetica',bold?'bold':'normal');pdf.setFontSize(size);
+    width=Math.max(width,pdf.getTextWidth(String(value)));
   }
+  const result={width,ascent:Math.max(screen.ascent,arial.ascent),descent:Math.max(screen.descent,arial.descent)};
+  if(cache.size>=256)cache.clear();cache.set(key,result);return result;
+}
 
-  const lines=[];
-  let current='';
-
-  chunks.forEach(chunk=>{
-    if(!current){
-      current=chunk;
-      return;
+function sbWrapPrintText(value,width,size,metrics=sbPrintTextMetrics){
+  const lines=[],space=metrics(' ',size,false).width;let line='',lineWidth=0;
+  for(const word of String(value).split(/\s+/).filter(Boolean)){
+    const wordWidth=metrics(word,size,false).width;
+    if(line&&lineWidth+space+wordWidth<=width){line+=' '+word;lineWidth+=space+wordWidth;continue;}
+    if(line){lines.push(line);line='';lineWidth=0;}
+    if(wordWidth<=width){line=word;lineWidth=wordWidth;continue;}
+    const characters=Array.from(word);let offset=0;
+    while(offset<characters.length){
+      let low=1,high=characters.length-offset;
+      while(low<high){
+        const mid=Math.ceil((low+high)/2),part=characters.slice(offset,offset+mid).join('');
+        if(metrics(part,size,false).width<=width)low=mid;else high=mid-1;
+      }
+      const part=characters.slice(offset,offset+low).join('');offset+=low;
+      if(offset<characters.length)lines.push(part);else{line=part;lineWidth=metrics(part,size,false).width;}
     }
-
-    if(
-      (current+' '+chunk).length
-      <=maxChars
-    ){
-      current+=' '+chunk;
-    }else{
-      lines.push(current);
-      current=chunk;
-    }
-  });
-
-  if(current){
-    lines.push(current);
   }
+  if(line||!lines.length)lines.push(line);return lines;
+}
 
-  return lines;
+function wrapPdfNoteText(value,width,fontSize=11){
+  // Reutilizar saltos mientras el texto y el ancho no cambien durante un drag.
+  const cache=APP.tools.printNoteLines||(APP.tools.printNoteLines=new Map());
+  const key=width+'|'+fontSize+'|'+value;
+  if(cache.has(key))return cache.get(key);
+  const lines=sbWrapPrintText(value,width,fontSize);
+  if(cache.size>=512)cache.clear();cache.set(key,lines);return lines;
 }
 
 function buildNotesBlockLayout(noteMap,width){
-  const fontSize=11,
-        lineHeight=15,
-        noteGap=5,
-        headerY=24,
-        firstLineY=45;
-
-  /*
-   * El ancho máximo siempre depende
-   * del ancho YA EXISTENTE del SIPOC.
-   * Las notas nunca lo amplían.
-   */
-  const availableWidth=
-    Math.max(
-      120,
-      width-
-      STANDARD.canvasMargin*2-
-      34
-    );
-
-  const maxChars=
-    Math.max(
-      18,
-      Math.floor(
-        availableWidth/
-        (fontSize*.58)
-      )
-    );
-
+  const fontSize=11,lineHeight=15,noteGap=5,headerY=24,firstLineY=45;
+  const ordered=noteMap?.ordered||[],numberX=STANDARD.canvasMargin;
+  const numberWidth=Math.max(36,...ordered.map(note=>
+    Math.ceil(sbPrintTextMetrics(noteMap.map.get(note.id)||'',fontSize,true).width)+8));
+  const textX=numberX+numberWidth,rightX=width-STANDARD.canvasMargin-12;
+  const availableWidth=Math.max(1,rightX-textX-2);
   let cursorY=firstLineY;
+  const items=ordered.map(note=>{
+    const lines=wrapPdfNoteText(upper(note.text),availableWidth,fontSize);
+    const item={note,number:noteMap.map.get(note.id)||'',lines,y:cursorY};
+    cursorY+=lines.length*lineHeight+noteGap;return item;
+  });
+  return {items,fontSize,lineHeight,noteGap,headerY,numberX,textX,rightX,
+    height:Math.max(68,cursorY+8)};
+}
 
-  const items=
-    (noteMap?.ordered||[])
-      .map(note=>{
-
-        const lines=
-          wrapPdfNoteText(
-            upper(note.text),
-            maxChars
-          );
-
-        const item={
-          note,
-          number:
-            noteMap.map.get(note.id)||'',
-          lines,
-          y:cursorY
-        };
-
-        cursorY+=
-          lines.length*lineHeight+
-          noteGap;
-
-        return item;
-      });
-
-  return {
-    items,
-    fontSize,
-    lineHeight,
-    noteGap,
-    headerY,
-    height:
-      Math.max(
-        68,
-        cursorY+8
-      )
-  };
-}  
+function sbFitRelatedProcessText(logicalLines,box){
+  // Cada raya interior está a 8 unidades del borde; dejar 5 más para el texto.
+  const width=Math.max(1,box.w-26),height=box.h-10;
+  const metrics=(value,size,bold)=>sbPrintTextMetrics(value,size,bold,'Segoe UI');
+  let fit;
+  for(let size=10.5;size>=2;size-=.5){
+    const lines=logicalLines.flatMap(line=>sbWrapPrintText(line,width,size,metrics));
+    fit={fontSize:size,lineHeight:size*1.12,lines};
+    const ink=metrics('ÁÉÍÓÚÑgj',size,false);
+    if((lines.length-1)*fit.lineHeight+ink.ascent+ink.descent<=height)return fit;
+  }
+  return fit;
+}
 
 function nodeLogicalLines(node,noteMap){
   const lines=[];if(text(node.label))lines.push(upper(node.label));
@@ -3607,7 +3570,9 @@ function renderNodeText(
 
       : node.type==='system_response'
         ? sbFitSystemText(logicalLines,b)
-        : fitText(
+        : node.type==='related_process'
+          ? sbFitRelatedProcessText(logicalLines,b)
+          : fitText(
           logicalLines,
           b.w,
           b.h,
@@ -5199,8 +5164,8 @@ if(!fast)APP.validation.crossingEdges=crossing;
   svg+=`<rect x="${STANDARD.canvasMargin}" y="0" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.titleHeight}" fill="#fff" stroke="#000" stroke-width="1"/><rect x="${STANDARD.canvasMargin}" y="${STANDARD.titleHeight}" width="${g.width-STANDARD.canvasMargin*2}" height="${STANDARD.purposeHeight}" fill="#fff" stroke="#000" stroke-width="1"/>`;
   const title=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' ')||'NOMBRE DEL PROCESO PENDIENTE';
   svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight/2+1}" dominant-baseline="middle" font-size="12" font-weight="800" ${interactive?`data-sb-edit-master="process_name" style="cursor:text"`:`pointer-events="none"`}>${escapeXml(upper(title))}</text>`;
-  const purpose=APP.master?.purpose||'FINALIDAD PENDIENTE';
-  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight+STANDARD.purposeHeight/2+1}" dominant-baseline="middle" font-size="9" ${interactive?`data-sb-edit-master="purpose" style="cursor:text"`:`pointer-events="none"`}><tspan font-weight="800">FINALIDAD: </tspan><tspan>${escapeXml(upper(purpose))}</tspan></text>`;
+  const purpose=sbFlowPurpose()||'FINALIDAD PENDIENTE';
+  svg+=`<text x="${STANDARD.canvasMargin+6}" y="${STANDARD.titleHeight+STANDARD.purposeHeight/2+1}" dominant-baseline="middle" font-size="9" ${interactive?`data-sb-edit-flow="purpose" style="cursor:text"`:`pointer-events="none"`}><tspan font-weight="800">FINALIDAD: </tspan><tspan>${escapeXml(upper(purpose))}</tspan></text>`;
 
   const supplier=g.lanes.find(lane=>lane.kind==='supplier'),input=g.lanes.find(lane=>lane.kind==='input'),output=g.lanes.find(lane=>lane.kind==='output'),customer=g.lanes.find(lane=>lane.kind==='customer');
   if(supplier&&input)svg+=renderSharedPeripheralZone(supplier,input,g,interactive);
@@ -5271,45 +5236,16 @@ if(includeNotesBlock){
     `</text>`;
 
   layout.items.forEach(item=>{
-
-    item.lines.forEach(
-      (line,lineIndex)=>{
-
-        const y=
-          notesBaseY+
-          item.y+
-          lineIndex*
-          layout.lineHeight;
-
-        if(lineIndex===0){
-
-          svg+=
-            `<text `+
-            `x="${STANDARD.canvasMargin}" `+
-            `y="${y}" `+
-            `font-size="${layout.fontSize}" `+
-            `pointer-events="none">`+
-            `<tspan font-family="Arial" font-weight="bold">`+
-            `${escapeXml(item.number)} `+
-            `</tspan>`+
-            `<tspan font-family="Arial" font-weight="normal">`+
-            `${escapeXml(line)}`+
-            `</tspan>`+
-            `</text>`;
-
-        }else{
-
-          svg+=
-            `<text `+
-            `x="${STANDARD.canvasMargin+28}" `+
-            `y="${y}" `+
-            `font-size="${layout.fontSize}" `+
-            `pointer-events="none">`+
-            `${escapeXml(line)}`+
-            `</text>`;
-        }
-      }
-    );
+    const firstY=notesBaseY+item.y;
+    svg+=`<text class="sb-note-number" x="${layout.numberX}" y="${firstY}"
+      font-family="Arial" font-size="${layout.fontSize}" font-weight="bold"
+      text-anchor="start" letter-spacing="0" word-spacing="0" pointer-events="none">${escapeXml(item.number)}</text>`;
+    item.lines.forEach((line,lineIndex)=>{
+      const y=firstY+lineIndex*layout.lineHeight;
+      svg+=`<text class="sb-note-line" x="${layout.textX}" y="${y}"
+        font-family="Arial" font-size="${layout.fontSize}" font-weight="normal"
+        text-anchor="start" letter-spacing="0" word-spacing="0" pointer-events="none">${escapeXml(line)}</text>`;
+    });
   });
 }
   svg+='</svg>';return svg;
@@ -6328,7 +6264,7 @@ function renderInspectorContent(){
   const root=$('inspector_content'),flow=activeFlow(),model=currentModel();if(!flow||!model){root.innerHTML='<div class="empty-note">Abre un flujo para comenzar.</div>';return;}
   const sel=APP.selection;
   if(!sel){
-    root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad</label><textarea id="ins_purpose">${escapeHtml(APP.master.purpose||'')}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"></div>`;
+    root.innerHTML=`<div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad de esta versión</label><textarea id="ins_purpose">${escapeHtml(sbFlowPurpose(flow))}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div><div class="inspector-actions"></div>`;
     return;
   }
 
@@ -10359,7 +10295,7 @@ function renderInsertPalette(){
 
 function collectValidation(flow=activeFlow()){
   if(!flow)return ['No existe un flujo activo.'];const model=flow.payload.model,issues=[];const add=msg=>issues.push(msg);const lanes=model.lanes||[],actors=lanes.filter(l=>l.kind==='actor');
-  if(!text(APP.master?.process_name))add('Falta el nombre del proceso.');if(!text(APP.master?.purpose))add('Falta la finalidad del proceso.');if(actors.length<2)add('El proceso debe conservar al menos dos carriles de actores.');actors.forEach((l,i)=>{if(!text(l.label))add(`El actor ${i+1} no tiene nombre.`);});
+  if(!text(APP.master?.process_name))add('Falta el nombre del proceso.');if(!sbFlowPurpose(flow))add('Falta la finalidad del proceso.');if(actors.length<2)add('El proceso debe conservar al menos dos carriles de actores.');actors.forEach((l,i)=>{if(!text(l.label))add(`El actor ${i+1} no tiene nombre.`);});
   const ids=[...lanes.map(l=>l.id),...model.nodes.map(n=>n.id),...model.edges.map(e=>e.id),...model.notes.map(n=>n.id)];if(new Set(ids).size!==ids.length)add('Existen IDs duplicados en el modelo.');
   const actorNodes=model.nodes.filter(n=>laneKindForNode(n,model)==='actor'),sup=model.nodes.filter(n=>laneKindForNode(n,model)==='supplier'),inp=model.nodes.filter(n=>laneKindForNode(n,model)==='input'),out=model.nodes.filter(n=>laneKindForNode(n,model)==='output'),cus=model.nodes.filter(n=>laneKindForNode(n,model)==='customer');
   if(!actorNodes.length)add('El flujo debe contener al menos una actividad o decisión.');if(!sup.length)add('El flujo debe contener al menos un proveedor.');if(!inp.length)add('El flujo debe contener al menos una entrada.');if(!out.length)add('El flujo debe contener al menos una salida.');if(!cus.length)add('El flujo debe contener al menos un cliente.');
@@ -10498,9 +10434,24 @@ const activities=orderedActorNodes.map((node,index)=>{
     const prev=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='actor').map(e=>({activity_id:e.source,activity_name:upper(nodeById(e.source,model)?.label),label:upper(e.label)}));const next=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='actor').map(e=>({activity_id:e.target,activity_name:upper(nodeById(e.target,model)?.label),label:upper(e.label)}));const ins=model.edges.filter(e=>e.target===node.id&&laneKindForNode(nodeById(e.source,model),model)==='input').map(e=>({id:nodeById(e.source,model)?.id||'',name:upper(nodeById(e.source,model)?.label),node_type:validNodeTypeForLane('input',nodeById(e.source,model)?.type),label:upper(e.label)}));const outs=model.edges.filter(e=>e.source===node.id&&laneKindForNode(nodeById(e.target,model),model)==='output').map(e=>({id:nodeById(e.target,model)?.id||'',name:upper(nodeById(e.target,model)?.label),node_type:validNodeTypeForLane('output',nodeById(e.target,model)?.type),label:upper(e.label)}));const lane=laneById(node.lane_id,model);return {...sbIconContractMeta(node.meta),id:node.id,sequence:index+1,actor_lane_id:lane.id,actor:upper(lane.label),name:upper(node.label),type:node.type==='decision'?'decision':'actividad',node_type:validNodeTypeForLane('actor',node.type),previous:prev,next,inputs:ins,outputs:outs,note_ids:[...(node.note_ids||[])],documents:(node.documents||[]).map(documentTextValue).filter(Boolean)};});
   const noteMap=   buildNoteNumberMap(     model,     geom.lanes   );  const clarifying_notes=   noteMap.ordered.map(note=>{      const node=             nodeById(               note.node_id,               model             ),            lane=             !node &&             text(note.lane_id)               ? laneById(                   note.lane_id,                   model                 )               : null,            targetKind=             node               ? noteTargetKind(                   node,                   model                 )               : lane?.kind==='actor'                 ? 'actor_lane'                 : '',            isActivity=             targetKind==='activity'||             targetKind==='decision';      return {       id:note.id,        target_id:         node?.id||         lane?.id||         '',        target_kind:         targetKind,        target_name:         upper(           node?.label||           lane?.label||           ''         ),        activity_id:         isActivity           ? node?.id||''           : '',        activity_name:         isActivity           ? upper(node?.label||'')           : '',        text:upper(note.text),       number:noteMap.map.get(note.id)     };   });
   const docMap=new Map();normalizeDocumentCatalog(APP.master).forEach(value=>docMap.set(documentKey(value),documentTextValue(value)));model.nodes.flatMap(n=>n.documents||[]).forEach(d=>{const value=documentTextValue(d);if(value)docMap.set(documentKey(value),value);});
-  return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(APP.master.purpose),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
+  return {process_code:upper(APP.master.process_code),process_name:upper(APP.master.process_name),purpose:upper(sbFlowPurpose(flow)),lanes:{suppliers_inputs:supplierRows,actors:actorLanes.map(l=>({id:l.id,name:upper(l.label)})),outputs_customers:customerRows},activities,clarifying_notes,documents:[...docMap.values()]};
 }
 function buildSBToLMP(flow){return{contract_code:'SB_TO_LMP',contract_version:'1.0',source_module:'SIPOC_BUILDER',target_module:'LMP',generated_at:nowIso(),sipoc_input:buildSipocInput(flow)};}
+function sbDownloadPart(value,fallback){
+  return (text(value)||fallback).replace(/[<>:"/\\|?*\u0000-\u001f]/g,' ').replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'')||fallback;
+}
+function sbProcessDownloadName({includeTime=false,withoutNotes=false,extension='pdf',date=new Date()}={}){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
+    timeZone:'America/Guayaquil',year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+  }).formatToParts(date).map(part=>[part.type,part.value]));
+  const stamp=parts.day+'-'+parts.month+'-'+parts.year+
+    (includeTime?' '+parts.hour+'-'+parts.minute+'-'+parts.second:'');
+  return sbDownloadPart(APP.master?.process_code,'SIN CÓDIGO')+' - '+
+    sbDownloadPart(APP.master?.process_name,'SIN NOMBRE')+' ('+stamp+')'+
+    (withoutNotes?' SIN N.A':'')+'.'+extension;
+}
+
 function downloadText(content,filename,mime='application/json'){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function exportLmp(flowId=APP.exportFlowId){
   sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
@@ -10580,14 +10531,7 @@ async function exportPdf(flowId=APP.exportFlowId,includeNotesBlock=true){
   try{
     const blob=await buildPdfBlob(flow,{includeNotesBlock}),
           url=URL.createObjectURL(blob),
-          suffix=includeNotesBlock?'CON_NOTAS':'SIN_BLOQUE_NOTAS',
-          filename=
-            `SIPOC_${(
-              APP.master?.process_code||
-              APP.master?.process_name||
-              flow.version_name||
-              'PROCESO'
-            ).replace(/[^A-Z0-9_-]+/gi,'_')}_${flow.version_number}_${suffix}.pdf`;
+          filename=sbProcessDownloadName({withoutNotes:!includeNotesBlock});
 
     APP.pdfPreview.url=url;
     APP.pdfPreview.filename=filename;
@@ -10606,7 +10550,13 @@ function downloadPdfPreview(){
   if(!APP.pdfPreview.url||!APP.pdfPreview.filename)return;const a=document.createElement('a');a.href=APP.pdfPreview.url;a.download=APP.pdfPreview.filename;document.body.appendChild(a);a.click();a.remove();
 }
 
-function saveBackup(){if(!APP.master){gMsg('warn','No existe un proceso para respaldar.');return;}if(activeFlow())saveActiveFlow({silent:true});const backup={backup_code:'SB_MASTER_BACKUP',backup_version:'1.0',generated_at:nowIso(),active_flow_id:APP.activeFlowId,master:clone(APP.master)};downloadText(JSON.stringify(backup,null,2),`SB_MASTER_BACKUP_${(APP.master.process_code||'PROCESO').replace(/[^A-Z0-9_-]+/g,'_')}.json`);}
+function saveBackup(){
+  if(!APP.master){gMsg('warn','No existe un proceso para respaldar.');return;}
+  if(activeFlow())saveActiveFlow({silent:true});
+  sbNormalizeFlowPurposes();
+  const exportedAt=new Date(),backup={backup_code:'SB_MASTER_BACKUP',backup_version:'1.0',generated_at:exportedAt.toISOString(),active_flow_id:APP.activeFlowId,master:clone(APP.master)};
+  downloadText(JSON.stringify(backup,null,2),sbProcessDownloadName({includeTime:true,extension:'json',date:exportedAt}));
+}
 function restoreBackup(raw){
   try{
     const data=
@@ -10635,6 +10585,7 @@ function restoreBackup(raw){
         ? APP.master.document_catalog
         : [];
 
+    sbNormalizeFlowPurposes();
     APP.master.flows.forEach(flow=>{
       flow.payload=flow.payload||{};
 
@@ -11686,10 +11637,6 @@ function importLmp(raw){
           upper(input.process_name);
       }
 
-      if(!APP.master.purpose){
-        APP.master.purpose=
-          upper(input.purpose);
-      }
     }
 
     const model=
@@ -11701,6 +11648,7 @@ function importLmp(raw){
         type:'as_is',
         status:'draft',
         source:'lmp',
+        purpose:upper(input.purpose),
         model
       });
 
@@ -12981,11 +12929,11 @@ function sbRenderArrowRoute(points,stroke,width,style={}){
   return '<path d="'+pathFromPoints(shaft)+'" fill="none" stroke="'+stroke+'" stroke-width="'+width+'"/>'+
     '<path class="sb-arrow-tip" d="'+pathFromPoints([arrow.tip,arrow.left,arrow.right])+' Z" fill="'+stroke+'" stroke="none" pointer-events="none"/>';
 }
-function sbTextMetrics(value,size=8,bold=true){
-  const key=size+'|'+bold+'|'+value,cache=APP.tools.textMetrics;
+function sbTextMetrics(value,size=8,bold=true,fontFamily='Arial'){
+  const key=fontFamily+'|'+size+'|'+bold+'|'+value,cache=APP.tools.textMetrics;
   if(cache.has(key))return cache.get(key);
   const canvas=APP.tools.measureCanvas||(APP.tools.measureCanvas=document.createElement('canvas'));
-  const ctx=canvas.getContext('2d');ctx.font=(bold?'700 ':'400 ')+size+'px Arial';
+  const ctx=canvas.getContext('2d');ctx.font=(bold?'700 ':'400 ')+size+'px '+fontFamily;
   const m=ctx.measureText(value),result={width:m.width,ascent:m.actualBoundingBoxAscent??size*.75,descent:m.actualBoundingBoxDescent??size*.25};
   if(cache.size>=256)cache.clear();cache.set(key,result);return result;
 }
@@ -13388,7 +13336,7 @@ function sbBindInspectorFields(){
   const fields={
     ins_process_code:{kind:'master',field:'process_code'},
     ins_process_name:{kind:'master',field:'process_name'},
-    ins_purpose:{kind:'master',field:'purpose'},
+    ins_purpose:{kind:'flow',field:'purpose'},
     ins_flow_name:{kind:'flow',field:'version_name'},
     ins_flow_type:{kind:'flow',field:'version_type',preserveCase:true},
     ins_flow_status:{kind:'flow',field:'status',preserveCase:true},
@@ -13414,6 +13362,8 @@ function sbEditableTarget(target){
   const lane=target.closest('[data-lane-id]');
   if(lane&&laneById(lane.dataset.laneId)?.kind==='actor')
     return {kind:'lane',id:lane.dataset.laneId,field:'label',flowId,element:lane};
+  const versionField=target.closest('[data-sb-edit-flow]');
+  if(versionField)return {kind:'flow',field:versionField.dataset.sbEditFlow,flowId,element:versionField};
   const general=target.closest('[data-sb-edit-master]');
   if(general)return {kind:'master',field:general.dataset.sbEditMaster,flowId,element:general};
   return null;
@@ -13422,7 +13372,7 @@ function sbOpenInline(spec){
   if(!sbCommitEdit())return;
   sbFinishNudge();
   const owner=sbResolveEdit(spec);if(!owner)return;
-  APP.selection=spec.kind==='master'?null:{type:spec.kind,id:spec.id};
+  APP.selection=spec.kind==='master'||spec.kind==='flow'?null:{type:spec.kind,id:spec.id};
   renderInspector();
   const host=$('sb_inline_editor'),old=$('sb_inline_input'),input=document.createElement('textarea');
   input.id='sb_inline_input';input.setAttribute('aria-label','Editar '+(spec.field==='label'?'texto':spec.field));
@@ -13541,7 +13491,7 @@ function sbBindTools(){
     sbCommitEdit({render:false});sbCloseContextMenu();
     if(!APP.tools.headerFrame)APP.tools.headerFrame=requestAnimationFrame(()=>{APP.tools.headerFrame=null;sbUpdateFrozenHeaders();});
   },{passive:true});
-  document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();if(currentModel())renderStudio(false);});
+  document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();APP.tools.printNoteLines?.clear();if(currentModel())renderStudio(false);});
 }
 function sbUpdateFrozenHeaders(rebuild=false){
   const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),model=currentModel(),button=$('btn_freeze_headers');
@@ -13822,9 +13772,10 @@ function importSx(raw){
     if(!sbCommitEdit({render:false}))throw Error('Termina la edición actual antes de importar.');
     sbFinishNudge();sbCancelPortDrag();
     const master=APP.master?clone(APP.master):createMaster(input);
-    for(const key of ['process_code','process_name','purpose'])if(!master[key])master[key]=upper(input[key]);
+    sbNormalizeFlowPurposes(master);
+    for(const key of ['process_code','process_name'])if(!master[key])master[key]=upper(input[key]);
     const n=master.flows.reduce((a,f)=>Math.max(a,Number(f.version_number)||0),0)+1;
-    const flow={flow_id:uid('SBF'),version_number:n,version_name:upper(contract.flow.version_name)||'AS-IS RECIBIDO DESDE SX',version_type:contract.flow.version_type==='to_be'?'to_be':'as_is',status:'draft',source_origin:'sx',parent_flow_id:null,created_at:nowIso(),updated_at:nowIso(),saved_at:null,payload:{model,sipoc_input:clone(input),source_contract:{code:'SX_TO_SB',version:'2.0'}}};
+    const flow={flow_id:uid('SBF'),version_number:n,version_name:upper(contract.flow.version_name)||'AS-IS RECIBIDO DESDE SX',version_type:contract.flow.version_type==='to_be'?'to_be':'as_is',status:'draft',purpose:upper(input.purpose),source_origin:'sx',parent_flow_id:null,created_at:nowIso(),updated_at:nowIso(),saved_at:null,payload:{model,sipoc_input:clone(input),source_contract:{code:'SX_TO_SB',version:'2.0'}}};
     master.flows.push(flow);master.updated_at=nowIso();APP.master=master;
     if(!openFlow(flow.flow_id))throw Error('No se pudo abrir el flujo.');
     APP.dirty=true;renderStudioContext();gMsg('ok','SX_TO_SB 2.0 importado correctamente.');return true;
