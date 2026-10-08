@@ -3207,8 +3207,8 @@ function wrapPdfNoteText(value,width,fontSize=11){
 function buildNotesBlockLayout(noteMap,width){
   const fontSize=11,lineHeight=15,noteGap=5,headerY=24,firstLineY=45;
   const ordered=noteMap?.ordered||[],numberX=STANDARD.canvasMargin;
-  const numberWidth=Math.max(36,...ordered.map(note=>
-    Math.ceil(sbPrintTextMetrics(noteMap.map.get(note.id)||'',fontSize,true).width)+8));
+  const numberWidth=Math.max(30,...ordered.map(note=>
+    Math.ceil(sbPrintTextMetrics(noteMap.map.get(note.id)||'',fontSize,true).width)+6));
   const textX=numberX+numberWidth,rightX=width-STANDARD.canvasMargin-12;
   const availableWidth=Math.max(1,rightX-textX-2);
   let cursorY=firstLineY;
@@ -3222,17 +3222,8 @@ function buildNotesBlockLayout(noteMap,width){
 }
 
 function sbFitRelatedProcessText(logicalLines,box){
-  // Cada raya interior está a 8 unidades del borde; dejar 5 más para el texto.
-  const width=Math.max(1,box.w-26),height=box.h-10;
-  const metrics=(value,size,bold)=>sbPrintTextMetrics(value,size,bold,'Segoe UI');
-  let fit;
-  for(let size=10.5;size>=2;size-=.5){
-    const lines=logicalLines.flatMap(line=>sbWrapPrintText(line,width,size,metrics));
-    fit={fontSize:size,lineHeight:size*1.12,lines};
-    const ink=metrics('ÁÉÍÓÚÑgj',size,false);
-    if((lines.length-1)*fit.lineHeight+ink.ascent+ink.descent<=height)return fit;
-  }
-  return fit;
+  // Reservar las rayas interiores y un margen seguro de 5 unidades.
+  return fitText(logicalLines,box.w-16,box.h,10.5);
 }
 
 function nodeLogicalLines(node,noteMap){
@@ -3247,159 +3238,56 @@ function wrapLine(line,maxChars){
   words.forEach(word=>{if(!current){current=word;return;}if((current+' '+word).length<=maxChars){current+=' '+word;}else{out.push(current);current=word;}});if(current)out.push(current);return out;
 }
 
-function fitText(lines,width,height,maxFont=11){
-  for(let fs=maxFont;fs>=2;fs-=.5){const maxChars=Math.max(4,Math.floor((width-14)/(fs*.58)));const wrapped=[];lines.forEach(line=>wrapped.push(...wrapLine(line,maxChars)));const lh=fs*1.12;if(wrapped.length*lh<=height-10)return {fontSize:fs,lineHeight:lh,lines:wrapped};}
-  const fs=2,maxChars=Math.max(4,Math.floor((width-10)/(fs*.58))),wrapped=[];lines.forEach(line=>wrapped.push(...wrapLine(line,maxChars)));return {fontSize:fs,lineHeight:2.2,lines:wrapped};
+function fitText(lines,width,height,maxFont=11,bottomInset=0){
+  const availableWidth=Math.max(1,width-10),top=5,bottom=height-bottomInset-5;
+  const metrics=(value,size,bold)=>sbPrintTextMetrics(value,size,bold,'Segoe UI');
+  let fit;
+  for(let size=maxFont;size>=2;size-=.5){
+    const wrapped=lines.flatMap(line=>sbWrapPrintText(line,availableWidth,size,metrics));
+    const lineHeight=size*1.12,total=(wrapped.length-1)*lineHeight+size*1.5;
+    const centerOffset=Math.max(top+total/2,Math.min(height/2,bottom-total/2));
+    fit={fontSize:size,lineHeight,lines:wrapped,centerOffset};
+    if(total<=bottom-top)return fit;
+  }
+  return fit;
 }
 
-function fitDecisionText(
-  lines,
-  width,
-  height,
-  maxFont=9.5,
-  minFont=5.5
-){
-  const source=
-    Array.isArray(lines) &&
-    lines.length
-      ? lines
-      : ['TEXTO PENDIENTE'];
-
-  for(
-    let fs=maxFont;
-    fs>=minFont;
-    fs-=.5
-  ){
-    const lineHeight=
-      fs*1.12;
-
-    const centerWidth=
-      width*.82;
-
-    const maxChars=
-      Math.max(
-        5,
-        Math.floor(
-          (centerWidth-10)/
-          (fs*.58)
-        )
-      );
-
-    const wrapped=[];
-
-    source.forEach(line=>
-      wrapped.push(
-        ...wrapLine(
-          line,
-          maxChars
-        )
-      )
-    );
-
-    const totalHeight=
-      Math.max(
-        lineHeight,
-        (wrapped.length-1)*
-          lineHeight+
-          fs
-      );
-
-    if(
-      totalHeight>
-      height*.72
-    ){
-      continue;
-    }
-
-    const fits=
-      wrapped.every(
-        (line,index)=>{
-          const dy=
-            (
-              index-
-              (wrapped.length-1)/2
-            )*
-            lineHeight;
-
-          /*
-           * El ancho disponible disminuye
-           * al acercarse a las puntas
-           * superior e inferior del rombo.
-           */
-          const diamondFactor=
-            Math.max(
-              .34,
-              1-
-              (
-                2*
-                Math.abs(dy)/
-                height
-              )
-            );
-
-          const allowedWidth=
-            Math.max(
-              width*.34,
-              width*
-                diamondFactor*
-                .90-
-                8
-            );
-
-          const estimatedWidth=
-            String(line).length*
-            fs*
-            .58;
-
-          return (
-            estimatedWidth<=
-            allowedWidth
-          );
-        }
-      );
-
-    if(fits){
-      return {
-        fontSize:fs,
-        lineHeight,
-        lines:wrapped
-      };
+function fitDecisionText(lines,width,height,maxFont=9.5,minFont=2){
+  const source=Array.isArray(lines)&&lines.length?lines:['TEXTO PENDIENTE'];
+  const metrics=(value,size,bold)=>sbPrintTextMetrics(value,size,bold,'Segoe UI');
+  const normal=Math.hypot(2/width,2/height),padding=5;
+  let fit;
+  for(let size=maxFont;size>=minFont;size-=.5){
+    for(const ratio of [.8,.75,.7,.65,.6,.55,.5,.45,.4,.35]){
+      const available=Math.max(1,width*ratio-10);
+      const words=source.flatMap(line=>String(line).split(/\s+/));
+      if(words.some(word=>word.length<=30&&metrics(word,size,false).width>available))continue;
+      const wrapped=source.flatMap(line=>sbWrapPrintText(line,available,size,metrics));
+      for(let i=wrapped.length-1;i>0;i--){
+        if(/^[?!.,:;]+$/.test(wrapped[i])){wrapped[i-1]+=wrapped[i];wrapped.splice(i,1);}
+      }
+      const lineHeight=size*1.12;
+      fit={fontSize:size,lineHeight,lines:wrapped};
+      if(wrapped.every((line,index)=>{
+        const dy=Math.abs((index-(wrapped.length-1)/2)*lineHeight)+size*.75;
+        const halfWidth=metrics(line,size,false).width/2;
+        return (1-2*halfWidth/width-2*dy/height)/normal>=padding;
+      }))return fit;
     }
   }
+  return fit;
+}
 
-  /*
-   * Piso de legibilidad.
-   * Nunca baja de 5.5 px.
-   */
-  const fs=minFont,
-        lineHeight=fs*1.05,
-        maxChars=
-          Math.max(
-            5,
-            Math.floor(
-              (
-                width*.74-
-                8
-              )/
-              (fs*.58)
-            )
-          ),
-        wrapped=[];
-
-  source.forEach(line=>
-    wrapped.push(
-      ...wrapLine(
-        line,
-        maxChars
-      )
-    )
-  );
-
-  return {
-    fontSize:fs,
-    lineHeight,
-    lines:wrapped
-  };
+function sbNodeTextFit(node,box,logicalLines){
+  // La posición y el icono no intervienen en el ajuste del texto.
+  const cache=APP.tools.printBoxFits||(APP.tools.printBoxFits=new Map());
+  const key=JSON.stringify([node.type,box.w,box.h,logicalLines]);
+  if(cache.has(key))return cache.get(key);
+  const fit=node.type==='decision'?fitDecisionText(logicalLines,box.w,box.h):
+    node.type==='system_response'?sbFitSystemText(logicalLines,box):
+    node.type==='related_process'?sbFitRelatedProcessText(logicalLines,box):
+    fitText(logicalLines,box.w,box.h,10.5,node.type==='document'?15:0);
+  if(cache.size>=512)cache.clear();cache.set(key,fit);return fit;
 }
 
 function renderNodeShape(
@@ -3548,36 +3436,13 @@ function renderNodeText(
   noteMap,
   model=currentModel()
 ){
-  const isDecision=
-    node.type==='decision';
-
   const logicalLines=
     nodeLogicalLines(
       node,
       noteMap
     );
 
-  const fit=
-    isDecision
-
-      ? fitDecisionText(
-          logicalLines,
-          b.w,
-          b.h,
-          9.5,
-          5.5
-        )
-
-      : node.type==='system_response'
-        ? sbFitSystemText(logicalLines,b)
-        : node.type==='related_process'
-          ? sbFitRelatedProcessText(logicalLines,b)
-          : fitText(
-          logicalLines,
-          b.w,
-          b.h,
-          10.5
-        );
+  const fit=sbNodeTextFit(node,b,logicalLines);
 
   const total=
     (
@@ -3587,7 +3452,7 @@ function renderNodeText(
 
   const startY=
     b.y+
-    b.h/2-
+    (fit.centerOffset??b.h/2)-
     total/2;
 
   return `
@@ -10503,6 +10368,14 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
           putOnlyUsedFonts:true
         });
 
+  // Las notas se imprimen como texto vectorial con espaciado explícito.
+  // Mantener sus posiciones del SVG evita que la conversión altere letras o líneas.
+  const noteTexts=Array.from(docSvg.querySelectorAll('.sb-note-number,.sb-note-line')).map(element=>{
+    const note={value:(element.textContent||'').replace(/\u2212/g,'-'),x:Number(element.getAttribute('x')),
+      y:Number(element.getAttribute('y')),size:Number(element.getAttribute('font-size')),
+      bold:element.classList.contains('sb-note-number')};
+    element.remove();return note;
+  });
   sbNormalizePdfFonts(docSvg);
   await pdf.svg(docSvg,{
     x:0,
@@ -10510,6 +10383,16 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
     width,
     height
   });
+  if(noteTexts.length){
+    const viewBox=docSvg.getAttribute('viewBox').split(/\s+/).map(Number);
+    const scale=Math.min(width/viewBox[2],height/viewBox[3]);
+    pdf.saveGraphicsState();pdf.setTextColor(0);pdf.setCharSpace(0);
+    noteTexts.forEach(note=>{
+      pdf.setFont('helvetica',note.bold?'bold':'normal');pdf.setFontSize(note.size*scale);
+      pdf.text(note.value,note.x*scale,topMargin+note.y*scale,{baseline:'alphabetic',charSpace:0});
+    });
+    pdf.restoreGraphicsState();
+  }
 
   return pdf.output('blob');
 }
@@ -12732,10 +12615,9 @@ function sbFitSystemText(logicalLines,box){
   const width=Math.max(8,box.w-32-12),height=box.h-14;
   let fit;
   for(let size=10.5;size>=2;size-=.5){
-    const lines=logicalLines.flatMap(line=>sbWrapMeasuredText(line,width,size));
+    const lines=logicalLines.flatMap(line=>sbWrapPrintText(line,width,size));
     fit={fontSize:size,lineHeight:size*1.18,lines};
-    const ink=sbTextMetrics('ÁÉÍÓÚÑgj',size,false);
-    if((lines.length-1)*fit.lineHeight+ink.ascent+ink.descent<=height)return fit;
+    if((lines.length-1)*fit.lineHeight+size*1.5<=height)return fit;
   }
   return fit;
 }
@@ -13491,7 +13373,7 @@ function sbBindTools(){
     sbCommitEdit({render:false});sbCloseContextMenu();
     if(!APP.tools.headerFrame)APP.tools.headerFrame=requestAnimationFrame(()=>{APP.tools.headerFrame=null;sbUpdateFrozenHeaders();});
   },{passive:true});
-  document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();APP.tools.printNoteLines?.clear();if(currentModel())renderStudio(false);});
+  document.fonts?.ready.then(()=>{APP.tools.textMetrics.clear();APP.tools.printNoteLines?.clear();APP.tools.printBoxFits?.clear();if(currentModel())renderStudio(false);});
 }
 function sbUpdateFrozenHeaders(rebuild=false){
   const vp=$('viewport'),stage=$('stage'),host=$('sb_frozen_headers'),model=currentModel(),button=$('btn_freeze_headers');
