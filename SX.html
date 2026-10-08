@@ -822,7 +822,7 @@ button:disabled{opacity:.5;cursor:not-allowed}input[type=checkbox]{width:auto}
 <section id="step_source" class="card">
  <h2>Carga el SIPOC y revisa sus datos</h2>
  <div class="field"><label for="sourceFileInput">PDF de una sola página o imagen del SIPOC</label><input id="sourceFileInput" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,image/*"></div>
- <p id="sourceStatus" role="status" class="sx-note">Selecciona un archivo para comenzar.</p>
+ <p id="sourceStatus" role="status" aria-live="polite" aria-atomic="true" class="sx-note">Selecciona un archivo para comenzar.</p>
  <div class="sx-inputs">
   <div class="field"><label for="processCode">Código del proceso</label><input id="processCode" placeholder="AS-PR-10401"></div>
   <div class="field"><label for="processName">Nombre del proceso</label><input id="processName" placeholder="EMBALAJE Y PALETIZADO"></div>
@@ -965,46 +965,94 @@ function detectPage(items,width,height,number){
 }
 async function fingerprint(bytes){if(globalThis.crypto?.subtle){const digest=await crypto.subtle.digest('SHA-256',bytes.slice(0));return Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');}return 'size-'+bytes.byteLength+'-'+hash(Array.from(new Uint8Array(bytes).slice(0,100000)).join(','));}
 async function releaseAssets(){clearManual();try{await runtime.pdfTask?.destroy();}catch{}runtime.pdfTask=null;runtime.pdf=null;runtime.image=null;runtime.assetsReady=false;}
+
+// Carga por etapas con límite total; la fuente activa solo cambia cuando la nueva vista está lista.
+const SOURCE_LOAD_STAGE_MS=20000,SOURCE_LOAD_TOTAL_MS=60000;
+function discardSourceTask(task){
+ if(!task)return;
+ try{Promise.resolve(task.destroy()).catch(()=>{});}catch{}
+}
+async function sourceLoadStep(work,message,deadline){
+ $('sourceStatus').textContent=message;
+ const remaining=deadline-Date.now();if(remaining<=0)throw new Error('Se agotó el tiempo de carga. Selecciona el archivo nuevamente para reintentar.');
+ const ms=Math.min(SOURCE_LOAD_STAGE_MS,remaining);let timer;
+ try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('La carga tardó demasiado en «'+message.replace(/…$/,'')+'». Selecciona el archivo nuevamente para reintentar.')),ms);})]);}
+ finally{clearTimeout(timer);}
+}
+
 async function handleSourceFile(event){
  const file=event.target.files?.[0];if(!file)return;
  if(runtime.busy||runtime.loading||runtime.preparing){event.target.value='';return;}
- runtime.loading=true;renderControls();let nextPdf=null,nextPdfTask=null;
+ runtime.loading=true;renderControls();$('step_source').setAttribute('aria-busy','true');
+ let nextPdf=null,nextPdfTask=null,deadline=Date.now()+SOURCE_LOAD_TOTAL_MS;
  try{
   if(file.size>100*1024*1024)throw new Error('El archivo supera 100 MB. Usa un PDF de una sola página o una imagen del SIPOC.');
-  $('sourceStatus').textContent='Leyendo '+file.name+'…';syncFields();const bytes=await file.arrayBuffer();const digest=await fingerprint(bytes);
+  syncFields();
+  const bytes=await sourceLoadStep(()=>file.arrayBuffer(),'Leyendo archivo: '+file.name+'…',deadline);
+  const digest=await sourceLoadStep(()=>fingerprint(bytes),'Comprobando el archivo…',deadline);
   const same=state.source?.sha256===digest;
-  if(state.source&&!same&&!confirm('Este archivo corresponde a otra fuente. Se iniciará una extracción nueva. Descarga un respaldo si necesitas conservar la anterior.'))return;
+  if(state.source&&!same){
+   $('sourceStatus').textContent='Esperando confirmación para cambiar de SIPOC…';
+   if(!confirm('Se iniciará una extracción nueva con este archivo, sin mezclar datos del SIPOC anterior. Descarga un respaldo si necesitas conservarlo. ¿Continuar?')){
+    $('sourceStatus').textContent='Carga cancelada; se conserva el SIPOC anterior: '+state.source.name+'.';
+    return;
+   }
+   deadline=Date.now()+SOURCE_LOAD_TOTAL_MS;
+  }
   const pdf=/\.pdf$/i.test(file.name)||file.type==='application/pdf'||new TextDecoder().decode(bytes.slice(0,5))==='%PDF-';
   const pages=[];let image=null;
   if(pdf){
-   const lib=await pdfLibrary();nextPdfTask=lib.getDocument({data:new Uint8Array(bytes.slice(0)),isEvalSupported:false,enableXfa:false,cMapUrl:PDFJS_BASE+'cmaps/',cMapPacked:true,standardFontDataUrl:PDFJS_BASE+'standard_fonts/'});nextPdf=await nextPdfTask.promise;
+   const lib=await sourceLoadStep(()=>pdfLibrary(),'Preparando el lector PDF…',deadline);
+   nextPdfTask=lib.getDocument({data:new Uint8Array(bytes.slice(0)),isEvalSupported:false,enableXfa:false,cMapUrl:PDFJS_BASE+'cmaps/',cMapPacked:true,standardFontDataUrl:PDFJS_BASE+'standard_fonts/'});
+   nextPdf=await sourceLoadStep(()=>nextPdfTask.promise,'Comprobando que el PDF tenga una sola página…',deadline);
    if(nextPdf.numPages!==1)throw new Error('SX admite un PDF de una sola página. Carga únicamente la página de tu SIPOC.');
-   for(let n=1;n<=1;n++){$('sourceStatus').textContent='Leyendo página '+n+' de '+nextPdf.numPages+'…';const p=await nextPdf.getPage(n),vp=p.getViewport({scale:1}),text=await p.getTextContent();pages.push(detectPage(nativeText(text,vp,lib,n),vp.width,vp.height,n));}
+   const p=await sourceLoadStep(()=>nextPdf.getPage(1),'Leyendo la página del SIPOC…',deadline),vp=p.getViewport({scale:1});
+   const text=await sourceLoadStep(()=>p.getTextContent(),'Recuperando los textos del SIPOC…',deadline);
+   pages.push(detectPage(nativeText(text,vp,lib,1),vp.width,vp.height,1));
   }else{
    if(!file.type.startsWith('image/')&&!/\.(?:png|jpe?g|jfif|webp|bmp|gif|avif|svg)$/i.test(file.name))throw new Error('Selecciona un PDF o una imagen, por ejemplo JPG o PNG.');
-   const url=URL.createObjectURL(file);try{image=new Image();image.src=url;await image.decode();}finally{URL.revokeObjectURL(url);}
+   const url=URL.createObjectURL(file);try{image=new Image();image.src=url;await sourceLoadStep(()=>image.decode(),'Leyendo la imagen del SIPOC…',deadline);}finally{URL.revokeObjectURL(url);}
    pages.push({number:1,width:image.naturalWidth,height:image.naturalHeight,native:[],body:{x:0,y:0,width:image.naturalWidth,height:image.naturalHeight},minFont:0,included:true,lanes:[],mapApplied:false,mapIssues:[],noteText:'',header:{}});
   }
-  await releaseAssets();
-  if(!same){const existing=!state.source?clone(state.process):null,notes=!state.source?state.notesRaw:'',legacy=!state.source?state.legacySnapshot:null,warnings=!state.source?state.warnings:[];state=initialState();if(existing){state.process=existing;state.notesRaw=notes;}if(legacy){state.legacySnapshot=legacy;state.warnings=warnings.concat(issue('Fuente cargada para una extracción nueva. El respaldo antiguo sigue conservado en la trazabilidad.'));}state.pages=pages;}
-  else{state.pages=pages.map(p=>{const old=pageById(p.number);return old?{...p,body:old.body,included:old.included,lanes:old.lanes,mapApplied:old.mapApplied,mapIssues:old.mapIssues,mapResponse:old.mapResponse,auditError:old.auditError,diagram_geometry:old.diagram_geometry}:p;});}
-  runtime.pdf=nextPdf;runtime.pdfTask=nextPdfTask;nextPdf=null;nextPdfTask=null;runtime.image=image;runtime.assetsReady=true;runtime.revision++;
-  state.source={name:file.name,kind:pdf?'pdf':'image',size:file.size,sha256:digest,pages:pages.length};
-  if(!same){$('saveReceipt').textContent='';$('saveReceipt').classList.add('hidden');const h=pages.find(p=>p.header.process_code)?.header||{};for(const key of ['process_code','process_name','purpose'])if(!state.process[key]&&h[key])state.process[key]=h[key];if(!state.notesRaw)state.notesRaw=pages.map(p=>p.noteText).filter(Boolean).join('\n');}
-  state.selectedPage=state.pages.some(p=>p.number===state.selectedPage)?state.selectedPage:1;fillFields();renderPages();await renderSource();
-  $('sourceStatus').textContent=file.name+' · '+(pdf?'PDF de '+pages.length+' '+(pages.length===1?'página':'páginas'):'Imagen cargada')+(same?' · avance anterior conservado.':'.');
-  if(!pdf)$('sourceStatus').textContent+=' Completa los datos del proceso y pega las notas. Si la vista previa está bien, continúa sin ajustar el recorte.';
-  renderAll();saveSession(false);
- }catch(error){uiError(error,'sourceStatus');try{await nextPdfTask?.destroy();}catch{}}finally{runtime.loading=false;renderControls();event.target.value='';}
+  let candidate;
+  if(same){
+   if(state.pages.length!==1)throw new Error('La sesión debe contener únicamente una página de SIPOC.');
+   candidate=clone(state);candidate.pages=pages.map(p=>{const old=pageById(p.number);return old?{...p,body:old.body,included:true,lanes:old.lanes,mapApplied:old.mapApplied,mapIssues:old.mapIssues,mapResponse:old.mapResponse,auditError:old.auditError,diagram_geometry:old.diagram_geometry}:p;});
+  }else{
+   candidate=initialState();
+   // Conservar solo datos escritos antes de la primera fuente; nunca los de una extracción anterior.
+   if(!state.source&&!state.segments.length&&!state.legacySnapshot){candidate.process=clone(state.process);candidate.notesRaw=state.notesRaw;}
+   candidate.pages=pages;
+   const h=pages[0].header||{};for(const key of ['process_code','process_name','purpose'])if(!candidate.process[key]&&h[key])candidate.process[key]=h[key];
+   if(!candidate.notesRaw)candidate.notesRaw=pages[0].noteText||'';
+  }
+  candidate.source={name:file.name,kind:pdf?'pdf':'image',size:file.size,sha256:digest,pages:1};candidate.selectedPage=1;
+  const preview=await sourceLoadStep(()=>renderRegion(candidate.pages[0],undefined,2400,{pdf:nextPdf,image,assetsReady:true}),'Generando la vista previa del SIPOC…',deadline);
+  // El documento anterior sigue disponible durante toda la validación y el renderizado.
+  const previousTask=runtime.pdfTask;
+  clearManual();if(same&&state.manualDrafts)candidate.manualDrafts=clone(state.manualDrafts);
+  state=candidate;runtime.pdf=nextPdf;runtime.pdfTask=nextPdfTask;nextPdf=null;nextPdfTask=null;runtime.image=image;runtime.assetsReady=true;runtime.revision++;
+  if(!same){$('saveReceipt').textContent='';$('saveReceipt').classList.add('hidden');$('jsonPreview').textContent='';$('issueList').replaceChildren();$('reviewStats').replaceChildren();}
+  fillFields();renderPages();await renderSource(null,preview);renderAll();saveSession(false);
+  $('sourceStatus').textContent=file.name+' · '+(pdf?'PDF de una página':'Imagen cargada')+(same?' · avance anterior conservado.':' · nueva extracción lista.');
+  if(!pdf)$('sourceStatus').textContent+=' Completa los datos del proceso y pega las notas.';
+  discardSourceTask(previousTask);
+ }catch(error){
+  const preserved=state.source?' Se conserva el SIPOC actual: '+state.source.name+'.':'';
+  const retry=/reintentar/.test(str(error?.message))?'':' Selecciona el archivo nuevamente para reintentar.';
+  uiError(new Error('No se pudo cargar el archivo: '+str(error?.message||error)+preserved+retry),'sourceStatus');
+ }finally{
+  discardSourceTask(nextPdfTask);runtime.loading=false;$('step_source').removeAttribute('aria-busy');renderControls();event.target.value='';
+ }
 }
-async function renderRegion(page,b={x:0,y:0,width:100,height:100},maxSide=2300){
- if(!runtime.assetsReady)throw new Error('Vuelve a cargar el archivo original para generar los recortes.');
+async function renderRegion(page,b={x:0,y:0,width:100,height:100},maxSide=2300,assets=runtime){
+ if(!assets.assetsReady)throw new Error('Vuelve a cargar el archivo original para generar los recortes.');
  const crop={x:page.body.x+b.x*page.body.width/100,y:page.body.y+b.y*page.body.height/100,width:b.width*page.body.width/100,height:b.height*page.body.height/100};
  const scale=Math.min(maxSide/Math.max(crop.width,crop.height),page.minFont?15/page.minFont:1.2);
  const safeScale=Math.max(.05,scale),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil(crop.width*safeScale));canvas.height=Math.max(1,Math.ceil(crop.height*safeScale));
  const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
- if(runtime.pdf){const p=await runtime.pdf.getPage(page.number);await p.render({canvasContext:context,viewport:p.getViewport({scale:safeScale}),transform:[1,0,0,1,-crop.x*safeScale,-crop.y*safeScale]}).promise;}
- else context.drawImage(runtime.image,crop.x,crop.y,crop.width,crop.height,0,0,canvas.width,canvas.height);
+ if(assets.pdf){const p=await assets.pdf.getPage(page.number);await p.render({canvasContext:context,viewport:p.getViewport({scale:safeScale}),transform:[1,0,0,1,-crop.x*safeScale,-crop.y*safeScale]}).promise;}
+ else context.drawImage(assets.image,crop.x,crop.y,crop.width,crop.height,0,0,canvas.width,canvas.height);
  return canvas;
 }
 async function encodedImage(canvas){return canvas.toDataURL('image/png');}
@@ -1498,7 +1546,7 @@ function renderControls(){
  for(const id of ['sourceFileInput','processCode','processName','processPurpose','plainTextNotes','backupLoadBtn','newProcessBtn','loadSessionBtn','applyBodyBtn','manualApplyBtn','manualPrepareBtn','reloadConfigBtn','manualStage','manualPage','manualSegment','batchSize','splitSelectedBtn','manualPasteBtn'])$(id).disabled=locked;
  for(const id of ['startBtn','resumeBtn','continueExtractionBtn'])$(id).disabled=locked||!runtime.assetsReady;
  $('continueExtractionBtn').classList.toggle('hidden',!runtime.assetsReady||!nextTask());
- for(const id of ['editSourceBtn','reviewSourceBtn','reviewBtn'])$(id).disabled=locked;
+ for(const id of ['editSourceBtn','reviewSourceBtn','reviewBtn','downloadSbBtn','downloadLmpBtn'])$(id).disabled=locked;
  for(const button of document.querySelectorAll('[data-copy-image],[data-download-image]'))button.disabled=locked;
  $('manualCopyBtn').disabled=locked||!runtime.manualTask;
  for(const checkbox of document.querySelectorAll('[data-page-include]'))checkbox.disabled=locked;
@@ -1511,9 +1559,9 @@ function renderPages(){
  renderControls();
 }
 
-async function renderSource(focus=null){
+async function renderSource(focus=null,preparedCanvas=null){
  const page=selectedPage();if(!page||!runtime.assetsReady)return;
- const revision=runtime.revision,canvas=await renderRegion(page,undefined,2400);if(revision!==runtime.revision)return;
+ const revision=runtime.revision,canvas=preparedCanvas||await renderRegion(page,undefined,2400);if(revision!==runtime.revision)return;
  const ctx=canvas.getContext('2d');ctx.lineWidth=2;for(const s of state.segments.filter(s=>s.page===page.number&&s.status!=='superseded')){const b=s.bounds_pct;ctx.strokeStyle=s.status==='done'?'#23a477':'#2986c7';ctx.strokeRect(b.x*canvas.width/100,b.y*canvas.height/100,b.width*canvas.width/100,b.height*canvas.height/100);}
  if(focus){ctx.strokeStyle='#e14838';ctx.lineWidth=4;ctx.strokeRect(focus.x*canvas.width/100,focus.y*canvas.height/100,focus.width*canvas.width/100,focus.height*canvas.height/100);}
  $('sourceImageStage').replaceChildren(canvas);$('bodyTop').value=(page.body.y/page.height*100).toFixed(1);$('bodyBottom').value=((page.body.y+page.body.height)/page.height*100).toFixed(1);
