@@ -53,7 +53,7 @@ button { cursor: pointer; }
   overflow: hidden;
   backdrop-filter: blur(14px);
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
 }
 
 /* HEADER */
@@ -708,8 +708,60 @@ grid-template-columns: var(--avatar-size) minmax(120px, 1fr) 34px;
     --avatar-size: 106px;
     grid-template-columns: var(--avatar-size) minmax(0, 1fr) 34px;
   }
-  .mod-slogan { display: none; }
+  .mod-slogan { display: block; }
   .footer-note { display: none; }
+}
+/* Portal UX: preserves the existing avatars and module content. */
+.launcher-header { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); }
+.header-pillars, .pillar > div { min-width: 0; }
+.pillar strong, .pillar span { overflow-wrap: anywhere; }
+.portal-toolbar {
+  padding: 13px clamp(18px, 2.2vw, 34px);
+  border-bottom: 1px solid var(--line);
+  background: #f0f6ff;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.portal-toolbar .user-area { margin-left: auto; flex-wrap: wrap; }
+.portal-toolbar .user-meta { max-width: 260px; }
+.modules-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.modules-heading h2 { font-size: 1rem; margin: 0; color: var(--navy); }
+.modules-heading > span { font-size: 0.78rem; color: var(--muted); }
+.portal-load-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 11px 14px; margin-bottom: 16px; border-radius: 12px; background: #edf4ff; color: #264c78; font-size: 0.86rem; }
+.portal-load-status[hidden], .retry-btn[hidden] { display: none; }
+.portal-load-status[data-state="error"] { background: #fff4ed; color: #7a4319; }
+.retry-btn { min-height: 40px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--navy); font-weight: 800; }
+.mod-card { grid-template-columns: var(--avatar-size) minmax(0, 1fr) 34px; padding: 8px; min-width: 0; }
+.mod-agent, .mod-name, .mod-slogan { overflow-wrap: anywhere; }
+.mod-name { font-size: clamp(12px, 0.85vw, 14px); line-height: 1.3; }
+.mod-slogan { font-size: clamp(11px, 0.78vw, 12px); line-height: 1.35; }
+.mod-card:hover { transform: translateY(-2px); }
+.mod-card:focus-visible, button:focus-visible, .footer-links a:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+.new-tab-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.launcher-footer { flex-wrap: wrap; }
+.tools-modal { max-height: calc(100dvh - 44px); overflow-y: auto; }
+@media (max-width: 1180px) {
+  .launcher-header { grid-template-columns: 1fr; }
+  .brand-block { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 16px; }
+  .modules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .modules-grid { grid-template-columns: 1fr; }
+  .portal-toolbar { justify-content: flex-start; }
+  .portal-toolbar .user-area { margin-left: 0; width: auto; flex: 1 1 240px; }
+  .mod-card { --avatar-size: 104px; grid-template-columns: var(--avatar-size) minmax(0, 1fr) 30px; }
+}
+@media (max-width: 420px) {
+  .mod-card { --avatar-size: 76px; grid-template-columns: var(--avatar-size) minmax(0, 1fr) 25px; padding: 7px; }
+  .mod-info { padding: 9px; }
+  .mod-agent { font-size: 1rem; line-height: 1.1; }
+  .mod-arrow span { width: 24px; height: 24px; font-size: 18px; }
+  .portal-toolbar .user-meta { max-width: 160px; }
+  .footer-note { display: block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mod-card, .mod-avatar img, .mod-arrow span, .main-btn { transition: none; }
+  .mod-card:hover, .mod-card:hover .mod-avatar img, .mod-card:hover .mod-arrow span, .tools-card:hover, .tools-local-btn:hover, .main-btn:hover { transform: none; }
 }
 </style>
 </head>
@@ -737,7 +789,9 @@ grid-template-columns: var(--avatar-size) minmax(120px, 1fr) 34px;
       </div>
     </section>
 
-<section class="header-tools" aria-label="Herramientas del launcher">
+  </header>
+
+<section class="header-tools portal-toolbar" aria-label="Herramientas y sesión del portal">
   
 <div class="tools-menu-wrap">
   <button class="tools-local-btn" id="toolsBtn" type="button" onclick="openToolsModal()">
@@ -757,9 +811,13 @@ grid-template-columns: var(--avatar-size) minmax(120px, 1fr) 34px;
         <button class="logout-btn" id="logoutBtn" type="button">Cerrar sesión</button>
       </div>
     </section>
-  </header>
 
   <main class="launcher-main">
+    <div class="modules-heading"><h2>Módulos</h2><span>Un clic abre el módulo en otra pestaña ↗</span></div>
+    <div class="portal-load-status" id="portalLoadStatus" role="status" aria-live="polite">
+      <span id="portalLoadText">Cargando accesos del portal…</span>
+      <button class="retry-btn" id="retryLoadBtn" type="button" hidden>Reintentar</button>
+    </div>
     <section class="modules-grid" id="modulesGrid" aria-label="Módulos del SGMP">
       <!-- Cards injected by JS -->
     </section>
@@ -844,6 +902,8 @@ var SESSION_KEY = 'sgmp_session_v1';
 var AVATAR_BASE = 'assets/avatars/';
 var SESSION = loadSession();
 var CURRENT_MODULES = [];
+var PORTAL_LOAD_ID = 0;
+var PORTAL_REQUEST_TIMEOUT_MS = 20000;
 
 // ── Module visual defaults (fallback when Sheet fields are empty) ──
 var MODULE_DEFAULTS = {
@@ -878,29 +938,42 @@ function normalizeAvatarFile(file) {
 // ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
+function setPortalLoadState(state, text) {
+  var box = document.getElementById('portalLoadStatus');
+  box.hidden = state === 'ready';
+  box.dataset.state = state;
+  document.getElementById('portalLoadText').textContent = text || '';
+  document.getElementById('retryLoadBtn').hidden = state !== 'error';
+  document.getElementById('modulesGrid').setAttribute('aria-busy', String(state === 'loading'));
+}
+
 function init() {
+  var loadId = ++PORTAL_LOAD_ID;
+  setPortalLoadState('loading', 'Cargando accesos del portal…');
+  document.getElementById('modulesGrid').innerHTML = '';
   apiGet('get_all')
     .then(function(res) {
-      if (!res.ok) { showError('No se pudo conectar con el sistema.'); return; }
-
-      var cfg     = res.data.global  || {};
-      var modules = res.data.modules || [];
-
-      var support = cfg.support_text || 'Portal SGMP · Los accesos se cargan desde configuración central.';
-      document.getElementById('footerNote').textContent  = support;
-
-      var loginRequired = cfg.login_required === 'SI';
-
-      if (loginRequired && !SESSION.username) {
+      if (loadId !== PORTAL_LOAD_ID) return;
+      if (!res || !res.ok || !res.data || !Array.isArray(res.data.modules)) {
+        throw new Error('No se pudo cargar la configuración del portal.');
+      }
+      var cfg = res.data.global || {};
+      var modules = res.data.modules;
+      document.getElementById('footerNote').textContent = cfg.support_text || 'Portal SGMP · Los accesos se cargan desde configuración central.';
+      setPortalLoadState('ready', '');
+      if (cfg.login_required === 'SI' && !SESSION.username) {
         showLoginModal(modules);
       } else {
         renderModules(applyPermissions(modules));
         renderUser();
       }
     })
-    .catch(function() {
-      renderModules(getFallbackModules());
-      renderUser();
+    .catch(function(error) {
+      if (loadId !== PORTAL_LOAD_ID) return;
+      document.getElementById('modulesGrid').innerHTML = '';
+      setPortalLoadState('error', error && error.message === 'PORTAL_TIMEOUT'
+        ? 'La conexión está tardando demasiado. Vuelve a intentarlo.'
+        : 'No se pudieron cargar los accesos. Comprueba tu conexión y vuelve a intentarlo.');
     });
 }
 
@@ -942,7 +1015,7 @@ function renderModules(modules) {
 function renderGrid(modules, includePlaceholder) {
   if (includePlaceholder === undefined) includePlaceholder = true;
 
-  var html = modules.map(function(m){ return buildCard(m); }).join('');
+  var html = modules.map(function(m, i){ return buildCard(m, i); }).join('');
 
   if (includePlaceholder && modules.length < 9) {
     html += buildPlaceholderCard();
@@ -954,23 +1027,26 @@ function renderGrid(modules, includePlaceholder) {
 
 // buildCard — avatar ALWAYS on the left, text on the right.
 // Visual fields (agent_name, accent_color, slogan, avatar_file) are admin-editable via Sheet.
-function buildCard(mod) {
+function buildCard(mod, index) {
   var v         = getVisual(mod);
   var img       = AVATAR_BASE + v.file;
   var disabled  = (!mod.url || mod.url === '#') ? ' disabled' : '';
   var styleAttr = '--accent:' + v.accent;
   var search    = [v.agent, mod.code || '', mod.name || '', v.slogan].join(' ').toLowerCase();
+  var tag = disabled ? 'article' : 'a';
+  var linkAttrs = disabled ? ' aria-disabled="true"' : ' href="' + esc(resolveUrl(mod.url)) + '" target="_blank" rel="noopener"';
 
-  return '<article class="mod-card' + disabled + '" role="button" tabindex="0" style="' + styleAttr + '" data-url="' + esc(mod.url || '#') + '" data-search="' + esc(search) + '">' +
-    '<div class="mod-avatar"><img src="' + esc(img) + '" alt="Avatar de ' + esc(v.agent) + '" loading="lazy" onerror="handleImgError(this)" /></div>' +
+  return '<' + tag + ' class="mod-card' + disabled + '"' + linkAttrs + ' style="' + esc(styleAttr) + '" data-url="' + esc(mod.url || '#') + '" data-search="' + esc(search) + '">' +
+    '<div class="mod-avatar"><img src="' + esc(img) + '" alt="Avatar de ' + esc(v.agent) + '" width="112" height="112" decoding="async" loading="' + (index < 3 ? 'eager' : 'lazy') + '" onerror="handleImgError(this)" /></div>' +
     '<div class="mod-info">' +
       '<div class="mod-agent">' + esc(v.agent) + '</div>' +
       '<div class="mod-code-badge">' + esc(mod.code || '') + '</div>' +
       '<div class="mod-name">' + esc(mod.name || 'Módulo SGMP') + '</div>' +
       '<div class="mod-slogan">' + esc(v.slogan) + '</div>' +
     '</div>' +
-    '<div class="mod-arrow"><span>›</span></div>' +
-  '</article>';
+    '<div class="mod-arrow" aria-hidden="true"><span>↗</span></div>' +
+    (disabled ? '' : '<span class="new-tab-label">Abre en otra pestaña</span>') +
+  '</' + tag + '>';
 }
 
 function buildPlaceholderCard() {
@@ -981,13 +1057,11 @@ function buildPlaceholderCard() {
 }
 
 function wireModuleEvents() {
-  document.querySelectorAll('.mod-card').forEach(function(card) {
-    card.addEventListener('click', function() { openModule(card.getAttribute('data-url')); });
+  document.querySelectorAll('a.mod-card').forEach(function(card) {
+    card.addEventListener('click', persistSessionBeforeOpen);
+    card.addEventListener('auxclick', persistSessionBeforeOpen);
     card.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        openModule(card.getAttribute('data-url'));
-      }
+      if (e.key === ' ') { e.preventDefault(); card.click(); }
     });
   });
 }
@@ -995,7 +1069,7 @@ function wireModuleEvents() {
 function openModule(url) {
   if (!url || url === '#') return;
   persistSessionBeforeOpen();
-  window.location.href = resolveUrl(url);
+  window.open(resolveUrl(url), '_blank', 'noopener');
 }
 
 function renderUser() {
@@ -1020,12 +1094,17 @@ document.getElementById('userAvatar').textContent = initials || 'US';
 }
 
 function handleImgError(img) {
-  if (img.dataset.fallbackTried === '1') {
+  if (img.dataset.fallbackTried === '2') {
     img.style.opacity = '0';
     return;
   }
-  img.dataset.fallbackTried = '1';
   var file = String(img.getAttribute('src') || '').split('/').pop();
+  if (!img.dataset.fallbackTried && window.location.protocol === 'file:') {
+    img.dataset.fallbackTried = '1';
+    img.src = 'avatars/' + file;
+    return;
+  }
+  img.dataset.fallbackTried = '2';
   img.src = 'https://raw.githubusercontent.com/enginesgmp/sgmp/main/assets/avatars/' + file;
 }
 
@@ -1035,9 +1114,10 @@ function handleImgError(img) {
 function showLoginModal(modules) {
   document.getElementById('loginModal').classList.add('show');
   document.getElementById('doLoginBtn').onclick = function(){ doLogin(modules); };
-  document.getElementById('loginPass').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') doLogin(modules);
-  });
+  document.getElementById('loginPass').onkeydown = function(e){
+    if (e.key === 'Enter' && !document.getElementById('doLoginBtn').disabled) doLogin(modules);
+  };
+  document.getElementById('loginUser').focus();
 }
 
 function doLogin(modules) {
@@ -1045,7 +1125,9 @@ function doLogin(modules) {
   var p   = document.getElementById('loginPass').value;
   var err = document.getElementById('loginErr');
   var btn = document.getElementById('doLoginBtn');
+  if (btn.disabled) return;
   if (!u || !p) { showMsg(err, 'Ingresa usuario y contraseña.'); return; }
+  err.className = 'msg error';
   btn.textContent = 'Verificando...';
   btn.disabled    = true;
 
@@ -1068,8 +1150,8 @@ function doLogin(modules) {
         btn.disabled    = false;
       }
     })
-    .catch(function(){
-      showMsg(err, 'Error de conexión.');
+    .catch(function(error){
+      showMsg(err, error && error.message === 'PORTAL_TIMEOUT' ? 'La conexión tardó demasiado. Intenta ingresar nuevamente.' : 'Error de conexión. Intenta ingresar nuevamente.');
       btn.textContent = 'Ingresar';
       btn.disabled    = false;
     });
@@ -1140,7 +1222,19 @@ function persistSessionBeforeOpen() {
 function apiGet(action, params) {
   var url = API + '?action=' + encodeURIComponent(action);
   if (params) Object.keys(params).forEach(function(k){ url += '&' + k + '=' + encodeURIComponent(params[k]); });
-  return fetch(url).then(function(r){ return r.json(); });
+  var controller = new AbortController();
+  var timer;
+  var timeout = new Promise(function(resolve, reject) {
+    timer = setTimeout(function() {
+      reject(new Error('PORTAL_TIMEOUT'));
+      controller.abort();
+    }, PORTAL_REQUEST_TIMEOUT_MS);
+  });
+  var request = fetch(url, { signal: controller.signal }).then(function(r) {
+    if (!r.ok) throw new Error('PORTAL_HTTP_ERROR');
+    return r.json();
+  });
+  return Promise.race([request, timeout]).finally(function() { clearTimeout(timer); });
 }
 
 function loadSession() {
@@ -1169,6 +1263,8 @@ function showError(msg) {
 }
 
 // ── Boot ──
+document.getElementById('retryLoadBtn').addEventListener('click', init);
+renderUser();
 init();
 </script>
 </body>
