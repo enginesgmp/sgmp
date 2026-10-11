@@ -1056,22 +1056,64 @@ function buildPlaceholderCard() {
   '</article>';
 }
 
+
+
 function wireModuleEvents() {
   document.querySelectorAll('a.mod-card').forEach(function(card) {
-    card.addEventListener('click', persistSessionBeforeOpen);
-    card.addEventListener('auxclick', persistSessionBeforeOpen);
+    card.addEventListener('click', function(e) {
+      e.preventDefault();
+      openModule(card.getAttribute('data-url'));
+    });
+
+    card.addEventListener('auxclick', function(e) {
+      if (e.button === 1) {
+        e.preventDefault();
+        openModule(card.getAttribute('data-url'));
+      }
+    });
+
     card.addEventListener('keydown', function(e) {
-      if (e.key === ' ') { e.preventDefault(); card.click(); }
+      if (e.key === ' ') {
+        e.preventDefault();
+        card.click();
+      }
     });
   });
 }
 
 function openModule(url) {
   if (!url || url === '#') return;
+
+  var destino = resolveUrl(url);
   persistSessionBeforeOpen();
-  window.open(resolveUrl(url), '_blank', 'noopener');
+
+  var nuevaPestana = window.open('about:blank', '_blank');
+
+  if (!nuevaPestana) {
+    window.location.href = destino;
+    return;
+  }
+
+  try {
+    var sesion = sessionStorage.getItem(SESSION_KEY);
+
+    if (sesion) {
+      nuevaPestana.sessionStorage.setItem(SESSION_KEY, sesion);
+    }
+
+    nuevaPestana.opener = null;
+    nuevaPestana.location.replace(destino);
+
+  } catch (error) {
+    try {
+      nuevaPestana.close();
+    } catch (_) {}
+
+    window.location.href = destino;
+  }
 }
 
+  
 function renderUser() {
   if (SESSION.username) {
     var displayName = SESSION.name || SESSION.username;
