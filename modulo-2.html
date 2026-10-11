@@ -720,6 +720,22 @@ body:has(#view_studio:fullscreen) .sb-global-process{display:none}
 .sb-direction-pickers{display:grid;grid-template-columns:1fr 1fr;gap:18px}.sb-direction-field{border:0;padding:0;margin:0;min-width:0}.sb-direction-field legend{font-size:13px;font-weight:750;color:#123A63;margin-bottom:10px}.sb-direction-compass{display:grid;grid-template-columns:42px 52px 42px;grid-template-rows:42px 44px 42px;gap:4px;justify-content:center;align-items:center}.sb-direction-arrow{width:42px;min-height:42px;padding:0!important;font-size:28px!important;line-height:1}.sb-direction-arrow[aria-pressed="true"],.sb-connection-modes button[aria-pressed="true"]{background:#E0F5FF;border-color:#00AEEF;color:#0284C7;box-shadow:inset 0 0 0 1px #00AEEF}.sb-direction-top{grid-column:2;grid-row:1;justify-self:center}.sb-direction-left{grid-column:1;grid-row:2}.sb-direction-right{grid-column:3;grid-row:2}.sb-direction-bottom{grid-column:2;grid-row:3;justify-self:center}.sb-direction-box{grid-column:2;grid-row:2;width:52px;height:40px;background:#F5FAFE;border:1px solid #587084}.sb-direction-box[data-box-side="left"]{border-left:4px solid #0284C7}.sb-direction-box[data-box-side="right"]{border-right:4px solid #0284C7}.sb-direction-box[data-box-side="top"]{border-top:4px solid #0284C7}.sb-direction-box[data-box-side="bottom"]{border-bottom:4px solid #0284C7}.sb-direction-preview{background:#F5FAFE;border-radius:9px;margin:14px 0}.sb-direction-preview svg{display:block;width:100%;height:110px}.sb-direction-preview svg>rect{fill:#FFF;stroke:#587084;stroke-width:1.2}.sb-picker-route{stroke:#0284C7;stroke-width:1.7;fill:none}.sb-picker-route circle{fill:#FFF}.sb-connection-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sb-direction-delete{margin-top:14px;padding-top:14px;border-top:1px solid #E1EAF2}.sb-direction-delete button{width:100%}.edge-route-handle[data-orientation="vertical"]{cursor:ew-resize}.edge-route-handle[data-orientation="horizontal"]{cursor:ns-resize}.edge-route-handle[data-orientation="corner"]{cursor:move}.sb-issue-link{display:block;width:100%;text-align:left;white-space:normal;line-height:1.5;margin-bottom:8px}.sb-issue-link:hover{background:#E5F5FF;border-color:#00AEEF}.sb-located{filter:drop-shadow(0 0 4px #00AEEF)}
 
 </style>
+<style id="sb-compact-refinement">
+/* Refinamiento autorizado: mantener las herramientas en una fila en ambos modos. */
+.sb-search-tools{flex-direction:row;align-items:center;gap:8px;min-width:0}
+.sb-search-guides{order:-1;flex:none}
+.sb-diagram-search{width:210px;flex:0 1 210px}
+#view_studio:fullscreen .sb-full-tools .sb-search-tools{min-width:0}
+
+.sb-direction-pickers{gap:12px}
+.sb-direction-field legend{margin-bottom:7px}
+.sb-connection-modes{margin-top:12px;gap:8px}
+.sb-direction-delete{margin-top:10px;padding-top:10px}
+#sb_inline_editor.sb-inline-node:has([data-sb-native-spelling])>svg{visibility:hidden}
+#sb_inline_editor.sb-inline-node .sb-inline-input[data-sb-native-spelling]{color:#111;caret-color:#111;background:#fff;overflow:auto;white-space:pre-wrap;text-align:center;box-sizing:border-box;resize:none;word-break:normal;overflow-wrap:normal;text-transform:uppercase}
+#sb_inline_editor.sb-inline-node .sb-inline-input[data-sb-native-spelling]::selection{background:#B7DBFF;color:#111}
+
+</style>
 </head>
 <body>
 <div class="app">
@@ -4366,7 +4382,7 @@ function renderEdgeLabel(edge,points,interactive=true){return sbRenderLabel(edge
 function renderEdge(edge,geometry,model,crossing,interactive=true,connectorLabels=null){
   const selected=interactive&&((APP.selection?.type==='edge'&&APP.selection.id===edge.id)||(APP.selection?.type==='nodes'&&(APP.selection.connector_markers||[]).some(marker=>marker.edgeId===edge.id)));
   const stroke=crossing?'#D92D20':selected?'#00AEEF':'#000',sw=crossing||selected?2.8:1.25;
-  const hit=points=>interactive?'<path class="edge-hit" d="'+pathFromPoints(points)+'" fill="none" stroke="transparent" stroke-width="14"/>':'';
+  const hit=points=>interactive?'<path class="edge-hit" d="'+pathFromPoints(points)+'" fill="none" stroke="transparent" stroke-width="16"/>':'';
   let content='';
   if(edge.mode==='connector'){
     const cg=connectorGeometry(edge,geometry,model);if(!cg)return '';
@@ -13053,7 +13069,7 @@ function sbInlineCaretPoint(preview,offset){
   return last?{...last,x:last.endX}:{x:preview.box.w/2,y:preview.box.h/2-preview.fontSize/2,h:preview.fontSize,row:0};
 }
 function sbPaintInlineSelection(){
-  const session=APP.tools.editing,preview=session?.nodePreview;if(!preview)return;
+  const session=APP.tools.editing,preview=session?.nodePreview;if(!preview||session.input.dataset.sbNativeSpelling)return;
   const input=session.input,start=input.selectionStart,end=input.selectionEnd,rows=new Map();
   for(const glyph of preview.glyphs){
     if(glyph.to<=start||glyph.from>=end)continue;
@@ -13123,11 +13139,12 @@ function sbInlineSetRange(input,anchor,focus){
   input.setSelectionRange(Math.min(anchor,focus),Math.max(anchor,focus),focus<anchor?'backward':'forward');sbPaintInlineSelection();
 }
 function sbBindNodeInline(input){
+  input.dataset.sbNativeSpelling="true";input.setAttribute("autocorrect","off");
   input.addEventListener('input',sbRefreshNodeInline);
   input.addEventListener('select',sbPaintInlineSelection);
   input.addEventListener('keyup',sbPaintInlineSelection);
   input.addEventListener('pointerdown',event=>{
-    const preview=APP.tools.editing?.nodePreview;if(!preview||event.button!==0)return;
+    const preview=APP.tools.editing?.nodePreview;if(input.dataset.sbNativeSpelling||!preview||event.button!==0)return;
     event.preventDefault();input.focus({preventScroll:true});const offset=sbInlinePointerOffset(preview,event);
     let anchor=event.shiftKey?(input.selectionDirection==='backward'?input.selectionEnd:input.selectionStart):offset,focus=offset;
     if(event.detail===2){
@@ -13138,13 +13155,13 @@ function sbBindNodeInline(input){
     try{input.setPointerCapture(event.pointerId);}catch(error){}
   });
   input.addEventListener('pointermove',event=>{
-    const preview=APP.tools.editing?.nodePreview;if(preview?.pointer?.id!==event.pointerId)return;
+    const preview=APP.tools.editing?.nodePreview;if(input.dataset.sbNativeSpelling||preview?.pointer?.id!==event.pointerId)return;
     sbInlineSetRange(input,preview.pointer.anchor,sbInlinePointerOffset(preview,event));
   });
   const stop=event=>{const preview=APP.tools.editing?.nodePreview;if(preview?.pointer?.id===event.pointerId)preview.pointer=null;};
   input.addEventListener('pointerup',stop);input.addEventListener('pointercancel',stop);
   input.addEventListener('keydown',event=>{
-    const preview=APP.tools.editing?.nodePreview;if(!preview||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
+    const preview=APP.tools.editing?.nodePreview;if(input.dataset.sbNativeSpelling||!preview||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
     if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
     const offset=input.selectionDirection==='backward'?input.selectionStart:input.selectionEnd,point=sbInlineCaretPoint(preview,offset);
     const row=preview.glyphs.filter(g=>g.row===point.row);if(!row.length)return;
@@ -14700,14 +14717,14 @@ function sbDirectionPicker(key,side){
 }
 sbUxOpenEdge=function(id,p){
   if(!sbCommitEdit({render:false}))return;const edge=edgeById(id);if(!edge)return;APP.selection={type:'edge',id};renderStudio(false);
-  const markup='<div class="sb-direction-pickers">'+sbDirectionPicker('source',edge.source_side||'right')+sbDirectionPicker('target',edge.target_side||'left')+'</div><div class="sb-direction-preview" aria-label="Vista previa de la conexión"></div><div class="sb-connection-modes"><button type="button" data-connection-mode="line" aria-pressed="'+(edge.mode!=='connector')+'">→ Línea</button><button type="button" data-connection-mode="connector" aria-pressed="'+(edge.mode==='connector')+'">○ Conector</button></div><div class="sb-direction-delete"><button type="button" id="sb_ux_edge_delete" class="danger">Eliminar</button></div>';
-  if(!sbUxContext('Conexión',markup,p,380))return;
-  const menu=$('sb_ux_context_content');sbDirectionPreview(edge,menu.querySelector('.sb-direction-preview'));
+  const markup='<div class="sb-direction-pickers">'+sbDirectionPicker('source',edge.source_side||'right')+sbDirectionPicker('target',edge.target_side||'left')+'</div><div class="sb-connection-modes"><button type="button" data-connection-mode="line" aria-pressed="'+(edge.mode!=='connector')+'">→ Línea</button><button type="button" data-connection-mode="connector" aria-pressed="'+(edge.mode==='connector')+'">○ Conector</button></div><div class="sb-direction-delete"><button type="button" id="sb_ux_edge_delete" class="danger">Eliminar</button></div>';
+  if(!sbUxContext('Conexión',markup,p,340))return;
+  const menu=$('sb_ux_context_content');
   menu.querySelectorAll('[data-direction]').forEach(button=>button.onclick=()=>{
     const field=button.dataset.direction+'_side',nodeId=edge[button.dataset.direction];if(edge[field]===button.dataset.side)return;
     if(!canUseNodeSide(nodeId,button.dataset.side,currentModel(),id)){gMsg('warn','Ese lado ya alcanzó su capacidad de conexiones.');return;}
     pushHistory();edge[field]=button.dataset.side;markDirty();renderStudio(false);
-    const fieldset=button.closest('fieldset');fieldset.querySelector('.sb-direction-box').dataset.boxSide=button.dataset.side;fieldset.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));sbDirectionPreview(edge,menu.querySelector('.sb-direction-preview'));updateHistoryButtons();
+    const fieldset=button.closest('fieldset');fieldset.querySelector('.sb-direction-box').dataset.boxSide=button.dataset.side;fieldset.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));updateHistoryButtons();
   });
   menu.querySelectorAll('[data-connection-mode]').forEach(button=>button.onclick=()=>{if((edge.mode||'line')===button.dataset.connectionMode)return;sbUxCloseContext();APP.selection={type:'edge',id};button.dataset.connectionMode==='line'?revertSelectedConnector():convertSelectedEdgeToConnector();sbUxOpenEdge(id,p);});
   $('sb_ux_edge_delete').onclick=()=>{sbUxCloseContext();APP.selection={type:'edge',id};deleteSelection();};
@@ -14799,6 +14816,69 @@ function sbRecoveryPrepare(){
 const sbRecoveryInitNative=init;init=async function(){
   let legacyBefore=null;try{legacyBefore=JSON.parse(localStorage.getItem(SB_WORKSPACE_STORAGE_KEY))?.master?.master_id||null;}catch(error){}
   sbRecoveryInitNative();sbRecoveryPrepare();await sbLocalBoot(legacyBefore);
+};
+
+// Sin diccionario ni revisión global: sugerencias del navegador durante la edición.
+function sbNativeSpellingLayout(session){
+  const input=session?.input,preview=session?.nodePreview;if(!preview||!input.dataset.sbNativeSpelling)return;
+  const host=$('sb_inline_editor'),scale=host.clientWidth/(preview.box?.w||host.clientWidth||1);
+  const lineHeight=parseFloat(input.style.lineHeight)||parseFloat(input.style.fontSize)*1.2||16;
+  const rows=new Set(preview.glyphs.filter(g=>g.from<input.value.length).map(g=>g.row));
+  input.style.paddingTop=Math.max(3,(host.clientHeight-Math.max(rows.size,1)*lineHeight)/2)+'px';
+  input.style.paddingBottom='3px';input.style.paddingLeft=input.style.paddingRight=Math.max(3,6*scale)+'px';
+  input.style.fontWeight=preview.actor||preview.edge?'700':'400';input.lang='es';input.spellcheck=true;input.setAttribute('autocorrect','off');
+}
+const sbCompactRefreshInline=sbRefreshNodeInline;
+sbRefreshNodeInline=function(...args){const result=sbCompactRefreshInline(...args);sbNativeSpellingLayout(APP.tools.editing);return result;};
+const sbCompactRefreshEdge=sbUxRefreshEdgeInline;
+sbUxRefreshEdgeInline=function(session){const result=sbCompactRefreshEdge(session);sbNativeSpellingLayout(session);return result;};
+const sbCompactRefreshActor=sbUxRefreshActorInline;
+sbUxRefreshActorInline=function(session){const result=sbCompactRefreshActor(session);sbNativeSpellingLayout(session);return result;};
+function sbCompactUppercase(input){
+  if(!input||input.isContentEditable||!['INPUT','TEXTAREA'].includes(input.tagName))return;
+  const session=APP.tools.editing;
+  const content=session?.input===input&&!session.spec.preserveCase||input.closest('#node_annotation_popup')||input.matches('[data-catalog-input],#catalog_new_document');
+  if(!content||input.type==='search'||input.type==='number'||input.type==='file')return;
+  const value=input.value,upper=value.toUpperCase();if(value===upper)return;
+  const start=input.selectionStart,end=input.selectionEnd,direction=input.selectionDirection;
+  input.value=upper;if(start!==null)input.setSelectionRange(value.slice(0,start).toUpperCase().length,value.slice(0,end).toUpperCase().length,direction);
+}
+const sbCompactValidationNative=refreshValidation;
+refreshValidation=function(){
+  sbCompactValidationNative();const badge=$('validation_badge');if(!activeFlow())return;
+  const count=APP.validation.issues.length;badge.textContent=count?'⚠ '+count+' brecha'+(count===1?'':'s'):'✓ Sin brechas';
+  badge.setAttribute('aria-label',count?'Ver '+count+' brechas metodológicas':'Revisar validación: sin brechas metodológicas');
+  badge.title='Revisar brechas metodológicas y localizar el problema';badge.setAttribute('aria-live','polite');
+};
+const sbCompactSyncControlsNative=sbUxSyncControls;
+sbUxSyncControls=function(...args){const result=sbCompactSyncControlsNative(...args);if(document.fullscreenElement===$('view_studio'))$('sb_ux_full_save').prepend($('validation_badge'));return result;};
+// Los tiradores y líneas tienen prioridad solamente donde coinciden con el separador.
+function sbCompactUnderlyingEdge(event){
+  if(!event.target.closest?.('#canvas [data-lane-resize]'))return null;
+  for(const element of document.elementsFromPoint(event.clientX,event.clientY)){
+    if(!element.closest?.('#canvas'))continue;
+    if(element.closest('.node,[data-connect-port],[data-node-action],[data-connector-marker]'))return null;
+    if(element.matches?.('[data-edge-segment],.edge-hit'))return element;
+  }
+  return null;
+}
+function sbCompactPrioritizeEdge(event){
+  const target=sbCompactUnderlyingEdge(event);if(!target)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(event.type==='pointerdown'&&event.button===0&&target.hasAttribute('data-edge-segment')){
+    beginEdgeSegmentDrag(event,target.dataset.edgeId,Number(target.dataset.edgeSegment),target.dataset.connectorBranch||null);return;
+  }
+  const options={bubbles:true,cancelable:true,view:window,clientX:event.clientX,clientY:event.clientY,button:event.button,buttons:event.buttons,detail:event.detail,ctrlKey:event.ctrlKey,shiftKey:event.shiftKey,altKey:event.altKey,metaKey:event.metaKey};
+  target.dispatchEvent(event instanceof PointerEvent?new PointerEvent(event.type,{...options,pointerId:event.pointerId,pointerType:event.pointerType,isPrimary:event.isPrimary}):new MouseEvent(event.type,options));
+}
+const sbCompactPrepareNative=sbRecoveryPrepare;
+sbRecoveryPrepare=function(){
+  sbCompactPrepareNative();const badge=$('validation_badge'),marker=document.createComment('sb-validation-home');badge.after(marker);SB_UX.homes.set(badge.id,{marker,group:'sb_ux_full_save'});
+  for(const name of ['pointerdown','click','dblclick','contextmenu'])document.addEventListener(name,sbCompactPrioritizeEdge,true);
+  document.addEventListener('input',event=>{if(!event.isComposing)sbCompactUppercase(event.target);},true);
+  document.addEventListener('compositionend',event=>{sbCompactUppercase(event.target);if(APP.tools.editing?.input===event.target)sbRefreshNodeInline();},true);
+  document.addEventListener('focusin',event=>{const input=event.target;if(!input.matches?.('input,textarea'))return;input.setAttribute('autocorrect','off');if(input.matches('#doc_smart_input,#catalog_new_document,[data-catalog-input],#ins_process_code,#sb_ux_process_code'))input.spellcheck=false;});
+  sbUxSyncControls();refreshValidation();
 };
 
  document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
