@@ -741,6 +741,7 @@ body:has(#view_studio:fullscreen) .sb-global-process{display:none}
 .sb-spell-overlay span{color:transparent!important;background:transparent!important}
 .sb-spell-error{text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#D71928;text-decoration-thickness:1.3px;text-underline-offset:2px}
 #sb_spell_menu{position:fixed;z-index:10010;width:220px;max-width:calc(100vw - 16px);padding:8px;border:1px solid #BDDDF1;border-radius:12px;background:#fff;box-shadow:0 6px 22px #123A6329;color:#123A63;font:13px/1.35 Arial,sans-serif}
+#sb_spell_menu button.sb-spell-close{width:26px;min-height:26px;margin:0 0 4px auto;padding:0;text-align:center;font-size:20px;line-height:24px}
 #sb_spell_menu strong{display:block;padding:5px 7px 7px;overflow-wrap:anywhere;font-size:12px}
 #sb_spell_menu button{display:block;width:100%;min-height:32px;margin:3px 0;padding:7px 9px;text-align:left;border:1px solid transparent;border-radius:7px;background:white;color:#123A63;font-size:13px;font-weight:650;line-height:1.2}
 #sb_spell_menu button:hover{background:#E7F5FF;border-color:#B8E1F7}
@@ -14897,7 +14898,7 @@ sbRecoveryPrepare=function(){
 };
 
 // Revisión local únicamente durante la edición. No se guardan marcas ni correcciones automáticas.
-const SB_SPELL={worker:null,ready:null,next:0,pending:new Map(),active:null,states:new WeakMap(),menu:null,menuToken:0,frame:0,failed:false,
+const SB_SPELL={worker:null,ready:null,next:0,pending:new Map(),active:null,states:new WeakMap(),menu:null,menuToken:0,frame:0,failed:false,ignored:new Set(),
   allowed:new Set(['SB','SIPOC','JSON','LMP','SX','PDF','GPP','OM','OBS','AS','IS','TO','BE','KG','G','MG','ML','CM','MM','PH'])};
 function sbSpellStart(){
   if(SB_SPELL.ready)return SB_SPELL.ready;
@@ -14925,7 +14926,7 @@ function sbSpellEligible(input){
 function sbSpellTokens(value){
   const tokens=[];for(const match of value.matchAll(/[\p{L}\p{M}\p{N}]+(?:[-_/][\p{L}\p{M}\p{N}]+)*/gu)){
     const raw=match[0],key=raw.normalize('NFC').toLocaleLowerCase('es');
-    if(/\d|[-_/]/u.test(raw)||raw.length===1||SB_SPELL.allowed.has(raw.toLocaleUpperCase('es')))continue;
+    if(/\d|[-_/]/u.test(raw)||raw.length===1||SB_SPELL.ignored.has(key)||SB_SPELL.allowed.has(raw.toLocaleUpperCase('es')))continue;
     tokens.push({raw,key,start:match.index,end:match.index+raw.length});
   }return tokens;
 }
@@ -14956,7 +14957,7 @@ function sbSpellPaint(state){
   const fragment=document.createDocumentFragment();let end=0;
   for(const token of state.tokens){
     fragment.append(document.createTextNode(state.value.slice(end,token.start)));const span=document.createElement('span');span.textContent=token.raw;
-    if(state.incorrect.has(token.key)&&!state.ignored.has(token.key)){span.className='sb-spell-error';span.dataset.spellStart=token.start;span.dataset.spellEnd=token.end;span.dataset.spellKey=token.key;}
+    if(state.incorrect.has(token.key)&&!state.ignored.has(token.key)&&!SB_SPELL.ignored.has(token.key)){span.className='sb-spell-error';span.dataset.spellStart=token.start;span.dataset.spellEnd=token.end;span.dataset.spellKey=token.key;}
     fragment.append(span);end=token.end;
   }fragment.append(document.createTextNode(state.value.slice(end)));state.mirror.replaceChildren(fragment);sbSpellPosition(state);
 }
@@ -14989,14 +14990,14 @@ function sbSpellApply(state,token,replacement){
 async function sbSpellOpenMenu(state,token,event){
   sbSpellCloseMenu();const menu=document.createElement('div');menu.id='sb_spell_menu';menu.setAttribute('role','menu');menu.setAttribute('aria-label','Revisión ortográfica');
   const parent=state.input.closest('dialog')||document.fullscreenElement||document.body;parent.append(menu);SB_SPELL.menu=menu;const generation=SB_SPELL.menuToken;
-  const title=document.createElement('strong');title.textContent=token.raw.toLocaleUpperCase('es');menu.append(title);
-  const choices=document.createElement('div');choices.className='sb-spell-choices';choices.textContent='Buscando sugerencias…';menu.append(choices);
-  const omit=document.createElement('button');omit.type='button';omit.textContent='Omitir';omit.setAttribute('role','menuitem');omit.onclick=()=>{state.ignored.add(token.key);sbSpellCloseMenu();sbSpellPaint(state);state.input.focus({preventScroll:true});};menu.append(omit);
+
+  const close=document.createElement('button');close.type='button';close.className='sb-spell-close';close.textContent='×';close.setAttribute('aria-label','Cerrar sugerencias');close.onclick=()=>{sbSpellCloseMenu();state.input.focus({preventScroll:true});};menu.append(close);const choices=document.createElement('div');choices.className='sb-spell-choices';choices.textContent='Buscando sugerencias…';menu.append(choices);
+  const omit=document.createElement('button');omit.type='button';omit.textContent='Ignorar';omit.setAttribute('role','menuitem');omit.onclick=()=>{state.ignored.add(token.key);SB_SPELL.ignored.add(token.key);try{localStorage.setItem('sb_ortografia_ignoradas_v1',JSON.stringify([...SB_SPELL.ignored]));}catch(error){}document.querySelectorAll('.sb-canvas-spell-mark').forEach(mark=>{if(mark.dataset.spellKey===token.key)mark.remove();});sbSpellCloseMenu();sbSpellPaint(state);state.input.focus({preventScroll:true});};menu.append(omit);
   menu.addEventListener('pointerdown',e=>e.preventDefault());
   const box=state.input.getBoundingClientRect(),x=event.clientX||box.left+20,y=event.clientY||box.top+20;sbSpellPlaceMenu(menu,x,y);
   try{const response=await sbSpellRequest('suggest',{word:token.key});if(SB_SPELL.menu!==menu||SB_SPELL.menuToken!==generation)return;choices.replaceChildren();
-    for(const suggestion of response.suggestions){const button=document.createElement('button');button.type='button';button.textContent=suggestion;button.dataset.spellSuggestion=suggestion;button.setAttribute('role','menuitem');button.onclick=()=>sbSpellApply(state,token,suggestion);choices.append(button);}
-    if(!response.suggestions.length)choices.textContent='Sin sugerencias';sbSpellPlaceMenu(menu,x,y);
+    for(const suggestion of response.suggestions){if(suggestion.normalize('NFC').toLocaleLowerCase('es')===token.key)continue;const button=document.createElement('button');button.type='button';button.textContent=suggestion;button.dataset.spellSuggestion=suggestion;button.setAttribute('role','menuitem');button.onclick=()=>sbSpellApply(state,token,suggestion);choices.append(button);}
+    sbSpellPlaceMenu(menu,x,y);
   }catch(error){if(SB_SPELL.menu===menu)choices.textContent='No se pudieron cargar sugerencias';sbSpellReportFailure();}
 }
 const sbSpellLayoutNative=sbNativeSpellingLayout;
@@ -15007,7 +15008,7 @@ const sbSpellEscapeNative=sbUxEscape;
 sbUxEscape=function(event){if(event.key==='Escape'&&SB_SPELL.menu){event.preventDefault();event.stopImmediatePropagation();sbSpellCloseMenu();return;}sbSpellEscapeNative(event);};
 const sbSpellPrepareNative=sbRecoveryPrepare;
 sbRecoveryPrepare=function(){
-  sbSpellPrepareNative();
+  sbSpellPrepareNative();try{const saved=JSON.parse(localStorage.getItem('sb_ortografia_ignoradas_v1')||'[]');if(Array.isArray(saved))for(const word of saved)if(typeof word==='string')SB_SPELL.ignored.add(word);}catch(error){}
   document.addEventListener('focusin',event=>{if(sbSpellEligible(event.target))sbSpellQueue(event.target,0);});
   document.addEventListener('input',event=>{if(!event.isComposing){sbSpellCloseMenu();sbSpellQueue(event.target);}},true);
   document.addEventListener('compositionend',event=>sbSpellQueue(event.target));
@@ -15042,7 +15043,7 @@ async function sbCanvasSpellScan(){
      const y=box.y+box.height-size*.15,amp=Math.max(.5,size*.055),step=Math.max(1.5,size*.16);
      let d=`M ${start.x} ${y}`,x=start.x;
      while(x<end.x){const next=Math.min(end.x,x+step);d+=` Q ${(x+next)/2} ${y+amp} ${next} ${y}`;x=next;if(x>=end.x)break;const last=Math.min(end.x,x+step);d+=` Q ${(x+last)/2} ${y-amp} ${last} ${y}`;x=last;}
-     const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',d);path.setAttribute('class','sb-canvas-spell-mark');path.setAttribute('fill','none');path.setAttribute('stroke','#D71928');path.setAttribute('stroke-width',Math.max(.7,size*.06));path.setAttribute('pointer-events','none');path.setAttribute('aria-hidden','true');group.append(path);
+     const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',d);path.setAttribute('class','sb-canvas-spell-mark');path.dataset.spellKey=token.key;path.setAttribute('fill','none');path.setAttribute('stroke','#D71928');path.setAttribute('stroke-width',Math.max(.7,size*.06));path.setAttribute('pointer-events','none');path.setAttribute('aria-hidden','true');group.append(path);
     }catch(error){/* Texto que acaba de retirarse o está oculto. */}
    }
   }
