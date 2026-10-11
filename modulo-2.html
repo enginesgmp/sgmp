@@ -736,6 +736,19 @@ body:has(#view_studio:fullscreen) .sb-global-process{display:none}
 #sb_inline_editor.sb-inline-node .sb-inline-input[data-sb-native-spelling]::selection{background:#B7DBFF;color:#111}
 
 </style>
+<style id="sb-dictionary-style">
+.sb-spell-overlay{position:absolute;overflow:hidden;z-index:4;pointer-events:none;user-select:none;border-style:solid;border-color:transparent;color:transparent!important;background:transparent!important;text-shadow:none!important;caret-color:transparent;max-width:none;max-height:none;visibility:visible}
+.sb-spell-overlay span{color:transparent!important;background:transparent!important}
+.sb-spell-error{text-decoration-line:underline;text-decoration-style:wavy;text-decoration-color:#D71928;text-decoration-thickness:1.3px;text-underline-offset:2px}
+#sb_spell_menu{position:fixed;z-index:10010;width:220px;max-width:calc(100vw - 16px);padding:8px;border:1px solid #BDDDF1;border-radius:12px;background:#fff;box-shadow:0 6px 22px #123A6329;color:#123A63;font:13px/1.35 Arial,sans-serif}
+#sb_spell_menu strong{display:block;padding:5px 7px 7px;overflow-wrap:anywhere;font-size:12px}
+#sb_spell_menu button{display:block;width:100%;min-height:32px;margin:3px 0;padding:7px 9px;text-align:left;border:1px solid transparent;border-radius:7px;background:white;color:#123A63;font-size:13px;font-weight:650;line-height:1.2}
+#sb_spell_menu button:hover{background:#E7F5FF;border-color:#B8E1F7}
+#sb_spell_menu>.sb-spell-choices{font-size:12px;color:#587084;padding:0 0 5px}
+#sb_spell_menu>button:last-child{border-top-color:#E1EAF2;margin-top:5px}
+
+</style>
+<script src="./recursos/ortografia/sb-ortografia.js"></script>
 </head>
 <body>
 <div class="app">
@@ -13253,7 +13266,7 @@ function sbBindTools(){
     const lane=event.target.closest('[data-lane-id]');sbShowContextMenu(event,lane?.dataset.laneId||null);
   });
   document.addEventListener('pointerdown',event=>{
-    if(event.target.closest('#sb_inline_editor,#sb_context_menu'))return;
+    if(event.target.closest('#sb_inline_editor,#sb_context_menu,#sb_spell_menu'))return;
     if(APP.tools.editing&&!APP.tools.editing.input.contains(event.target)){
       if(!sbCommitEdit({render:false})){event.preventDefault();event.stopImmediatePropagation();return;}
     }
@@ -14881,6 +14894,128 @@ sbRecoveryPrepare=function(){
   document.addEventListener('compositionend',event=>{sbCompactUppercase(event.target);if(APP.tools.editing?.input===event.target)sbRefreshNodeInline();},true);
   document.addEventListener('focusin',event=>{const input=event.target;if(!input.matches?.('input,textarea'))return;input.setAttribute('autocorrect','off');if(input.matches('#doc_smart_input,#catalog_new_document,[data-catalog-input],#ins_process_code,#sb_ux_process_code'))input.spellcheck=false;});
   sbUxSyncControls();refreshValidation();
+};
+
+// Revisión local únicamente durante la edición. No se guardan marcas ni correcciones automáticas.
+const SB_SPELL={worker:null,ready:null,next:0,pending:new Map(),active:null,states:new WeakMap(),menu:null,menuToken:0,frame:0,failed:false,
+  allowed:new Set(['SB','SIPOC','JSON','LMP','SX','PDF','GPP','OM','OBS','AS','IS','TO','BE','KG','G','MG','ML','CM','MM','PH'])};
+function sbSpellStart(){
+  if(SB_SPELL.ready)return SB_SPELL.ready;
+  SB_SPELL.ready=new Promise((resolve,reject)=>{
+    try{
+      if(!window.SB_ORTHO_WORKER_SOURCE)throw Error('Falta recursos/ortografia/sb-ortografia.js');
+      const url=URL.createObjectURL(new Blob([window.SB_ORTHO_WORKER_SOURCE],{type:'text/javascript'}));
+      const worker=SB_SPELL.worker=new Worker(url);URL.revokeObjectURL(url);
+      worker.onmessage=event=>{const data=event.data;if(data.ready){resolve();return;}const request=SB_SPELL.pending.get(data.id);if(!request)return;SB_SPELL.pending.delete(data.id);data.error?request.reject(Error(data.error)):request.resolve(data);};
+      worker.onerror=event=>{const error=Error(event.message||'No se pudo iniciar la ortografía local');reject(error);for(const request of SB_SPELL.pending.values())request.reject(error);SB_SPELL.pending.clear();};
+    }catch(error){reject(error);}
+  });
+  return SB_SPELL.ready;
+}
+async function sbSpellRequest(action,payload){
+  await sbSpellStart();return new Promise((resolve,reject)=>{const id=++SB_SPELL.next;SB_SPELL.pending.set(id,{resolve,reject});SB_SPELL.worker.postMessage({id,action,...payload});});
+}
+function sbSpellReportFailure(){if(!SB_SPELL.failed){SB_SPELL.failed=true;gMsg('warn','No se pudo cargar el corrector local. Revisa recursos/ortografia/sb-ortografia.js.');}}
+function sbSpellEligible(input){
+  if(!input?.matches?.('input,textarea')||input.disabled||input.readOnly)return false;
+  if(input.matches('input[type="search"],input[type="number"],input[type="file"],#sb_diagram_search,#catalog_search,#doc_smart_input,#catalog_new_document,[data-catalog-input],#sb_ux_process_code,#ins_process_code'))return false;
+  const session=APP.tools.editing;
+  return input.id==='sb_inline_input'||input.id==='sb_action_input'||!!input.closest('#node_annotation_popup')&&input.tagName==='TEXTAREA'||session?.input===input&&!session.spec.preserveCase&&!session.spec.numeric&&['label','text','version_name','purpose','process_name'].includes(session.spec.field);
+}
+function sbSpellTokens(value){
+  const tokens=[];for(const match of value.matchAll(/[\p{L}\p{M}\p{N}]+(?:[-_/][\p{L}\p{M}\p{N}]+)*/gu)){
+    const raw=match[0],key=raw.normalize('NFC').toLocaleLowerCase('es');
+    if(/\d|[-_/]/u.test(raw)||raw.length===1||SB_SPELL.allowed.has(raw.toLocaleUpperCase('es')))continue;
+    tokens.push({raw,key,start:match.index,end:match.index+raw.length});
+  }return tokens;
+}
+function sbSpellCloseMenu(){SB_SPELL.menu?.remove();SB_SPELL.menu=null;SB_SPELL.menuToken++;}
+function sbSpellDispose(state){if(!state)return;clearTimeout(state.timer);state.mirror.remove();if(SB_SPELL.active===state){SB_SPELL.active=null;sbSpellCloseMenu();}SB_SPELL.states.delete(state.input);}
+function sbSpellState(input){
+  if(!sbSpellEligible(input))return null;
+  let state=SB_SPELL.states.get(input);if(state)return state;
+  if(SB_SPELL.active&&SB_SPELL.active.input!==input)sbSpellDispose(SB_SPELL.active);
+  const parent=input.parentElement;if(getComputedStyle(parent).position==='static')parent.style.position='relative';
+  const mirror=document.createElement('div');mirror.className='sb-spell-overlay';mirror.setAttribute('aria-hidden','true');parent.append(mirror);
+  state={input,mirror,revision:0,value:null,tokens:[],incorrect:new Set(),ignored:new Set(),timer:null};
+  SB_SPELL.states.set(input,state);SB_SPELL.active=state;input.spellcheck=false;input.setAttribute('autocorrect','off');
+  input.addEventListener('scroll',sbSpellLayoutSoon,{passive:true});
+  return state;
+}
+function sbSpellPosition(state){
+  const input=state.input,mirror=state.mirror;if(!input.isConnected||input.getClientRects().length===0){sbSpellDispose(state);return false;}
+  const parent=mirror.parentElement,box=input.getBoundingClientRect(),root=parent.getBoundingClientRect(),style=getComputedStyle(input);
+  Object.assign(mirror.style,{left:(box.left-root.left-parent.clientLeft+parent.scrollLeft)+'px',top:(box.top-root.top-parent.clientTop+parent.scrollTop)+'px',width:box.width+'px',height:box.height+'px',boxSizing:'border-box'});
+  for(const key of ['fontFamily','fontSize','fontWeight','fontStyle','fontStretch','letterSpacing','wordSpacing','textAlign','textIndent','textTransform','direction','paddingTop','paddingRight','paddingBottom','paddingLeft','borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth'])mirror.style[key]=style[key];
+  mirror.style.lineHeight=input.tagName==='INPUT'?Math.max(parseFloat(style.fontSize),input.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom))+'px':style.lineHeight;
+  mirror.style.whiteSpace=input.tagName==='INPUT'?'pre':'pre-wrap';mirror.style.overflowWrap=input.tagName==='INPUT'?'normal':'break-word';
+  mirror.scrollTop=input.scrollTop;mirror.scrollLeft=input.scrollLeft;return true;
+}
+function sbSpellPaint(state){
+  if(!state||state.value!==state.input.value)return;
+  const fragment=document.createDocumentFragment();let end=0;
+  for(const token of state.tokens){
+    fragment.append(document.createTextNode(state.value.slice(end,token.start)));const span=document.createElement('span');span.textContent=token.raw;
+    if(state.incorrect.has(token.key)&&!state.ignored.has(token.key)){span.className='sb-spell-error';span.dataset.spellStart=token.start;span.dataset.spellEnd=token.end;span.dataset.spellKey=token.key;}
+    fragment.append(span);end=token.end;
+  }fragment.append(document.createTextNode(state.value.slice(end)));state.mirror.replaceChildren(fragment);sbSpellPosition(state);
+}
+function sbSpellQueue(input=APP.tools.editing?.input,delay=260){
+  if(!sbSpellEligible(input)||APP.tools.editing?.composing)return;
+  const state=sbSpellState(input);if(!state)return;input.spellcheck=false;clearTimeout(state.timer);
+  state.timer=setTimeout(async()=>{
+    const revision=++state.revision,value=input.value,tokens=sbSpellTokens(value);state.value=value;state.tokens=tokens;state.incorrect.clear();sbSpellPaint(state);
+    try{const response=await sbSpellRequest('check',{words:[...new Set(tokens.map(token=>token.key))]});if(SB_SPELL.active!==state||state.revision!==revision||input.value!==value)return;state.incorrect=new Set(response.results.filter(word=>!word.correct).map(word=>word.word));sbSpellPaint(state);}
+    catch(error){sbSpellReportFailure();}
+  },delay);
+}
+function sbSpellLayoutSoon(){if(SB_SPELL.frame)return;SB_SPELL.frame=requestAnimationFrame(()=>{SB_SPELL.frame=0;const state=SB_SPELL.active;if(state){if(state.input.value===state.value)sbSpellPosition(state);else state.mirror.replaceChildren();}});}
+function sbSpellWordAt(state,event){
+  if(!state||state.value!==state.input.value)return null;
+  for(const span of state.mirror.querySelectorAll('.sb-spell-error'))for(const box of span.getClientRects()){
+    if(event.clientX>=box.left-2&&event.clientX<=box.right+2&&event.clientY>=box.top-2&&event.clientY<=box.bottom+3)return state.tokens.find(token=>token.start===Number(span.dataset.spellStart));
+  }
+  if(event.clientX===0&&event.clientY===0)return state.tokens.find(token=>state.incorrect.has(token.key)&&!state.ignored.has(token.key)&&state.input.selectionStart>=token.start&&state.input.selectionStart<=token.end);
+  return null;
+}
+function sbSpellPlaceMenu(menu,x,y){const box=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(innerWidth-box.width-8,x))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-box.height-8,y))+'px';}
+function sbSpellApply(state,token,replacement){
+  sbSpellCloseMenu();const input=state.input;if(!input.isConnected||input.value.slice(token.start,token.end)!==token.raw){sbSpellQueue(input);return;}
+  input.focus({preventScroll:true});input.setSelectionRange(token.start,token.end);
+  const value=replacement.toLocaleUpperCase('es');
+  if(!document.execCommand('insertText',false,value)){input.setRangeText(value,token.start,token.end,'end');input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:value}));}
+  sbSpellQueue(input,0);
+}
+async function sbSpellOpenMenu(state,token,event){
+  sbSpellCloseMenu();const menu=document.createElement('div');menu.id='sb_spell_menu';menu.setAttribute('role','menu');menu.setAttribute('aria-label','Revisión ortográfica');
+  const parent=state.input.closest('dialog')||document.fullscreenElement||document.body;parent.append(menu);SB_SPELL.menu=menu;const generation=SB_SPELL.menuToken;
+  const title=document.createElement('strong');title.textContent=token.raw.toLocaleUpperCase('es');menu.append(title);
+  const choices=document.createElement('div');choices.className='sb-spell-choices';choices.textContent='Buscando sugerencias…';menu.append(choices);
+  const omit=document.createElement('button');omit.type='button';omit.textContent='Omitir';omit.setAttribute('role','menuitem');omit.onclick=()=>{state.ignored.add(token.key);sbSpellCloseMenu();sbSpellPaint(state);state.input.focus({preventScroll:true});};menu.append(omit);
+  menu.addEventListener('pointerdown',e=>e.preventDefault());
+  const box=state.input.getBoundingClientRect(),x=event.clientX||box.left+20,y=event.clientY||box.top+20;sbSpellPlaceMenu(menu,x,y);
+  try{const response=await sbSpellRequest('suggest',{word:token.key});if(SB_SPELL.menu!==menu||SB_SPELL.menuToken!==generation)return;choices.replaceChildren();
+    for(const suggestion of response.suggestions){const button=document.createElement('button');button.type='button';button.textContent=suggestion;button.dataset.spellSuggestion=suggestion;button.setAttribute('role','menuitem');button.onclick=()=>sbSpellApply(state,token,suggestion);choices.append(button);}
+    if(!response.suggestions.length)choices.textContent='Sin sugerencias';sbSpellPlaceMenu(menu,x,y);
+  }catch(error){if(SB_SPELL.menu===menu)choices.textContent='No se pudieron cargar sugerencias';sbSpellReportFailure();}
+}
+const sbSpellLayoutNative=sbNativeSpellingLayout;
+sbNativeSpellingLayout=function(session){sbSpellLayoutNative(session);if(session?.input){session.input.spellcheck=false;sbSpellQueue(session.input);}};
+const sbSpellCloseInlineNative=sbCloseInline;
+sbCloseInline=function(session){sbSpellDispose(SB_SPELL.states.get(session?.input));sbSpellCloseInlineNative(session);};
+const sbSpellEscapeNative=sbUxEscape;
+sbUxEscape=function(event){if(event.key==='Escape'&&SB_SPELL.menu){event.preventDefault();event.stopImmediatePropagation();sbSpellCloseMenu();return;}sbSpellEscapeNative(event);};
+const sbSpellPrepareNative=sbRecoveryPrepare;
+sbRecoveryPrepare=function(){
+  sbSpellPrepareNative();
+  document.addEventListener('focusin',event=>{if(sbSpellEligible(event.target))sbSpellQueue(event.target,0);});
+  document.addEventListener('input',event=>{if(!event.isComposing){sbSpellCloseMenu();sbSpellQueue(event.target);}},true);
+  document.addEventListener('compositionend',event=>sbSpellQueue(event.target));
+  document.addEventListener('focusout',event=>{const state=SB_SPELL.states.get(event.target);if(state)setTimeout(()=>{if(document.activeElement!==state.input)sbSpellDispose(state);},0);});
+  document.addEventListener('contextmenu',event=>{const state=SB_SPELL.states.get(event.target),token=sbSpellWordAt(state,event);if(!token)return;event.preventDefault();event.stopImmediatePropagation();sbSpellOpenMenu(state,token,event);},true);
+  document.addEventListener('pointerdown',event=>{if(SB_SPELL.menu&&!event.target.closest('#sb_spell_menu'))sbSpellCloseMenu();},true);
+  document.addEventListener('keydown',event=>{if(SB_SPELL.menu&&event.key==='Tab')sbSpellCloseMenu();},true);
+  window.addEventListener('resize',sbSpellLayoutSoon);document.addEventListener('scroll',sbSpellLayoutSoon,true);
 };
 
  document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
