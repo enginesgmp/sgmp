@@ -939,8 +939,11 @@ async function loadConfiguration(){
 }
 function promptFor(stage,variables){
  const template=runtime.prompts[PROMPT_KEYS[stage]]||FALLBACK_PROMPTS[stage];
- return str(template).replace(/\{\{([a-zA-Z0-9_]+)\}\}/g,(_,key)=>{if(!(key in variables))throw new Error('Falta contexto del prompt: '+key);return str(variables[key]);});
+ const rendered=str(template).replace(/\{\{([a-zA-Z0-9_]+)\}\}/g,(_,key)=>{if(!(key in variables))throw new Error('Falta contexto del prompt: '+key);return str(variables[key]);});
+ const compatibility=['extraction','consolidation'].includes(stage)?'\n\nCOMPATIBILIDAD CON BUILDER (SIN CAMBIAR EL ESQUEMA):\nConserva en relations todas las flechas observadas, incluidas las que comparten origen y destino. No mezcles etiquetas, no inventes cajas intermedias y no borres una rama. Builder representa una sola flecha por pareja; SX advertirá esta diferencia al final y elegirá la primera según su posición, de arriba hacia abajo. Registra información incompleta o dudosa en validation, sin solicitar otra pasada ni bloquear la descarga. Conserva el texto y las asociaciones explícitas de las notas; una nota sin asociación permanece sin destinatario.':'';
+ return rendered+compatibility;
 }
+
 async function pdfLibrary(){if(!runtime.pdfModule){runtime.pdfModule=await import(PDFJS_BASE+'legacy/build/pdf.mjs');runtime.pdfModule.GlobalWorkerOptions.workerSrc=PDFJS_BASE+'legacy/build/pdf.worker.mjs';}return runtime.pdfModule;}
 function textLines(items){const rows=[];for(const item of items.slice().sort((a,b)=>a.y-b.y||a.x-b.x)){let row=rows.find(r=>Math.abs(r.y-item.y)<Math.max(2,item.height*.4));if(!row){row={y:item.y,height:item.height,items:[]};rows.push(row);}row.items.push(item);}return rows.sort((a,b)=>a.y-b.y).map(row=>{let text='',right=null;for(const t of row.items.sort((a,b)=>a.x-b.x)){if(right!==null&&t.x-right>Math.max(1,t.height*.12))text+=' ';text+=t.text;right=Math.max(right??0,t.x+t.width);}return {...row,text:text.trim()};});}
 function nativeText(content,viewport,lib,pageNumber){
@@ -1127,6 +1130,10 @@ function geometryRelation(raw){
 function geometriesAgree(a,b){
  for(const k of ['source_point_pct','target_point_pct'])if(a[k]&&b[k]&&(Math.abs(a[k].x-b[k].x)>.35||Math.abs(a[k].y-b[k].y)>.35))return false;
  for(const k of ['source_side','target_side','source_connector_id','target_connector_id'])if(a[k]&&b[k]&&a[k]!==b[k])return false;
+ if(Array.isArray(a.waypoints_pct)&&Array.isArray(b.waypoints_pct)){
+  if(a.waypoints_pct.length!==b.waypoints_pct.length)return false;
+  for(let i=0;i<a.waypoints_pct.length;i++)if(Math.abs(a.waypoints_pct[i].x-b.waypoints_pct[i].x)>.35||Math.abs(a.waypoints_pct[i].y-b.waypoints_pct[i].y)>.35)return false;
+ }
  return true;
 }
 function currentSend(){
@@ -1285,6 +1292,7 @@ function gatherModel(){
  if(!elements.length)addPending('Aún no se han extraído cajas. El JSON se puede descargar con estructura vacía.');
  for(const [key,label] of [['process_code','Código'],['process_name','Nombre'],['purpose','Finalidad']])if(!state.process[key])addPending(label+' del proceso sin completar.');
  pending.push(...geometryProblems({lanes,elements,relations,connectors}),...arr(state.warnings));
+ pending.push(...builderCompatibilityWarnings({lanes,elements,relations,connectors,boundary,notes,associations}));
  const unique=compactObservations(Array.from(new Map(pending.map(p=>[p.id,p])).values()));
  return {lanes,elements,relations,connectors,boundary,notes,associations,pending:unique};
 }
@@ -1326,9 +1334,31 @@ function extractionMetadata(model){
 }
 
 
+function builderRelationTop(relation,model){
+ const sourceCircle=model.connectors.find(c=>c.id===relation.source_connector_id);
+ const source=model.elements.find(e=>e.id===relation.source_id);
+ return [sourceCircle?.attachment_point_pct?.y,relation.source_point_pct?.y,relation.label_point_pct?.y,relation.waypoints_pct?.[0]?.y,source?.bounds_pct?.y].find(v=>typeof v==='number'&&Number.isFinite(v))??Infinity;
+}
+function builderCompatibilityWarnings(model){
+ const confirmed=confirmedExportModel(model),groups=new Map(),warnings=[];
+ for(const relation of confirmed.relations){const key=relation.source_id+'|'+relation.target_id;const rows=groups.get(key)||[];rows.push(relation);groups.set(key,rows);}
+ for(const rows of groups.values())if(rows.length>1){
+  const ordered=rows.map((r,i)=>({r,i})).sort((a,b)=>builderRelationTop(a.r,model)-builderRelationTop(b.r,model)||a.i-b.i),first=ordered[0].r;
+  const source=model.elements.find(e=>e.id===first.source_id),target=model.elements.find(e=>e.id===first.target_id);
+  const labels=ordered.slice(1).map(({r})=>r.label?'«'+r.label+'»':'sin etiqueta').join(', ');
+  warnings.push(issue('Builder admite una sola flecha entre '+(source?.name||first.source_id)+' y '+(target?.name||first.target_id)+'. Se representará la primera de arriba hacia abajo'+(first.label?' («'+first.label+'»)':' (sin etiqueta)')+'. Las otras '+(rows.length-1)+' ('+labels+') permanecen en el JSON de SX, pero no se representarán en SB.',{page:first.page,element_id:first.source_id,bounds_pct:source?.bounds_pct}));
+ }
+ const allowed=(a,b)=>a==='supplier'&&b==='input'||a==='input'&&['activity','decision'].includes(b)||['activity','decision'].includes(a)&&['activity','decision','output'].includes(b)||a==='output'&&b==='customer';
+ for(const r of confirmed.relations){const source=model.elements.find(e=>e.id===r.source_id),target=model.elements.find(e=>e.id===r.target_id);if(source&&target&&(source.id===target.id||!allowed(source.kind,target.kind)))warnings.push(issue('La flecha '+(r.label?'«'+r.label+'» ':'')+'entre '+source.name+' y '+target.name+' no puede representarse con las relaciones actuales del Builder. Se conserva en el JSON de SX para validación.',{page:r.page,element_id:source.id,bounds_pct:source.bounds_pct}));}
+ for(const note of model.notes)if(!model.associations.get(note.id)?.size)warnings.push(issue('La nota '+(note.number||'sin número')+' no tiene una actividad o actor asociado. Se conserva en SX y su JSON; Builder no la asignará por suposición.',{note_id:note.id}));
+ const diagram=buildDiagramModel(confirmed);
+ for(const circle of diagram.connectors)warnings.push(issue('El círculo '+(circle.label||'sin identificación')+' no forma parte de una conexión confirmada entre dos cajas. Se conserva en el JSON de SX; Builder no inventará su pareja.',{element_id:circle.element_id,page:model.elements.find(e=>e.id===circle.element_id)?.page}));
+ if(diagram.connection_fragments.length)warnings.push(issue('Existen '+diagram.connection_fragments.length+' tramos de flecha con continuidad pendiente. Se conservan en el JSON de SX; no se dibujarán como conexiones completas en Builder.',{page:model.elements[0]?.page}));
+ return warnings;
+}
 function confirmedNodeType(e){return e.kind==='decision'?'decision':str(e.node_type)&&nodeType(e)===e.node_type?e.node_type:'';}
 function confirmedExportModel(model){
- const disputed=Object.values(state.audits).flatMap(a=>arr(a.disputed_relations)).filter(object);
+ const disputed=Object.values(state.audits).filter(a=>a&&!a.stale).flatMap(a=>arr(a.disputed_relations)).filter(object);
  const relations=model.relations.filter(r=>!disputed.some(d=>{
   if(str(d.source_id)!==r.source_id||str(d.target_id)!==r.target_id)return false;
   if(d.label!==undefined&&str(d.label)!==r.label)return false;
@@ -1634,7 +1664,7 @@ function renderReview(){
  syncFields();const model=gatherModel(),filter=$('issueFilter').value;
  $('reviewStats').innerHTML='<span class="sx-badge">'+model.elements.length+' cajas</span><span class="sx-badge">'+confirmedExportModel(model).relations.length+' conexiones</span><span class="sx-badge">'+model.notes.length+' notas</span>';
  const allGroups=observationGroups(model.pending);
- $('pendingSummary').textContent='Observaciones opcionales'+(allGroups.length?' ('+allGroups.length+' grupos)':'');
+ $('pendingSummary').textContent='Advertencias de validación (no bloquean la descarga)'+(allGroups.length?' ('+allGroups.length+' grupos)':'');
  $('continueExtractionBtn').classList.toggle('hidden',!runtime.assetsReady||!nextTask());
  const shown=model.pending.filter(p=>filter==='all'||(filter==='open'?!p.reviewed:p.reviewed));
  const itemHtml=p=>'<div class="sx-issue '+(p.reviewed?'reviewed':'')+'"><p>'+esc(p.message)+(p.occurrences>1?' <small>('+p.occurrences+' avisos equivalentes agrupados)</small>':'')+'</p><div class="sx-row">'+(p.page?'<button class="btn-ghost" data-issue-source="'+esc(p.id)+'">Ver fuente</button>':'')+'<label><input type="checkbox" data-issue-reviewed="'+esc(p.id)+'" '+(p.reviewed?'checked':'')+'> Marcar (opcional)</label></div><label class="sx-note" for="comment-'+esc(p.id)+'">Comentario opcional, solo en SX</label><textarea id="comment-'+esc(p.id)+'" data-issue-comment="'+esc(p.id)+'">'+esc(p.review_comment)+'</textarea></div>';
