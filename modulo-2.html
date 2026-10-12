@@ -545,6 +545,15 @@ body.sb-ux-actor-dragging,body.sb-ux-actor-dragging *{cursor:grabbing!important;
 #view_studio:fullscreen .sb-full-tools .sb-history-arrow{font-size:25px;line-height:1}#view_studio:fullscreen .sb-full-tools #btn_undo,#view_studio:fullscreen .sb-full-tools #btn_redo{padding:3px 8px;min-width:36px}
 @media(max-width:700px){.workspace.sb-info-workspace,.workspace.sb-info-workspace:not(.sb-help-collapsed),#view_studio:fullscreen .workspace.sb-info-workspace{grid-template-columns:minmax(0,1fr) 220px}.sb-process-fields{grid-template-columns:120px minmax(140px,1fr)}}
 
+
+/* Exportación unificada: opciones visuales del PDF independientes del contrato JSON. */
+.sb-pdf-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.sb-pdf-header p{font-size:.78rem;color:var(--muted);margin-top:4px}.sb-pdf-header>button{min-width:34px;padding:2px 10px;font-size:20px}
+.sb-pdf-title{display:flex;justify-content:space-between;gap:12px;margin:12px 0 8px}.sb-pdf-title>span{color:var(--muted);font-size:.78rem}
+.sb-pdf-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.sb-pdf-options>label{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:#F4F8FC}.sb-pdf-options small,.sb-pdf-integration small{display:block;color:var(--muted);font-size:.75rem;margin-top:3px}
+.sb-pdf-switch{position:relative;width:38px;height:22px;flex-shrink:0}.sb-pdf-switch input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:1;margin:0}.sb-pdf-switch>span{display:block;width:38px;height:22px;border-radius:15px;background:#BACBD9;transition:background .15s}.sb-pdf-switch>span:after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .15s}.sb-pdf-switch input:checked+span{background:var(--blue)}.sb-pdf-switch input:checked+span:after{transform:translateX(16px)}.sb-pdf-switch input:focus-visible+span{outline:2px solid var(--blue2);outline-offset:3px}
+.sb-pdf-actions{margin-top:10px}.sb-pdf-integration{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.sb-pdf-json{background:#EFF8FC;border-color:#BDDCEA}.pdf-preview-frame{min-height:150px}
+@media(max-width:650px){.sb-pdf-options{grid-template-columns:1fr;gap:6px}.sb-pdf-options>label{padding:7px 10px}.sb-pdf-integration .sb-pdf-json{width:100%}.sb-pdf-header p{font-size:.72rem}}
+@media(prefers-reduced-motion:reduce){.sb-pdf-switch>span,.sb-pdf-switch>span:after{transition:none}}
 </style>
 <script>
 // SGMP Session Guard conservado del módulo vigente.
@@ -891,13 +900,19 @@ body:has(#view_studio:fullscreen) .sb-global-process{display:none}
 
 <dialog id="insert_dialog"><div class="dialog-inner"><h3 id="insert_title">Insertar</h3><p id="insert_help">Selecciona la figura permitida para el carril activo.</p><div id="insert_palette" class="palette"></div><div class="dialog-actions"><button data-dialog-close="insert_dialog" type="button">Cancelar</button></div></div></dialog>
 <dialog id="validation_dialog"><div class="dialog-inner"><h3>Validación estructural</h3><p>Guardar y exportar PDF están permitidos. Estas alertas deben resolverse antes de exportar JSON → LMP.</p><div id="validation_list" class="issue-list"></div><div class="dialog-actions"><button data-dialog-close="validation_dialog" type="button">Cerrar</button></div></div></dialog>
-<dialog id="export_dialog"><div class="dialog-inner"><h3>Exportar flujo</h3><p>El PDF puede generarse con información pendiente. La exportación JSON → LMP requiere un SIPOC sin alertas estructurales.</p><div class="palette"><button id="btn_export_pdf_notes" type="button"><strong>PDF con notas aclaratorias</strong><small>Incluye el listado de notas aclaratorias al pie del SIPOC.</small></button><button id="btn_export_pdf_no_notes" type="button"><strong>PDF sin listado de notas aclaratorias</strong><small>Conserva las referencias 5.2, 5.3… dentro de las cajas y omite únicamente el listado inferior.</small></button><button id="btn_export_lmp" type="button"><strong>JSON → LMP</strong><small>Contrato SB_TO_LMP 1.0 del flujo seleccionado.</small></button></div><div class="dialog-actions"><button data-dialog-close="export_dialog" type="button">Cerrar</button></div></div></dialog>
-<dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner"><h3>Vista previa PDF</h3><p>El PDF conserva el SIPOC completo en una única página vectorial.</p><div id="pdf_preview_status" class="pdf-preview-status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe><div class="dialog-actions"><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button><button data-dialog-close="pdf_preview_dialog" type="button">Cerrar</button></div></div></dialog>
+<dialog id="pdf_preview_dialog" class="pdf-preview-dialog"><div class="dialog-inner">
+<header class="sb-pdf-header"><div><h3>Exportar flujo</h3><p id="sb_pdf_context"></p></div><button data-dialog-close="pdf_preview_dialog" type="button" aria-label="Cerrar exportación">×</button></header>
+<div class="sb-pdf-title"><strong>PDF · Vista previa</strong><span id="sb_pdf_version"></span></div>
+<div class="sb-pdf-options"><label><span><strong>Notas aclaratorias</strong><small>Listado al pie del SIPOC</small></span><span class="sb-pdf-switch"><input id="sb_pdf_notes" type="checkbox" checked role="switch" aria-label="Incluir listado de notas aclaratorias"><span></span></span></label><label><span><strong>Marcas de revisión</strong><small>Contornos Obs/OM y rellenos de colores</small></span><span class="sb-pdf-switch"><input id="sb_pdf_review" type="checkbox" role="switch" aria-label="Incluir contornos y colores de revisión"><span></span></span></label></div>
+<div id="pdf_preview_status" class="pdf-preview-status" role="status">Generando vista previa…</div><iframe id="pdf_preview_frame" class="pdf-preview-frame hidden" title="Vista previa PDF"></iframe>
+<div class="dialog-actions sb-pdf-actions"><button id="btn_print_pdf" type="button" disabled>Imprimir</button><button id="btn_download_pdf" class="primary" type="button" disabled>Descargar PDF</button></div>
+<section class="sb-pdf-integration"><div><strong>Integración con LMP</strong><small>JSON · Intercambio entre módulos</small></div><button id="btn_export_lmp" class="sb-pdf-json" type="button">Exportar JSON → LMP</button></section>
+</div></dialog>
 <dialog id="manual_dialog"><div class="dialog-inner"><h3>Manual de usuario — SIPOC Builder</h3><div class="manual">
   <h4>Flujo de trabajo</h4><ol><li>Crea/importa un flujo en Biblioteca.</li><li>Abre Diagram Studio.</li><li>Haz clic derecho en una zona vacía del carril y elige Agregar caja. Con un carril seleccionado, usa Menú o Shift+F10 para abrir el mismo menú por teclado.</li><li>Selecciona una caja y usa uno de sus cuatro puntos celestes: lado de salida → caja destino → lado de entrada.</li><li>Guarda libremente. Las alertas bloquean JSON→LMP; guardar y PDF están disponibles.</li></ol>
   <h4>Biblioteca y respaldo</h4><p>Código y nombre del proceso se editan en la sección global, sobre Biblioteca de flujos y Diagram Studio. La biblioteca muestra flujos a la izquierda, una vista previa de solo lectura en el centro y el catálogo de documentos a la derecha. Seleccionar un flujo permite consultarlo sin modificar su geometría; Abrir en Studio o Diagram Studio abre el flujo seleccionado para editarlo. Importar reúne SX y LMP. Cargar respaldo, en la cabecera SGMP, permite elegir o arrastrar un JSON maestro; sus validaciones y su contenido completo se conservan.</p><h4>Blindaje metodológico</h4><ul><li>Proveedor/Cliente: proceso relacionado o caja blanca universal.</li><li>Entrada/Salida: caja blanca, respuesta de sistema, documento o elemento físico.</li><li>Actor: caja blanca, actividad de sistema o decisión.</li><li>Siempre existen al menos dos carriles de actores.</li><li>Las cajas S-I-O-C solo se desplazan verticalmente dentro de su zona lógica. Las cajas de actores pueden pasar entre carriles de actores.</li><li>El borde inferior del SIPOC se arrastra para ampliar o reducir la altura sin invadir las cajas.</li><li>Ctrl + rueda aplica zoom dentro del Studio: puede alejarse hasta encajar el SIPOC completo y acercarse hasta 250 %; el botón central o arrastrar el fondo exterior desplaza el lienzo; el arrastre dentro del diagrama selecciona.</li></ul>
   <h4>Alineación y conexiones</h4><p>Las guías de alineación están activadas inicialmente: encajan bordes, centros y puntos reales de entrada y salida de las conexiones. Si los extremos quedan alineados y no hay obstáculos, la flecha puede quedar recta. Las manijas de las conexiones también encajan con sus extremos. Se conservan los recorridos ajustados manualmente. Desactívalas con Guías de alineación o mantén Alt para mover libremente. Las cajas admiten diez conexiones por lado; las decisiones conservan sus puertos únicos. Las puntas mantienen el mismo tamaño en cualquier conexión. Un clic en espacio vacío cancela una conexión pendiente o limpia su selección; en pantalla completa, Esc cancela primero la acción abierta y solicita confirmar la salida cuando el navegador permite capturarlo. Las parejas de círculos comparten etiqueta y se ordenan por su primera aparición, de izquierda a derecha y después de arriba abajo. Las notas conservan la serie 5.2, 5.3… y el mismo orden espacial de sus propietarios.</p>
-  <h4>Anotaciones y acciones de caja</h4><p>Selecciona una caja: documentos arriba izquierda; Notas, Obs y OM arriba derecha; tipo de caja abajo izquierda; marca de revisión abajo derecha. Pasa el cursor por un icono para identificar su función. El tipo respeta las figuras permitidas para el carril y documentos reutiliza el catálogo.</p><p>Las pestañas Notas, Obs y OM muestran el nombre completo de la sección y entradas compactas. Haz clic en una entrada para leerla y editarla en un cuadro de tamaño moderado; × vuelve al listado. La × de una entrada la elimina. Escribe junto al botón Agregar para crear una entrada. El texto se confirma al salir del campo; el panel tiene una única zona de scroll cuando el contenido es extenso.</p><p>Observaciones: borde rojo continuo. Oportunidades de mejora: borde verde intenso discontinuo. Si hay ambas, comparten el contorno; la selección azul sigue visible. Las notas aclaratorias explican el SIPOC y conservan su numeración; Obs y OM son herramientas del analista.</p><h4>Biblioteca de flujos</h4><p>Selecciona una versión en la lista izquierda. La vista previa muestra el SIPOC real ampliado, con recorte proporcional para llenar su área, priorizando la esquina superior izquierda y recortando hacia abajo o a la derecha. El diagrama completo se consulta y edita en Studio. Abrir en Studio y las acciones Duplicar, Renombrar, Exportar y Eliminar están encima de la vista previa. Duplicar mantiene Biblioteca y selecciona la copia. Nuevo flujo e Importar están a la izquierda. Importar abre una ventana con SX y LMP juntos. Solo puede elegirse un origen: al cargar el JSON, el otro origen se deshabilita. La × junto al archivo lo quita y habilita ambos. Un único botón Importar ejecuta el origen elegido y cierra la ventana al completar. Puedes arrastrar el archivo o elegirlo desde el ordenador. Documentos permanece visible a la derecha; el buscador filtra la lista. Las listas extensas tienen scroll propio.</p><h4>Edición y pantalla completa</h4><p>Enter aplica y cierra; Shift + Enter permite saltos de línea. Esc cancela primero la acción abierta y, cuando no queda ninguna, pide confirmar la salida de pantalla completa. La captura de Esc depende del soporte del navegador; su salida de emergencia permanece disponible. Clic derecho en el lienzo muestra las figuras permitidas; sobre un actor permite agregar a izquierda o derecha o eliminar; sobre una conexión permite configurar sus extremos; sobre una selección múltiple permite alinear y distribuir. Arrastra el encabezado de un actor para reordenarlo. Supr sobre un círculo elimina su conexión completa y ambos círculos; Deshacer recupera la operación. Doble clic en un círculo navega a su pareja al 100 % con una animación de 1,5 segundos. El zoom se puede escribir. Información del flujo y Ayuda permanecen visibles en el inspector derecho. La guía general aparece arriba y la ayuda contextual se adapta debajo a la selección. La finalidad ajusta su altura al texto, sin scroll interno.</p><h4>Marcas, ayuda y exportación</h4><p>Las marcas son rellenos de revisión visibles: verde Correcta, rojo Propuesta de eliminación y morado Propuesta de consolidación. Quitar marca restaura el relleno metodológico. No eliminan ni consolidan automáticamente. La Ayuda conserva gestos y leyendas. Código y nombre se editan arriba, fuera de pantalla completa. Información del flujo reúne nombre de versión, tipo, estado y finalidad en el inspector derecho; Ayuda muestra las acciones del contexto actual. En pantalla completa solo se muestra una barra compacta para guardar, exportar, deshacer/rehacer, encabezados, guías, zoom y salir.</p><p>Guardar flujo y el respaldo maestro conservan anotaciones y marcas. El PDF incluye las notas aclaratorias cuando se solicita su listado y omite OM, observaciones, marcas y bordes de trabajo. Código y nombre del proceso son globales; finalidad, nombre, tipo y estado se guardan por versión. En pantalla completa, Ctrl + rueda y Ctrl +/− controlan el zoom del lienzo desde cualquier zona de Studio.</p>
+  <h4>Anotaciones y acciones de caja</h4><p>Selecciona una caja: documentos arriba izquierda; Notas, Obs y OM arriba derecha; tipo de caja abajo izquierda; marca de revisión abajo derecha. Pasa el cursor por un icono para identificar su función. El tipo respeta las figuras permitidas para el carril y documentos reutiliza el catálogo.</p><p>Las pestañas Notas, Obs y OM muestran el nombre completo de la sección y entradas compactas. Haz clic en una entrada para leerla y editarla en un cuadro de tamaño moderado; × vuelve al listado. La × de una entrada la elimina. Escribe junto al botón Agregar para crear una entrada. El texto se confirma al salir del campo; el panel tiene una única zona de scroll cuando el contenido es extenso.</p><p>Observaciones: borde rojo continuo. Oportunidades de mejora: borde verde intenso discontinuo. Si hay ambas, comparten el contorno; la selección azul sigue visible. Las notas aclaratorias explican el SIPOC y conservan su numeración; Obs y OM son herramientas del analista.</p><h4>Biblioteca de flujos</h4><p>Selecciona una versión en la lista izquierda. La vista previa muestra el SIPOC real ampliado, con recorte proporcional para llenar su área, priorizando la esquina superior izquierda y recortando hacia abajo o a la derecha. El diagrama completo se consulta y edita en Studio. Abrir en Studio y las acciones Duplicar, Renombrar, Exportar y Eliminar están encima de la vista previa. Duplicar mantiene Biblioteca y selecciona la copia. Nuevo flujo e Importar están a la izquierda. Importar abre una ventana con SX y LMP juntos. Solo puede elegirse un origen: al cargar el JSON, el otro origen se deshabilita. La × junto al archivo lo quita y habilita ambos. Un único botón Importar ejecuta el origen elegido y cierra la ventana al completar. Puedes arrastrar el archivo o elegirlo desde el ordenador. Documentos permanece visible a la derecha; el buscador filtra la lista. Las listas extensas tienen scroll propio.</p><h4>Edición y pantalla completa</h4><p>Enter aplica y cierra; Shift + Enter permite saltos de línea. Esc cancela primero la acción abierta y, cuando no queda ninguna, pide confirmar la salida de pantalla completa. La captura de Esc depende del soporte del navegador; su salida de emergencia permanece disponible. Clic derecho en el lienzo muestra las figuras permitidas; sobre un actor permite agregar a izquierda o derecha o eliminar; sobre una conexión permite configurar sus extremos; sobre una selección múltiple permite alinear y distribuir. Arrastra el encabezado de un actor para reordenarlo. Supr sobre un círculo elimina su conexión completa y ambos círculos; Deshacer recupera la operación. Doble clic en un círculo navega a su pareja al 100 % con una animación de 1,5 segundos. El zoom se puede escribir. Información del flujo y Ayuda permanecen visibles en el inspector derecho. La guía general aparece arriba y la ayuda contextual se adapta debajo a la selección. La finalidad ajusta su altura al texto, sin scroll interno.</p><h4>Marcas, ayuda y exportación</h4><p>Las marcas son rellenos de revisión visibles: verde Correcta, rojo Propuesta de eliminación y morado Propuesta de consolidación. Quitar marca restaura el relleno metodológico. No eliminan ni consolidan automáticamente. La Ayuda conserva gestos y leyendas. Código y nombre se editan arriba, fuera de pantalla completa. Información del flujo reúne nombre de versión, tipo, estado y finalidad en el inspector derecho; Ayuda muestra las acciones del contexto actual. En pantalla completa solo se muestra una barra compacta para guardar, exportar, deshacer/rehacer, encabezados, guías, zoom y salir.</p><p>Guardar flujo y el respaldo maestro conservan anotaciones y marcas. El PDF permite activar el listado de notas y los contornos y colores de revisión. Los textos internos de Obs y OM no se añaden al listado de notas. Código y nombre del proceso son globales; finalidad, nombre, tipo y estado se guardan por versión. En pantalla completa, Ctrl + rueda y Ctrl +/− controlan el zoom del lienzo desde cualquier zona de Studio.</p>
   <h4>Atajos</h4><ul><li>Supr/Delete: eliminar selección.</li><li>Ctrl+Z / Ctrl+Y: deshacer / rehacer.</li><li>Ctrl+D: crear una caja vacía del mismo tipo en el mismo carril.</li><li>Ctrl+S: guardar flujo.</li><li>Esc: cancelar selección o conexión.</li></ul>
 </div><div class="dialog-actions"><button data-dialog-close="manual_dialog" type="button">Cerrar</button></div></div></dialog>
 
@@ -3764,7 +3779,7 @@ function sbRefreshBoxPanel(){
   positionNodeAnnotationPopup();
 }
 function sbWorkHelpHtml(){
-  return `<div class="inspector-section sb-work-help"><h4>Ayuda de la caja</h4><div class="sb-help-row"><span>▤</span><span>Arriba izquierda: vincular documentos.</span></div><div class="sb-help-row"><span>✎</span><span>Arriba derecha: Notas, Obs y OM.</span></div><div class="sb-help-row"><span>◇</span><span>Abajo izquierda: cambiar tipo de caja.</span></div><div class="sb-help-row"><span>◉</span><span>Abajo derecha: marcar para revisión.</span></div><p>Doble clic en el texto para editarlo.</p><h4>Anotaciones del analista</h4><div class="sb-help-row"><span class="sb-border-swatch"></span><span>Rojo continuo: observaciones.</span></div><div class="sb-help-row"><span class="sb-border-swatch is-om"></span><span>Verde discontinuo: oportunidades de mejora.</span></div><p>Si hay ambas, comparten el contorno.</p><h4>Marcas de revisión</h4>${Object.values(SB_REVIEW_MARKS).map(mark=>`<div class="sb-help-row"><span class="sb-mark-swatch" style="background:${mark.color};opacity:.25"></span><span>${mark.label}</span></div>`).join('')}<p>Las marcas y los bordes de trabajo se guardan con el flujo y se omiten del PDF. Las notas aclaratorias forman parte del SIPOC.</p></div>`;
+  return `<div class="inspector-section sb-work-help"><h4>Ayuda de la caja</h4><div class="sb-help-row"><span>▤</span><span>Arriba izquierda: vincular documentos.</span></div><div class="sb-help-row"><span>✎</span><span>Arriba derecha: Notas, Obs y OM.</span></div><div class="sb-help-row"><span>◇</span><span>Abajo izquierda: cambiar tipo de caja.</span></div><div class="sb-help-row"><span>◉</span><span>Abajo derecha: marcar para revisión.</span></div><p>Doble clic en el texto para editarlo.</p><h4>Anotaciones del analista</h4><div class="sb-help-row"><span class="sb-border-swatch"></span><span>Rojo continuo: observaciones.</span></div><div class="sb-help-row"><span class="sb-border-swatch is-om"></span><span>Verde discontinuo: oportunidades de mejora.</span></div><p>Si hay ambas, comparten el contorno.</p><h4>Marcas de revisión</h4>${Object.values(SB_REVIEW_MARKS).map(mark=>`<div class="sb-help-row"><span class="sb-mark-swatch" style="background:${mark.color};opacity:.25"></span><span>${mark.label}</span></div>`).join('')}<p>Las marcas y los bordes de trabajo se guardan con el flujo y pueden incluirse en el PDF activando Marcas de revisión. Las notas aclaratorias forman parte del SIPOC.</p></div>`;
 }
 function sbProcessInspectorHtml(flow){
   return `<div class="inspector-section"><h4>Proceso y versión</h4><div class="field"><label>Código del proceso</label><input id="ins_process_code" value="${escapeHtml(APP.master.process_code||'')}"></div><div class="field"><label>Nombre del proceso</label><input id="ins_process_name" value="${escapeHtml(APP.master.process_name||'')}"></div><div class="field"><label>Finalidad de esta versión</label><textarea id="ins_purpose">${escapeHtml(sbFlowPurpose(flow))}</textarea></div><div class="field"><label>Nombre del flujo</label><input id="ins_flow_name" value="${escapeHtml(flow.version_name)}"></div><div class="inspector-grid"><div class="field"><label>Tipo</label><select id="ins_flow_type"><option value="as_is" ${flow.version_type==='as_is'?'selected':''}>AS-IS</option><option value="to_be" ${flow.version_type==='to_be'?'selected':''}>TO-BE</option></select></div><div class="field"><label>Estado</label><select id="ins_flow_status"><option value="draft" ${flow.status==='draft'?'selected':''}>Borrador</option><option value="validated" ${flow.status==='validated'?'selected':''}>Validado</option><option value="frozen" ${flow.status==='frozen'?'selected':''}>Congelado</option></select></div></div></div>`;
@@ -4714,7 +4729,7 @@ function deleteWorkComment(
   );
 }
   
-function sbRenderSvgBody(model=currentModel(),{interactive=true,fast=false,includeNotesBlock=true}={}){
+function sbRenderSvgBody(model=currentModel(),{interactive=true,fast=false,includeNotesBlock=true,includeReviewMarks=false}={}){
 const g=laneGeometry(model,{includeNotesBlock}),
       noteMap=g.noteMap,
       connectorLabels=interactive&&(fast||APP.drag||APP.connectorDrag)?null:sbConnectorLabelMap(model,g),
@@ -4733,7 +4748,7 @@ if(!fast)APP.validation.crossingEdges=crossing;
 
   const supplier=g.lanes.find(lane=>lane.kind==='supplier'),input=g.lanes.find(lane=>lane.kind==='input'),output=g.lanes.find(lane=>lane.kind==='output'),customer=g.lanes.find(lane=>lane.kind==='customer');
   if(supplier&&input)svg+=renderSharedPeripheralZone(supplier,input,g,interactive);
-  g.lanes.filter(lane=>lane.kind==='actor').forEach(lane=>{svg+=renderActorLane(lane,g,interactive);});
+  g.lanes.filter(lane=>lane.kind==='actor').forEach(lane=>{svg+=renderActorLane(lane,g,interactive,includeReviewMarks);});
   if(output&&customer)svg+=renderSharedPeripheralZone(output,customer,g,interactive);
 
   model.edges.forEach(edge=>{svg+=renderEdge(edge,g,model,crossing.has(edge.id),interactive,connectorLabels);});
@@ -4755,7 +4770,7 @@ sel=
       data-node-id="${node.id}"
       style="cursor:${interactive?'move':'default'}"
     >
-      ${renderNodeShape(node,b,sel,interactive)}
+      ${renderNodeShape(node,b,sel,interactive||includeReviewMarks)}
       ${renderNodeText(node,b,noteMap,model)}
       ${renderSystemIcon(node,b,model,interactive)}
       ${renderNodeAnnotationTrigger(node,b,interactive)}
@@ -4899,7 +4914,8 @@ function renderLaneAnnotationTrigger(
 function renderActorLane(
   lane,
   geometry,
-  interactive
+  interactive,
+  includeReviewMarks=false
 ){
   const selected=
           APP.selection?.type==='lane' &&
@@ -4967,7 +4983,7 @@ function renderActorLane(
         pointer-events="${interactive?'all':'none'}"
       />
 
-      ${interactive&&(selected||sbHasWork(lane,'work_comments')||sbHasWork(lane,'work_opportunities'))?sbWorkShape(lane,{x:lane.x,y:geometry.laneTop,w:lane.width,h:STANDARD.laneHeaderHeight},`M${lane.x} ${geometry.laneTop} H${lane.x+lane.width} V${geometry.laneTop+STANDARD.laneHeaderHeight} H${lane.x} Z`,'none',selected,true):''}
+      ${(interactive||includeReviewMarks)&&(selected||sbHasWork(lane,'work_comments')||sbHasWork(lane,'work_opportunities'))?sbWorkShape(lane,{x:lane.x,y:geometry.laneTop,w:lane.width,h:STANDARD.laneHeaderHeight},`M${lane.x} ${geometry.laneTop} H${lane.x+lane.width} V${geometry.laneTop+STANDARD.laneHeaderHeight} H${lane.x} Z`,'none',selected,true):''}
 
       ${sbRenderActorHeaderText(lane,geometry,noteLine)}
 
@@ -9718,7 +9734,11 @@ function refreshValidation(){
 }
 function showValidation(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);$('validation_list').innerHTML=issues.length?issues.map((msg,i)=>`<div class="issue"><strong>${i+1}.</strong> ${escapeHtml(msg)}</div>`).join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';$('validation_dialog').showModal();}
 
-function openExport(   flowId=APP.activeFlowId ){   const flow=     flowById(flowId);    if(!flow){     return false;   }    if(     flowId===     APP.activeFlowId   ){     saveActiveFlow({       silent:true     });   }    APP.exportFlowId=     flowId;    $('export_dialog')     .showModal();    return true; }
+function openExport(flowId=APP.activeFlowId){
+ const flow=flowById(flowId);if(!flow)return false;
+ if(!sbCommitEdit({render:false}))return false;sbFinishNudge();sbCancelPortDrag();
+ if(flowId===APP.activeFlowId)saveActiveFlow({silent:true});APP.exportFlowId=flowId;exportPdf(flowId,true,false);return true;
+}
 
 function validNodeTypeForLane(kind,value){
   const allowed=ALLOWED_BY_LANE[kind]||[],candidate=text(value).toLowerCase();return allowed.includes(candidate)?candidate:'white_box';
@@ -9858,17 +9878,22 @@ function sbProcessDownloadName({includeTime=false,withoutNotes=false,extension='
 function downloadText(content,filename,mime='application/json'){const blob=new Blob([content],{type:mime});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function exportLmp(flowId=APP.exportFlowId){
   sbCommitEdit({render:false});sbFinishNudge();sbCancelPortDrag();
-const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('export_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('export_dialog').close();}
+const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);if(issues.length){$('pdf_preview_dialog').close();showValidation(flowId);return;}downloadText(JSON.stringify(buildSBToLMP(flow),null,2),`SB_TO_LMP_${flow.version_number}.json`);$('pdf_preview_dialog').close();}
 
-function svgForFlow(flow,{includeNotesBlock=true}={}){
+function svgForFlow(flow,{includeNotesBlock=true,includeReviewMarks=false}={}){
   const oldActive=APP.activeFlowId,oldSelection=APP.selection;APP.activeFlowId=flow.flow_id;APP.selection=null;
-  try{return renderSvg(flow.payload.model,{interactive:false,includeNotesBlock});}finally{APP.activeFlowId=oldActive;APP.selection=oldSelection;}
+  try{return renderSvg(flow.payload.model,{interactive:false,includeNotesBlock,includeReviewMarks});}finally{APP.activeFlowId=oldActive;APP.selection=oldSelection;}
 }
 
 function clearPdfPreview(){
-  if(APP.pdfPreview.url){URL.revokeObjectURL(APP.pdfPreview.url);APP.pdfPreview.url=null;}APP.pdfPreview.filename=null;const frame=$('pdf_preview_frame'),status=$('pdf_preview_status'),button=$('btn_download_pdf');if(frame){frame.src='about:blank';frame.classList.add('hidden');}if(status){status.classList.remove('hidden');status.textContent='Generando vista previa…';}if(button)button.disabled=true;
+ APP.pdfPreview.revision=(APP.pdfPreview.revision||0)+1;
+ if(APP.pdfPreview.url)URL.revokeObjectURL(APP.pdfPreview.url);
+ APP.pdfPreview.url=null;APP.pdfPreview.filename=null;APP.pdfPreview.flowId=null;APP.pdfPreview.busy=false;
+ const frame=$('pdf_preview_frame');frame.src='about:blank';frame.classList.add('hidden');
+ $('pdf_preview_status').hidden=false;$('pdf_preview_status').textContent='Generando vista previa…';
+ $('btn_download_pdf').disabled=true;$('btn_print_pdf').disabled=true;
 }
-async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
+async function buildPdfBlob(flow,{includeNotesBlock=true,includeReviewMarks=false}={}){
   const jsPDF=window.jspdf?.jsPDF;
 
   if(!jsPDF||typeof jsPDF.API?.svg!=='function'){
@@ -9878,7 +9903,7 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
   }
 
   await sbPrepareSystemIconsForPdf(flow.payload.model);
-  const svgString=svgForFlow(flow,{includeNotesBlock}),
+  const svgString=svgForFlow(flow,{includeNotesBlock,includeReviewMarks}),
         parser=new DOMParser(),
         docSvg=parser
           .parseFromString(svgString,'image/svg+xml')
@@ -9935,40 +9960,17 @@ async function buildPdfBlob(flow,{includeNotesBlock=true}={}){
   return pdf.output('blob');
 }
   
-async function exportPdf(flowId=APP.exportFlowId,includeNotesBlock=true){
-  const flow=flowById(flowId);
-  if(!flow)return;
-
-  $('export_dialog').close();
-  clearPdfPreview();
-
-  const dialog=$('pdf_preview_dialog'),
-        status=$('pdf_preview_status'),
-        frame=$('pdf_preview_frame'),
-        button=$('btn_download_pdf');
-
-  dialog.showModal();
-
-  try{
-    const blob=await buildPdfBlob(flow,{includeNotesBlock}),
-          url=URL.createObjectURL(blob),
-          filename=sbProcessDownloadName({withoutNotes:!includeNotesBlock});
-
-    APP.pdfPreview.url=url;
-    APP.pdfPreview.filename=filename;
-
-    frame.src=url+'#toolbar=0&view=FitH';
-    frame.classList.remove('hidden');
-    status.classList.add('hidden');
-    button.disabled=false;
-  }catch(error){
-    status.classList.remove('hidden');
-    status.textContent=`No fue posible generar el PDF: ${error.message}`;
-    gMsg('err',status.textContent);
-  }
+async function exportPdf(flowId=APP.exportFlowId,includeNotesBlock=true,includeReviewMarks=false){
+ const flow=flowById(flowId);if(!flow)return;
+ clearPdfPreview();APP.exportFlowId=flowId;APP.pdfPreview.flowId=flowId;
+ $('sb_pdf_notes').checked=includeNotesBlock;$('sb_pdf_review').checked=includeReviewMarks;
+ $('sb_pdf_context').textContent=[APP.master?.process_code,APP.master?.process_name].filter(Boolean).join(' · ');
+ $('sb_pdf_version').textContent=flow.version_name||'';
+ const dialog=$('pdf_preview_dialog');if(!dialog.open)dialog.showModal();
+ await sbRefreshPdfPreview();
 }
 function downloadPdfPreview(){
-  if(!APP.pdfPreview.url||!APP.pdfPreview.filename)return;const a=document.createElement('a');a.href=APP.pdfPreview.url;a.download=APP.pdfPreview.filename;document.body.appendChild(a);a.click();a.remove();
+  if(APP.pdfPreview.busy||!APP.pdfPreview.url||!APP.pdfPreview.filename)return;const a=document.createElement('a');a.href=APP.pdfPreview.url;a.download=APP.pdfPreview.filename;document.body.appendChild(a);a.click();a.remove();
 }
 
 function saveBackup(){
@@ -11599,7 +11601,7 @@ function bindGlobalEvents(){
   $('document_catalog_content').addEventListener(   'click',   event=>{     const add=       event.target.closest(         '#catalog_add_document'       );      if(add){       addCatalogDocument();       return;     }      const save=       event.target.closest(         '#catalog_save_all'       );      if(save){       saveDocumentCatalog();       return;     }      const del=       event.target.closest(         '[data-catalog-delete]'       );      if(del){       if(catalogHasPendingChanges()){         gMsg(           'warn',           'Guarda primero los cambios pendientes del catálogo antes de eliminar.'         );         return;       }        deleteCatalogDocument(         Number(           del.dataset.catalogDelete         )       );     }   } );  $('document_catalog_content').addEventListener(   'input',   event=>{      if(       event.target.matches(         '#catalog_search'       )     ){       filterDocumentCatalog();       return;     }      if(       event.target.matches(         '[data-catalog-input]'       )     ){       updateCatalogSaveButton();       filterDocumentCatalog();     }   } );
   $('btn_save_flow').addEventListener(   'click',   ()=>saveActiveFlow() );  $('btn_duplicate_flow').addEventListener(   'click',   ()=>duplicateFlow() );  $('btn_export_flow').addEventListener(   'click',   ()=>openExport() );  $('validation_badge').addEventListener(   'click',   ()=>showValidation() );  $('btn_fullscreen_studio').addEventListener(   'click',   toggleStudioFullscreen );
   $('btn_add_actor').addEventListener('click',addActorLane);$('btn_undo').addEventListener('click',undo);$('btn_redo').addEventListener('click',redo);$('btn_delete').addEventListener('click',deleteSelection);$('btn_zoom_out').addEventListener('click',()=>zoomBy(1/STANDARD.zoomStep));$('btn_zoom_in').addEventListener('click',()=>zoomBy(STANDARD.zoomStep));
-  $('btn_export_pdf_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,true) );  $('btn_export_pdf_no_notes').addEventListener(   'click',   ()=>exportPdf(APP.exportFlowId,false) );  $('btn_export_lmp').addEventListener(   'click',   ()=>exportLmp() );  $('btn_download_pdf').addEventListener(   'click',   downloadPdfPreview );  $('pdf_preview_dialog').addEventListener(   'close',   clearPdfPreview );
+  $('sb_pdf_notes').addEventListener('change',sbRefreshPdfPreview);$('sb_pdf_review').addEventListener('change',sbRefreshPdfPreview);$('btn_print_pdf').addEventListener('click',sbPrintPdfPreview);$('pdf_preview_frame').addEventListener('load',()=>{if(APP.pdfPreview.url&&!APP.pdfPreview.busy&&$('pdf_preview_dialog').open)$('btn_print_pdf').disabled=false;});  $('btn_export_lmp').addEventListener(   'click',   ()=>exportLmp() );  $('btn_download_pdf').addEventListener(   'click',   downloadPdfPreview );  $('pdf_preview_dialog').addEventListener(   'close',   clearPdfPreview );
   document.querySelectorAll('[data-dialog-close]').forEach(btn=>btn.addEventListener('click',()=>$(btn.dataset.dialogClose)?.close()));
   window.addEventListener('resize',()=>{if(APP.view==='studio'&&currentModel())applyCamera();});
   
@@ -13770,8 +13772,8 @@ renderLaneAnnotationTrigger=function(lane,geometry,interactive,selected){
     .replaceAll(`x="${oldX}"`,`x="${x}"`).replaceAll(`y="${oldY+.5}"`,`y="${y+.5}"`);
 };
 const sbUxActorNativeRender=renderActorLane;
-renderActorLane=function(lane,geometry,interactive){
-  let markup=sbUxActorNativeRender(lane,geometry,interactive);
+renderActorLane=function(lane,geometry,interactive,includeReviewMarks=false){
+  let markup=sbUxActorNativeRender(lane,geometry,interactive,includeReviewMarks);
   const selected=APP.selection?.type==='lane'&&APP.selection.id===lane.id;
   if(!interactive||(!selected&&!sbHasWork(lane,'work_comments')&&!sbHasWork(lane,'work_opportunities')))return markup;
   const oldBox={x:lane.x,y:geometry.laneTop,w:lane.width,h:STANDARD.laneHeaderHeight};
@@ -14066,7 +14068,7 @@ function sbUxHelpTip(){
   const tab=$('node_annotation_popup').dataset.tab;
   if(tab==='documents')return 'Selecciona un documento del catálogo o escribe su código y pulsa Agregar. Se añaden los paréntesis y se cierra el panel; × retira un documento.';
   if(tab==='type')return 'Elige una figura para cambiar el tipo de caja. Solo aparecen los tipos permitidos en este carril.';
-  if(tab==='mark')return 'Elige un color de revisión o quita la marca. Estas marcas se guardan en el respaldo y no salen en el PDF.';
+  if(tab==='mark')return 'Elige un color de revisión o quita la marca. Estas marcas se guardan en el respaldo y pueden incluirse en el PDF activando Marcas de revisión.';
   return 'Notas forman parte del SIPOC; Obs y OM son herramientas de revisión. Pulsa una entrada para editarla; Agregar crea otra y × elimina la elegida.';
  }
  if(s?.type==='node')return 'Documentos arriba izquierda; Notas, Obs y OM arriba derecha; figura abajo izquierda; revisión abajo derecha. Doble clic edita el texto. Supr elimina la caja.';
@@ -14101,7 +14103,7 @@ function sbUxSyncInfoFields(){
 renderInspector=function(){
  const root=$('inspector_content');if(!root)return;
  if(!$('sb_ux_info_section')){
-  root.innerHTML='<section id="sb_ux_info_section" class="sb-inspector-section" aria-labelledby="sb_ux_info_heading"><h3 id="sb_ux_info_heading">Información del flujo</h3><div id="sb_ux_info_fields"></div></section><section id="sb_ux_help_section" class="sb-inspector-section" aria-labelledby="sb_ux_help_heading"><h3 id="sb_ux_help_heading">Ayuda</h3><div class="sb-help-general"><h4>Guía general</h4><p>Clic derecho: opciones. Doble clic: editar. Arrastra para mover.</p><p>Enter aplica · Shift + Enter: nueva línea · Esc cancela · Supr elimina · Deshacer recupera.</p><p>En las cajas: documentos arriba izquierda; anotaciones arriba derecha; figura abajo izquierda; revisión abajo derecha.</p><div class="sb-help-row"><span class="sb-border-swatch"></span><span>Obs: rojo continuo.</span></div><div class="sb-help-row"><span class="sb-border-swatch is-om"></span><span>OM: verde discontinuo.</span></div><p>Obs + OM comparten el contorno.</p>'+Object.values(SB_REVIEW_MARKS).map(mark=>'<div class="sb-help-row"><span class="sb-mark-swatch" style="background:'+mark.color+'"></span><span>'+escapeHtml(mark.label)+'</span></div>').join('')+'<p>Las notas aclaratorias forman parte del SIPOC. Los bordes y colores de revisión se guardan en JSON y no salen en PDF.</p></div><div class="sb-help-current"><h4>Según tu selección</h4><p id="sb_ux_help_context" class="sb-help-context" aria-live="polite"></p></div></section>';
+  root.innerHTML='<section id="sb_ux_info_section" class="sb-inspector-section" aria-labelledby="sb_ux_info_heading"><h3 id="sb_ux_info_heading">Información del flujo</h3><div id="sb_ux_info_fields"></div></section><section id="sb_ux_help_section" class="sb-inspector-section" aria-labelledby="sb_ux_help_heading"><h3 id="sb_ux_help_heading">Ayuda</h3><div class="sb-help-general"><h4>Guía general</h4><p>Clic derecho: opciones. Doble clic: editar. Arrastra para mover.</p><p>Enter aplica · Shift + Enter: nueva línea · Esc cancela · Supr elimina · Deshacer recupera.</p><p>En las cajas: documentos arriba izquierda; anotaciones arriba derecha; figura abajo izquierda; revisión abajo derecha.</p><div class="sb-help-row"><span class="sb-border-swatch"></span><span>Obs: rojo continuo.</span></div><div class="sb-help-row"><span class="sb-border-swatch is-om"></span><span>OM: verde discontinuo.</span></div><p>Obs + OM comparten el contorno.</p>'+Object.values(SB_REVIEW_MARKS).map(mark=>'<div class="sb-help-row"><span class="sb-mark-swatch" style="background:'+mark.color+'"></span><span>'+escapeHtml(mark.label)+'</span></div>').join('')+'<p>Las notas aclaratorias forman parte del SIPOC. Los bordes y colores de revisión se guardan en JSON y pueden incluirse en el PDF activando Marcas de revisión.</p></div><div class="sb-help-current"><h4>Según tu selección</h4><p id="sb_ux_help_context" class="sb-help-context" aria-live="polite"></p></div></section>';
  }
  sbUxSyncInfoFields();const tip=sbUxHelpTip();if($('sb_ux_help_context').textContent!==tip)$('sb_ux_help_context').textContent=tip;
 };
@@ -14949,6 +14951,32 @@ sbRecoveryPrepare=function(){
  });SB_CANVAS_SPELL.observer.observe(canvas,{childList:true,subtree:true,characterData:true});}
  sbCanvasSpellQueue();
 };
+
+async function sbRefreshPdfPreview(){
+ const flow=flowById(APP.pdfPreview.flowId);if(!flow||!$('pdf_preview_dialog').open)return;
+ const revision=APP.pdfPreview.revision=(APP.pdfPreview.revision||0)+1;
+ APP.pdfPreview.busy=true;$('btn_download_pdf').disabled=true;$('btn_print_pdf').disabled=true;
+ const status=$('pdf_preview_status');status.hidden=false;status.classList.remove('hidden');status.textContent='Generando vista previa…';
+ $('pdf_preview_frame').classList.add('hidden');
+ const options={includeNotesBlock:$('sb_pdf_notes').checked,includeReviewMarks:$('sb_pdf_review').checked};
+ try{
+  const blob=await buildPdfBlob(flow,options);
+  if(revision!==APP.pdfPreview.revision||!$('pdf_preview_dialog').open)return;
+  if(APP.pdfPreview.url)URL.revokeObjectURL(APP.pdfPreview.url);
+  const url=URL.createObjectURL(blob);APP.pdfPreview.url=url;
+  const name=sbProcessDownloadName({withoutNotes:!options.includeNotesBlock});
+  APP.pdfPreview.filename=options.includeReviewMarks?name.replace(/\.pdf$/i,' CON REVISIÓN.pdf'):name;
+  APP.pdfPreview.options=options;APP.pdfPreview.busy=false;
+  $('pdf_preview_frame').src=url+'#toolbar=0&view=FitH';$('pdf_preview_frame').classList.remove('hidden');
+  status.hidden=true;$('btn_download_pdf').disabled=false;
+ }catch(error){if(revision!==APP.pdfPreview.revision)return;APP.pdfPreview.busy=false;status.hidden=false;status.textContent='No fue posible generar el PDF: '+error.message;gMsg('err',status.textContent);}
+}
+function sbPrintPdfPreview(){
+ if(!APP.pdfPreview.url||APP.pdfPreview.busy||$('btn_print_pdf').disabled)return;
+ try{const frame=$('pdf_preview_frame');frame.contentWindow.focus();frame.contentWindow.print();}
+ catch(error){gMsg('warn','No se pudo abrir la impresión. Descarga el PDF para imprimirlo desde tu visor.');}
+}
+
  document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
 </script>
 
