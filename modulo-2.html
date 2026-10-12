@@ -5717,14 +5717,25 @@ function saveDocumentCatalog(){
 }
 
 async function deleteCatalogDocument(index){
-  if(!sbCommitEdit({render:false}))return;const master=APP.master,docs=normalizeDocumentCatalog(master),value=docs[index];if(!master||!value)return;
-  const warn=()=>gMsg('warn','No se puede eliminar: el documento está asociado a los flujos del proceso. Quita primero esas asociaciones.');
-  if(processDocumentUsages(value).length){warn();return;}
-  if(!await sbActionDialog({title:'Eliminar documento',message:'Se eliminará «'+documentTextValue(value)+'» del catálogo del proceso.',accept:'Eliminar',danger:true})||APP.master!==master)return;
-  if(processDocumentUsages(value).length){warn();return;}const current=normalizeDocumentCatalog(master);if(!current.includes(value))return;
-  pushHistory();master.document_catalog=current.filter(item=>item!==value);master.updated_at=nowIso();if(activeFlow())markDirty();else APP.dirty=true;renderLibrary();if(activeFlow())renderStudio(false);sbLocalSchedule();
+  if(!sbCommitEdit({render:false}))return;
+  const master=APP.master,docs=normalizeDocumentCatalog(master),value=docs[index];
+  if(!master||!value)return;
+  if(!await sbActionDialog({title:'Eliminar documento',message:'Se eliminará «'+documentTextValue(value)+'» del catálogo y de todas las cajas donde esté asociado, en todos los flujos del proceso.',accept:'Eliminar',danger:true})||APP.master!==master)return;
+  const current=normalizeDocumentCatalog(master),key=documentKey(value);
+  if(!current.includes(value))return;
+  pushHistory({includeAllFlows:true});
+  for(const flow of master.flows||[]){
+    let changed=false;
+    for(const node of flow.payload?.model?.nodes||[]){
+      const documents=node.documents||[],remaining=documents.filter(doc=>documentKey(doc)!==key);
+      if(remaining.length!==documents.length){node.documents=remaining;changed=true;}
+    }
+    if(changed)flow.updated_at=nowIso();
+  }
+  master.document_catalog=current.filter(item=>documentKey(item)!==key);master.updated_at=nowIso();
+  if(activeFlow())markDirty();else APP.dirty=true;
+  renderLibrary();if(activeFlow())renderStudio(false);sbLocalSchedule();
 }
-
 function renderLibrary(){
   const s=$('process_summary'),list=$('flow_list');
   if(!APP.master){s.innerHTML='<span class="chip">Sin proceso activo</span>';list.innerHTML='<div class="flow-empty">Todavía no existe ningún flujo. Importa desde LMP o crea un flujo en blanco.</div>';renderDocumentCatalog();return;}
