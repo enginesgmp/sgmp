@@ -2179,9 +2179,23 @@ function installActivitySaveGuards(){
   );
 }
 
+/* La cola conserva operation_id cuando no se confirma la respuesta. */
+async function radarRequestTransport(url,init,timeoutMs=0){
+ const controller=timeoutMs>0?new AbortController():null;let timer;
+ const request=(async()=>{
+  const response=await fetch(url,controller?{...init,signal:controller.signal}:init);let responseText;
+  try{responseText=await response.text();}catch(error){const readError=new Error('No se pudo leer la respuesta.');readError.code='RADAR_READ_RESPONSE';throw readError;}
+  return {response,responseText};
+ })();
+ if(!controller)return request;
+ try{return await Promise.race([request,new Promise((resolve,reject)=>{
+  timer=setTimeout(()=>{const error=new Error('RADAR tardó en responder. El guardado aún no se confirmó.');error.code='RADAR_TIMEOUT';reject(error);controller.abort();},timeoutMs);
+ })]);}finally{clearTimeout(timer);}
+}
 async function api(
   action,
-  payload = {}
+  payload = {},
+  options = {}
 ){
   if(!apiReady()){
     throw new Error(
@@ -2235,75 +2249,21 @@ async function api(
       .toString(36)
       .slice(2);
 
-  let response;
-
+  let response,responseText;
   try{
-    response =
-      await fetch(
-        requestUrl,
-        {
-          method:
-            "POST",
-
-          cache:
-            "no-store",
-
-          headers: {
-            "Content-Type":
-              "text/plain;charset=utf-8",
-
-            "Accept":
-              "application/json"
-          },
-
-          body:
-            JSON.stringify(
-              requestBody
-            )
-        }
-      );
-
+    const timeoutMs=options.timeoutMs??(action.startsWith('gpp_')?60000:0);
+    ({response,responseText}=await radarRequestTransport(requestUrl,{
+      method:'POST',cache:'no-store',
+      headers:{'Content-Type':'text/plain;charset=utf-8','Accept':'application/json'},
+      body:JSON.stringify(requestBody)
+    },timeoutMs));
   }catch(error){
-    console.error(
-      "RADAR · error de transporte",
-      {
-        action:
-          action,
-
-        name:
-          error?.name || "",
-
-        message:
-          error?.message || ""
-      }
-    );
-
-    throw new Error(
-      "No fue posible conectar con RADAR al ejecutar " +
-      action +
-      "."
-    );
+    if(error?.code==='RADAR_TIMEOUT')throw error;
+    if(error?.code==='RADAR_READ_RESPONSE')throw new Error('RADAR no pudo leer la respuesta de '+action+'.');
+    console.error('RADAR · error de transporte',{action,name:error?.name||'',message:error?.message||''});
+    throw new Error('No fue posible conectar con RADAR al ejecutar '+action+'.');
   }
-
-  const status =
-    Number(
-      response.status || 0
-    );
-
-  let responseText =
-    "";
-
-  try{
-    responseText =
-      await response.text();
-
-  }catch(error){
-    throw new Error(
-      "RADAR no pudo leer la respuesta de " +
-      action +
-      "."
-    );
-  }
+  const status=Number(response.status||0);
 
   if(!response.ok){
     let finalHost =
@@ -12007,7 +11967,7 @@ const GPP_LABELS={alertas:'Alertas',ciclos:'Planes',om:'OM',incidencias:'Inciden
 function gppToday(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Guayaquil',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function gppUid(){return globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);}
 function gppButton(label,code,cls='ghost'){return `<button class="btn ${cls}" type="button" onclick="${esc(code)}">${esc(label)}</button>`;}
-function gppKeep(entity,items){items.forEach(x=>GPP.rows[entity+':'+x.id]=x);return items;}
+function gppKeep(entity,items){items.forEach((x,i)=>{const key=entity+':'+x.id,old=GPP.rows[key];if(entity==='actividades'&&Number(old?.version)>Number(x.version)){items[i]=old;return;}GPP.rows[key]=x;});return items;}
 function gppGet(entity,id){return GPP.rows[entity+':'+id];}
 function gppProcessName(id){const p=processById(id);return p?processDisplayName(p):id;}
 function gppOpen(id=''){if(isManagement()){toast('Gestión GPP es de uso interno.');return;}if(id&&!GPP.process){gppRememberPosition();GPP.returnList={entity:GPP.entity,offset:GPP.offset,filters:{...GPP.filters},scroll:window.scrollY,section:gppUi().section};}const previous=GPP.process;GPP.process=id;GPP.offset=0;GPP.tab='Plan';GPP.cycle='';if(!id){gppUi().section=isAnalyst()?'procesos':'resumen';GPP.entity='ciclos';GPP.filters={};}VIEW={type:'gpp'};if(id&&id!==previous)gppOpening(id);render();}
@@ -12162,7 +12122,7 @@ function gppUnsupportedContract(error,action){return ['gpp_bootstrap','gpp_proce
 function gppRequest(action,q={},force=false){
  GPP.cache=GPP.cache||new Map();GPP.inflight=GPP.inflight||new Map();GPP.compatibilityErrors=GPP.compatibilityErrors||new Map();const key=gppQueryKey(action,q),entry=GPP.cache.get(key),owner=SESSION?.session_token,incompatible=GPP.compatibilityErrors.get(action);
  if(incompatible?.owner===owner&&!force)return Promise.reject(incompatible.error);
- const fetch=()=>{if(GPP.inflight.has(key))return GPP.inflight.get(key);const pending=api(action,q).then(data=>{if(SESSION?.session_token===owner){GPP.compatibilityErrors.delete(action);gppCachePut(action,q,data);GPP.updated=Date.now();}return data;}).catch(error=>{if(SESSION?.session_token===owner&&gppUnsupportedContract(error,action))GPP.compatibilityErrors.set(action,{owner,error});throw error;}).finally(()=>{if(GPP.inflight.get(key)===pending)GPP.inflight.delete(key);});GPP.inflight.set(key,pending);return pending;};
+ const fetch=()=>{if(GPP.inflight.has(key))return GPP.inflight.get(key);const revision=GPP_CHECKS.owner===owner?GPP_CHECKS.summaryRevision:0;const pending=api(action,q).then(data=>{if(SESSION?.session_token===owner){gppReconcileCheckRead(data,revision);GPP.compatibilityErrors.delete(action);gppCachePut(action,q,data);GPP.updated=Date.now();}return data;}).catch(error=>{if(SESSION?.session_token===owner&&gppUnsupportedContract(error,action))GPP.compatibilityErrors.set(action,{owner,error});throw error;}).finally(()=>{if(GPP.inflight.get(key)===pending)GPP.inflight.delete(key);});GPP.inflight.set(key,pending);return pending;};
  if(entry&&!force){if(Date.now()-entry.time>60000&&!GPP.inflight.has(key)){const seq=GPP.seq;fetch().then(()=>{if(SESSION?.session_token===owner&&GPP.seq===seq&&VIEW.type==='gpp')gppRender();}).catch(e=>{const el=document.querySelector('.gpp-status');if(el)el.textContent='Datos anteriores disponibles. No se pudo actualizar: '+e.message;});}return Promise.resolve(entry.data);}
  return fetch();
 }
@@ -12194,60 +12154,111 @@ const GPP_WASTES=['Espera','Transporte','Movimientos','Inventario','Sobreproducc
 
 
 /* Cola de checks: la intención visible y el estado confirmado permanecen separados. */
-const GPP_CHECKS={waiters:[],owner:'',key:'',entries:new Map(),batch:null,timer:null,running:false,error:'',attempts:0,maxBatch:8};
+const GPP_CHECKS={waiters:[],owner:'',key:'',entries:new Map(),batch:null,timer:null,running:false,error:'',attempts:0,maxBatch:8,requestStarted:0,slowTimer:null,summaryRevision:0,summaryTimer:null,summaryRunning:false,summaryPending:false,summaryError:'',summaryAttempts:0,saved:false,savedTimer:null,confirmedRows:new Map()};
 function gppEnsureChecks(){
  const owner=SESSION?.session_token||'';if(GPP_CHECKS.owner===owner)return;
- clearTimeout(GPP_CHECKS.timer);Object.assign(GPP_CHECKS,{owner,key:SESSION?'radar-gpp:'+encodeURIComponent(SESSION.username)+':checks:'+encodeURIComponent(API_URL):'',entries:new Map(),batch:null,timer:null,running:false,error:'',attempts:0,maxBatch:8});
+ clearTimeout(GPP_CHECKS.timer);clearTimeout(GPP_CHECKS.slowTimer);clearTimeout(GPP_CHECKS.summaryTimer);clearTimeout(GPP_CHECKS.savedTimer);Object.assign(GPP_CHECKS,{owner,key:SESSION?'radar-gpp:'+encodeURIComponent(SESSION.username)+':checks:'+encodeURIComponent(API_URL):'',entries:new Map(),batch:null,timer:null,running:false,error:'',attempts:0,maxBatch:8,requestStarted:0,slowTimer:null,summaryRevision:0,summaryTimer:null,summaryRunning:false,summaryPending:false,summaryError:'',summaryAttempts:0,saved:false,savedTimer:null,confirmedRows:new Map()});
  if(!owner)return;try{const saved=JSON.parse(localStorage.getItem(GPP_CHECKS.key)||'null');if(saved){for(const row of saved.entries||[])if(row.id&&['Pendiente','Completada'].includes(row.desired))GPP_CHECKS.entries.set(row.id,row);GPP_CHECKS.batch=saved.batch||null;}}catch(error){}
  if(GPP_CHECKS.entries.size)gppScheduleChecks(250);
 }
 function gppPersistChecks(){try{if(!GPP_CHECKS.key)return;if(GPP_CHECKS.entries.size||GPP_CHECKS.batch)localStorage.setItem(GPP_CHECKS.key,JSON.stringify({entries:[...GPP_CHECKS.entries.values()],batch:GPP_CHECKS.batch}));else localStorage.removeItem(GPP_CHECKS.key);GPP_CHECKS.storageError=false;}catch(error){GPP_CHECKS.storageError=true;}}
 function gppCheckState(row){return GPP_CHECKS.entries.get(row.id)?.desired||row.estado;}
-function gppCheckLabel(row){const e=GPP_CHECKS.entries.get(row.id);return e?'<span class="gpp-chip '+(e.conflict?'warn':'')+'">'+(e.conflict?'Revisar cambio':GPP_CHECKS.batch?.items.some(x=>x.id===row.id)?'Guardando…':'Por guardar')+'</span>':gppStatusChip(row.estado);}
+function gppCheckLabel(row){
+ const e=GPP_CHECKS.entries.get(row.id);if(!e)return gppStatusChip(row.estado);
+ const sent=GPP_CHECKS.batch?.items.find(x=>x.id===row.id);
+ return '<span class="gpp-chip '+(e.conflict||GPP_CHECKS.error?'warn':'')+'">'+(e.conflict?'Revisar cambio':GPP_CHECKS.error?'Sin confirmar':sent&&sent.estado===e.desired?'Sincronizando':'Pendiente de sincronizar')+'</span>';
+}
 function gppScheduleChecks(delay=180){clearTimeout(GPP_CHECKS.timer);if(!GPP_CHECKS.owner||GPP_CHECKS.running)return;GPP_CHECKS.timer=setTimeout(()=>{void gppFlushChecks();},delay);}
 function gppToggleActivity(id,input){
  gppEnsureChecks();const a=gppGet('actividades',id);if(!a)return;let e=GPP_CHECKS.entries.get(id);if(!e){e={id,proceso_id:a.proceso_id,ciclo_id:a.ciclo_id,version:a.version,confirmed:a.estado,desired:a.estado};GPP_CHECKS.entries.set(id,e);}e.desired=input.checked?'Completada':'Pendiente';
  if(!e.conflict&&!GPP_CHECKS.batch?.items.some(x=>x.id===id)&&e.desired===e.confirmed)GPP_CHECKS.entries.delete(id);
- gppPersistChecks();gppUpdateCheckUI();if(!GPP_CHECKS.error)gppScheduleChecks();
+ GPP_CHECKS.saved=false;clearTimeout(GPP_CHECKS.savedTimer);gppPersistChecks();gppUpdateCheckUI();if(!GPP_CHECKS.error)gppScheduleChecks();
 }
 function gppUpdateCheckUI(){
  for(const waiter of [...GPP_CHECKS.waiters])waiter();
  document.querySelectorAll('.gpp-activity[data-activity]').forEach(el=>{const row=gppGet('actividades',el.dataset.activity);if(!row)return;const input=el.querySelector('input[type=checkbox]');if(input)input.checked=gppCheckState(row)==='Completada';const status=el.querySelector('.gpp-check-row-status');if(status)status.innerHTML=gppCheckLabel(row);const date=el.querySelector('.gpp-activity-date');if(date)date.innerHTML=gppActivityDate(row.fecha_plan,gppCheckState(row));});
  let bar=document.getElementById('gppCheckSync');const place=document.querySelector('.gpp-content');if(!bar&&place){bar=document.createElement('div');bar.id='gppCheckSync';bar.className='gpp-check-sync';bar.setAttribute('role','status');bar.setAttribute('aria-live','polite');place.querySelector('.gpp-header')?.insertAdjacentElement('afterend',bar);}if(!bar)return;
- const n=GPP_CHECKS.entries.size,offline=navigator.onLine===false,conflicts=[...GPP_CHECKS.entries.values()].filter(e=>e.conflict).length;
- bar.hidden=!n&&!GPP_CHECKS.error&&!GPP_CHECKS.storageError;
- bar.innerHTML=(GPP_CHECKS.storageError?'Mantén esta pestaña abierta: no se pudo conservar la cola local. ':offline?'Sin conexión · Cambios conservados. ':GPP_CHECKS.error?'Cambios pendientes de sincronizar. ':conflicts?'Hay '+conflicts+' cambios por revisar. ':n?'Guardando '+n+' '+(n===1?'cambio':'cambios')+'…':'Guardado')+(GPP_CHECKS.error?gppButton('Reintentar','gppRetryChecks()'):'')+(conflicts?gppButton('Revisar cambios','gppReviewCheckConflicts()'):'');
+ const n=GPP_CHECKS.entries.size,offline=navigator.onLine===false,conflicts=[...GPP_CHECKS.entries.values()].filter(e=>e.conflict).length,slow=GPP_CHECKS.running&&Date.now()-GPP_CHECKS.requestStarted>=10000;
+ bar.hidden=!n&&!GPP_CHECKS.error&&!GPP_CHECKS.storageError&&!GPP_CHECKS.summaryPending&&!GPP_CHECKS.saved;
+ let message=GPP_CHECKS.storageError?'Mantén esta pestaña abierta: no se pudo conservar la cola local.':offline&&n?'Sin conexión · Cambios conservados en este equipo.':GPP_CHECKS.error?'Sin confirmar · Tus selecciones están conservadas.':conflicts?'Hay '+conflicts+' cambios por revisar.':n?slow?'La conexión está tardando · Puedes seguir marcando.':'Sincronizando '+n+' '+(n===1?'cambio':'cambios')+'…':GPP_CHECKS.summaryPending?GPP_CHECKS.summaryError?'Checks guardados · Resumen pendiente de actualizar.':offline?'Checks guardados · Sin conexión para actualizar indicadores.':'Checks guardados · Actualizando indicadores…':'Todo guardado';
+ const error=GPP_CHECKS.error;if(error){
+  if(/no soportada|no admitida/i.test(error))message='El servidor necesita una actualización · Tus checks siguen pendientes.';
+  else if(/RECUPERACION_CONFLICTO/i.test(error))message='Administración debe revisar un guardado anterior · Tus selecciones están conservadas.';
+ }
+ bar.innerHTML=esc(message)+(GPP_CHECKS.error||GPP_CHECKS.summaryError?gppButton('Reintentar','gppRetryChecks()'):'')+(conflicts?gppButton('Revisar cambios','gppReviewCheckConflicts()'):'')+(error?'<details><summary>Detalle del problema</summary><p>'+esc(error)+'</p></details>':'');
 }
+/* Una lectura iniciada antes de guardar no debe deshacer la confirmación visible. */
+function gppReconcileCheckRead(data,startedRevision){
+ if(GPP_CHECKS.owner!==SESSION?.session_token)return data;
+ function visit(value){if(!value||typeof value!=='object')return;
+  if(Array.isArray(value)){for(let i=0;i<value.length;i++){const fresh=GPP_CHECKS.confirmedRows.get(value[i]?.id);if(fresh&&Number(value[i].version)<=Number(fresh.version)&&(!fresh.ruta||startedRevision!==GPP_CHECKS.summaryRevision))value[i]=Object.assign({},value[i],fresh);else visit(value[i]);}return;}
+  if(value.ciclos&&value.indicadores&&startedRevision!==GPP_CHECKS.summaryRevision&&GPP.dashboard)for(const key of ['indicadores','kpis','alertas','total_alertas'])if(GPP.dashboard[key]!==undefined)value[key]=GPP.dashboard[key];
+  Object.values(value).forEach(visit);
+ }visit(data);return data;
+}
+function gppBriefSavedState(owner){GPP_CHECKS.saved=true;clearTimeout(GPP_CHECKS.savedTimer);GPP_CHECKS.savedTimer=setTimeout(()=>{if(GPP_CHECKS.owner===owner){GPP_CHECKS.saved=false;gppUpdateCheckUI();}},1800);}
+function gppScheduleCheckSummary(delay=750){
+ if(!GPP_CHECKS.owner||!GPP_CHECKS.summaryPending)return;
+ clearTimeout(GPP_CHECKS.summaryTimer);GPP_CHECKS.summaryTimer=setTimeout(()=>{void gppSyncCheckSummary();},delay);
+}
+async function gppSyncCheckSummary(){
+ const owner=GPP_CHECKS.owner;if(!owner||!GPP_CHECKS.summaryPending||GPP_CHECKS.summaryRunning||navigator.onLine===false)return;
+ if(GPP_CHECKS.running||!GPP_CHECKS.error&&[...GPP_CHECKS.entries.values()].some(e=>!e.conflict)){gppScheduleCheckSummary();return;}
+ const revision=GPP_CHECKS.summaryRevision;GPP_CHECKS.summaryRunning=true;
+ try{
+  const dashboard=await api('gpp_dashboard',{limit:25});
+  if(GPP_CHECKS.owner!==owner||SESSION?.session_token!==owner)return;
+  if(revision!==GPP_CHECKS.summaryRevision){gppScheduleCheckSummary();return;}
+  if(!Array.isArray(dashboard?.ciclos)||!Array.isArray(dashboard?.indicadores)||!dashboard.kpis)throw new Error('No se confirmó la actualización de los indicadores.');
+  gppPatchChecks({...dashboard,items:[]});GPP_CHECKS.summaryPending=false;GPP_CHECKS.summaryError='';GPP_CHECKS.summaryAttempts=0;GPP.updated=Date.now();
+  gppBriefSavedState(owner);
+ }catch(error){
+  if(GPP_CHECKS.owner!==owner||SESSION?.session_token!==owner)return;
+  GPP_CHECKS.summaryError=error.message;if(++GPP_CHECKS.summaryAttempts<=2)gppScheduleCheckSummary(5000*GPP_CHECKS.summaryAttempts);
+ }finally{if(GPP_CHECKS.owner===owner){GPP_CHECKS.summaryRunning=false;gppUpdateCheckUI();}}
+}
+function gppTransientCheckError(error){return /RADAR_TIMEOUT|tardó en responder|no fue posible conectar|no pudo leer|HTTP|fetch|network|conexión|conectar|Failed|respuesta no válida|respuesta de guardado está incompleta|no se confirmó cada check|lock|bloqueo|try again|too many times|internal error/i.test(String(error?.code||'')+' '+String(error?.message||error));}
+
 function gppPatchChecks(result){
  const rows=result.items||[],cycles=result.ciclos||[];gppKeep('actividades',rows);gppKeep('ciclos',cycles);
- function patch(value){if(!value||typeof value!=='object')return;if(Array.isArray(value)){for(let i=0;i<value.length;i++){const row=rows.find(x=>x.id===value[i]?.id),cycle=cycles.find(x=>x.id===value[i]?.id);if(row||cycle)value[i]=Object.assign({},value[i],row||cycle);else patch(value[i]);}return;}if(value.ciclos&&value.indicadores){value.indicadores=result.indicadores;value.kpis=result.kpis;value.alertas=result.alertas;value.total_alertas=result.total_alertas;}Object.values(value).forEach(patch);}
+ function patch(value){if(!value||typeof value!=='object')return;if(Array.isArray(value)){for(let i=0;i<value.length;i++){const row=rows.find(x=>x.id===value[i]?.id),cycle=cycles.find(x=>x.id===value[i]?.id);if(row||cycle)value[i]=Object.assign({},value[i],row||cycle);else patch(value[i]);}return;}if(value.ciclos&&value.indicadores){for(const key of ['indicadores','kpis','alertas','total_alertas'])if(result[key]!==undefined)value[key]=result[key];}Object.values(value).forEach(patch);}
  patch(GPP.dashboard);for(const cached of GPP.cache?.values()||[])patch(cached.data);
- for(const [key,cached] of GPP.cache||[]){if(cached.action==='gpp_list'&&cached.q.entidad==='alertas')GPP.cache.delete(key);if(cached.action==='gpp_bootstrap'&&cached.data.sections)cached.data.sections.alertas={items:result.alertas||[],total:result.total_alertas||0,offset:0};}
- for(const row of rows){const el=[...document.querySelectorAll('.gpp-activity[data-activity]')].find(x=>x.dataset.activity===row.id),info=el?.querySelector('.gpp-activity-info');if(info){const template=document.createElement('template');template.innerHTML=gppCard('actividades',row);info.innerHTML=template.content.querySelector('.gpp-activity-info').innerHTML;}}
+ if(result.alertas)for(const [key,cached] of GPP.cache||[]){if(cached.action==='gpp_list'&&cached.q.entidad==='alertas')GPP.cache.delete(key);if(cached.action==='gpp_bootstrap'&&cached.data.sections)cached.data.sections.alertas={items:result.alertas,total:result.total_alertas||0,offset:0};}
+ for(const row of rows){const el=[...document.querySelectorAll('.gpp-activity[data-activity]')].find(x=>x.dataset.activity===row.id),info=el?.querySelector('.gpp-activity-info');if(info){const template=document.createElement('template');template.innerHTML=gppCard('actividades',row);const detail=template.content.querySelector('.gpp-activity-info');if(detail)info.innerHTML=detail.innerHTML;}}
  const cycle=cycles.find(c=>c.id===GPP.cycle),head=document.querySelector('.gpp-plan-head');if(cycle&&head){const progress=head.querySelector('.gpp-plan-meta>span');if(progress)progress.innerHTML='<strong>'+gppProgressValue(cycle.avance.porcentaje)+'</strong> · '+cycle.avance.completadas+' / '+cycle.avance.total+' actividades';const chip=head.querySelector('.gpp-plan-meta>.gpp-chip');if(chip)chip.outerHTML=gppStatusChip(cycle.situacion||cycle.estado);const next=Object.values(GPP.rows).filter(a=>a.ciclo_id===cycle.id&&a.actividad&&a.activo!=='NO'&&!['Completada','No aplica'].includes(a.estado)).sort((a,b)=>Number(a.orden)-Number(b.orden))[0],note=head.querySelector(':scope>p.gpp-meta');if(note)note.textContent='Líder: '+(cycle.lider||'Sin líder')+(next?' · Próxima actividad: '+next.actividad+' · '+gppDateLabel(next.fecha_plan):'');}
- document.querySelectorAll('[data-gpp-metric]').forEach(el=>{const field=el.dataset.gppMetric==='riesgo'?'procesos_en_riesgo':el.dataset.gppMetric==='vencidos'?'compromisos_vencidos':null;if(field&&result.kpis)el.querySelector('strong').textContent=result.kpis[field];});
- document.querySelectorAll('[data-gpp-indicator-group]').forEach(el=>{const indicator=result.indicadores?.find(i=>i.grupo===el.dataset.gppIndicatorGroup);if(indicator){el.querySelector('strong').innerHTML=gppProgressValue(indicator.porcentaje);el.querySelector('small').textContent=indicator.porcentaje==null?'Sin checks registrados':indicator.pendientes_revision?'Avance registrado · Revisiones pendientes':'Avance revisado';}});
+ document.querySelectorAll('[data-gpp-metric]').forEach(el=>{const field=el.dataset.gppMetric==='riesgo'?'procesos_en_riesgo':el.dataset.gppMetric==='vencidos'?'compromisos_vencidos':null;if(field&&result.kpis){const target=el.querySelector('strong');if(target)target.textContent=result.kpis[field];}});
+ document.querySelectorAll('[data-gpp-indicator-group]').forEach(el=>{const indicator=result.indicadores?.find(i=>i.grupo===el.dataset.gppIndicatorGroup);if(indicator){const value=el.querySelector('strong'),note=el.querySelector('small'),coverage=el.querySelector('p');if(value)value.innerHTML=gppProgressValue(indicator.porcentaje);if(note)note.textContent=indicator.porcentaje==null?'Sin checks registrados':indicator.pendientes_revision?'Avance registrado · Revisiones pendientes':'Avance revisado';if(coverage)coverage.textContent=indicator.pendientes_revision+' procesos por revisar';}});
 }
 async function gppFlushChecks(){
  gppEnsureChecks();if(!GPP_CHECKS.owner||GPP_CHECKS.running||GPP_CHECKS.error||navigator.onLine===false)return;
- if(!GPP_CHECKS.batch){const candidates=[...GPP_CHECKS.entries.values()].filter(e=>!e.conflict),firstCycle=candidates[0]?.ciclo_id,items=candidates.filter(e=>e.ciclo_id===firstCycle).slice(0,GPP_CHECKS.maxBatch).map(e=>({id:e.id,version:e.version,estado:e.desired}));if(!items.length)return;GPP_CHECKS.batch={operation_id:gppUid(),items};gppPersistChecks();}
- const owner=GPP_CHECKS.owner,batch=GPP_CHECKS.batch;GPP_CHECKS.running=true;gppUpdateCheckUI();
+ if(!GPP_CHECKS.batch){const candidates=[...GPP_CHECKS.entries.values()].filter(e=>!e.conflict),firstCycle=candidates[0]?.ciclo_id,items=candidates.filter(e=>e.ciclo_id===firstCycle).slice(0,GPP_CHECKS.maxBatch).map(e=>({id:e.id,version:e.version,estado:e.desired}));if(!items.length)return;GPP_CHECKS.batch={operation_id:gppUid(),items,resumen:false};gppPersistChecks();}
+ const owner=GPP_CHECKS.owner,batch=GPP_CHECKS.batch;GPP_CHECKS.running=true;GPP_CHECKS.requestStarted=Date.now();GPP_CHECKS.slowTimer=setTimeout(()=>{if(GPP_CHECKS.owner===owner&&GPP_CHECKS.running)gppUpdateCheckUI();},10000);gppUpdateCheckUI();
  try{
-  const result=await api('gpp_update_activities',batch);if(GPP_CHECKS.owner!==owner||SESSION?.session_token!==owner)return;
-  if(!Array.isArray(result?.items)||!Array.isArray(result?.conflicts)||!Array.isArray(result?.ciclos)||!Array.isArray(result?.indicadores))throw new Error('La respuesta de guardado está incompleta. Los cambios siguen pendientes.');const received=new Set([...result.items,...result.conflicts].map(row=>row.id));if(received.size!==batch.items.length||batch.items.some(row=>!received.has(row.id)))throw new Error('No se confirmó cada check del lote. Los cambios siguen pendientes.');
-  for(const row of result.items||[]){const e=GPP_CHECKS.entries.get(row.id);if(!e)continue;e.version=row.version;e.confirmed=row.estado;if(e.desired===row.estado)GPP_CHECKS.entries.delete(row.id);}
-  for(const conflict of result.conflicts||[]){const e=GPP_CHECKS.entries.get(conflict.id);if(e){e.conflict=conflict;e.version=conflict.actual.version;e.confirmed=conflict.actual.estado;}}
-  GPP_CHECKS.batch=null;GPP_CHECKS.attempts=0;gppPatchChecks(result);gppPersistChecks();
+  const result=await api('gpp_update_activities',batch,{timeoutMs:60000});if(GPP_CHECKS.owner!==owner||SESSION?.session_token!==owner)return;
+  if(!Array.isArray(result?.items)||!Array.isArray(result?.conflicts)||!Array.isArray(result?.ciclos)||!(result.resumen_pendiente===true||Array.isArray(result.indicadores)))throw new Error('La respuesta de guardado está incompleta. Los cambios siguen pendientes.');
+  const received=new Set([...result.items,...result.conflicts].map(row=>row.id));if(received.size!==batch.items.length||batch.items.some(row=>!received.has(row.id)))throw new Error('No se confirmó cada check del lote. Los cambios siguen pendientes.');
+  for(const row of result.items){const e=GPP_CHECKS.entries.get(row.id);if(!e)continue;e.version=row.version;e.confirmed=row.estado;if(e.desired===row.estado)GPP_CHECKS.entries.delete(row.id);}
+  for(const conflict of result.conflicts){const e=GPP_CHECKS.entries.get(conflict.id);if(e){e.conflict=conflict;e.version=conflict.actual.version;e.confirmed=conflict.actual.estado;}}
+  for(const row of [...result.items,...result.ciclos])GPP_CHECKS.confirmedRows.set(row.id,row);
+  GPP_CHECKS.batch=null;GPP_CHECKS.attempts=0;GPP_CHECKS.summaryRevision++;GPP_CHECKS.saved=true;
+  GPP_CHECKS.summaryPending=result.resumen_pendiente===true;GPP_CHECKS.summaryError='';GPP_CHECKS.summaryAttempts=0;
+  // Persistir la confirmación antes de pintar: un fallo visual no reenvía escrituras.
+  gppPersistChecks();try{gppPatchChecks(result);}catch(error){console.error('RADAR · checks confirmados, actualización visual pendiente',error);GPP_CHECKS.summaryPending=true;}
+  if(GPP_CHECKS.summaryPending)gppScheduleCheckSummary();else gppBriefSavedState(owner);
  }catch(error){
   if(GPP_CHECKS.owner!==owner||SESSION?.session_token!==owner)return;
   if(/Lote demasiado grande/.test(error.message)&&batch.items.length>1){GPP_CHECKS.maxBatch=Math.max(1,Math.floor(batch.items.length/2));GPP_CHECKS.batch=null;gppPersistChecks();}
-  else if(/No fue posible conectar|no pudo leer|HTTP|fetch|network|conexión|conectar|Failed/i.test(error.message)&&++GPP_CHECKS.attempts<=2){GPP_CHECKS.retryDelay=GPP_CHECKS.attempts*1500;}
+  else if(gppTransientCheckError(error)&&++GPP_CHECKS.attempts<=4){GPP_CHECKS.retryDelay=[2000,5000,10000,20000][GPP_CHECKS.attempts-1];}
   else GPP_CHECKS.error=error.message;
  }finally{
-  if(GPP_CHECKS.owner===owner){GPP_CHECKS.running=false;gppUpdateCheckUI();if(!GPP_CHECKS.error&&[...GPP_CHECKS.entries.values()].some(e=>!e.conflict)){const delay=GPP_CHECKS.retryDelay||180;delete GPP_CHECKS.retryDelay;gppScheduleChecks(delay);}}
+  if(GPP_CHECKS.owner===owner){
+   clearTimeout(GPP_CHECKS.slowTimer);GPP_CHECKS.running=false;gppUpdateCheckUI();
+   if(!GPP_CHECKS.error&&[...GPP_CHECKS.entries.values()].some(e=>!e.conflict)){const delay=GPP_CHECKS.retryDelay||180;delete GPP_CHECKS.retryDelay;gppScheduleChecks(delay);}
+  }
  }
 }
-function gppRetryChecks(){GPP_CHECKS.error='';GPP_CHECKS.attempts=0;gppPersistChecks();gppUpdateCheckUI();gppScheduleChecks(0);}
+function gppRetryChecks(){GPP_CHECKS.error='';GPP_CHECKS.attempts=0;GPP_CHECKS.summaryError='';GPP_CHECKS.summaryAttempts=0;gppPersistChecks();gppUpdateCheckUI();gppScheduleChecks(0);gppScheduleCheckSummary(0);}
+
 function gppRetryCheck(id){gppRetryChecks();}
 function gppReviewCheckConflicts(){const rows=[...GPP_CHECKS.entries.values()].filter(e=>e.conflict);gppModal('Revisar cambios de checks',rows.map(e=>'<article class="gpp-item"><h3>'+esc(e.conflict.actual.actividad||e.id)+'</h3><p>Estado guardado por otra persona: '+esc(e.confirmed)+' · Tu selección: '+esc(e.desired)+'</p><div class="gpp-toolbar">'+(e.conflict.editable?gppButton('Mantener mi cambio',"gppResolveCheckConflict('"+e.id+"',true)"):'')+gppButton('Usar estado guardado',"gppResolveCheckConflict('"+e.id+"',false)")+'</div></article>').join('')+gppButton('Cerrar',"document.getElementById('gppDialog').close()"));}
 function gppResolveCheckConflict(id,keep){const e=GPP_CHECKS.entries.get(id);if(!e?.conflict)return;if(keep&&!e.conflict.editable)return;gppKeep('actividades',[e.conflict.actual]);delete e.conflict;if(!keep||e.desired===e.confirmed)GPP_CHECKS.entries.delete(id);gppPersistChecks();gppUpdateCheckUI();if([...GPP_CHECKS.entries.values()].some(e=>e.conflict))gppReviewCheckConflicts();else document.getElementById('gppDialog').close();gppRetryChecks();}
