@@ -3376,7 +3376,7 @@ function buildNoteNumberMap(
 
   const nodeOrder=new Map((model.nodes||[]).map(node=>{
     const box=nodeBox(node,{lanes,bodyTop:0},model);
-    return [node.id,{x:box.x,y:box.y}];
+    return [node.id,{lane:lanes.findIndex(l=>l.id===node.lane_id),x:box.x,y:box.y}];
   }));
 
   const laneOrder=
@@ -3384,6 +3384,7 @@ function buildNoteNumberMap(
       lanes.map(lane=>[
         lane.id,
         {
+          lane:lanes.findIndex(item=>item.id===lane.id),
           y:-1,
           x:Number(lane.x)||0
         }
@@ -3406,6 +3407,7 @@ function buildNoteNumberMap(
     }
 
     return {
+      lane:999999,
       y:999999,
       x:999999
     };
@@ -3419,9 +3421,9 @@ function buildNoteNumberMap(
               pb=notePosition(b);
 
         return (
-          (pa.y===-1?0:1)-(pb.y===-1?0:1) ||
-          pa.x-pb.x ||
+          pa.lane-pb.lane ||
           pa.y-pb.y ||
+          pa.x-pb.x ||
           String(a.created_at||'')
             .localeCompare(
               String(b.created_at||'')
@@ -9730,7 +9732,7 @@ function renderInsertPalette(){
 function collectValidation(flow=activeFlow()){return collectValidationDetails(flow).map(issue=>issue.message);}
 
 function refreshValidation(){
-  const flow=activeFlow();const issues=flow?collectValidation(flow):[];APP.validation.issues=issues;const badge=$('validation_badge');if(!flow){badge.className='validation-pill';badge.textContent='○ Validación pendiente';return;}badge.className=`validation-pill ${issues.length?'is-bad':'is-ok'}`;badge.textContent=issues.length?`⚠ ${issues.length} alerta(s)`:'✓ Listo para JSON → LMP';
+  const flow=activeFlow();const details=flow?collectValidationDetails(flow):[],issues=details.map(issue=>issue.message);APP.validation.details=details;APP.validation.issues=issues;const badge=$('validation_badge');if(!flow){badge.className='validation-pill';badge.textContent='○ Validación pendiente';return;}badge.className=`validation-pill ${issues.length?'is-bad':'is-ok'}`;badge.textContent=issues.length?`⚠ ${issues.length} alerta(s)`:'✓ Listo para JSON → LMP';
 }
 function showValidation(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidation(flow);$('validation_list').innerHTML=issues.length?issues.map((msg,i)=>`<div class="issue"><strong>${i+1}.</strong> ${escapeHtml(msg)}</div>`).join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';$('validation_dialog').showModal();}
 
@@ -12434,26 +12436,26 @@ function sbFlushEdgeMotion(paint=true){
   });
 }
 
-// R06: una etiqueta por pareja, en orden X/Y, sin mutar durante render/export.
+// Una etiqueta por pareja: carril de origen y altura, sin mutar durante render/export.
 function sbAlphabeticLabel(sequence){
   let n=Math.max(1,Math.floor(Number(sequence)||1)),label='';
   while(n>0){n--;label=String.fromCharCode(65+n%26)+label;n=Math.floor(n/26);}
   return label;
 }
 function sbConnectorLabelMap(model,geometry){
-  const labels=new Map();
+  const labels=new Map(),nodes=new Map((model.nodes||[]).map(n=>[n.id,n]));
+  const laneOrder=new Map((geometry.lanes||[]).map((lane,index)=>[lane.id,index]));
   ['input','internal','output'].forEach(kind=>{
     const positions=new Map();
     const edges=(model.edges||[]).filter(e=>e.mode==='connector'&&e.connector_kind===kind);
     edges.forEach(edge=>{
       const cg=connectorGeometry(edge,geometry,model);
-      const points=cg?[cg.sourceMarker,cg.targetMarker]:[{x:Infinity,y:Infinity}];
-      points.sort((a,b)=>a.x-b.x||a.y-b.y);
-      positions.set(edge.id,points[0]);
+      const point=cg?.sourceMarker||{x:Infinity,y:Infinity};
+      positions.set(edge.id,{...point,lane:laneOrder.get(nodes.get(edge.source)?.lane_id)??Infinity});
     });
     edges.sort((a,b)=>{
       const pa=positions.get(a.id),pb=positions.get(b.id);
-      return pa.x-pb.x||pa.y-pb.y||String(a.id).localeCompare(String(b.id));
+      return pa.lane-pb.lane||pa.y-pb.y||pa.x-pb.x||String(a.id).localeCompare(String(b.id));
     }).forEach((edge,index)=>labels.set(edge.id,{sequence:index+1,label:connectorLabel(kind,index+1)}));
   });
   return labels;
@@ -14421,13 +14423,25 @@ function collectValidationDetails(flow=activeFlow()){
   if(!flow)return [{message:'No existe un flujo activo.',targets:[]}];
   const model=flow.payload.model,issues=new Map(),lanes=model.lanes||[],actors=lanes.filter(l=>l.kind==='actor');
   const node=n=>({type:'node',id:n.id}),lane=l=>({type:'lane',id:l.id}),edge=e=>({type:'edge',id:e.id});
-  const add=(message,...targets)=>{const record=issues.get(message)||{message,targets:[]};for(const target of targets.flat().filter(Boolean))if(!record.targets.some(t=>t.type===target.type&&t.id===target.id&&t.field===target.field))record.targets.push(target);issues.set(message,record);};
+  const add=(message,...targets)=>{const category=/cruces o solapamientos|Cajas superpuestas/.test(message)?'Advertencia visual':/IDs duplicados|inexistente|nota|Referencia|referencia|note_ids/.test(message)?'Integridad':/documento sin nombre|máximo de/.test(message)?'Advertencia':'Brecha metodológica';const record=issues.get(message)||{message,category,targets:[]};for(const target of targets.flat().filter(Boolean))if(!record.targets.some(t=>t.type===target.type&&t.id===target.id&&t.field===target.field))record.targets.push(target);issues.set(message,record);};
   if(!text(APP.master?.process_name))add('Falta el nombre del proceso.',{type:'master',field:'process_name'});
   if(!sbFlowPurpose(flow))add('Falta la finalidad del proceso.',{type:'flow',field:'purpose'});
   if(actors.length<2)add('El proceso debe conservar al menos dos carriles de actores.',actors.map(lane));
   actors.forEach((l,i)=>{if(!text(l.label))add(`El actor ${i+1} no tiene nombre.`,lane(l));});
   const ids=[...lanes.map(l=>l.id),...model.nodes.map(n=>n.id),...model.edges.map(e=>e.id),...model.notes.map(n=>n.id)];
   if(new Set(ids).size!==ids.length){const duplicates=ids.filter((id,i)=>ids.indexOf(id)!==i);add('Existen IDs duplicados en el modelo.',model.nodes.filter(n=>duplicates.includes(n.id)).map(node),lanes.filter(l=>duplicates.includes(l.id)).map(lane),model.edges.filter(e=>duplicates.includes(e.id)).map(edge));}
+  // Solo relaciones válidas cubren las conexiones obligatorias. Índices compartidos por la validación.
+  const nodesById=new Map(model.nodes.map(n=>[n.id,n])),incoming=new Map(),outgoing=new Map();
+  for(const e of model.edges){const source=nodesById.get(e.source),target=nodesById.get(e.target);if(!source||!target||source.id===target.id||!validateEdgeRelation(source,target,model))continue;
+    if(!incoming.has(e.target))incoming.set(e.target,[]);incoming.get(e.target).push(e);
+    if(!outgoing.has(e.source))outgoing.set(e.source,[]);outgoing.get(e.source).push(e);
+  }
+  actors.forEach(l=>{if(!model.nodes.some(n=>n.lane_id===l.id))add('El actor '+(upper(l.label)||l.id)+' no tiene actividad ni decisión.',lane(l));});
+  model.nodes.forEach(n=>{const kind=laneKindForNode(n,model),ins=incoming.get(n.id)||[],outs=outgoing.get(n.id)||[],name=upper(n.label)||n.id;
+    if(kind==='supplier'){if(model.edges.some(e=>e.target===n.id))add('El proveedor '+name+' no debe tener conexiones de entrada.',node(n));if(outs.length>1)add('El proveedor '+name+' debe tener una única conexión de salida.',node(n));}
+    else if(kind==='customer'){if(model.edges.some(e=>e.source===n.id))add('El cliente '+name+' no debe tener conexiones de salida.',node(n));if(ins.length>1)add('El cliente '+name+' debe tener una única conexión de entrada.',node(n));}
+    if(sbIconEligible(n,model)&&!sbIconFileValid(n.icon_file))add('La caja de sistema '+name+' no tiene identificado su sistema. Selecciona su icono.',node(n));
+  });
   const inLane=kind=>model.nodes.filter(n=>laneKindForNode(n,model)===kind),actorNodes=inLane('actor'),sup=inLane('supplier'),inp=inLane('input'),out=inLane('output'),cus=inLane('customer');
   for(const [nodes,kind,msg] of [[actorNodes,'actor','El flujo debe contener al menos una actividad o decisión.'],[sup,'supplier','El flujo debe contener al menos un proveedor.'],[inp,'input','El flujo debe contener al menos una entrada.'],[out,'output','El flujo debe contener al menos una salida.'],[cus,'customer','El flujo debe contener al menos un cliente.']])if(!nodes.length)add(msg,lanes.filter(l=>l.kind===kind).map(lane));
   model.nodes.forEach(n=>{if(!laneById(n.lane_id,model))add(`La caja ${n.id} referencia un carril inexistente.`,node(n));(n.documents||[]).forEach(d=>{if(!text(d?.name||d))add(`Existe un documento sin nombre en ${upper(n.label)||n.id}.`,node(n));});});
@@ -14436,7 +14450,16 @@ function collectValidationDetails(flow=activeFlow()){
   inp.forEach(n=>{if(!model.edges.some(e=>e.target===n.id&&laneKindForNode(nodeById(e.source,model),model)==='supplier'))add(`La entrada ${upper(n.label)||n.id} no tiene proveedor.`,node(n));if(!model.edges.some(e=>e.source===n.id&&laneKindForNode(nodeById(e.target,model),model)==='actor'))add(`La entrada ${upper(n.label)||n.id} no alimenta ninguna actividad.`,node(n));});
   out.forEach(n=>{if(!model.edges.some(e=>e.target===n.id&&laneKindForNode(nodeById(e.source,model),model)==='actor'))add(`La salida ${upper(n.label)||n.id} no proviene de una actividad.`,node(n));if(!model.edges.some(e=>e.source===n.id&&laneKindForNode(nodeById(e.target,model),model)==='customer'))add(`La salida ${upper(n.label)||n.id} no tiene cliente.`,node(n));});
   cus.forEach(n=>{if(!model.edges.some(e=>e.target===n.id&&laneKindForNode(nodeById(e.source,model),model)==='output'))add(`El cliente ${upper(n.label)||n.id} no recibe ninguna salida.`,node(n));});
-  actorNodes.forEach(n=>{const incoming=model.edges.filter(e=>e.target===n.id),outgoing=model.edges.filter(e=>e.source===n.id);if(!incoming.length&&!outgoing.length)add(`La actividad ${upper(n.label)||n.id} está aislada.`,node(n));if(n.type==='decision'){if(!incoming.length)add(`La decisión ${upper(n.label)||n.id} no tiene actividad previa.`,node(n));if(outgoing.length<2)add(`La decisión ${upper(n.label)||n.id} debe tener al menos dos salidas.`,node(n));if(incoming.length+outgoing.length>4)add(`La decisión ${upper(n.label)||n.id} supera sus cuatro puntos únicos de conexión.`,node(n));outgoing.forEach(e=>{if(!text(e.label))add(`Una rama de la decisión ${upper(n.label)||n.id} no tiene etiqueta.`,edge(e),node(n));});}});
+  actorNodes.forEach(n=>{
+    const ins=incoming.get(n.id)||[],outs=outgoing.get(n.id)||[],name=upper(n.label)||n.id;
+    if(n.type==='decision'){
+      if(!ins.length)add('La decisión '+name+' no tiene conexión de entrada.',node(n));
+      if(outs.length<2)add('La decisión '+name+' debe tener al menos dos salidas.',node(n));
+      if(ins.length+outs.length>4)add('La decisión '+name+' supera sus cuatro puntos únicos de conexión.',node(n));
+      outs.forEach(e=>{if(!text(e.label))add('Una rama de la decisión '+name+' no tiene etiqueta.',edge(e),node(n));});
+    }else if(!ins.length&&!outs.length)add('La actividad '+name+' está aislada.',node(n));
+    else {if(!ins.length)add('La actividad '+name+' no tiene conexión de entrada.',node(n));if(!outs.length)add('La actividad '+name+' no tiene conexión de salida.',node(n));}
+  });
   const geometry=laneGeometry(model),crossing=crossingEdgeIds(model,geometry);if(crossing.size)add(`Existen ${crossing.size} conexión(es) involucradas en cruces o solapamientos de líneas. Reubica la ruta o conviértelas en conectores.`,model.edges.filter(e=>crossing.has(e.id)).map(edge));
   const owners=[...model.nodes.map(n=>({...node(n),value:n})),...lanes.map(l=>({...lane(l),value:l}))];
   for(const message of sbNoteIssues(model)){
@@ -14692,7 +14715,7 @@ async function sbLocateTarget(target,flowId=APP.activeFlowId){
   else if(target.type==='note'){const note=model.notes.find(n=>n.id===target.id);if(!note)return;if(note.node_id)return sbLocateTarget({type:'node',id:note.node_id},flowId);if(note.lane_id)return sbLocateTarget({type:'lane',id:note.lane_id},flowId);}
   if(!point)return;APP.selection=selection;renderStudio(false);requestAnimationFrame(()=>{animateCameraToCanvasPoint(point,1,1000);const element=$('canvas').querySelector(selector);element?.classList.add('sb-located');setTimeout(()=>element?.classList.remove('sb-located'),1800);});
 }
-showValidation=function(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidationDetails(flow),list=$('validation_list');list.innerHTML=issues.length?issues.map((issue,i)=>'<button type="button" class="issue sb-issue-link" data-locate-issue="'+i+'"><strong>'+(i+1)+'.</strong> '+escapeHtml(issue.message)+'</button>').join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';list.querySelectorAll('[data-locate-issue]').forEach(button=>button.onclick=()=>{$('validation_dialog').close();const issue=issues[Number(button.dataset.locateIssue)];if(issue.targets[0])sbLocateTarget(issue.targets[0],flowId);});$('validation_dialog').showModal();};
+showValidation=function(flowId=APP.activeFlowId){const flow=flowById(flowId);if(!flow)return;const issues=collectValidationDetails(flow),list=$('validation_list');list.innerHTML=issues.length?issues.map((issue,i)=>'<button type="button" class="issue sb-issue-link" data-locate-issue="'+i+'"><strong>'+(i+1)+'.</strong> '+'<small>'+escapeHtml(issue.category)+'</small> '+escapeHtml(issue.message)+'</button>').join(''):'<div class="empty-note">Sin alertas estructurales. El flujo está listo para exportar.</div>';list.querySelectorAll('[data-locate-issue]').forEach(button=>button.onclick=()=>{$('validation_dialog').close();const issue=issues[Number(button.dataset.locateIssue)];if(issue.targets[0])sbLocateTarget(issue.targets[0],flowId);});$('validation_dialog').showModal();};
 const sbSearchEscapeNative=sbUxEscape;sbUxEscape=function(event){if(event.key==='Escape'&&!$('sb_diagram_results')?.hidden){event.preventDefault();event.stopImmediatePropagation();$('sb_diagram_results').hidden=true;return;}return sbSearchEscapeNative(event);};
 
 function sbRecoveryPrepare(){
@@ -14753,7 +14776,7 @@ function sbCompactUppercase(input){
 const sbCompactValidationNative=refreshValidation;
 refreshValidation=function(){
   sbCompactValidationNative();const badge=$('validation_badge');if(!activeFlow())return;
-  const count=APP.validation.issues.length;badge.textContent=count?'⚠ '+count+' brecha'+(count===1?'':'s'):'✓ Sin brechas';
+  const count=APP.validation.issues.length,breaches=(APP.validation.details||[]).filter(issue=>issue.category==='Brecha metodológica').length,alerts=count-breaches;badge.textContent=count?'⚠ '+[breaches?breaches+' brecha'+(breaches===1?'':'s'):'',alerts?alerts+' alerta'+(alerts===1?'':'s'):''].filter(Boolean).join(' · '):'✓ Sin brechas';
   badge.setAttribute('aria-label',count?'Ver '+count+' brechas metodológicas':'Revisar validación: sin brechas metodológicas');
   badge.title='Revisar brechas metodológicas y localizar el problema';badge.setAttribute('aria-live','polite');
 };
