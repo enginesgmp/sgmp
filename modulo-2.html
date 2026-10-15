@@ -554,6 +554,15 @@ body.sb-ux-actor-dragging,body.sb-ux-actor-dragging *{cursor:grabbing!important;
 .sb-pdf-actions{margin-top:10px}.sb-pdf-integration{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.sb-pdf-json{background:#EFF8FC;border-color:#BDDCEA}.pdf-preview-frame{min-height:150px}
 @media(max-width:650px){.sb-pdf-options{grid-template-columns:1fr;gap:6px}.sb-pdf-options>label{padding:7px 10px}.sb-pdf-integration .sb-pdf-json{width:100%}.sb-pdf-header p{font-size:.72rem}}
 @media(prefers-reduced-motion:reduce){.sb-pdf-switch>span,.sb-pdf-switch>span:after{transition:none}}
+
+/* Pestaña del inspector: solo cambia el espacio disponible, no la cámara. */
+#view_studio .workspace.sb-info-workspace{position:relative;--sb-inspector-width:260px}
+#view_studio:fullscreen .workspace.sb-info-workspace{--sb-inspector-width:310px}
+#sb_inspector_toggle{position:absolute;right:calc(var(--sb-inspector-width) - 12px);top:18px;z-index:30;width:30px;min-width:30px;height:46px;min-height:46px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #0EA5E9;border-radius:9px;background:#fff;color:#0284C7;font-size:28px;line-height:1;box-shadow:0 2px 6px #123A631a}
+#view_studio .workspace.sb-info-workspace.sb-inspector-hidden{grid-template-columns:minmax(0,1fr);gap:0}
+#view_studio .workspace.sb-inspector-hidden>.inspector{display:none}
+#view_studio .workspace.sb-inspector-hidden>#sb_inspector_toggle{right:0;border-radius:9px 0 0 9px}
+@media(max-width:700px){#view_studio .workspace.sb-info-workspace,#view_studio:fullscreen .workspace.sb-info-workspace{--sb-inspector-width:220px}}
 </style>
 <script>
 // SGMP Session Guard conservado del módulo vigente.
@@ -14166,9 +14175,23 @@ function sbUxEditZoom(){
  const host=$('zoom_value');if(host.querySelector('input'))return;const input=document.createElement('input');input.type='text';input.inputMode='decimal';input.className='sb-zoom-edit';input.value=String(Math.round(APP.camera.scale*100));input.setAttribute('aria-label','Porcentaje de zoom');host.replaceChildren(input);let done=false;
  const finish=cancel=>{if(done)return;const value=Number(input.value.trim().replace('%','').replace(',','.'));if(!cancel&&(!Number.isFinite(value)||value<=0)){input.setCustomValidity('Escribe un porcentaje mayor que cero.');input.reportValidity();input.focus();return;}done=true;if(!cancel)zoomBy(Math.max(STANDARD.minZoomFloor,Math.min(STANDARD.maxZoom,value/100))/(APP.camera.scale||1));host.textContent=Math.round(APP.camera.scale*100)+' %';$('viewport').focus({preventScroll:true});};input.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();finish(e.key==='Escape');}},true);input.addEventListener('blur',()=>finish(false));input.focus();input.select();
 }
+
+function sbPrepareInspectorToggle(workspace,aside){
+ if($('sb_inspector_toggle'))return;
+ aside.id=aside.id||'sb_flow_inspector';
+ const button=document.createElement('button');button.id='sb_inspector_toggle';button.type='button';button.setAttribute('aria-controls',aside.id);workspace.append(button);
+ const apply=hidden=>{
+  workspace.classList.toggle('sb-inspector-hidden',hidden);aside.inert=hidden;aside.setAttribute('aria-hidden',String(hidden));
+  button.textContent=hidden?'‹':'›';button.setAttribute('aria-expanded',String(!hidden));button.title=hidden?'Mostrar información y ayuda':'Ocultar información y ayuda';button.setAttribute('aria-label',button.title);
+  requestAnimationFrame(()=>{sbUxResizePurpose();sbUpdateFrozenHeaders(true);});
+ };
+ let hidden=false;try{hidden=localStorage.getItem('SGMP_SB_INSPECTOR_HIDDEN_V1')==='1';}catch(error){}
+ apply(hidden);
+ button.addEventListener('click',()=>{if(!sbCommitEdit())return;const next=!workspace.classList.contains('sb-inspector-hidden');apply(next);try{localStorage.setItem('SGMP_SB_INSPECTOR_HIDDEN_V1',next?'1':'0');}catch(error){}button.focus({preventScroll:true});});
+}
 function sbUxPrepare(){
  sbUxBindActorGestures();
- const studio=$('view_studio'),shell=studio.querySelector('.studio-shell'),workspace=studio.querySelector('.workspace'),aside=studio.querySelector('.inspector');workspace.classList.add('sb-info-workspace');aside.setAttribute('aria-label','Información del flujo y ayuda');
+ const studio=$('view_studio'),shell=studio.querySelector('.studio-shell'),workspace=studio.querySelector('.workspace'),aside=studio.querySelector('.inspector');workspace.classList.add('sb-info-workspace');aside.setAttribute('aria-label','Información del flujo y ayuda');sbPrepareInspectorToggle(workspace,aside);
  const bar=document.createElement('div');bar.className='sb-full-tools';bar.innerHTML='<span id="sb_ux_flow_title" class="sb-full-title sb-ux-flow-title"></span><div id="sb_ux_full_history" class="sb-full-group"></div><div id="sb_ux_full_guides" class="sb-full-group"></div><div id="sb_ux_full_save" class="sb-full-group"><span id="sb_ux_full_save_state" class="sb-save-state"></span></div><div id="sb_ux_full_zoom" class="sb-full-group"></div><div id="sb_ux_full_exit" class="sb-full-group"></div>';shell.prepend(bar);
  for(const [id,group] of [['btn_undo','history'],['btn_redo','history'],['btn_freeze_headers','guides'],['btn_alignment_guides','guides'],['btn_save_flow','save'],['btn_export_flow','save'],['btn_fullscreen_studio','exit']]){const control=$(id),marker=document.createComment('sb-ux-home-'+id);control.after(marker);SB_UX.homes.set(id,{marker,group:'sb_ux_full_'+group});control.title=({btn_undo:'Deshacer',btn_redo:'Rehacer',btn_freeze_headers:'Fijar o liberar encabezados',btn_alignment_guides:'Activar o desactivar guías de alineación'})[id]||control.textContent;}
  const zoom=$('zoom_value').closest('.zoom-group');zoom.id='sb_ux_zoom_group';const marker=document.createComment('sb-ux-home-zoom');zoom.after(marker);SB_UX.homes.set(zoom.id,{marker,group:'sb_ux_full_zoom'});$('active_flow_title').parentElement.insertAdjacentHTML('beforeend','<small id="sb_ux_save_state" class="sb-save-state"></small>');$('sb_context_menu').insertAdjacentHTML('beforeend','<div id="sb_ux_context_content"></div>');studio.insertAdjacentHTML('beforeend','<dialog id="sb_ux_exit_dialog" aria-labelledby="sb_ux_exit_title"><strong id="sb_ux_exit_title">Confirmar salida de pantalla completa</strong><div class="sb-exit-actions"><button type="button" id="sb_ux_exit_yes">Sí</button><button type="button" id="sb_ux_exit_no">No</button></div></dialog>');
