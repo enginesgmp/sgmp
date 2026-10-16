@@ -2239,7 +2239,18 @@ function installActivitySaveGuards(){
 }
 
 /* La cola conserva operation_id cuando no se confirma la respuesta. */
-async function radarRequestTransport(url,init,timeoutMs=0){
+async function radarRequestTransport(url,init,timeoutMs=0,transport='fetch'){
+ if(transport==='xhr'&&typeof XMLHttpRequest!=='undefined')return new Promise((resolve,reject)=>{
+  const request=new XMLHttpRequest();let finished=false;
+  const finish=(callback,value)=>{if(finished)return;finished=true;request.onload=request.onerror=request.ontimeout=request.onabort=null;callback(value);};
+  request.open(init.method||'GET',url,true);request.withCredentials=false;request.timeout=timeoutMs;
+  for(const [name,value] of Object.entries(init.headers||{}))request.setRequestHeader(name,value);
+  request.onload=()=>{try{finish(resolve,{response:{ok:request.status>=200&&request.status<300,status:request.status,url:request.responseURL||url},responseText:request.responseText});}catch(cause){const error=new Error('No se pudo leer la respuesta.');error.code='RADAR_READ_RESPONSE';finish(reject,error);}};
+  request.onerror=()=>finish(reject,new Error('No fue posible conectar con RADAR.'));
+  request.ontimeout=()=>{const error=new Error('RADAR tardó en responder. La carga aún no se confirmó.');error.code='RADAR_TIMEOUT';finish(reject,error);};
+  request.onabort=()=>{const error=new Error('La carga de RADAR fue interrumpida.');error.code='RADAR_READ_RESPONSE';finish(reject,error);};
+  request.send(init.body??null);
+ });
  const controller=timeoutMs>0?new AbortController():null;let timer;
  const request=(async()=>{
   const response=await fetch(url,controller?{...init,signal:controller.signal}:init);let responseText;
@@ -2251,167 +2262,62 @@ async function radarRequestTransport(url,init,timeoutMs=0){
   timer=setTimeout(()=>{const error=new Error('RADAR tardó en responder. El guardado aún no se confirmó.');error.code='RADAR_TIMEOUT';reject(error);controller.abort();},timeoutMs);
  })]);}finally{clearTimeout(timer);}
 }
-async function api(
-  action,
-  payload = {},
-  options = {}
-){
-  if(!apiReady()){
-    throw new Error(
-      "API de RADAR no configurada."
-    );
-  }
+async function api(action,payload={},options={}){
+  if(!apiReady())throw new Error('API de RADAR no configurada.');
+  const isLogin=action==='login',initialRequest=isLogin||action==='bootstrap';
+  if(!isLogin&&!SESSION?.session_token)throw new Error('SESION_REQUERIDA');
+  const requestBody={action,payload};
+  if(!isLogin)requestBody.session_token=SESSION.session_token;
+  const requestText=JSON.stringify(requestBody);
+  const timeoutBudget=options.timeoutMs??(initialRequest?45000:action.startsWith('gpp_')?60000:0),startedAt=Date.now();
 
-  const isLogin =
-    action === "login";
-
-  if(
-    !isLogin &&
-    !SESSION?.session_token
-  ){
-    throw new Error(
-      "SESION_REQUERIDA"
-    );
-  }
-
-  const requestBody = {
-    action,
-    payload
-  };
-
-  if(!isLogin){
-    requestBody.session_token =
-      SESSION.session_token;
-  }
-
-  /*
-   * Apps Script ContentService
-   * responde mediante una URL
-   * temporal de un solo uso.
-   *
-   * Generamos una solicitud única
-   * para evitar reutilización de
-   * redirecciones/caché anteriores.
-   */
-  const separator =
-    API_URL.includes("?")
-      ? "&"
-      : "?";
-
-  const requestUrl =
-    API_URL +
-    separator +
-    "radar_request=" +
-    Date.now() +
-    "_" +
-    Math.random()
-      .toString(36)
-      .slice(2);
-
-  let response,responseText;
-  try{
-    const timeoutMs=options.timeoutMs??(action.startsWith('gpp_')?60000:0);
-    ({response,responseText}=await radarRequestTransport(requestUrl,{
-      method:'POST',cache:'no-store',
-      headers:{'Content-Type':'text/plain;charset=utf-8','Accept':'application/json'},
-      body:JSON.stringify(requestBody)
-    },timeoutMs));
-  }catch(error){
-    if(error?.code==='RADAR_TIMEOUT')throw error;
-    if(error?.code==='RADAR_READ_RESPONSE')throw new Error('RADAR no pudo leer la respuesta de '+action+'.');
-    console.error('RADAR · error de transporte',{action,name:error?.name||'',message:error?.message||''});
-    throw new Error('No fue posible conectar con RADAR al ejecutar '+action+'.');
-  }
-  const status=Number(response.status||0);
-
-  if(!response.ok){
-    let finalHost =
-      "";
-
-    try{
-      finalHost =
-        new URL(
-          response.url
-        ).hostname;
-
-    }catch(_){}
-
-    console.error(
-      "RADAR · respuesta HTTP no válida",
-      {
-        action:
-          action,
-
-        status:
-          status,
-
-        finalHost:
-          finalHost
-      }
-    );
-
-    throw new Error(
-      "RADAR respondió HTTP " +
-      status +
-      " al ejecutar " +
-      action +
-      "."
-    );
-  }
-
-  let json;
-
-  try{
-    json =
-      JSON.parse(
-        responseText
-      );
-
-  }catch(error){
-    console.error(
-      "RADAR · respuesta no JSON",
-      {
-        action:
-          action,
-
-        status:
-          status
-      }
-    );
-
-    throw new Error(
-      "RADAR devolvió una respuesta no válida al ejecutar " +
-      action +
-      "."
-    );
-  }
-
-  if(!json.ok){
-    const message =
-      String(
-        json.error ||
-        "Error API"
-      ).trim();
-
-    if(
-      isRadarSessionError(
-        message
-      )
-    ){
-      forceRadarRelogin(
-        message ===
-          "SESION_EXPIRADA"
-          ? "La sesión expiró. Ingrese nuevamente."
-          : "La sesión ya no es válida. Ingrese nuevamente."
-      );
+  // ContentService usa una URL temporal. Si ésta vuelve a doGet, se recibe
+  // la ficha técnica; nunca es una confirmación de lectura ni de guardado.
+  // Sólo login/bootstrap pueden repetir ese caso, con la misma petición.
+  for(let attempt=0;;attempt++){
+    const separator=API_URL.includes('?')?'&':'?';
+    const requestUrl=API_URL+separator+'radar_request='+Date.now()+'_'+Math.random().toString(36).slice(2)+'_'+attempt;
+    const remainingMs=timeoutBudget>0?timeoutBudget-(Date.now()-startedAt):0;
+    if(timeoutBudget>0&&remainingMs<=0){
+      const error=new Error('RADAR tardó en responder. La carga aún no se confirmó.');error.code='RADAR_TIMEOUT';throw error;
     }
-
-    throw new Error(
-      message
-    );
+    let response,responseText;
+    try{
+      ({response,responseText}=await radarRequestTransport(requestUrl,{
+        method:'POST',redirect:'follow',cache:'no-store',
+        headers:{'Content-Type':'text/plain;charset=utf-8','Accept':'application/json'},
+        body:requestText
+      },remainingMs,initialRequest?'xhr':'fetch'));
+    }catch(error){
+      if(error?.code==='RADAR_TIMEOUT'){if(initialRequest)error.message='RADAR tardó en cargar. Intenta ingresar nuevamente.';throw error;}
+      if(error?.code==='RADAR_READ_RESPONSE')throw new Error('RADAR no pudo leer la respuesta de '+action+'.');
+      console.error('RADAR · error de transporte',{action,name:error?.name||'',message:error?.message||''});
+      throw new Error('No fue posible conectar con RADAR al ejecutar '+action+'.');
+    }
+    const status=Number(response.status||0);
+    if(!response.ok){
+      let finalHost='';try{finalHost=new URL(response.url).hostname;}catch(_){}
+      console.error('RADAR · respuesta HTTP no válida',{action,status,finalHost});
+      throw new Error('RADAR respondió HTTP '+status+' al ejecutar '+action+'.');
+    }
+    let json;
+    try{json=JSON.parse(responseText);}catch(error){
+      console.error('RADAR · respuesta no JSON',{action,status});
+      throw new Error('RADAR devolvió una respuesta no válida al ejecutar '+action+'.');
+    }
+    if(!json.ok){
+      const message=String(json.error||'Error API').trim();
+      if(isRadarSessionError(message))forceRadarRelogin(message==='SESION_EXPIRADA'?'La sesión expiró. Ingrese nuevamente.':'La sesión ya no es válida. Ingrese nuevamente.');
+      throw new Error(message);
+    }
+    const serviceOnly=json.data?.service==='RADAR SGMP API'&&json.data?.version==='RADAR_V3'&&!json.data?.runtime;
+    if(serviceOnly){
+      if(initialRequest&&attempt<2)continue;
+      const error=new Error(initialRequest?'RADAR no pudo recuperar la carga inicial. Intenta ingresar nuevamente.':'RADAR devolvió el estado de la API en lugar de la respuesta de '+action+'. La operación no está confirmada.');
+      error.code='RADAR_SERVICE_RESPONSE';throw error;
+    }
+    return json.data;
   }
-
-  return json.data;
 }
 
 function toast(message){
